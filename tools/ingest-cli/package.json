@@ -1,0 +1,28 @@
+{
+  "name": "@hauska-engine/ingest-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Operator CLI for enqueueing ingest jobs, listing job status, viewing failures, running eval, recording per-jurisdiction human-review hours, and reporting against the $200 compute + 1hr human review per-jurisdiction target (commitment #3).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "ingest-cli": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@hauska-engine/corpus": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

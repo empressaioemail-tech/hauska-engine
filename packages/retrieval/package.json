@@ -1,0 +1,30 @@
+{
+  "name": "@hauska-engine/retrieval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hybrid retrieval query layer combining structural graph traversal (ADR-010) with vector similarity. Consumed by services/retrieval-api.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@hauska-engine/atom-contract-pin": "workspace:*",
+    "@hauska-engine/atoms": "workspace:*",
+    "@hauska-engine/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

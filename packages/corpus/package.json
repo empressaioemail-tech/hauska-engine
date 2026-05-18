@@ -1,0 +1,61 @@
+{
+  "name": "@hauska-engine/corpus",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Code-ingestion pipeline modules. Adapters (Stream 1A), structural extraction + atomization (Stream 1B), eval harness + version-tracking (Stream 1D).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./adapters": {
+      "types": "./src/adapters/index.ts",
+      "import": "./src/adapters/index.ts"
+    },
+    "./extraction": {
+      "types": "./src/extraction/index.ts",
+      "import": "./src/extraction/index.ts"
+    },
+    "./atomization": {
+      "types": "./src/atomization/index.ts",
+      "import": "./src/atomization/index.ts"
+    },
+    "./eval": {
+      "types": "./src/eval/index.ts",
+      "import": "./src/eval/index.ts"
+    },
+    "./version-tracking": {
+      "types": "./src/version-tracking/index.ts",
+      "import": "./src/version-tracking/index.ts"
+    },
+    "./curated-queries": {
+      "types": "./src/curated-queries/index.ts",
+      "import": "./src/curated-queries/index.ts"
+    },
+    "./cost-tracking": {
+      "types": "./src/cost-tracking/index.ts",
+      "import": "./src/cost-tracking/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@hauska-engine/atom-contract-pin": "workspace:*",
+    "@hauska-engine/atoms": "workspace:*",
+    "@hauska-engine/storage": "workspace:*",
+    "cheerio": "^1.0.0",
+    "undici": "^7.2.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

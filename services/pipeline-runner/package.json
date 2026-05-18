@@ -1,0 +1,29 @@
+{
+  "name": "@hauska-engine/pipeline-runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pipeline orchestration runner (Stream 1A). Postgres job table + Cloud Run jobs. State machine: queued -> fetching -> extracted -> atomized -> indexed -> eval-running -> loaded / failed.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@hauska-engine/atoms": "workspace:*",
+    "@hauska-engine/corpus": "workspace:*",
+    "@hauska-engine/storage": "workspace:*",
+    "drizzle-orm": "^0.36.4",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

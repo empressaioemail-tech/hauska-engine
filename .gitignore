@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# coverage
+coverage/
+.nyc_output/
+
+# pipeline-runner local state
+services/pipeline-runner/.local/
+ingest-cli-state.json
+
+# IPFS dev cache
+.ipfs-cache/
+
+# Generated fixtures (kept under git when explicitly added)
+*.fixture.local.json
