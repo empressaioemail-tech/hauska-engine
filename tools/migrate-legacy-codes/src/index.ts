@@ -2,17 +2,20 @@
 /**
  * tools/migrate-legacy-codes — one-shot migration CLI.
  *
- * Per the 2026-05-19 dispatch (Path B greenlit). Reads legacy
- * code_atoms rows, synthesizes Bump 1 atom instances, writes to a
- * StoragePort (in-memory for dry-run + eval; Postgres for production
- * write once that landing finishes).
+ * Per the 2026-05-19 dispatches. Path B (Nick 2026-05-19): read legacy
+ * code_atoms rows, synthesize Bump 1 atom instances, write to a
+ * StoragePort. Path C (Nick 2026-05-19): live re-ingestion of Bastrop
+ * UDC via Stream 1A MunicodeHtmlAdapter (JSON mode) into the same
+ * StoragePort.
  *
  * Subcommands:
- *   coverage-report          → answers dispatch Check 1
- *   probe-bastrop-udc        → focused presence check for UDC chapters
- *   dry-run [--jurisdiction] → transform + synthesize against in-memory storage
- *   write [--jurisdiction] [--target=in-memory|postgres] → writes atoms
- *   eval [--jurisdiction]    → migrate + run eval-harness seed queries
+ *   coverage-report           → answers dispatch Check 1
+ *   probe-bastrop-udc         → focused UDC presence check (tightened)
+ *   dry-run [--jurisdiction]  → Path B transform + synthesize against in-memory storage
+ *   write [--jurisdiction]    → Path B writes atoms (--target=in-memory only for now)
+ *   eval [--jurisdiction]     → Path B migrate + run eval-harness seed queries
+ *   path-c-ingest-bastrop-udc → Path C live Municode re-ingestion + atomization
+ *   path-c-eval               → Path C + UDC curated-query eval (Sync 4 / B.6 fire path)
  *
  * Production-write target Postgres landing is a separate sprint; until
  * then `--target=postgres` errors politely.
@@ -28,6 +31,8 @@ import { InMemoryStorage, type StoragePort } from "@hauska-engine/storage";
 
 import { LegacyClient } from "./legacy-client.js";
 import { runMigration } from "./migrate.js";
+import { runPathCIngest } from "./path-c-ingest.js";
+import { buildBastropUdcCuratedQueries } from "./udc-curated-queries.js";
 import { curatedQueriesForJurisdiction, buildSeedCuratedQueries } from "./seed-curated-queries.js";
 
 function resolveDatabaseUrl(explicit: string | undefined): string {
@@ -240,6 +245,172 @@ program
   )
   .action(() => {
     console.log(JSON.stringify(buildSeedCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-probe-section")
+  .description("Diagnostic: dump body content of one Municode Doc for inspection.")
+  .requiredOption("--node-id <id>", "Municode TOC node id")
+  .action(async (opts: { nodeId: string }) => {
+    const { MunicodeJsonClient } = await import("@hauska-engine/corpus/adapters");
+    const client = new MunicodeJsonClient();
+    const clientContent = await client.getClientContent(1169);
+    const product = clientContent?.codes?.[0];
+    if (!product) return console.log("{}");
+    const job = await client.getLatestJob(product.productId);
+    if (!job) return console.log("{}");
+    const env = await client.getCodesContent(job.Id, job.ProductId, opts.nodeId);
+    console.log(
+      JSON.stringify(
+        {
+          docs: env?.Docs.map((d) => ({
+            Id: d.Id,
+            Title: d.Title,
+            NodeDepth: d.NodeDepth,
+            ContentChars: d.Content?.length ?? 0,
+            ContentPreview: d.Content?.slice(0, 800) ?? null,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+  });
+
+program
+  .command("path-c-probe-toc")
+  .description(
+    "Diagnostic: hit Municode JSON API and print top-level TOC headings for Bastrop. Used to dial in the chapter-filter regex.",
+  )
+  .action(async () => {
+    const { MunicodeJsonClient } = await import("@hauska-engine/corpus/adapters");
+    const client = new MunicodeJsonClient();
+    const clientContent = await client.getClientContent(1169);
+    const product = clientContent?.codes?.[0];
+    if (!product) {
+      console.log(JSON.stringify({ error: "No product found for clientId=1169" }));
+      return;
+    }
+    const job = await client.getLatestJob(product.productId);
+    if (!job) {
+      console.log(JSON.stringify({ error: "No latest job for product" }));
+      return;
+    }
+    const top = await client.getTocChildren(job.Id, job.ProductId);
+    console.log(
+      JSON.stringify(
+        {
+          product: { productName: product.productName, productId: product.productId },
+          job: { Id: job.Id, Name: job.Name, ProductId: job.ProductId },
+          topLevel: top.map((n) => ({
+            Id: n.Id,
+            Heading: n.Heading,
+            HasChildren: n.HasChildren,
+            NodeDepth: n.NodeDepth,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+  });
+
+program
+  .command("path-c-ingest-bastrop-udc")
+  .description(
+    "Path C: live re-ingest Bastrop UDC chapters from Municode JSON API. Writes to in-memory storage; no Neon dependency.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive). Defaults to 'unified.*development|development code|zoning'.",
+    "unified.*development|development code|zoning",
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "30")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: "bastrop_tx",
+      jurisdictionName: "Bastrop, TX",
+      editionLabel: "Bastrop UDC (current supplement)",
+      clientId: 1169,
+      librarySlug: "bastrop",
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+    });
+    console.log(JSON.stringify({ pathCIngest: result.report }, null, 2));
+  });
+
+program
+  .command("path-c-eval")
+  .description(
+    "Path C end-to-end: live Bastrop UDC re-ingest + UDC curated-query eval. Sync 4 / B.6 fire path.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex",
+    "unified.*development|development code|zoning",
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "30")
+  .option(
+    "--queries-file <path>",
+    "Optional JSON file of curated queries to use instead of the UDC seed set",
+  )
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: "bastrop_tx",
+        jurisdictionName: "Bastrop, TX",
+        editionLabel: "Bastrop UDC (current supplement)",
+        clientId: 1169,
+        librarySlug: "bastrop",
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+      });
+
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        const raw = await fs.readFile(opts.queriesFile, "utf8");
+        queries = JSON.parse(raw) as CuratedQuery[];
+      } else {
+        queries = buildBastropUdcCuratedQueries();
+      }
+
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: "bastrop_tx",
+        queries,
+      });
+
+      console.log(
+        JSON.stringify(
+          {
+            pathCIngest: ingest.report,
+            eval: report,
+            syncFourReady: report.passed,
+          },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-udc-queries")
+  .description("Print the Bastrop UDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildBastropUdcCuratedQueries(), null, 2));
   });
 
 program.parseAsync(process.argv).catch((err) => {

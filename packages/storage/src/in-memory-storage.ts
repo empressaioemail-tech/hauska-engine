@@ -81,6 +81,7 @@ export class InMemoryStorage implements StoragePort {
 
   async search(query: AtomQuery): Promise<ReadonlyArray<AtomSearchResult>> {
     const q = (query.q ?? "").toLowerCase().trim();
+    const tokens = tokenize(q);
     const limit = Math.max(1, Math.min(query.limit ?? 25, 100));
     const results: AtomSearchResult[] = [];
     for (const [atomDid, inst] of this.atoms) {
@@ -89,16 +90,24 @@ export class InMemoryStorage implements StoragePort {
       }
       if (query.entityType && inst.entityType !== query.entityType) continue;
       const snippet = buildSnippet(inst);
-      if (q && !snippet.toLowerCase().includes(q)) continue;
-      results.push({
-        atomDid,
-        entityType: inst.entityType,
-        entityId: inst.entityId,
-        jurisdictionTenant: inst.jurisdictionTenant,
-        sectionNumber: inst.entityType === "code-section" ? inst.sectionNumber : null,
-        snippet,
-        score: q ? scoreMatch(snippet.toLowerCase(), q) : 1,
-      });
+      const lowerSnippet = snippet.toLowerCase();
+      // Token-based scoring: count how many query tokens appear in the
+      // snippet. Pure substring match was too brittle ("B3 Code" in
+      // query doesn't substring-match "(B3) Code" in body). Tokenize
+      // by punctuation + whitespace so parens, dashes, periods don't
+      // sink retrieval.
+      if (q.length === 0) {
+        results.push(buildResult(atomDid, inst, snippet, 1));
+        continue;
+      }
+      if (tokens.length === 0) continue;
+      let matched = 0;
+      for (const t of tokens) {
+        if (lowerSnippet.includes(t)) matched++;
+      }
+      if (matched === 0) continue;
+      const score = matched / tokens.length;
+      results.push(buildResult(atomDid, inst, snippet, score));
     }
     results.sort((a, b) => b.score - a.score);
     return results.slice(0, limit);
@@ -130,6 +139,30 @@ export class InMemoryStorage implements StoragePort {
   async upsertJurisdictionStatus(snapshot: JurisdictionStatusSnapshot): Promise<void> {
     this.jurisdictionStatus.set(snapshot.jurisdictionTenant, snapshot);
   }
+}
+
+function tokenize(s: string): ReadonlyArray<string> {
+  return s
+    .split(/[^a-z0-9.]+/i)
+    .map((t) => t.toLowerCase())
+    .filter((t) => t.length >= 2);
+}
+
+function buildResult(
+  atomDid: string,
+  inst: CodeAtomInstance,
+  snippet: string,
+  score: number,
+): AtomSearchResult {
+  return {
+    atomDid,
+    entityType: inst.entityType,
+    entityId: inst.entityId,
+    jurisdictionTenant: inst.jurisdictionTenant,
+    sectionNumber: inst.entityType === "code-section" ? inst.sectionNumber : null,
+    snippet,
+    score,
+  };
 }
 
 function buildSnippet(inst: CodeAtomInstance): string {

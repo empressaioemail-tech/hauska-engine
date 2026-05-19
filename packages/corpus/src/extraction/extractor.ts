@@ -61,13 +61,17 @@ function splitHeadingLabel(text: string): { label: string; title: string } {
   if (symbolMatch) {
     return { label: symbolMatch[1] ?? "", title: (symbolMatch[2] ?? "").trim() };
   }
-  const labelMatch = text.match(
-    /^(Chapter|Article|Division|Section)\s+([\w.-]+)\s*[—–-]?\s*(.*)$/i,
+  // Handle abbreviated forms (Sec., Ch., Art., Div.) plus the full
+  // words. Trailing dot is consumed; the number that follows is the
+  // section label. "Sec. 14.01.001 - Adopted." -> label "14.01.001",
+  // title "Adopted."
+  const abbrevMatch = text.match(
+    /^(Chapter|Ch\.?|Article|Art\.?|Division|Div\.?|Section|Sec\.?)\s+([\w.-]+)\s*[—–-]?\s*(.*)$/i,
   );
-  if (labelMatch) {
+  if (abbrevMatch) {
     return {
-      label: labelMatch[2] ?? "",
-      title: (labelMatch[3] ?? "").trim() || (labelMatch[1] ?? ""),
+      label: abbrevMatch[2] ?? "",
+      title: (abbrevMatch[3] ?? "").trim() || (abbrevMatch[1] ?? ""),
     };
   }
   const numericMatch = text.match(/^([\w.-]+)\s+(.*)$/);
