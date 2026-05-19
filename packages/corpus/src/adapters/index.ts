@@ -18,4 +18,10 @@ export type {
   MunicodeTocNode,
 } from "./municode/json-client.js";
 export { ECode360Adapter } from "./ecode360/index.js";
-export { RawPdfAdapter } from "./raw-pdf/index.js";
+export { RawPdfAdapter, pdfjsTextExtractor, pdfPagesToBlocks } from "./raw-pdf/index.js";
+export type {
+  PdfPageText,
+  PdfTextExtractor,
+  PdfNormalizeOptions,
+  RawPdfAdapterOptions,
+} from "./raw-pdf/index.js";

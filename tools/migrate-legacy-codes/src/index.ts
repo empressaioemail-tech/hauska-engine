@@ -32,8 +32,17 @@ import { InMemoryStorage, type StoragePort } from "@hauska-engine/storage";
 import { LegacyClient } from "./legacy-client.js";
 import { runMigration } from "./migrate.js";
 import { runPathCIngest } from "./path-c-ingest.js";
+import { runPathPdfIngest } from "./path-pdf-ingest.js";
 import { buildBastropUdcCuratedQueries } from "./udc-curated-queries.js";
-import { curatedQueriesForJurisdiction, buildSeedCuratedQueries } from "./seed-curated-queries.js";
+import {
+  buildBastropB3CuratedQueries,
+  B3_EDITION_LABEL,
+} from "./b3-curated-queries.js";
+import {
+  buildSeedCuratedQueries,
+  curatedQueriesForJurisdiction,
+  curatedQueriesForJurisdictionAndBooks,
+} from "./seed-curated-queries.js";
 
 function resolveDatabaseUrl(explicit: string | undefined): string {
   const url = explicit || process.env.LEGACY_DATABASE_URL || process.env.DATABASE_URL;
@@ -162,10 +171,22 @@ program
   .option("--jurisdiction <key>", "Filter to one jurisdiction")
   .option("--code-book <book>", "Filter to one code book within the jurisdiction")
   .option("--code-books <books>", "Comma-separated allow-list of code books (e.g. IRC_R301_2_1,IWUIC)")
-  .action(async (opts: RunOptions) => {
+  .option(
+    "--show-sections",
+    "Also print all section entityIds + sectionNumbers + titles (helpful for curated-query authoring)",
+  )
+  .action(async (opts: RunOptions & { showSections?: boolean }) => {
     const url = resolveDatabaseUrl(program.opts().databaseUrl);
     const { result } = await runAgainstInMemory(url, opts);
-    console.log(JSON.stringify({ dryRun: result.report }, null, 2));
+    const output: Record<string, unknown> = { dryRun: result.report };
+    if (opts.showSections) {
+      output.sections = result.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
   });
 
 program
@@ -218,6 +239,16 @@ program
       const fs = await import("node:fs/promises");
       const raw = await fs.readFile(opts.queriesFile, "utf8");
       queries = JSON.parse(raw) as CuratedQuery[];
+    } else if (opts.codeBooks) {
+      const books = opts.codeBooks
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      queries = curatedQueriesForJurisdictionAndBooks(opts.jurisdiction, books);
+    } else if (opts.codeBook) {
+      queries = curatedQueriesForJurisdictionAndBooks(opts.jurisdiction, [
+        opts.codeBook,
+      ]);
     } else {
       queries = curatedQueriesForJurisdiction(opts.jurisdiction);
     }
@@ -421,6 +452,186 @@ program
   .action(() => {
     console.log(JSON.stringify(buildBastropUdcCuratedQueries(), null, 2));
   });
+
+const BASTROP_B3_PDF_URL =
+  "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf";
+
+program
+  .command("path-pdf-probe-extract")
+  .description(
+    "Diagnostic: fetch a publisher-hosted PDF, run the born-digital extractor, and dump per-page text (or a slice).",
+  )
+  .option(
+    "--pdf-url <url>",
+    "PDF URL. Defaults to the Bastrop B3 Code (April 2025) URL.",
+    BASTROP_B3_PDF_URL,
+  )
+  .option(
+    "--pages <range>",
+    "Page range to print (e.g. '1-5'). Defaults to first 3 pages.",
+    "1-3",
+  )
+  .option(
+    "--chars-per-page <n>",
+    "Cap printed chars per page (avoids massive stdout). 0 = unlimited.",
+    "1200",
+  )
+  .action(
+    async (opts: {
+      pdfUrl: string;
+      pages: string;
+      charsPerPage: string;
+    }) => {
+      const { RawPdfAdapter, pdfjsTextExtractor } = await import(
+        "@hauska-engine/corpus/adapters"
+      );
+      const adapter = new RawPdfAdapter({
+        textExtractor: pdfjsTextExtractor,
+        capabilitiesNameOverride: "raw-pdf-probe",
+      });
+      const reference = {
+        sourceId: "probe",
+        jurisdictionTenant: "probe",
+        editionLabel: "probe",
+        sourceUrl: opts.pdfUrl,
+      };
+      const raw = await adapter.fetch(reference);
+      if (!raw.body) {
+        console.log(
+          JSON.stringify(
+            { error: "fetch returned empty body", metadata: raw.metadata },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+      // Re-extract directly so we can slice by page without running
+      // the full normalize() walker. The adapter's textExtractor is
+      // the source of truth.
+      const pages = await pdfjsTextExtractor(raw.body);
+      const range = parsePageRange(opts.pages, pages.length);
+      const cap = Math.max(0, Number(opts.charsPerPage));
+      const slice = pages
+        .filter((p) => p.pageNumber >= range.from && p.pageNumber <= range.to)
+        .map((p) => ({
+          pageNumber: p.pageNumber,
+          totalChars: p.text.length,
+          text: cap === 0 ? p.text : p.text.slice(0, cap),
+        }));
+      console.log(
+        JSON.stringify(
+          {
+            url: opts.pdfUrl,
+            totalPages: pages.length,
+            range,
+            pages: slice,
+          },
+          null,
+          2,
+        ),
+      );
+    },
+  );
+
+program
+  .command("path-pdf-ingest-bastrop-b3")
+  .description(
+    "Path PDF: ingest the Bastrop Building Block (B3) Code (April 2025) born-digital PDF. Writes to in-memory storage; no Neon dependency.",
+  )
+  .option("--pdf-url <url>", "Override the B3 PDF URL", BASTROP_B3_PDF_URL)
+  .option(
+    "--show-sections",
+    "Also print all ingested section entityIds + section numbers + titles (helpful for curated-query authoring).",
+  )
+  .action(async (opts: { pdfUrl: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathPdfIngest({
+      storage,
+      jurisdictionTenant: "bastrop_tx",
+      jurisdictionName: "Bastrop, TX",
+      editionLabel: B3_EDITION_LABEL,
+      pdfUrl: opts.pdfUrl,
+    });
+    const output: Record<string, unknown> = { pathPdfIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-pdf-eval")
+  .description(
+    "Path PDF end-to-end: ingest the Bastrop B3 Code + run the B3 curated-query eval. Sync 4.5 Bastrop UDC fire path.",
+  )
+  .option("--pdf-url <url>", "Override the B3 PDF URL", BASTROP_B3_PDF_URL)
+  .option(
+    "--queries-file <path>",
+    "Optional JSON file of curated queries to use instead of the B3 seed set",
+  )
+  .action(async (opts: { pdfUrl: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathPdfIngest({
+      storage,
+      jurisdictionTenant: "bastrop_tx",
+      jurisdictionName: "Bastrop, TX",
+      editionLabel: B3_EDITION_LABEL,
+      pdfUrl: opts.pdfUrl,
+    });
+
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      const raw = await fs.readFile(opts.queriesFile, "utf8");
+      queries = JSON.parse(raw) as CuratedQuery[];
+    } else {
+      queries = buildBastropB3CuratedQueries();
+    }
+
+    const report = await evaluate({
+      storage,
+      jurisdictionTenant: "bastrop_tx",
+      queries,
+    });
+
+    console.log(
+      JSON.stringify(
+        {
+          pathPdfIngest: ingest.report,
+          eval: report,
+          syncFourFiveReady: report.passed,
+        },
+        null,
+        2,
+      ),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-b3-queries")
+  .description("Print the Bastrop B3 Code curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildBastropB3CuratedQueries(), null, 2));
+  });
+
+function parsePageRange(
+  range: string,
+  totalPages: number,
+): { from: number; to: number } {
+  const m = range.match(/^(\d+)(?:-(\d+))?$/);
+  if (!m) return { from: 1, to: Math.min(3, totalPages) };
+  const from = Math.max(1, parseInt(m[1] ?? "1", 10));
+  const to = m[2]
+    ? Math.min(totalPages, parseInt(m[2], 10))
+    : Math.min(totalPages, from);
+  return { from, to };
+}
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(

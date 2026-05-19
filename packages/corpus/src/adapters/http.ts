@@ -52,6 +52,22 @@ export class RespectfulFetch {
     return await res.text();
   }
 
+  /**
+   * Fetch binary content as a Buffer. Used by the raw-PDF adapter to
+   * pull a publisher-hosted PDF for downstream text extraction (born-
+   * digital) or OCR (scanned). Throws on non-2xx.
+   */
+  async fetchBytes(url: string, init: RequestInit = {}): Promise<Uint8Array> {
+    const res = await this.fetch(url, init);
+    if (!res.ok) {
+      throw new Error(
+        `RespectfulFetch: HTTP ${res.status} ${res.statusText} for ${url}`,
+      );
+    }
+    const ab = await res.arrayBuffer();
+    return new Uint8Array(ab);
+  }
+
   async fetch(url: string, init: RequestInit = {}) {
     const host = new URL(url).host;
     const state = this.getHostState(host);

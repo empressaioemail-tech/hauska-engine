@@ -192,43 +192,149 @@ const GRAND_COUNTY_DRAFTS: ReadonlyArray<SeedQueryDraft> = [
   },
 ];
 
+/**
+ * Grand County LAND_USE (Land Use Code rev. 3/21) — Session A.5 scope.
+ *
+ * 215 atoms across 10 articles per the 2026-05-19 live coverage.
+ * Article 2 = zoning districts; Article 5 = lot design (setbacks);
+ * Article 7 = subdivision; Article 10 = definitions. Section labels
+ * carry no "Section" / "Article" prefix in the legacy ingest; they're
+ * raw X.Y numerics with `#partN` suffixes for over-cap chunks.
+ *
+ * Reviewer-zero curation lands separately (Nick or Grand County
+ * contact); ratification status `draft` per Phase 0.
+ */
+const GRAND_COUNTY_LANDUSE_DRAFTS: ReadonlyArray<SeedQueryDraft> = [
+  // Targets surfaced via dry-run --show-sections against the live
+  // 2026-05-19 corpus. Distinctive district / topic terminology +
+  // section-number anchor (the storage scorer applies a +0.25 bonus
+  // when the query contains the atom's section number, stripped of
+  // any #partN suffix the legacy ingest added for over-cap chunks).
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "2.3",
+    queryText: "2.3 Small Lot Residential SLR district",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "2.10",
+    queryText: "2.10 Highway Commercial HC district",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "2.12",
+    queryText: "2.12 Resort Special RS district",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "4.4#part1",
+    queryText: "4.4 Planned Unit Development PUD",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "4.8#part1",
+    queryText: "4.8 Scenic Resource Protection District",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "5.4#part1",
+    queryText: "5.4 residential districts dimensional setback",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "6.1#part1",
+    queryText: "6.1 off-street parking spaces required",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "6.4#part1",
+    queryText: "6.4 landscaping screening buffer",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "6.5#part1",
+    queryText: "6.5 sign regulations permitted",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "LAND_USE",
+    edition: "Land Use Code (rev. 3/21)",
+    sectionNumber: "6.14",
+    queryText: "6.14 affordable housing assured",
+  },
+];
+
+const ALL_DRAFTS: ReadonlyArray<SeedQueryDraft> = [
+  ...BASTROP_DRAFTS,
+  ...GRAND_COUNTY_DRAFTS,
+  ...GRAND_COUNTY_LANDUSE_DRAFTS,
+];
+
+function compileDrafts(
+  drafts: ReadonlyArray<SeedQueryDraft>,
+): ReadonlyArray<CuratedQuery> {
+  return drafts.map<CuratedQuery>((d, i) => ({
+    queryId: `seed-${d.jurisdictionKey}-${d.codeBook}-${i + 1}`,
+    jurisdictionTenant: d.jurisdictionKey,
+    queryText: d.queryText,
+    expectedAtomDid: expectedDid(
+      d.jurisdictionKey,
+      d.codeBook,
+      d.edition,
+      d.sectionNumber,
+    ),
+    queryType: d.queryType ?? "retrieval",
+    authorshipSource: "llm-generated",
+    humanReviewedBy: null,
+    humanReviewedAt: null,
+    status: "draft",
+  }));
+}
+
 export function buildSeedCuratedQueries(): ReadonlyArray<CuratedQuery> {
-  const now = new Date().toISOString();
-  const queries: CuratedQuery[] = [];
-  let serial = 0;
-
-  const compile = (drafts: ReadonlyArray<SeedQueryDraft>): void => {
-    for (const d of drafts) {
-      serial++;
-      queries.push({
-        queryId: `seed-${d.jurisdictionKey}-${serial}`,
-        jurisdictionTenant: d.jurisdictionKey,
-        queryText: d.queryText,
-        expectedAtomDid: expectedDid(
-          d.jurisdictionKey,
-          d.codeBook,
-          d.edition,
-          d.sectionNumber,
-        ),
-        queryType: d.queryType ?? "retrieval",
-        authorshipSource: "llm-generated",
-        humanReviewedBy: null,
-        humanReviewedAt: null,
-        status: "draft",
-      });
-    }
-  };
-
-  compile(BASTROP_DRAFTS);
-  compile(GRAND_COUNTY_DRAFTS);
-
-  return queries;
+  return compileDrafts(ALL_DRAFTS);
 }
 
 export function curatedQueriesForJurisdiction(
   jurisdictionKey: string,
 ): ReadonlyArray<CuratedQuery> {
-  return buildSeedCuratedQueries().filter(
-    (q) => q.jurisdictionTenant === jurisdictionKey,
+  return compileDrafts(
+    ALL_DRAFTS.filter((d) => d.jurisdictionKey === jurisdictionKey),
+  );
+}
+
+/**
+ * Filter the seed query set to a jurisdiction + an explicit allow-list
+ * of code books. Used by the `eval --code-books=...` CLI path so a
+ * jurisdiction-and-book-scoped migration eval against the matching
+ * scoped query subset.
+ */
+export function curatedQueriesForJurisdictionAndBooks(
+  jurisdictionKey: string,
+  codeBooks: ReadonlyArray<string>,
+): ReadonlyArray<CuratedQuery> {
+  const booksAllowed = new Set(codeBooks);
+  return compileDrafts(
+    ALL_DRAFTS.filter(
+      (d) => d.jurisdictionKey === jurisdictionKey && booksAllowed.has(d.codeBook),
+    ),
   );
 }
