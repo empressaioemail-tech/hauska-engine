@@ -22,12 +22,13 @@ function isAccessPolicy(value: string): value is AccessPolicy {
 
 /**
  * Parse a comma-separated `accessPolicies` query parameter into a typed
- * array. Returns `undefined` when the param is absent (caller passes no
- * filter), and an empty array when the param is present-but-empty (caller
- * filters to nothing, which the storage layer honors by returning []).
- * Unknown access-policy values are dropped; a tracked decision in
- * preference to throwing 400, so additive future policies do not break
- * older callers.
+ * array. Returns `undefined` when the param is absent, and an empty
+ * array when the param is present-but-empty. Note: the storage layer
+ * gates its filter on `accessPolicies.length > 0`, so an empty array is
+ * treated as "no access-policy filter" (returns all), same as omitting
+ * the param. Unknown access-policy values are dropped; a tracked
+ * decision in preference to throwing 400, so additive future policies
+ * do not break older callers.
  */
 function parseAccessPolicies(
   raw: string | undefined,
