@@ -20,6 +20,7 @@ import {
 
 import type {
   AtomInstance,
+  AttachedDocumentAtomInstance,
   CodeAmendmentAtomInstance,
   CodeCrossReferenceAtomInstance,
   CodeDefinitionAtomInstance,
@@ -27,6 +28,7 @@ import type {
   CodeSectionAtomInstance,
   JurisdictionCorpusAtomInstance,
   ResponseTaskAtomInstance,
+  SheetContentExtractionAtomInstance,
 } from "./instances.js";
 
 /**
@@ -404,6 +406,121 @@ export function bootstrapEngineAtomRegistry(
     },
   };
 
+  const sheetContentExtraction: AtomRegistration<
+    "sheet-content-extraction",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "sheet-content-extraction",
+    domain: "cortex",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    composition: [],
+    eventTypes: [
+      "sheet-content-extraction.produced",
+      "sheet-content-extraction.re-extracted",
+    ],
+    // ADR-017: sheet extractions are engagement workflow data.
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"sheet-content-extraction">> => {
+      const inst = await lookup.get<SheetContentExtractionAtomInstance>(
+        "sheet-content-extraction",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `sheet-content-extraction/${entityId}`,
+        ) as ContextSummary<"sheet-content-extraction">;
+      }
+      const label = inst.pageLabel || inst.sourceSheetId;
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `Sheet ${label} — ${inst.extractedTextSegments.length} text segments, ${inst.structuredAnnotations.length} structured annotations (OCR: ${inst.ocrModel}).`,
+        `Sheet ${label} extraction`,
+      );
+      return {
+        prose,
+        typed: {
+          sourceSheetId: inst.sourceSheetId,
+          engagementId: inst.engagementId,
+          pageLabel: inst.pageLabel,
+          textSegmentCount: inst.extractedTextSegments.length,
+          annotationCount: inst.structuredAnnotations.length,
+          ocrModel: inst.ocrModel,
+          actorId: inst.actorId,
+        },
+        keyMetrics: [
+          { label: "Sheet", value: label },
+          { label: "Annotations", value: inst.structuredAnnotations.length },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.fetchedAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
+  const attachedDocument: AtomRegistration<
+    "attached-document",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "attached-document",
+    domain: "cortex",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    composition: [],
+    eventTypes: [
+      "attached-document.ingested",
+      "attached-document.re-parsed",
+    ],
+    // ADR-017: attached documents are engagement workflow data.
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"attached-document">> => {
+      const inst = await lookup.get<AttachedDocumentAtomInstance>(
+        "attached-document",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `attached-document/${entityId}`,
+        ) as ContextSummary<"attached-document">;
+      }
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `${inst.title} (${inst.documentType}). ${inst.extractedText}`,
+        `${inst.title} (${inst.documentType})`,
+      );
+      return {
+        prose,
+        typed: {
+          title: inst.title,
+          documentType: inst.documentType,
+          engagementId: inst.engagementId,
+          originalBlobRef: inst.originalBlobRef,
+          actorId: inst.actorId,
+        },
+        keyMetrics: [
+          { label: "Title", value: inst.title },
+          { label: "Type", value: inst.documentType },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.fetchedAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
   registry.register(codeSection);
   registry.register(codeDefinition);
   registry.register(codeAmendment);
@@ -411,6 +528,8 @@ export function bootstrapEngineAtomRegistry(
   registry.register(codeEdition);
   registry.register(jurisdictionCorpus);
   registry.register(responseTask);
+  registry.register(sheetContentExtraction);
+  registry.register(attachedDocument);
 
   return registry;
 }
