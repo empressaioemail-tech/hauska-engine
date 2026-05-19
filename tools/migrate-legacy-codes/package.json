@@ -1,0 +1,31 @@
+{
+  "name": "@hauska-engine/migrate-legacy-codes",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-shot migration of legacy-design-tools code_atoms rows into Bump 1 atom-instance shapes (code-section / code-definition / code-amendment / code-cross-reference / code-edition / jurisdiction-corpus). Per the 2026-05-19 Path B plan; greenlit 2026-05-19.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "migrate-legacy-codes": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@hauska-engine/atoms": "workspace:*",
+    "@hauska-engine/corpus": "workspace:*",
+    "@hauska-engine/storage": "workspace:*",
+    "commander": "^12.1.0",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
