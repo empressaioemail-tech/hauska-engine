@@ -39,6 +39,17 @@ import {
   B3_EDITION_LABEL,
 } from "./b3-curated-queries.js";
 import {
+  buildBastropCountyCuratedQueries,
+  BASTROP_COUNTY_SUBDIVISION_REGS_URL,
+  BC_EDITION_LABEL,
+  BC_JURISDICTION,
+} from "./bastrop-county-curated-queries.js";
+import {
+  buildElginCuratedQueries,
+  ELGIN_EDITION_LABEL,
+  ELGIN_JURISDICTION,
+} from "./elgin-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -619,6 +630,214 @@ program
   .action(() => {
     console.log(JSON.stringify(buildBastropB3CuratedQueries(), null, 2));
   });
+
+program
+  .command("path-pdf-ingest-bastrop-county")
+  .description(
+    "Path PDF: ingest the Bastrop County Subdivision Regulations (Revised April 24, 2017) born-digital PDF. Tagged internal-tier per the 2026-05-19 Sync 4.5 dispatch (partnership-pending Sylvia outreach).",
+  )
+  .option("--pdf-url <url>", "Override the PDF URL", BASTROP_COUNTY_SUBDIVISION_REGS_URL)
+  .option(
+    "--show-sections",
+    "Also print all ingested section entityIds + section numbers + titles.",
+  )
+  .action(async (opts: { pdfUrl: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathPdfIngest({
+      storage,
+      jurisdictionTenant: BC_JURISDICTION,
+      jurisdictionName: "Bastrop County, TX",
+      editionLabel: BC_EDITION_LABEL,
+      pdfUrl: opts.pdfUrl,
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathPdfIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-pdf-eval-bastrop-county")
+  .description(
+    "Path PDF: ingest Bastrop County Subdivision Regulations + run the curated-query eval. Phase C of the 2026-05-19 Sync 4.5 dispatch.",
+  )
+  .option("--pdf-url <url>", "Override the PDF URL", BASTROP_COUNTY_SUBDIVISION_REGS_URL)
+  .option(
+    "--queries-file <path>",
+    "Optional JSON file of curated queries to use instead of the BC seed set",
+  )
+  .action(async (opts: { pdfUrl: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathPdfIngest({
+      storage,
+      jurisdictionTenant: BC_JURISDICTION,
+      jurisdictionName: "Bastrop County, TX",
+      editionLabel: BC_EDITION_LABEL,
+      pdfUrl: opts.pdfUrl,
+      accessPolicy: "platform-internal",
+    });
+
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      const raw = await fs.readFile(opts.queriesFile, "utf8");
+      queries = JSON.parse(raw) as CuratedQuery[];
+    } else {
+      queries = buildBastropCountyCuratedQueries();
+    }
+
+    const report = await evaluate({
+      storage,
+      jurisdictionTenant: BC_JURISDICTION,
+      queries,
+    });
+
+    console.log(
+      JSON.stringify(
+        {
+          pathPdfIngest: ingest.report,
+          eval: report,
+          syncFourFiveReady: report.passed,
+        },
+        null,
+        2,
+      ),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-bastrop-county-queries")
+  .description("Print the Bastrop County curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildBastropCountyCuratedQueries(), null, 2));
+  });
+
+const ELGIN_DEFAULT_CHAPTER_FILTER = "subdivisions|zoning|site developments";
+
+program
+  .command("path-c-eval-elgin")
+  .description(
+    "Path C end-to-end: live Elgin re-ingest + curated-query eval. Phase E of the 2026-05-19 Sync 4.5 dispatch.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    ELGIN_DEFAULT_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "200")
+  .option(
+    "--queries-file <path>",
+    "Optional JSON file of curated queries to use instead of the Elgin seed set",
+  )
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: ELGIN_JURISDICTION,
+        jurisdictionName: "Elgin, TX",
+        editionLabel: ELGIN_EDITION_LABEL,
+        clientId: 2076,
+        librarySlug: "elgin",
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        const raw = await fs.readFile(opts.queriesFile, "utf8");
+        queries = JSON.parse(raw) as CuratedQuery[];
+      } else {
+        queries = buildElginCuratedQueries();
+      }
+
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: ELGIN_JURISDICTION,
+        queries,
+      });
+
+      console.log(
+        JSON.stringify(
+          {
+            pathCIngest: ingest.report,
+            eval: report,
+            syncFourFiveReady: report.passed,
+          },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-elgin-queries")
+  .description("Print the Elgin curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildElginCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-elgin")
+  .description(
+    "Path C: live re-ingest Elgin development chapters (Subdivisions, Zoning, Site Developments) from Municode JSON API. Internal-tier per the 2026-05-19 Sync 4.5 dispatch.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    ELGIN_DEFAULT_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "60")
+  .option(
+    "--show-sections",
+    "Also print all ingested section entityIds + section numbers + titles.",
+  )
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: "elgin_tx",
+        jurisdictionName: "Elgin, TX",
+        editionLabel: "Elgin Code of Ordinances (current supplement)",
+        clientId: 2076,
+        librarySlug: "elgin",
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
 
 function parsePageRange(
   range: string,

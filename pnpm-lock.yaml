@@ -24,8 +24,8 @@ importers:
   packages/atom-contract-pin:
     dependencies:
       '@hauska/atom-contract':
-        specifier: ^1.0.0
-        version: 1.0.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.1.0
+        version: 1.1.0(@types/pg@8.20.0)(postgres@3.4.9)
     devDependencies:
       typescript:
         specifier: ~5.7.2
@@ -539,8 +539,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@hauska/atom-contract@1.0.0':
-    resolution: {integrity: sha512-nrlsTkIJEtxy9fLVzTjqhswlOQJ6n/5zB2Y7kyJtqLlxFiYJqtF4qiCf3VpHmemx8OzqToWSr1JiH/0fXvtEgA==}
+  '@hauska/atom-contract@1.1.0':
+    resolution: {integrity: sha512-vhJdXwlhf0finvxzfvqXQ1bAJx3zwDSEO1m3SNXkVuD68IziibfMTWwNWabvl7DuEBZkaEGIJM02ZXnG+F2eUg==}
     engines: {node: '>=18.18.0'}
 
   '@hono/node-server@1.19.14':
@@ -1356,7 +1356,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@hauska/atom-contract@1.0.0(@types/pg@8.20.0)(postgres@3.4.9)':
+  '@hauska/atom-contract@1.1.0(@types/pg@8.20.0)(postgres@3.4.9)':
     dependencies:
       drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
     transitivePeerDependencies:

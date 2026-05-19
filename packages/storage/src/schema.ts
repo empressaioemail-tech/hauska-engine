@@ -194,6 +194,14 @@ export const jurisdictionStatus = pgTable("jurisdiction_status", {
   atomCount: integer("atom_count").notNull().default(0),
   lastRefreshedAt: timestamp("last_refreshed_at", { withTimezone: true }),
   driftStatus: text("drift_status").notNull().default("clean"),
+  /**
+   * ADR-017 access tier propagated from the jurisdiction-corpus atom.
+   * Surfaces that gate visibility (MCP `list_jurisdictions` for
+   * unauthenticated callers, public catalog) filter on this. Default
+   * `"public-free"` keeps backward compatibility with rows written by
+   * older ingest runs (pre-v1.1.0 of the atom contract).
+   */
+  accessPolicy: text("access_policy").notNull().default("public-free"),
 });
 
 /**

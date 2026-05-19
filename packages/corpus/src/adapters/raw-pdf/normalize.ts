@@ -22,8 +22,12 @@ import type {
 import type { PdfPageText } from "./pdfjs-extractor.js";
 
 const CHAPTER_RE = /^CHAPTER\s+([\w.-]+)\s*[:\-—–]?\s*(.*?)\s*$/i;
-const ARTICLE_RE = /^ARTICLE\s+([\w.-]+)\s+(.*?)\s*$/i;
-const SECTION_RE = /^(?:SEC\.?|SECTION)\s+([\w.-]+)\s+(.*?)\s*$/i;
+const ARTICLE_RE = /^ARTICLE\s+([\w.-]+)(?:\s+(.*?))?\s*$/i;
+// Title may be omitted when the source typesets it on the next line
+// (Bastrop County Subdivision Regulations: bare "SECTION X" followed by
+// the title line). The multi-line continuation merge below recovers
+// the title from the next typeset line.
+const SECTION_RE = /^(?:SEC\.?|SECTION)\s+([\w.-]+)(?:\s+(.*?))?\s*$/i;
 // Alpha-only top-level subsection — "(a)", "(b)", "(z)". Numeric-only
 // nested subsections fall through to NESTED_SUBSECTION_RE.
 const SUBSECTION_RE = /^\(([a-z]+)\)\s+(.+)$/i;

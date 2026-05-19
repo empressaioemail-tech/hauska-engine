@@ -115,15 +115,29 @@ export class InMemoryStorage implements StoragePort {
       // `#partN`-stripped form so a query like "4.4 PUD" anchors atom
       // whose sectionNumber is "4.4#part1" (legacy ingest splits
       // over-cap sections via the #partN convention).
+      //
+      // Match is token-equality (not substring) so short labels like
+      // Roman numerals ("I", "V", "X") don't mis-fire as substring hits
+      // inside English words ("drainage", "service", "tax"). The
+      // tokenizer preserves dots, so "1.1.001" stays a single token.
       let bonus = 0;
       if (inst.entityType === "code-section" && inst.sectionNumber) {
-        const sectionLower = inst.sectionNumber.toLowerCase();
+        // Strip trailing punctuation (Municode atomization can carry
+        // "36-7." with trailing period; queries naturally drop it) plus
+        // the `#partN` ingest-artifact suffix.
+        const sectionLower = inst.sectionNumber
+          .toLowerCase()
+          .replace(/[.,;:!?]+$/, "");
         if (sectionLower) {
-          if (q.includes(sectionLower)) {
+          if (tokens.includes(sectionLower)) {
             bonus += 0.25;
           } else {
             const stripped = sectionLower.split("#")[0];
-            if (stripped && stripped !== sectionLower && q.includes(stripped)) {
+            if (
+              stripped &&
+              stripped !== sectionLower &&
+              tokens.includes(stripped)
+            ) {
               bonus += 0.25;
             }
           }
@@ -167,10 +181,20 @@ export class InMemoryStorage implements StoragePort {
 
   async listJurisdictionStatus(filter?: {
     qualityBarOnly?: boolean;
+    accessPolicies?: ReadonlyArray<import("@hauska-engine/atoms").AccessPolicy>;
   }): Promise<ReadonlyArray<JurisdictionStatusSnapshot>> {
-    const snapshots = Array.from(this.jurisdictionStatus.values());
-    if (!filter?.qualityBarOnly) return snapshots;
-    return snapshots.filter((s) => s.qualityBar.startsWith("passing"));
+    let snapshots = Array.from(this.jurisdictionStatus.values());
+    if (filter?.qualityBarOnly) {
+      snapshots = snapshots.filter((s) => s.qualityBar.startsWith("passing"));
+    }
+    if (filter?.accessPolicies && filter.accessPolicies.length > 0) {
+      const allowed = new Set(filter.accessPolicies);
+      // Absent accessPolicy is treated as "public-free" per port docs.
+      snapshots = snapshots.filter((s) =>
+        allowed.has(s.accessPolicy ?? "public-free"),
+      );
+    }
+    return snapshots;
   }
 
   async upsertJurisdictionStatus(snapshot: JurisdictionStatusSnapshot): Promise<void> {
@@ -179,8 +203,12 @@ export class InMemoryStorage implements StoragePort {
 }
 
 function tokenize(s: string): ReadonlyArray<string> {
+  // Preserve dots AND hyphens so compound section labels survive
+  // intact: "36-7", "46-1", "5.04(b)", "R301.1" all stay single tokens.
+  // Without `-` in the keep-set the anchor-boost match for Municode-
+  // style chapter-number labels (e.g. "36-7.") would never fire.
   return s
-    .split(/[^a-z0-9.]+/i)
+    .split(/[^a-z0-9.-]+/i)
     .map((t) => t.toLowerCase())
     .filter((t) => t.length >= 2);
 }
