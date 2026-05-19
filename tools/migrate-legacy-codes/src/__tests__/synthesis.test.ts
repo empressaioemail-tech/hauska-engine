@@ -102,7 +102,13 @@ describe("synthesize-xrefs", () => {
     expect(resolved.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("captures Section X.YZ word-form references", () => {
+  it("drops cross-references whose target does not resolve in-corpus", () => {
+    // Post-2026-05-19 policy: synthesize-xrefs only emits xrefs that
+    // resolve to an actual in-corpus section. Refs to external codes
+    // (IRC §X, IBC §Y) or to non-existent subsection labels are not
+    // emitted. The fixture's Section 504 body cites "Section 504.1"
+    // but no Section 504.1 atom exists in the corpus — that ref is
+    // dropped + counted in unresolvedCount.
     const transformed = transformBatch(ALL_ROWS, {
       sourceNameById: SOURCE_NAME_BY_ID,
     });
@@ -111,9 +117,13 @@ describe("synthesize-xrefs", () => {
       sections: transformed.instances,
       sectionsByEdition,
     });
-    // Section 504 body cites "Section 504.1" - sniffer should pick it up.
-    const refs = result.crossReferences.flatMap((x) => x.referenceText);
-    expect(refs.some((r) => /section\s+504/i.test(r))).toBe(true);
+    // Every emitted xref must have a non-empty toSectionId.
+    for (const xref of result.crossReferences) {
+      expect(xref.toSectionId.length).toBeGreaterThan(0);
+    }
+    // Some refs in the fixture point to "Section 504.1" which doesn't
+    // resolve; those should land in unresolvedCount.
+    expect(result.unresolvedCount).toBeGreaterThan(0);
   });
 
   it("emits resolved atom-link edges with the right link type taxonomy", () => {

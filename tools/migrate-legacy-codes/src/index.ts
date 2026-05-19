@@ -128,6 +128,7 @@ program
 interface RunOptions {
   jurisdiction?: string;
   codeBook?: string;
+  codeBooks?: string;
 }
 
 async function runAgainstInMemory(
@@ -137,12 +138,16 @@ async function runAgainstInMemory(
   const legacy = new LegacyClient({ databaseUrl: url });
   const storage = new InMemoryStorage();
   try {
+    const codeBooksList = opts.codeBooks
+      ? opts.codeBooks.split(",").map((s) => s.trim()).filter((s) => s.length > 0)
+      : undefined;
     const result = await runMigration({
       legacy,
       storage,
       filter: {
         ...(opts.jurisdiction ? { jurisdictionKey: opts.jurisdiction } : {}),
         ...(opts.codeBook ? { codeBook: opts.codeBook } : {}),
+        ...(codeBooksList ? { codeBooks: codeBooksList } : {}),
       },
     });
     return { storage, result };
@@ -156,6 +161,7 @@ program
   .description("Transform + synthesize + write into an in-memory StoragePort; print report only.")
   .option("--jurisdiction <key>", "Filter to one jurisdiction")
   .option("--code-book <book>", "Filter to one code book within the jurisdiction")
+  .option("--code-books <books>", "Comma-separated allow-list of code books (e.g. IRC_R301_2_1,IWUIC)")
   .action(async (opts: RunOptions) => {
     const url = resolveDatabaseUrl(program.opts().databaseUrl);
     const { result } = await runAgainstInMemory(url, opts);
@@ -169,6 +175,7 @@ program
   )
   .option("--jurisdiction <key>", "Filter to one jurisdiction")
   .option("--code-book <book>", "Filter to one code book within the jurisdiction")
+  .option("--code-books <books>", "Comma-separated allow-list of code books (e.g. IRC_R301_2_1,IWUIC)")
   .option("--target <target>", "in-memory | postgres", "in-memory")
   .action(async (opts: RunOptions & { target: string }) => {
     if (opts.target === "postgres") {
@@ -192,6 +199,8 @@ program
     "Migrate into an in-memory StoragePort and run the eval harness against the seed curated queries.",
   )
   .option("--jurisdiction <key>", "Filter to one jurisdiction (required for eval)")
+  .option("--code-book <book>", "Filter to one code book")
+  .option("--code-books <books>", "Comma-separated allow-list of code books")
   .option(
     "--queries-file <path>",
     "Optional JSON file of curated queries to use instead of the seed set",
