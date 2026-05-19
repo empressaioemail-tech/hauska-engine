@@ -13,6 +13,7 @@
 import type { AtomLink } from "@hauska-engine/atoms";
 
 import type {
+  AccessPolicy,
   CodeAtomInstance,
   CodeAtomEntityType,
 } from "@hauska-engine/atoms";
@@ -50,6 +51,13 @@ export interface JurisdictionStatusSnapshot {
   atomCount: number;
   lastRefreshedAt: string | null;
   driftStatus: "clean" | "amendments-pending" | "stale";
+  /**
+   * ADR-017 access tier propagated from the jurisdiction-corpus atom.
+   * Surfaces that gate visibility (MCP `list_jurisdictions` for
+   * unauthenticated callers, public catalog) filter on this. Absent =
+   * treat as `"public-free"`.
+   */
+  accessPolicy?: AccessPolicy;
 }
 
 export interface StoragePort {
@@ -97,6 +105,14 @@ export interface StoragePort {
   /** Per-jurisdiction status snapshot for the coverage dashboard + MCP list_jurisdictions tool. */
   listJurisdictionStatus(filter?: {
     qualityBarOnly?: boolean;
+    /**
+     * Optional access-policy allow-list. Used by surfaces that gate on
+     * visibility: MCP `list_jurisdictions` for unauthenticated callers
+     * passes `["public-free"]`; platform-internal callers pass all four.
+     * Omitted = no access-policy filter. Snapshots whose `accessPolicy`
+     * is absent are treated as `"public-free"`.
+     */
+    accessPolicies?: ReadonlyArray<AccessPolicy>;
   }): Promise<ReadonlyArray<JurisdictionStatusSnapshot>>;
 
   upsertJurisdictionStatus(snapshot: JurisdictionStatusSnapshot): Promise<void>;

@@ -15,6 +15,7 @@
  * post-fetch atomization pipeline, same dedupe-by-entityId discipline.
  */
 
+import type { AccessPolicy } from "@hauska-engine/atoms";
 import {
   RawPdfAdapter,
   pdfjsTextExtractor,
@@ -53,6 +54,13 @@ export interface PathPdfIngestOptions {
    * born-digital extractor. Tests inject canned page text.
    */
   textExtractor?: PdfTextExtractor;
+  /**
+   * ADR-017 access tier tagged onto the emitted `jurisdiction-corpus`
+   * atom + `jurisdictionStatus` row. Partnership-pending jurisdictions
+   * pass `"platform-internal"`; partnership-confirmed pass
+   * `"public-free"` (also the default when omitted).
+   */
+  accessPolicy?: AccessPolicy;
 }
 
 export interface PathPdfIngestReport {
@@ -72,6 +80,7 @@ export interface PathPdfIngestReport {
     sectionNumber: string;
     title: string;
   }>;
+  accessPolicy: AccessPolicy;
 }
 
 export interface PathPdfIngestResult {
@@ -107,7 +116,8 @@ export async function runPathPdfIngest(
     },
   });
   const extractionQuality = reportExtractionQuality(tree);
-  const rawAtomization = atomize(tree);
+  const accessPolicy: AccessPolicy = options.accessPolicy ?? "public-free";
+  const rawAtomization = atomize(tree, { accessPolicy });
 
   // Dedupe sections by entityId. Born-digital PDF walks don't typically
   // emit the same section twice, but the dedupe matches Path C
@@ -191,6 +201,7 @@ export async function runPathPdfIngest(
     atomCount: dedupedSections.length,
     lastRefreshedAt: rawAtomization.edition.fetchedAt,
     driftStatus: "clean",
+    accessPolicy,
   });
 
   const sectionSample = dedupedSections.slice(0, 25).map((s) => ({
@@ -216,6 +227,7 @@ export async function runPathPdfIngest(
       atomLinksEmitted: dedupedLinks.length,
       extractionQuality,
       sectionSample,
+      accessPolicy,
     },
     atomization: {
       ...rawAtomization,

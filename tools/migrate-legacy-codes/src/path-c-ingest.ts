@@ -12,6 +12,7 @@
  * source + a StoragePort instance.
  */
 
+import type { AccessPolicy } from "@hauska-engine/atoms";
 import {
   MunicodeHtmlAdapter,
   type CodeReference,
@@ -19,6 +20,11 @@ import {
 import { atomize, type AtomizationResult } from "@hauska-engine/corpus/atomization";
 import { buildCodeTree, reportExtractionQuality } from "@hauska-engine/corpus/extraction";
 import type { StoragePort } from "@hauska-engine/storage";
+
+import {
+  buildSectionsByEdition,
+  sniffCrossReferences,
+} from "./synthesize-xrefs.js";
 
 export interface PathCIngestOptions {
   storage: StoragePort;
@@ -38,6 +44,14 @@ export interface PathCIngestOptions {
   maxLeafFetches?: number;
   /** Optional pre-configured adapter (lets tests stub the walker). */
   adapter?: MunicodeHtmlAdapter;
+  /**
+   * ADR-017 access tier tagged onto the emitted `jurisdiction-corpus`
+   * atom + `jurisdictionStatus` row. Partnership-pending jurisdictions
+   * (Smithville, Elgin, Bastrop County per the 2026-05-19 Sync 4.5
+   * dispatch) pass `"platform-internal"`; partnership-confirmed pass
+   * `"public-free"` (also the default when omitted).
+   */
+  accessPolicy?: AccessPolicy;
 }
 
 export interface PathCIngestReport {
@@ -46,6 +60,12 @@ export interface PathCIngestReport {
   definitionsIngested: number;
   crossReferencesIngested: number;
   crossReferencesResolved: number;
+  /**
+   * Body-sniffed cross-reference targets that did not resolve to an
+   * in-corpus section. Per ADR-010 §Link taxonomy these are not emitted
+   * as code-cross-reference atoms; the count is captured for diagnostics.
+   */
+  crossReferencesUnresolvedSkipped: number;
   amendmentsIngested: number;
   editionEntityId: string;
   jurisdictionCorpusEntityId: string;
@@ -58,6 +78,7 @@ export interface PathCIngestReport {
     sectionNumber: string;
     title: string;
   }>;
+  accessPolicy: AccessPolicy;
 }
 
 export interface PathCIngestResult {
@@ -97,7 +118,8 @@ export async function runPathCIngest(
     },
   });
   const extractionQuality = reportExtractionQuality(tree);
-  const rawAtomization = atomize(tree);
+  const accessPolicy: AccessPolicy = options.accessPolicy ?? "public-free";
+  const rawAtomization = atomize(tree, { accessPolicy });
   // Dedupe sections by entityId — the Municode JSON walker can emit
   // the same Doc through multiple TOC paths (intermediate-article
   // envelopes overlap). Mirrors the Path B transformBatch policy:
@@ -110,32 +132,52 @@ export async function runPathCIngest(
     sectionSeen.add(s.entityId);
     return true;
   });
-  const xrefSeen = new Set<string>();
-  const dedupedXrefs = rawAtomization.crossReferences.filter((x) => {
-    if (xrefSeen.has(x.entityId)) return false;
-    xrefSeen.add(x.entityId);
-    return true;
+  // Drop atomize()-emitted cross-references; re-run the body-level
+  // sniffer for in-corpus-only resolution. Mirrors path-pdf-ingest's
+  // discipline — atomize()'s string-construction toSectionId produces
+  // dangling pointers for xrefs whose targets are articles, chapters,
+  // or external citations (IRC, IBC). Per ADR-010 §Link taxonomy
+  // code-cross-reference is an in-corpus pointer; external citations
+  // remain in section bodyText as prose. This fix lifts a Path C
+  // ingest's crossRef score from ~0.02 (PR #2 Bastrop adoption-section
+  // baseline) to whatever the actual in-corpus resolution rate is.
+  const sectionsByEdition = buildSectionsByEdition(dedupedSections);
+  const xrefResult = sniffCrossReferences({
+    sections: dedupedSections,
+    sectionsByEdition,
   });
-  const editionSeen = new Set<string>();
-  const dedupedEditions = (() => {
-    const out: typeof rawAtomization.edition[] = [];
-    if (!editionSeen.has(rawAtomization.edition.entityId)) {
-      editionSeen.add(rawAtomization.edition.entityId);
-      out.push(rawAtomization.edition);
-    }
-    return out;
-  })();
+  const resolvedXrefs = xrefResult.crossReferences;
   // Rebuild edition.sectionIds to match the deduped list so composition
   // edges stay coherent.
   const dedupedEdition = {
     ...rawAtomization.edition,
     sectionIds: dedupedSections.map((s) => s.entityId),
   };
-  // Dedupe links by (from, to, linkType) tuple.
+  // Drop atomize()-emitted cross-reference links; re-emit from sniffer.
+  // Linktype taxonomy matches atomize.ts's mapReferenceTypeToLinkType.
+  const XREF_LINK_TYPES = new Set([
+    "see-also",
+    "subject-to",
+    "as-defined-in",
+    "cites",
+  ]);
+  const compositionAndAmendmentLinks = rawAtomization.links.filter((l) => {
+    if (
+      l.fromEntityType === "code-section" &&
+      l.toEntityType === "code-section" &&
+      XREF_LINK_TYPES.has(l.linkType)
+    ) {
+      return false;
+    }
+    return true;
+  });
   const linkKey = (l: typeof rawAtomization.links[number]) =>
     `${l.fromEntityType}/${l.fromEntityId}->${l.toEntityType}/${l.toEntityId}@${l.linkType}`;
   const linkSeen = new Set<string>();
-  const dedupedLinks = rawAtomization.links.filter((l) => {
+  const dedupedLinks = [
+    ...compositionAndAmendmentLinks,
+    ...xrefResult.links,
+  ].filter((l) => {
     const k = linkKey(l);
     if (linkSeen.has(k)) return false;
     linkSeen.add(k);
@@ -145,16 +187,16 @@ export async function runPathCIngest(
     ...rawAtomization,
     edition: dedupedEdition,
     sections: dedupedSections,
-    crossReferences: dedupedXrefs,
+    crossReferences: resolvedXrefs,
     links: dedupedLinks,
   };
 
   await options.storage.writeAtoms([
     atomization.jurisdictionCorpus,
-    ...dedupedEditions,
+    dedupedEdition,
     ...dedupedSections,
     ...atomization.definitions,
-    ...dedupedXrefs,
+    ...resolvedXrefs,
     ...atomization.amendments,
   ]);
   await options.storage.writeAtomLinks(dedupedLinks);
@@ -169,11 +211,8 @@ export async function runPathCIngest(
     atomCount: atomization.sections.length,
     lastRefreshedAt: atomization.edition.fetchedAt,
     driftStatus: "clean",
+    accessPolicy,
   });
-
-  const resolvedXrefs = atomization.crossReferences.filter(
-    (x) => x.toSectionId !== "",
-  );
 
   const sectionSample = atomization.sections.slice(0, 25).map((s) => ({
     entityId: s.entityId,
@@ -186,14 +225,16 @@ export async function runPathCIngest(
       jurisdictionTenant: options.jurisdictionTenant,
       sectionsIngested: atomization.sections.length,
       definitionsIngested: atomization.definitions.length,
-      crossReferencesIngested: atomization.crossReferences.length,
+      crossReferencesIngested: resolvedXrefs.length,
       crossReferencesResolved: resolvedXrefs.length,
+      crossReferencesUnresolvedSkipped: xrefResult.unresolvedCount,
       amendmentsIngested: atomization.amendments.length,
       editionEntityId: atomization.edition.entityId,
       jurisdictionCorpusEntityId: atomization.jurisdictionCorpus.entityId,
       atomLinksEmitted: atomization.links.length,
       extractionQuality,
       sectionSample,
+      accessPolicy,
     },
     atomization,
   };

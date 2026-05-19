@@ -23,7 +23,7 @@
 
 import { createHash } from "node:crypto";
 
-import type { AtomLink } from "@hauska-engine/atoms";
+import type { AccessPolicy, AtomLink } from "@hauska-engine/atoms";
 import type {
   CodeAmendmentAtomInstance,
   CodeCrossReferenceAtomInstance,
@@ -49,6 +49,17 @@ export interface AtomizationResult {
   amendments: ReadonlyArray<CodeAmendmentAtomInstance>;
   crossReferences: ReadonlyArray<CodeCrossReferenceAtomInstance>;
   links: ReadonlyArray<AtomLink>;
+}
+
+export interface AtomizeOptions {
+  /**
+   * ADR-017 access tier tagged onto the emitted `jurisdiction-corpus`
+   * atom. Per the 2026-05-19 Sync 4.5 sprint, partnership-pending
+   * jurisdictions ingest as `"platform-internal"`; partnership-
+   * confirmed ingest as `"public-free"` (also the default when this
+   * option is omitted).
+   */
+  accessPolicy?: AccessPolicy;
 }
 
 function slugify(input: string): string {
@@ -138,7 +149,10 @@ function buildCrossReferenceId(
  * cross-reference targets against the collected sections in a second
  * pass. Definitions and amendments are emitted alongside sections.
  */
-export function atomize(tree: CodeTreeNode): AtomizationResult {
+export function atomize(
+  tree: CodeTreeNode,
+  options: AtomizeOptions = {},
+): AtomizationResult {
   const jurisdictionTenant = tree.jurisdictionTenant;
   const editionLabel = tree.editionLabel;
   const editionSlug = slugify(editionLabel);
@@ -428,7 +442,9 @@ export function atomize(tree: CodeTreeNode): AtomizationResult {
       jurisdictionId,
       tree.jurisdictionName,
       editionId,
+      options.accessPolicy ?? "public-free",
     ),
+    ...(options.accessPolicy ? { accessPolicy: options.accessPolicy } : {}),
   };
 
   links.push({

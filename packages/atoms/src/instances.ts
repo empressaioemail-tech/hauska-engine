@@ -7,6 +7,10 @@
  * and a content hash (the storage layer maps content hash to CID).
  */
 
+import type { AccessPolicy } from "@hauska-engine/atom-contract-pin";
+
+export type { AccessPolicy };
+
 export interface BaseAtomInstance {
   entityType: string;
   /** Stable local id within entityType. Combined with entityType into a DID per ADR-011. */
@@ -90,6 +94,18 @@ export interface JurisdictionCorpusAtomInstance extends BaseAtomInstance {
     | "passing"
     | "passing-recalibrated";
   lastRefreshedAt: string;
+  /**
+   * ADR-017 access tier per `@hauska/atom-contract@^1.1.0`. Surfaces
+   * that gate on visibility (MCP `list_jurisdictions`, public catalog)
+   * treat an omitted field as `"public-free"`. Partnership-pending
+   * jurisdictions ingest as `"platform-internal"` until partnership
+   * outreach closes; the field flips to `"public-free"` once cleared.
+   *
+   * See `_decisions/2026-05-19_sync_4_5_and_cortex_sprint.md` Path A
+   * resolution for the Smithville / Elgin / Bastrop County tagging
+   * driver.
+   */
+  accessPolicy?: AccessPolicy;
 }
 
 export type CodeAtomInstance =
