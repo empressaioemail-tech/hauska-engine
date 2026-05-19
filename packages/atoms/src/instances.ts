@@ -862,15 +862,160 @@ export const DETAIL_CALLOUT_SPEC_SCHEMA = z.object({
   accessPolicy: ACCESS_POLICY_SCHEMA,
 });
 
+// ---------------------------------------------------------------------------
+// L5 — `product-spec-reference` atom
+// ---------------------------------------------------------------------------
+//
+// A reference to a specific ICC-ES-evaluated product spec (e.g. ESR-1234
+// for a rated connector or assembly), carrying the live ICC-ES status.
+//
+// Live verification per the 2026-05-19 Lane A.2 dispatch: v1 is a
+// periodic re-poll against the ICC-ES site (not a real-time webhook).
+// The poller is runtime-layer work (legacy-design-tools per Sprint
+// Amendment 6), NOT atom-shape scope — the atom just carries the
+// current `status` + `lastVerifiedAt`, and the poller writes status
+// changes as new atom versions per ADR-011 (same DID, new CID).
+//
+// The atom also carries an inline `statusHistory` — an append-only
+// ESR-status-change chain — so a consumer holding a single atom
+// version can see the transition history without walking the version
+// chain. The array is always present; an empty array means "no
+// history recorded yet".
+
 /**
- * Union of Cortex (L-surface) atom instances. Grows as L5-L6 land.
+ * ICC-ES evaluation status. Mirrors the ICC-ES public surface:
+ *   - `active`    — the ESR is current and in good standing.
+ *   - `withdrawn` — the report has been withdrawn by ICC-ES.
+ *   - `expired`   — the report's evaluation period has lapsed.
+ */
+export type ProductSpecStatus = "active" | "withdrawn" | "expired";
+
+export const PRODUCT_SPEC_STATUSES: ReadonlyArray<ProductSpecStatus> = [
+  "active",
+  "withdrawn",
+  "expired",
+];
+
+/**
+ * ESR-number format guard. ICC-ES Evaluation Service Reports are
+ * numbered `ESR-` followed by digits (e.g. `ESR-1234`, `ESR-2929`).
+ */
+export const ESR_NUMBER_RE = /^ESR-\d+$/;
+
+/** Structured product identity — never free-text. */
+export interface ProductIdentifier {
+  /** Product name (e.g. "Strong-Drive SDWS Timber Screw"). */
+  name: string;
+  /** Manufacturer (e.g. "Simpson Strong-Tie"). */
+  manufacturer: string;
+}
+
+/**
+ * One entry in the ESR-status-change chain — a status observed by the
+ * poller at a point in time, with the ICC-ES URL it was verified
+ * against. Append-only; the newest entry's `status` equals the atom's
+ * current `status`.
+ */
+export interface ProductSpecStatusChange {
+  status: ProductSpecStatus;
+  /** ISO-8601 timestamp the status was observed. */
+  changedAt: string;
+  /** ICC-ES URL this status was verified against at this transition. */
+  sourceUrl: string;
+}
+
+/**
+ * L5 — `product-spec-reference` atom.
+ *
+ * Reference to an ICC-ES-evaluated product spec with live status. When
+ * the poller detects a status change upstream it writes a new atom
+ * version (ADR-011) and appends to `statusHistory`; downstream findings
+ * that cite the product flag on a non-`active` status.
+ *
+ * The inherited `BaseAtomInstance.sourceUrl` carries the ICC-ES listing
+ * URL the current `status` was verified against (the dispatch's
+ * `source_url`); per-transition URLs live in `statusHistory[].sourceUrl`.
+ */
+export interface ProductSpecReferenceAtomInstance extends BaseAtomInstance {
+  entityType: "product-spec-reference";
+  /** Structured product identity. */
+  product: ProductIdentifier;
+  /** ICC-ES ESR number (format `ESR-<digits>`). */
+  esrNumber: string;
+  /** Current ICC-ES evaluation status. */
+  status: ProductSpecStatus;
+  /** ISO-8601 timestamp the status was last verified by the poller. */
+  lastVerifiedAt: string;
+  /**
+   * Append-only ESR-status-change chain. Always present; empty until
+   * the first verification is recorded. The newest entry's `status`
+   * mirrors the atom's current `status`.
+   */
+  statusHistory: ReadonlyArray<ProductSpecStatusChange>;
+  /** Engagement this product reference belongs to. Null if catalog-wide. */
+  engagementId: string | null;
+  /** Source finding entityId that referenced this product. Null otherwise. */
+  findingId: string | null;
+  /** Source response-task entityId. Null otherwise. */
+  responseTaskId: string | null;
+  /** ISO-8601 timestamp the reference was created. */
+  createdAt: string;
+  /** Architect / staff member who added the product reference (ADR-015). */
+  actorId: string | null;
+  /** Actor accountable for the engagement; may differ from `actorId`. */
+  principalActorId: string | null;
+  /** Access tier per ADR-017. Default `"tenant-private"`. */
+  accessPolicy?: AccessPolicy;
+}
+
+/**
+ * Zod schema mirroring `ProductSpecReferenceAtomInstance`. Canonical
+ * boundary-validation surface for L5 cross-repo consumers (the ICC-ES
+ * poller, the MCP tool, the UI). The `esrNumber` is format-validated.
+ */
+export const PRODUCT_SPEC_REFERENCE_SCHEMA = z.object({
+  entityType: z.literal("product-spec-reference"),
+  entityId: z.string().min(1),
+  jurisdictionTenant: z.string().min(1),
+  fetchedAt: z.string().min(1),
+  sourceAdapter: z.string().min(1),
+  sourceUrl: z.string(),
+  contentHash: z.string().min(1),
+  product: z.object({
+    name: z.string().min(1),
+    manufacturer: z.string().min(1),
+  }),
+  esrNumber: z.string().regex(ESR_NUMBER_RE, {
+    message: "esrNumber must match ESR-<digits> (e.g. ESR-1234)",
+  }),
+  status: z.enum(["active", "withdrawn", "expired"]),
+  lastVerifiedAt: z.string().min(1),
+  statusHistory: z.array(
+    z.object({
+      status: z.enum(["active", "withdrawn", "expired"]),
+      changedAt: z.string().min(1),
+      sourceUrl: z.string(),
+    }),
+  ),
+  engagementId: z.string().nullable(),
+  findingId: z.string().nullable(),
+  responseTaskId: z.string().nullable(),
+  createdAt: z.string().min(1),
+  actorId: z.string().nullable(),
+  principalActorId: z.string().nullable(),
+  accessPolicy: ACCESS_POLICY_SCHEMA,
+});
+
+/**
+ * Union of Cortex (L-surface) atom instances. Grows as L6 lands.
  */
 export type CortexAtomInstance =
   | ResponseTaskAtomInstance
   | SheetContentExtractionAtomInstance
   | AttachedDocumentAtomInstance
   | DeliverableLetterAtomInstance
-  | DetailCalloutSpecAtomInstance;
+  | DetailCalloutSpecAtomInstance
+  | ProductSpecReferenceAtomInstance;
 
 export type CortexAtomEntityType = CortexAtomInstance["entityType"];
 
@@ -880,6 +1025,7 @@ export const CORTEX_ATOM_ENTITY_TYPES: ReadonlyArray<CortexAtomEntityType> = [
   "attached-document",
   "deliverable-letter",
   "detail-callout-spec",
+  "product-spec-reference",
 ];
 
 /**
