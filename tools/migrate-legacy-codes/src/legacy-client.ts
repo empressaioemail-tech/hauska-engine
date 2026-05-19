@@ -172,6 +172,15 @@ export class LegacyClient {
       FROM code_atoms
       WHERE jurisdiction_key = 'bastrop_tx'
     `;
+    // UDC indicators per cc-agent-M's tightening pass:
+    //  - Require a zoning-specific keyword in the SECTION TITLE
+    //    (charter sections like "Effect of Charter on Existing Laws"
+    //    no longer false-positive on a "14.x" section-number match
+    //    because the title doesn't carry the keyword).
+    //  - OR a section_number under the canonical UDC chapter range
+    //    (Bastrop's UDC chapter is typically 14 / 150 — exclude
+    //    sections whose title contains "charter" or "amendment" so
+    //    Sec. 14.01 "Effect of Charter Amendments" doesn't slip in).
     const candidates = await this.sql<
       Array<{
         section_number: string | null;
@@ -183,8 +192,11 @@ export class LegacyClient {
       FROM code_atoms
       WHERE jurisdiction_key = 'bastrop_tx'
         AND (
-          section_title ~* 'unified development|zoning|setback|land use|subdivision|use district|land development'
-          OR section_number ~* '^14\.|^150\.|^UDC'
+          section_title ~* 'unified development|use district|zoning district|setback|subdivision standard|lot dimension|land development|zoning regulation|district standard'
+          OR (
+            section_number ~* '^14\.|^150\.|^UDC'
+            AND section_title !~* 'charter|amendment|preamble|adoption'
+          )
         )
       ORDER BY section_number NULLS LAST
       LIMIT 50
