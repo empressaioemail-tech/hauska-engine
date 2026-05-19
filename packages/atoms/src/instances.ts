@@ -592,14 +592,285 @@ export const DELIVERABLE_LETTER_SCHEMA = z.object({
   accessPolicy: ACCESS_POLICY_SCHEMA,
 });
 
+// ---------------------------------------------------------------------------
+// L4 — `detail-callout-spec` atom
+// ---------------------------------------------------------------------------
+//
+// Spec for a Revit detail callout that the Revit Connector add-in
+// consumes via APS Design Automation. Closes the Revit content-push gap.
+//
+// The `spec` payload is a discriminated union keyed on `detailType`:
+// each detail type carries its own structured spec shape. The
+// `DetailCalloutType` enum IS the discriminant — there is no redundant
+// top-level `detailType` field on the atom, so the atom and its spec
+// can never drift. Consumers (the Revit Connector add-in) switch on
+// `atom.spec.detailType`.
+//
+// Extensibility: the v1 set is door-schedule / wall-section / wall-type
+// / room-finish. A new detail type adds (1) a member to
+// `DetailCalloutType`, (2) a spec interface, (3) an arm to the
+// `DetailCalloutSpec` union, and (4) an arm to the Zod
+// `discriminatedUnion`. No atom-shape migration — older atoms keep
+// their existing discriminant.
+
+export type DetailCalloutType =
+  | "door-schedule"
+  | "wall-section"
+  | "wall-type"
+  | "room-finish";
+
+export const DETAIL_CALLOUT_TYPES: ReadonlyArray<DetailCalloutType> = [
+  "door-schedule",
+  "wall-section",
+  "wall-type",
+  "room-finish",
+];
+
+/** One layer of a wall assembly (shared by wall-section + wall-type). */
+export interface WallAssemblyLayer {
+  material: string;
+  /** As-drawn thickness, architect notation (e.g. `5/8"`). */
+  thickness: string;
+  /** Layer function (e.g. `structure`, `finish`, `membrane`). */
+  function: string;
+}
+
+/** L4 spec — door schedule. One row per scheduled door. */
+export interface DoorScheduleSpec {
+  detailType: "door-schedule";
+  rows: ReadonlyArray<{
+    doorMark: string;
+    doorType: string;
+    /** Architect feet-inches notation kept verbatim (e.g. `3'-0"`). */
+    width: string;
+    height: string;
+    material: string;
+    /** Fire rating, empty when not rated (e.g. `20 min`). */
+    fireRating: string;
+    hardwareSet: string;
+  }>;
+}
+
+/** L4 spec — wall section cut. */
+export interface WallSectionSpec {
+  detailType: "wall-section";
+  /** Section mark (e.g. `A/A-501`). */
+  sectionMark: string;
+  /** Free description of where the section is cut. */
+  cutLocation: string;
+  assemblyLayers: ReadonlyArray<WallAssemblyLayer>;
+  /** Bottom datum (e.g. `T.O. Slab`). */
+  baseDatum: string;
+  /** Top datum (e.g. `T.O. Parapet`). */
+  topDatum: string;
+}
+
+/** L4 spec — wall type definition. */
+export interface WallTypeSpec {
+  detailType: "wall-type";
+  /** Type mark (e.g. `W1`). */
+  typeMark: string;
+  assemblyLayers: ReadonlyArray<WallAssemblyLayer>;
+  fireRating: string;
+  /** Sound transmission class, empty when not specified. */
+  stcRating: string;
+}
+
+/** L4 spec — room finish schedule entry. */
+export interface RoomFinishSpec {
+  detailType: "room-finish";
+  roomName: string;
+  roomNumber: string;
+  floorFinish: string;
+  baseFinish: string;
+  wallFinish: string;
+  ceilingFinish: string;
+  ceilingHeight: string;
+}
+
+/** Discriminated union of detail-callout spec payloads, keyed on `detailType`. */
+export type DetailCalloutSpec =
+  | DoorScheduleSpec
+  | WallSectionSpec
+  | WallTypeSpec
+  | RoomFinishSpec;
+
 /**
- * Union of Cortex (L-surface) atom instances. Grows as L4-L6 land.
+ * Push lifecycle of a detail-callout spec through the Revit Connector:
+ *   - `pending`          — created, not yet pushed.
+ *   - `pushed`           — submitted to APS Design Automation.
+ *   - `applied`          — the add-in applied the detail in the model.
+ *   - `rejected-by-user` — the architect declined the pushed detail.
+ */
+export type DetailCalloutPushState =
+  | "pending"
+  | "pushed"
+  | "applied"
+  | "rejected-by-user";
+
+export const DETAIL_CALLOUT_PUSH_STATES: ReadonlyArray<DetailCalloutPushState> = [
+  "pending",
+  "pushed",
+  "applied",
+  "rejected-by-user",
+];
+
+/**
+ * Legal push-state transitions. `applied` is terminal; a
+ * `rejected-by-user` spec can be revised and returned to `pending` for
+ * another push attempt. This is advisory — the atom-registry performs
+ * no runtime enforcement (consistent with L1-L3 state fields); the
+ * Revit Connector + UI consult it to gate transitions.
+ */
+export const LEGAL_PUSH_TRANSITIONS: Record<
+  DetailCalloutPushState,
+  ReadonlyArray<DetailCalloutPushState>
+> = {
+  pending: ["pushed"],
+  pushed: ["applied", "rejected-by-user"],
+  applied: [],
+  "rejected-by-user": ["pending"],
+};
+
+/** True when `to` is a legal next push-state from `from`. */
+export function isLegalPushTransition(
+  from: DetailCalloutPushState,
+  to: DetailCalloutPushState,
+): boolean {
+  return LEGAL_PUSH_TRANSITIONS[from].includes(to);
+}
+
+/**
+ * L4 — `detail-callout-spec` atom.
+ *
+ * A structured spec for a Revit detail callout. The Revit Connector
+ * add-in consumes it and pushes the detail into the model via APS
+ * Design Automation. The atom is the single source of truth for spec
+ * content + push state; declared eventTypes
+ * (`detail-callout-spec.created` / `.pushed` / `.applied` /
+ * `.rejected`) supply the audit chain.
+ */
+export interface DetailCalloutSpecAtomInstance extends BaseAtomInstance {
+  entityType: "detail-callout-spec";
+  /** Engagement this callout spec belongs to. */
+  engagementId: string;
+  /** Detail-type-specific spec payload (discriminated on `detailType`). */
+  spec: DetailCalloutSpec;
+  /** Push lifecycle state. */
+  pushState: DetailCalloutPushState;
+  /**
+   * APS Design Automation work-item ref. Opaque to the engine — the
+   * Revit Connector populates it once `pushState` reaches `"pushed"`.
+   * Null while `pending`.
+   */
+  apsTaskRef: string | null;
+  /** Source finding entityId that drove this callout. Null if not finding-driven. */
+  findingId: string | null;
+  /** Source response-task entityId. Null if not task-driven. */
+  responseTaskId: string | null;
+  /** ISO-8601 timestamp the spec was created. */
+  createdAt: string;
+  /** ISO-8601 timestamp the spec entered `"pushed"`. Null otherwise. */
+  pushedAt: string | null;
+  /** Architect / staff member who authored the callout spec (ADR-015). */
+  actorId: string | null;
+  /** Actor accountable for the engagement; may differ from `actorId`. */
+  principalActorId: string | null;
+  /** Access tier per ADR-017. Default `"tenant-private"`. */
+  accessPolicy?: AccessPolicy;
+}
+
+const WALL_ASSEMBLY_LAYER_SCHEMA = z.object({
+  material: z.string(),
+  thickness: z.string(),
+  function: z.string(),
+});
+
+/**
+ * Zod discriminated union mirroring `DetailCalloutSpec`. The
+ * `detailType` discriminant selects the arm; an unknown detailType or
+ * a payload that doesn't match its arm fails validation.
+ */
+export const DETAIL_CALLOUT_SPEC_PAYLOAD_SCHEMA = z.discriminatedUnion(
+  "detailType",
+  [
+    z.object({
+      detailType: z.literal("door-schedule"),
+      rows: z.array(
+        z.object({
+          doorMark: z.string(),
+          doorType: z.string(),
+          width: z.string(),
+          height: z.string(),
+          material: z.string(),
+          fireRating: z.string(),
+          hardwareSet: z.string(),
+        }),
+      ),
+    }),
+    z.object({
+      detailType: z.literal("wall-section"),
+      sectionMark: z.string(),
+      cutLocation: z.string(),
+      assemblyLayers: z.array(WALL_ASSEMBLY_LAYER_SCHEMA),
+      baseDatum: z.string(),
+      topDatum: z.string(),
+    }),
+    z.object({
+      detailType: z.literal("wall-type"),
+      typeMark: z.string(),
+      assemblyLayers: z.array(WALL_ASSEMBLY_LAYER_SCHEMA),
+      fireRating: z.string(),
+      stcRating: z.string(),
+    }),
+    z.object({
+      detailType: z.literal("room-finish"),
+      roomName: z.string(),
+      roomNumber: z.string(),
+      floorFinish: z.string(),
+      baseFinish: z.string(),
+      wallFinish: z.string(),
+      ceilingFinish: z.string(),
+      ceilingHeight: z.string(),
+    }),
+  ],
+);
+
+/**
+ * Zod schema mirroring `DetailCalloutSpecAtomInstance`. Canonical
+ * boundary-validation surface for L4 cross-repo consumers (the Revit
+ * Connector add-in + the MCP tool + the UI).
+ */
+export const DETAIL_CALLOUT_SPEC_SCHEMA = z.object({
+  entityType: z.literal("detail-callout-spec"),
+  entityId: z.string().min(1),
+  jurisdictionTenant: z.string().min(1),
+  fetchedAt: z.string().min(1),
+  sourceAdapter: z.string().min(1),
+  sourceUrl: z.string(),
+  contentHash: z.string().min(1),
+  engagementId: z.string().min(1),
+  spec: DETAIL_CALLOUT_SPEC_PAYLOAD_SCHEMA,
+  pushState: z.enum(["pending", "pushed", "applied", "rejected-by-user"]),
+  apsTaskRef: z.string().nullable(),
+  findingId: z.string().nullable(),
+  responseTaskId: z.string().nullable(),
+  createdAt: z.string().min(1),
+  pushedAt: z.string().nullable(),
+  actorId: z.string().nullable(),
+  principalActorId: z.string().nullable(),
+  accessPolicy: ACCESS_POLICY_SCHEMA,
+});
+
+/**
+ * Union of Cortex (L-surface) atom instances. Grows as L5-L6 land.
  */
 export type CortexAtomInstance =
   | ResponseTaskAtomInstance
   | SheetContentExtractionAtomInstance
   | AttachedDocumentAtomInstance
-  | DeliverableLetterAtomInstance;
+  | DeliverableLetterAtomInstance
+  | DetailCalloutSpecAtomInstance;
 
 export type CortexAtomEntityType = CortexAtomInstance["entityType"];
 
@@ -608,6 +879,7 @@ export const CORTEX_ATOM_ENTITY_TYPES: ReadonlyArray<CortexAtomEntityType> = [
   "sheet-content-extraction",
   "attached-document",
   "deliverable-letter",
+  "detail-callout-spec",
 ];
 
 /**
