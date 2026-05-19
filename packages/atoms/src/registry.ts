@@ -27,6 +27,7 @@ import type {
   CodeEditionAtomInstance,
   CodeSectionAtomInstance,
   DeliverableLetterAtomInstance,
+  DetailCalloutSpecAtomInstance,
   JurisdictionCorpusAtomInstance,
   ResponseTaskAtomInstance,
   SheetContentExtractionAtomInstance,
@@ -594,6 +595,70 @@ export function bootstrapEngineAtomRegistry(
     },
   };
 
+  const detailCalloutSpec: AtomRegistration<
+    "detail-callout-spec",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "detail-callout-spec",
+    domain: "cortex",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    composition: [],
+    eventTypes: [
+      "detail-callout-spec.created",
+      "detail-callout-spec.pushed",
+      "detail-callout-spec.applied",
+      "detail-callout-spec.rejected",
+    ],
+    // ADR-017: detail-callout specs are engagement workflow data.
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"detail-callout-spec">> => {
+      const inst = await lookup.get<DetailCalloutSpecAtomInstance>(
+        "detail-callout-spec",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `detail-callout-spec/${entityId}`,
+        ) as ContextSummary<"detail-callout-spec">;
+      }
+      const detailType = inst.spec.detailType;
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `Detail callout (${detailType}) — push state: ${inst.pushState}${inst.apsTaskRef ? `, APS task ${inst.apsTaskRef}` : ""}.`,
+        `Detail callout (${detailType}, ${inst.pushState})`,
+      );
+      return {
+        prose,
+        typed: {
+          detailType,
+          pushState: inst.pushState,
+          engagementId: inst.engagementId,
+          apsTaskRef: inst.apsTaskRef,
+          findingId: inst.findingId,
+          responseTaskId: inst.responseTaskId,
+          createdAt: inst.createdAt,
+          pushedAt: inst.pushedAt,
+          actorId: inst.actorId,
+          principalActorId: inst.principalActorId,
+        },
+        keyMetrics: [
+          { label: "Detail type", value: detailType },
+          { label: "Push state", value: inst.pushState },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.pushedAt ?? inst.createdAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
   registry.register(codeSection);
   registry.register(codeDefinition);
   registry.register(codeAmendment);
@@ -604,6 +669,7 @@ export function bootstrapEngineAtomRegistry(
   registry.register(sheetContentExtraction);
   registry.register(attachedDocument);
   registry.register(deliverableLetter);
+  registry.register(detailCalloutSpec);
 
   return registry;
 }

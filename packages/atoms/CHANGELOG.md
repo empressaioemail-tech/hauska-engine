@@ -2,6 +2,52 @@
 
 All notable changes to `@hauska-engine/atoms` are documented here.
 
+## [0.4.0] - 2026-05-19
+
+Lane A.2 Phase D — L4 atom shape.
+
+### Added — L4 `detail-callout-spec` atom
+
+A structured spec for a Revit detail callout. The Revit Connector
+add-in consumes it and pushes the detail into the model via APS
+Design Automation. Closes the Revit content-push gap.
+
+- `DetailCalloutType` enum — v1 set: `door-schedule` / `wall-section`
+  / `wall-type` / `room-finish`. The enum IS the discriminant of the
+  `spec` payload; there is no redundant top-level `detailType` field,
+  so atom + spec can never drift. Extensible: a new detail type adds a
+  union member, a spec interface, a `DetailCalloutSpec` arm, and a Zod
+  `discriminatedUnion` arm — no atom-shape migration.
+- Per-type spec shapes: `DoorScheduleSpec`, `WallSectionSpec`,
+  `WallTypeSpec`, `RoomFinishSpec`, unified as the `DetailCalloutSpec`
+  discriminated union (`DETAIL_CALLOUT_SPEC_PAYLOAD_SCHEMA` is the Zod
+  `z.discriminatedUnion`). `WallAssemblyLayer` shared by wall-section +
+  wall-type.
+- `DetailCalloutPushState` enum: `pending` / `pushed` / `applied` /
+  `rejected-by-user`. `LEGAL_PUSH_TRANSITIONS` + `isLegalPushTransition`
+  helper — advisory (no runtime enforcement, consistent with L1-L3
+  state fields); `applied` is terminal, `rejected-by-user` can return
+  to `pending` for a re-push.
+- `apsTaskRef` — opaque APS Design Automation work-item ref; the Revit
+  Connector populates it once `pushState` reaches `"pushed"`.
+- Source provenance: `findingId` + `responseTaskId` (which finding /
+  response-task drove the callout). ADR-015 actor linking via
+  `actorId` + `principalActorId`.
+- Registration: domain `cortex`, five render modes (default `card`),
+  `accessPolicy: "tenant-private"` (ADR-017), leaf composition,
+  eventTypes `detail-callout-spec.created` / `.pushed` / `.applied` /
+  `.rejected`.
+- `DETAIL_CALLOUT_SPEC_SCHEMA` Zod schema — canonical boundary
+  validation for the Revit Connector add-in + MCP tool + UI.
+- 20-test conformance suite: schema validation (one arm per detail
+  type, mismatched-payload rejection), `@ts-expect-error` widening
+  rejection, push-state transition tests (forward lifecycle, terminal
+  `applied`, illegal skips), contextSummary round-trip.
+
+Fires **Sync B(L4)** — unblocks Lane B (cc-agent-M
+`cortex/detail_callout_spec_*` MCP tools) and Lane C (cc-agent-C L4 UI
+surface).
+
 ## [0.3.0] - 2026-05-19
 
 Lane A.2 Phase C — L3 atom shape.
