@@ -13,3 +13,9 @@ export * from "./ipfs-port.js";
 export * from "./content-hash.js";
 export * from "./in-process-cache.js";
 export * from "./in-memory-storage.js";
+
+// Re-export AccessPolicy so consumers of the storage port (retrieval,
+// retrieval-api, MCP server type-mirrors) don't need a transitive
+// import from @hauska-engine/atoms just to type the filter parameter
+// on listJurisdictionStatus.
+export type { AccessPolicy } from "@hauska-engine/atoms";

@@ -130,6 +130,97 @@ describe("retrieval-api contract (Sync 3)", () => {
     expect(body.jurisdictions[0].qualityBar).toBe("passing");
   });
 
+  it("GET /jurisdictions?accessPolicies=public-free filters to public-tier only", async () => {
+    // Two jurisdictions: one public-free, one platform-internal.
+    const storage = new InMemoryStorage();
+    storage.upsertJurisdictionStatus({
+      jurisdictionTenant: "public-tx",
+      jurisdictionName: "Public TX",
+      currentEditionDid: null,
+      qualityBar: "passing",
+      top3Score: 1.0,
+      sectionNumScore: 1.0,
+      crossRefScore: 1.0,
+      atomCount: 10,
+      lastRefreshedAt: null,
+      driftStatus: "clean",
+      accessPolicy: "public-free",
+    });
+    storage.upsertJurisdictionStatus({
+      jurisdictionTenant: "internal-tx",
+      jurisdictionName: "Internal TX",
+      currentEditionDid: null,
+      qualityBar: "passing",
+      top3Score: 1.0,
+      sectionNumScore: 1.0,
+      crossRefScore: 1.0,
+      atomCount: 5,
+      lastRefreshedAt: null,
+      driftStatus: "clean",
+      accessPolicy: "platform-internal",
+    });
+    const app = buildApp({ storage, apiKey: "" });
+
+    // No filter → both visible.
+    const all = (await (await app.request("/jurisdictions")).json()) as {
+      jurisdictions: Array<{ jurisdictionTenant: string }>;
+    };
+    expect(all.jurisdictions.map((j) => j.jurisdictionTenant).sort()).toEqual(
+      ["internal-tx", "public-tx"],
+    );
+
+    // Filtered to public-free → only public-tx.
+    const publicOnly = (await (
+      await app.request("/jurisdictions?accessPolicies=public-free")
+    ).json()) as { jurisdictions: Array<{ jurisdictionTenant: string }> };
+    expect(publicOnly.jurisdictions.map((j) => j.jurisdictionTenant)).toEqual([
+      "public-tx",
+    ]);
+
+    // Comma-separated multi-value: public-free + platform-internal → both.
+    const both = (await (
+      await app.request(
+        "/jurisdictions?accessPolicies=public-free,platform-internal",
+      )
+    ).json()) as { jurisdictions: Array<{ jurisdictionTenant: string }> };
+    expect(both.jurisdictions.map((j) => j.jurisdictionTenant).sort()).toEqual(
+      ["internal-tx", "public-tx"],
+    );
+
+    // Unknown values are dropped silently (additive-future safety).
+    const droppedUnknown = (await (
+      await app.request(
+        "/jurisdictions?accessPolicies=public-free,future-policy-tier",
+      )
+    ).json()) as { jurisdictions: Array<{ jurisdictionTenant: string }> };
+    expect(
+      droppedUnknown.jurisdictions.map((j) => j.jurisdictionTenant),
+    ).toEqual(["public-tx"]);
+  });
+
+  it("GET /jurisdictions: accessPolicy field surfaces on the wire", async () => {
+    const storage = new InMemoryStorage();
+    storage.upsertJurisdictionStatus({
+      jurisdictionTenant: "tagged-tx",
+      jurisdictionName: "Tagged TX",
+      currentEditionDid: null,
+      qualityBar: "passing",
+      top3Score: 1.0,
+      sectionNumScore: 1.0,
+      crossRefScore: 1.0,
+      atomCount: 1,
+      lastRefreshedAt: null,
+      driftStatus: "clean",
+      accessPolicy: "platform-internal",
+    });
+    const app = buildApp({ storage, apiKey: "" });
+    const res = await app.request("/jurisdictions");
+    const body = (await res.json()) as {
+      jurisdictions: Array<{ accessPolicy?: string }>;
+    };
+    expect(body.jurisdictions[0]?.accessPolicy).toBe("platform-internal");
+  });
+
   it("GET /jurisdictions/:id returns status", async () => {
     const storage = new InMemoryStorage();
     await seed(storage);
