@@ -27,6 +27,7 @@ import type {
   CodeEditionAtomInstance,
   CodeSectionAtomInstance,
   DeliverableLetterAtomInstance,
+  DeliverableLetterRenderAtomInstance,
   DetailCalloutSpecAtomInstance,
   JurisdictionCorpusAtomInstance,
   ProductSpecReferenceAtomInstance,
@@ -724,6 +725,64 @@ export function bootstrapEngineAtomRegistry(
     },
   };
 
+  const deliverableLetterRender: AtomRegistration<
+    "deliverable-letter-render",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "deliverable-letter-render",
+    domain: "cortex",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    // Leaf composition: `sourceLetterRef` is a peer reference (the
+    // render is derived-from, not owns, its source letter); consumers
+    // resolve the DID themselves. Consistent with L1-L5 leaf shapes.
+    composition: [],
+    // A render is an immutable produced artifact — a single event type.
+    eventTypes: ["deliverable-letter-render.produced"],
+    // ADR-017: renders are engagement workflow data.
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"deliverable-letter-render">> => {
+      const inst = await lookup.get<DeliverableLetterRenderAtomInstance>(
+        "deliverable-letter-render",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `deliverable-letter-render/${entityId}`,
+        ) as ContextSummary<"deliverable-letter-render">;
+      }
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `${inst.format.toUpperCase()} render of ${inst.sourceLetterRef} (source version ${inst.sourceLetterVersion}), produced ${inst.renderedAt}.`,
+        `${inst.format.toUpperCase()} render`,
+      );
+      return {
+        prose,
+        typed: {
+          sourceLetterRef: inst.sourceLetterRef,
+          sourceLetterVersion: inst.sourceLetterVersion,
+          format: inst.format,
+          blobRef: inst.blobRef,
+          renderedAt: inst.renderedAt,
+          renderedByActorId: inst.renderedByActorId,
+        },
+        keyMetrics: [
+          { label: "Format", value: inst.format },
+          { label: "Source letter", value: inst.sourceLetterRef },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.renderedAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
   registry.register(codeSection);
   registry.register(codeDefinition);
   registry.register(codeAmendment);
@@ -736,6 +795,7 @@ export function bootstrapEngineAtomRegistry(
   registry.register(deliverableLetter);
   registry.register(detailCalloutSpec);
   registry.register(productSpecReference);
+  registry.register(deliverableLetterRender);
 
   return registry;
 }

@@ -2,6 +2,56 @@
 
 All notable changes to `@hauska-engine/atoms` are documented here.
 
+## [0.6.0] - 2026-05-19
+
+Lane A.2 Phase F — L6 atom shape. **Completes the L1-L6 L-surface
+atom-shape set; Lane A.2 is done.**
+
+### Added — L6 `deliverable-letter-render` atom
+
+The rendered DOCX/PDF output of an L3 `deliverable-letter`, as a
+first-class atom. Planner architectural call per Sprint Amendment 6:
+render output IS an atom, not an ephemeral byte side-effect — aligns
+with the Hauska atom-first thesis (every output queryable with
+reasoning chain + source citation + timestamp) and enables "show all
+renders of this letter" audit queries. Renders are 1-to-many off L3.
+
+- `RenderFormat` enum: `docx` / `pdf` (lowercase to match the package
+  enum convention; extensible v1 set).
+- `sourceLetterRef` — a `did:hauska:deliverable-letter:<localId>` ref
+  to the L3 source atom; Zod-validated against `DELIVERABLE_LETTER_DID_RE`.
+- `sourceLetterVersion` — the source letter's `contentHash` at render
+  time, pinning rendered-against-which-version provenance (ADR-011).
+- `blobRef` — opaque pointer to the stored render bytes; storage
+  details (GCS key, signed-URL pattern, retention) are runtime-layer
+  per Sprint Amendment 6. The atom carries the reference, not bytes.
+- `renderedAt` + `renderedByActorId` (ADR-015 actor linking).
+- Registration: domain `cortex`, five render modes (default `card`),
+  `accessPolicy: "tenant-private"` (ADR-017), leaf composition, single
+  eventType `deliverable-letter-render.produced` (an immutable
+  produced artifact).
+- `DELIVERABLE_LETTER_RENDER_SCHEMA` Zod schema — canonical boundary
+  validation for the render pipeline + MCP tool + UI.
+- 16-test conformance suite: schema + round-trip, `@ts-expect-error`
+  widening rejection (format enum), reference-resolution test
+  (`sourceLetterRef` parses + resolves to a real `deliverable-letter`
+  atom; a dangling ref resolves to null), multi-render test (same
+  `sourceLetterRef` + different `sourceLetterVersion` coexist as
+  distinct atoms — 1-to-many proven; also same-version different-format),
+  contextSummary round-trip.
+
+Fires **Sync B(L6)** — unblocks Lane B (cc-agent-M
+`cortex/deliverable_letter_render` MCP tool) and Lane C (cc-agent-C L6
+UI surface).
+
+### Lane A.2 complete
+
+All six L-surface atom shapes are now locked in the engine
+atom-registry: L1 `response-task`, L2 `sheet-content-extraction` +
+`attached-document`, L3 `deliverable-letter`, L4 `detail-callout-spec`,
+L5 `product-spec-reference`, L6 `deliverable-letter-render`. Seven
+Cortex atom types total; `@hauska-engine/atoms` at 0.6.0.
+
 ## [0.5.0] - 2026-05-19
 
 Lane A.2 Phase E — L5 atom shape.
