@@ -19,22 +19,24 @@ import {
 } from "@hauska-engine/atom-contract-pin";
 
 import type {
+  AtomInstance,
   CodeAmendmentAtomInstance,
-  CodeAtomInstance,
   CodeCrossReferenceAtomInstance,
   CodeDefinitionAtomInstance,
   CodeEditionAtomInstance,
   CodeSectionAtomInstance,
   JurisdictionCorpusAtomInstance,
+  ResponseTaskAtomInstance,
 } from "./instances.js";
 
 /**
  * Storage-side accessor injected at bootstrap time. The retrieval API
  * implements this against the Postgres index + IPFS fetch path; tests
- * implement in-memory variants.
+ * implement in-memory variants. Keyed over the full atom union
+ * (code-corpus + Cortex L-surface).
  */
 export interface InstanceLookup {
-  get<T extends CodeAtomInstance>(
+  get<T extends AtomInstance>(
     entityType: T["entityType"],
     entityId: string,
   ): Promise<T | null>;
@@ -328,12 +330,87 @@ export function bootstrapEngineAtomRegistry(
     },
   };
 
+  // -------------------------------------------------------------------
+  // Cortex (L-surface) atoms — L1 through L6 per the 2026-05-19 Lane A.2
+  // dispatch. Each lands in its own PR; this block accretes registrations.
+  // -------------------------------------------------------------------
+
+  const responseTask: AtomRegistration<
+    "response-task",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "response-task",
+    domain: "cortex",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    composition: [],
+    // Audit-chain event types. The atom record holds current state;
+    // these let consumers compose an event-sourced view from the
+    // storage event log without the atom carrying the chain inline.
+    eventTypes: [
+      "response-task.opened",
+      "response-task.progressed",
+      "response-task.completed",
+      "response-task.cancelled",
+    ],
+    // ADR-017: response-task is engagement workflow data, private to the
+    // owning tenant. Never a public-catalog atom.
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"response-task">> => {
+      const inst = await lookup.get<ResponseTaskAtomInstance>(
+        "response-task",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `response-task/${entityId}`,
+        ) as ContextSummary<"response-task">;
+      }
+      const dueClause = inst.dueAt ? ` Due ${inst.dueAt}.` : "";
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `${inst.title} — ${inst.description} (${inst.state}).${dueClause}`,
+        `${inst.title} (${inst.state})`,
+      );
+      return {
+        prose,
+        typed: {
+          title: inst.title,
+          description: inst.description,
+          state: inst.state,
+          createdAt: inst.createdAt,
+          dueAt: inst.dueAt,
+          completedAt: inst.completedAt,
+          sourceClientCommentId: inst.sourceClientCommentId,
+          findingId: inst.findingId,
+          engagementId: inst.engagementId,
+          actorId: inst.actorId,
+          principalActorId: inst.principalActorId,
+        },
+        keyMetrics: [
+          { label: "State", value: inst.state },
+          { label: "Title", value: inst.title },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.completedAt ?? inst.createdAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
   registry.register(codeSection);
   registry.register(codeDefinition);
   registry.register(codeAmendment);
   registry.register(codeCrossReference);
   registry.register(codeEdition);
   registry.register(jurisdictionCorpus);
+  registry.register(responseTask);
 
   return registry;
 }

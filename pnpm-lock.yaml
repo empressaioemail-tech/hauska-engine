@@ -39,6 +39,9 @@ importers:
       '@hauska-engine/atom-contract-pin':
         specifier: workspace:*
         version: link:../atom-contract-pin
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ~5.7.2
