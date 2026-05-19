@@ -21,8 +21,11 @@ const app = buildApp();
 
 const port = Number(process.env.PORT ?? 8080);
 
+// Normalize backslashes so the endsWith check matches on Windows where
+// process.argv[1] is the OS-native path (e.g. P:\hauska-engine\...).
+const argvPath = process.argv[1]?.replace(/\\/g, "/");
 const isMain =
-  process.argv[1] && process.argv[1].endsWith("services/retrieval-api/src/index.ts");
+  !!argvPath && argvPath.endsWith("services/retrieval-api/src/index.ts");
 
 if (isMain) {
   startServer(app, port);
