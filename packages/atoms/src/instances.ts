@@ -1006,8 +1006,104 @@ export const PRODUCT_SPEC_REFERENCE_SCHEMA = z.object({
   accessPolicy: ACCESS_POLICY_SCHEMA,
 });
 
+// ---------------------------------------------------------------------------
+// L6 — `deliverable-letter-render` atom
+// ---------------------------------------------------------------------------
+//
+// The rendered output (DOCX / PDF) of an L3 `deliverable-letter`, as a
+// first-class atom rather than an ephemeral byte side-effect. Planner
+// architectural call per Sprint Amendment 6: render output IS an atom.
+// Rationale — the Hauska atom-first thesis ("sell reasoning, not data;
+// every output queryable with reasoning chain + source citation +
+// timestamp"). A render is an output, so it is first-class queryable,
+// enabling "show all renders of this letter" audit queries.
+//
+// Renders are 1-to-many off L3: a sent letter can be re-rendered
+// (format change, recipient lost the original, source-letter version
+// update). `sourceLetterVersion` pins exactly which version of the
+// source letter a given render was produced against.
+
 /**
- * Union of Cortex (L-surface) atom instances. Grows as L6 lands.
+ * Render output format. Lowercase to match the kebab-case enum
+ * convention used across this package's atom shapes. Extensible v1
+ * set — a new format adds a union member + a Zod-enum arm.
+ */
+export type RenderFormat = "docx" | "pdf";
+
+export const RENDER_FORMATS: ReadonlyArray<RenderFormat> = ["docx", "pdf"];
+
+/**
+ * DID-prefix guard for `sourceLetterRef` — the ref must point at a
+ * `deliverable-letter` atom (`did:hauska:deliverable-letter:<localId>`).
+ */
+export const DELIVERABLE_LETTER_DID_RE = /^did:hauska:deliverable-letter:.+/;
+
+/**
+ * L6 — `deliverable-letter-render` atom.
+ *
+ * The rendered DOCX/PDF artifact of an L3 `deliverable-letter`. The
+ * atom carries a reference to the stored bytes (`blobRef`), never the
+ * bytes themselves — storage details (GCS object key, signed-URL
+ * pattern, retention) are runtime-layer concerns per Sprint
+ * Amendment 6.
+ */
+export interface DeliverableLetterRenderAtomInstance extends BaseAtomInstance {
+  entityType: "deliverable-letter-render";
+  /**
+   * `did:hauska:deliverable-letter:<localId>` ref to the L3
+   * `deliverable-letter` atom this render is derived from.
+   */
+  sourceLetterRef: string;
+  /**
+   * The source letter atom's `contentHash` at render time. Pins which
+   * version was rendered — distinguishes re-renders of an updated
+   * letter and preserves rendered-against-which-version provenance
+   * explicitly (ADR-011: contentHash maps to the per-version CID).
+   */
+  sourceLetterVersion: string;
+  /** Output format. */
+  format: RenderFormat;
+  /**
+   * Opaque pointer to the stored render bytes. Storage details are
+   * runtime-layer; the atom carries the reference, not the bytes.
+   */
+  blobRef: string;
+  /** ISO-8601 timestamp the render was produced. */
+  renderedAt: string;
+  /** Actor who triggered the render (ADR-015). Null for system renders. */
+  renderedByActorId: string | null;
+  /** Access tier per ADR-017. Default `"tenant-private"`. */
+  accessPolicy?: AccessPolicy;
+}
+
+/**
+ * Zod schema mirroring `DeliverableLetterRenderAtomInstance`. Canonical
+ * boundary-validation surface for L6 cross-repo consumers. The
+ * `sourceLetterRef` is prefix-validated against the deliverable-letter
+ * DID shape.
+ */
+export const DELIVERABLE_LETTER_RENDER_SCHEMA = z.object({
+  entityType: z.literal("deliverable-letter-render"),
+  entityId: z.string().min(1),
+  jurisdictionTenant: z.string().min(1),
+  fetchedAt: z.string().min(1),
+  sourceAdapter: z.string().min(1),
+  sourceUrl: z.string(),
+  contentHash: z.string().min(1),
+  sourceLetterRef: z.string().regex(DELIVERABLE_LETTER_DID_RE, {
+    message:
+      "sourceLetterRef must be a did:hauska:deliverable-letter:<localId> ref",
+  }),
+  sourceLetterVersion: z.string().min(1),
+  format: z.enum(["docx", "pdf"]),
+  blobRef: z.string().min(1),
+  renderedAt: z.string().min(1),
+  renderedByActorId: z.string().nullable(),
+  accessPolicy: ACCESS_POLICY_SCHEMA,
+});
+
+/**
+ * Union of Cortex (L-surface) atom instances — complete L1-L6 set.
  */
 export type CortexAtomInstance =
   | ResponseTaskAtomInstance
@@ -1015,7 +1111,8 @@ export type CortexAtomInstance =
   | AttachedDocumentAtomInstance
   | DeliverableLetterAtomInstance
   | DetailCalloutSpecAtomInstance
-  | ProductSpecReferenceAtomInstance;
+  | ProductSpecReferenceAtomInstance
+  | DeliverableLetterRenderAtomInstance;
 
 export type CortexAtomEntityType = CortexAtomInstance["entityType"];
 
@@ -1026,6 +1123,7 @@ export const CORTEX_ATOM_ENTITY_TYPES: ReadonlyArray<CortexAtomEntityType> = [
   "deliverable-letter",
   "detail-callout-spec",
   "product-spec-reference",
+  "deliverable-letter-render",
 ];
 
 /**
