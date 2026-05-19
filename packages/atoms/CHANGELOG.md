@@ -2,6 +2,53 @@
 
 All notable changes to `@hauska-engine/atoms` are documented here.
 
+## [0.2.0] - 2026-05-19
+
+Lane A.2 Phase B — L2 atom shapes. Two coupled atoms (the sheet-ingest
+pass extracts both inline in one pass).
+
+### Added — L2a `sheet-content-extraction` atom
+
+Classified output of the sheet-ingest pass: OCR text segments plus
+structured annotations, produced downstream of the existing Claude
+vision OCR step.
+
+- `SheetContentExtractionAtomInstance` + `SHEET_CONTENT_EXTRACTION_SCHEMA`.
+- `BoundingBox` (page-relative, normalized `[0,1]`), `SheetTextSegment`,
+  `SheetStructuredAnnotation` supporting types.
+- `SheetAnnotationKind` enum: `revision-cloud` / `dimension` /
+  `schedule-row` / `callout`.
+- Link fields: `sourceSheetId`, `engagementId`, `actorId` (ADR-015).
+  `ocrModel` carries OCR provenance.
+- Registration: domain `cortex`, five render modes (default `card`),
+  `accessPolicy: "tenant-private"`, eventTypes
+  `sheet-content-extraction.produced` / `.re-extracted`.
+
+### Added — L2b `attached-document` atom
+
+A supporting document attached to an engagement (spec, calculation,
+product-data, narrative).
+
+- `AttachedDocumentAtomInstance` + `ATTACHED_DOCUMENT_SCHEMA`.
+- `AttachedDocumentType` enum: `specification` / `calculation` /
+  `product-data` / `narrative`.
+- Fields: `engagementId`, `title`, `documentType`, `extractedText`,
+  `originalBlobRef`, `actorId` (ADR-015).
+- Registration: domain `cortex`, five render modes (default `card`),
+  `accessPolicy: "tenant-private"`, eventTypes
+  `attached-document.ingested` / `.re-parsed`.
+
+### Changed
+
+- `CortexAtomInstance` union extended; `CORTEX_ATOM_ENTITY_TYPES` now
+  lists all three Cortex atoms.
+- 20-test L2 conformance suite (schema validation, registry
+  registration, contextSummary round-trip, cross-reference coverage).
+
+Fires **Sync B(L2)** — unblocks Lane B (cc-agent-M
+`cortex/sheet_content_extraction_*` MCP tools) and Lane C (cc-agent-C
+L2 UI surface).
+
 ## [0.1.0] - 2026-05-19
 
 Lane A.2 — L-surface atom shapes. Adds the first Cortex (L-surface)

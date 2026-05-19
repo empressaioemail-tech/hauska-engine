@@ -234,15 +234,217 @@ export const RESPONSE_TASK_SCHEMA = z.object({
     .optional(),
 });
 
+// ---------------------------------------------------------------------------
+// L2 — `sheet-content-extraction` + `attached-document` atoms
+// ---------------------------------------------------------------------------
+//
+// Two atoms in one phase per the 2026-05-19 Lane A.2 dispatch: they are
+// coupled at the producer (sheet ingest extracts both inline in one pass).
+// L2 closes the structured-annotation-extraction gap downstream of the
+// existing Claude vision OCR pass.
+
 /**
- * Union of Cortex (L-surface) atom instances. Grows as L2-L6 land.
+ * Page-relative bounding box. Coordinates are normalized to `[0, 1]`
+ * against the source page so they survive resolution / DPI changes:
+ * `x` / `y` are the top-left corner, `width` / `height` the extent.
  */
-export type CortexAtomInstance = ResponseTaskAtomInstance;
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Structured-annotation categories extracted from a construction sheet.
+ * `revision-cloud` marks a revised region; `dimension` a dimension
+ * callout; `schedule-row` a row from a door / window / finish schedule;
+ * `callout` a detail / section callout bubble.
+ */
+export type SheetAnnotationKind =
+  | "revision-cloud"
+  | "dimension"
+  | "schedule-row"
+  | "callout";
+
+export const SHEET_ANNOTATION_KINDS: ReadonlyArray<SheetAnnotationKind> = [
+  "revision-cloud",
+  "dimension",
+  "schedule-row",
+  "callout",
+];
+
+/** One OCR text segment with its page-relative position + confidence. */
+export interface SheetTextSegment {
+  text: string;
+  boundingBox: BoundingBox;
+  /** OCR confidence in `[0, 1]`. */
+  sourceConfidence: number;
+}
+
+/** One structured annotation extracted from the sheet. */
+export interface SheetStructuredAnnotation {
+  kind: SheetAnnotationKind;
+  position: BoundingBox;
+  content: string;
+  /** Extraction confidence in `[0, 1]`. */
+  sourceConfidence: number;
+}
+
+/**
+ * L2a — `sheet-content-extraction` atom.
+ *
+ * Classified output of the sheet-ingest pass: OCR text segments plus
+ * structured annotations (revision clouds, dimensions, schedule rows,
+ * callouts). Produced downstream of the existing Claude vision OCR step;
+ * the atom is what the `plan-review` compare workflow consumes instead
+ * of raw OCR text.
+ */
+export interface SheetContentExtractionAtomInstance extends BaseAtomInstance {
+  entityType: "sheet-content-extraction";
+  /** Source sheet entityId / blob ref this extraction was produced from. */
+  sourceSheetId: string;
+  /** Engagement the sheet belongs to. Null in rare standalone cases. */
+  engagementId: string | null;
+  /** Sheet number / label (e.g. "A-101"). Empty when the sheet is unlabeled. */
+  pageLabel: string;
+  /** OCR text segments with page-relative bounding boxes. */
+  extractedTextSegments: ReadonlyArray<SheetTextSegment>;
+  /** Structured annotations (revision clouds, dimensions, etc.). */
+  structuredAnnotations: ReadonlyArray<SheetStructuredAnnotation>;
+  /** Model that produced the OCR pass (provenance, e.g. "claude-sonnet-4-5"). */
+  ocrModel: string;
+  /** Architect / staff member who uploaded the source sheet (ADR-015). */
+  actorId: string | null;
+  /** Access tier per ADR-017. Default `"tenant-private"`. */
+  accessPolicy?: AccessPolicy;
+}
+
+/** Supporting-document categories attached to an engagement. */
+export type AttachedDocumentType =
+  | "specification"
+  | "calculation"
+  | "product-data"
+  | "narrative";
+
+export const ATTACHED_DOCUMENT_TYPES: ReadonlyArray<AttachedDocumentType> = [
+  "specification",
+  "calculation",
+  "product-data",
+  "narrative",
+];
+
+/**
+ * L2b — `attached-document` atom.
+ *
+ * A supporting document attached to an engagement (spec section,
+ * structural calculation, product-data sheet, design narrative). Carries
+ * the parsed text plus a reference to the stored original blob.
+ */
+export interface AttachedDocumentAtomInstance extends BaseAtomInstance {
+  entityType: "attached-document";
+  /** Engagement this document is attached to. */
+  engagementId: string;
+  /** Human document title. */
+  title: string;
+  /** Document category. */
+  documentType: AttachedDocumentType;
+  /** Parsed text content. */
+  extractedText: string;
+  /** Reference to the stored original blob (CID / storage key). */
+  originalBlobRef: string;
+  /** Architect / staff member who attached the document (ADR-015). */
+  actorId: string | null;
+  /** Access tier per ADR-017. Default `"tenant-private"`. */
+  accessPolicy?: AccessPolicy;
+}
+
+const BOUNDING_BOX_SCHEMA = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+});
+
+const ACCESS_POLICY_SCHEMA = z
+  .enum(["public-free", "public-paid", "platform-internal", "tenant-private"])
+  .optional();
+
+/**
+ * Zod schema mirroring `SheetContentExtractionAtomInstance`. Canonical
+ * boundary-validation surface for L2a cross-repo consumers.
+ */
+export const SHEET_CONTENT_EXTRACTION_SCHEMA = z.object({
+  entityType: z.literal("sheet-content-extraction"),
+  entityId: z.string().min(1),
+  jurisdictionTenant: z.string().min(1),
+  fetchedAt: z.string().min(1),
+  sourceAdapter: z.string().min(1),
+  sourceUrl: z.string(),
+  contentHash: z.string().min(1),
+  sourceSheetId: z.string().min(1),
+  engagementId: z.string().nullable(),
+  pageLabel: z.string(),
+  extractedTextSegments: z.array(
+    z.object({
+      text: z.string(),
+      boundingBox: BOUNDING_BOX_SCHEMA,
+      sourceConfidence: z.number().min(0).max(1),
+    }),
+  ),
+  structuredAnnotations: z.array(
+    z.object({
+      kind: z.enum(["revision-cloud", "dimension", "schedule-row", "callout"]),
+      position: BOUNDING_BOX_SCHEMA,
+      content: z.string(),
+      sourceConfidence: z.number().min(0).max(1),
+    }),
+  ),
+  ocrModel: z.string().min(1),
+  actorId: z.string().nullable(),
+  accessPolicy: ACCESS_POLICY_SCHEMA,
+});
+
+/**
+ * Zod schema mirroring `AttachedDocumentAtomInstance`. Canonical
+ * boundary-validation surface for L2b cross-repo consumers.
+ */
+export const ATTACHED_DOCUMENT_SCHEMA = z.object({
+  entityType: z.literal("attached-document"),
+  entityId: z.string().min(1),
+  jurisdictionTenant: z.string().min(1),
+  fetchedAt: z.string().min(1),
+  sourceAdapter: z.string().min(1),
+  sourceUrl: z.string(),
+  contentHash: z.string().min(1),
+  engagementId: z.string().min(1),
+  title: z.string().min(1),
+  documentType: z.enum([
+    "specification",
+    "calculation",
+    "product-data",
+    "narrative",
+  ]),
+  extractedText: z.string(),
+  originalBlobRef: z.string().min(1),
+  actorId: z.string().nullable(),
+  accessPolicy: ACCESS_POLICY_SCHEMA,
+});
+
+/**
+ * Union of Cortex (L-surface) atom instances. Grows as L3-L6 land.
+ */
+export type CortexAtomInstance =
+  | ResponseTaskAtomInstance
+  | SheetContentExtractionAtomInstance
+  | AttachedDocumentAtomInstance;
 
 export type CortexAtomEntityType = CortexAtomInstance["entityType"];
 
 export const CORTEX_ATOM_ENTITY_TYPES: ReadonlyArray<CortexAtomEntityType> = [
   "response-task",
+  "sheet-content-extraction",
+  "attached-document",
 ];
 
 /**
