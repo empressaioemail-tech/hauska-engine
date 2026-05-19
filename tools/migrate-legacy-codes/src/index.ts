@@ -33,7 +33,11 @@ import { LegacyClient } from "./legacy-client.js";
 import { runMigration } from "./migrate.js";
 import { runPathCIngest } from "./path-c-ingest.js";
 import { buildBastropUdcCuratedQueries } from "./udc-curated-queries.js";
-import { curatedQueriesForJurisdiction, buildSeedCuratedQueries } from "./seed-curated-queries.js";
+import {
+  buildSeedCuratedQueries,
+  curatedQueriesForJurisdiction,
+  curatedQueriesForJurisdictionAndBooks,
+} from "./seed-curated-queries.js";
 
 function resolveDatabaseUrl(explicit: string | undefined): string {
   const url = explicit || process.env.LEGACY_DATABASE_URL || process.env.DATABASE_URL;
@@ -162,10 +166,22 @@ program
   .option("--jurisdiction <key>", "Filter to one jurisdiction")
   .option("--code-book <book>", "Filter to one code book within the jurisdiction")
   .option("--code-books <books>", "Comma-separated allow-list of code books (e.g. IRC_R301_2_1,IWUIC)")
-  .action(async (opts: RunOptions) => {
+  .option(
+    "--show-sections",
+    "Also print all section entityIds + sectionNumbers + titles (helpful for curated-query authoring)",
+  )
+  .action(async (opts: RunOptions & { showSections?: boolean }) => {
     const url = resolveDatabaseUrl(program.opts().databaseUrl);
     const { result } = await runAgainstInMemory(url, opts);
-    console.log(JSON.stringify({ dryRun: result.report }, null, 2));
+    const output: Record<string, unknown> = { dryRun: result.report };
+    if (opts.showSections) {
+      output.sections = result.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
   });
 
 program
@@ -218,6 +234,16 @@ program
       const fs = await import("node:fs/promises");
       const raw = await fs.readFile(opts.queriesFile, "utf8");
       queries = JSON.parse(raw) as CuratedQuery[];
+    } else if (opts.codeBooks) {
+      const books = opts.codeBooks
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      queries = curatedQueriesForJurisdictionAndBooks(opts.jurisdiction, books);
+    } else if (opts.codeBook) {
+      queries = curatedQueriesForJurisdictionAndBooks(opts.jurisdiction, [
+        opts.codeBook,
+      ]);
     } else {
       queries = curatedQueriesForJurisdiction(opts.jurisdiction);
     }

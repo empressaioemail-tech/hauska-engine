@@ -106,7 +106,30 @@ export class InMemoryStorage implements StoragePort {
         if (lowerSnippet.includes(t)) matched++;
       }
       if (matched === 0) continue;
-      const score = matched / tokens.length;
+      // Section-number anchor boost: when the user includes the
+      // atom's section number in the query (e.g. "Section 503
+      // ignition resistant" or "2.3 SLR district"), that atom ranks
+      // higher than peers sharing topic tokens but not the number.
+      // Boost is small enough that a fully-matching atom still wins;
+      // acts as a deterministic tiebreaker. Also matches against the
+      // `#partN`-stripped form so a query like "4.4 PUD" anchors atom
+      // whose sectionNumber is "4.4#part1" (legacy ingest splits
+      // over-cap sections via the #partN convention).
+      let bonus = 0;
+      if (inst.entityType === "code-section" && inst.sectionNumber) {
+        const sectionLower = inst.sectionNumber.toLowerCase();
+        if (sectionLower) {
+          if (q.includes(sectionLower)) {
+            bonus += 0.25;
+          } else {
+            const stripped = sectionLower.split("#")[0];
+            if (stripped && stripped !== sectionLower && q.includes(stripped)) {
+              bonus += 0.25;
+            }
+          }
+        }
+      }
+      const score = matched / tokens.length + bonus;
       results.push(buildResult(atomDid, inst, snippet, score));
     }
     results.sort((a, b) => b.score - a.score);
