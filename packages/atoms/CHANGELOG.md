@@ -2,6 +2,54 @@
 
 All notable changes to `@hauska-engine/atoms` are documented here.
 
+## [0.3.0] - 2026-05-19
+
+Lane A.2 Phase C — L3 atom shape.
+
+### Added — L3 `deliverable-letter` atom
+
+The comment-response letter as a classified atom: structured sections
+with per-section provenance back to the L1 / L2 / finding / adjudication
+atoms that fed each section. DOCX/PDF rendering is a downstream consumer
+(L6) — the atom never carries rendered bytes.
+
+- `DeliverableLetterAtomInstance` + `DELIVERABLE_LETTER_SCHEMA`.
+- `LetterSection` + `LetterSectionProvenance` supporting types.
+- `LetterSectionKind` enum: `cover` / `intro` / `per-comment-response` /
+  `signature`. `REQUIRED_LETTER_SECTION_KINDS` = cover + intro +
+  signature (per-comment-response is variable).
+- `DeliverableLetterStatus` enum: `draft` / `sent`.
+- Per-section provenance arrays: `responseTaskIds` (L1),
+  `sheetContentExtractionIds` (L2), `findingIds`, `adjudicationStateIds`
+  — per-section so a `per-comment-response` section names exactly the
+  atoms it answers.
+- `deliverableLetterCompleteness(sections)` helper — returns
+  `{ complete, missing }`; the L6 render pipeline + UI gate the "send"
+  action on it. A `draft` letter may legitimately be incomplete.
+- Fields: `engagementId`, `title`, `status`, `recipientActorId`,
+  `sections`, `createdAt`, `sentAt`, `actorId` + `principalActorId`
+  (ADR-015).
+- Registration: domain `cortex`, five render modes (default `card`),
+  `accessPolicy: "tenant-private"` (ADR-017), leaf composition,
+  eventTypes `deliverable-letter.drafted` / `.section-revised` /
+  `.sent`.
+- 23-test conformance suite: schema validation, `@ts-expect-error`
+  widening rejection (status + section-kind unions), section-
+  completeness checks, provenance-chain integrity, contextSummary
+  round-trip.
+
+Fires **Sync B(L3)** — unblocks Lane B (cc-agent-M
+`cortex/deliverable_letter_*` MCP tools) and Lane C (cc-agent-C L3 UI
+surface).
+
+### Also in this release
+
+- `services/retrieval-api` — corrected the `parseAccessPolicies`
+  docstring: a present-but-empty `?accessPolicies=` yields an empty
+  array, which the storage layer treats as "no filter" (its filter is
+  gated on `accessPolicies.length > 0`), not "filters to nothing".
+  Docstring-only; no behavior change.
+
 ## [0.2.0] - 2026-05-19
 
 Lane A.2 Phase B — L2 atom shapes. Two coupled atoms (the sheet-ingest

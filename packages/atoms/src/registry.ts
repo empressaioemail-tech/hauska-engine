@@ -26,10 +26,12 @@ import type {
   CodeDefinitionAtomInstance,
   CodeEditionAtomInstance,
   CodeSectionAtomInstance,
+  DeliverableLetterAtomInstance,
   JurisdictionCorpusAtomInstance,
   ResponseTaskAtomInstance,
   SheetContentExtractionAtomInstance,
 } from "./instances.js";
+import { deliverableLetterCompleteness } from "./instances.js";
 
 /**
  * Storage-side accessor injected at bootstrap time. The retrieval API
@@ -521,6 +523,77 @@ export function bootstrapEngineAtomRegistry(
     },
   };
 
+  const deliverableLetter: AtomRegistration<
+    "deliverable-letter",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "deliverable-letter",
+    domain: "cortex",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    // Leaf composition: per-section provenance refs (response-task /
+    // sheet-content-extraction / finding / adjudication-state) are nested
+    // data fields, not flat owned-child slots, so they aren't declared
+    // as composition edges. Consumers traverse them by reading sections.
+    composition: [],
+    eventTypes: [
+      "deliverable-letter.drafted",
+      "deliverable-letter.section-revised",
+      "deliverable-letter.sent",
+    ],
+    // ADR-017: deliverable letters are engagement workflow data.
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"deliverable-letter">> => {
+      const inst = await lookup.get<DeliverableLetterAtomInstance>(
+        "deliverable-letter",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `deliverable-letter/${entityId}`,
+        ) as ContextSummary<"deliverable-letter">;
+      }
+      const completeness = deliverableLetterCompleteness(inst.sections);
+      const completeClause = completeness.complete
+        ? "complete"
+        : `incomplete (missing: ${completeness.missing.join(", ")})`;
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `${inst.title} — ${inst.status}, ${inst.sections.length} sections, ${completeClause}.`,
+        `${inst.title} (${inst.status})`,
+      );
+      return {
+        prose,
+        typed: {
+          title: inst.title,
+          status: inst.status,
+          engagementId: inst.engagementId,
+          recipientActorId: inst.recipientActorId,
+          sectionCount: inst.sections.length,
+          complete: completeness.complete,
+          missingSections: completeness.missing,
+          createdAt: inst.createdAt,
+          sentAt: inst.sentAt,
+          actorId: inst.actorId,
+          principalActorId: inst.principalActorId,
+        },
+        keyMetrics: [
+          { label: "Status", value: inst.status },
+          { label: "Sections", value: inst.sections.length },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.sentAt ?? inst.createdAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
   registry.register(codeSection);
   registry.register(codeDefinition);
   registry.register(codeAmendment);
@@ -530,6 +603,7 @@ export function bootstrapEngineAtomRegistry(
   registry.register(responseTask);
   registry.register(sheetContentExtraction);
   registry.register(attachedDocument);
+  registry.register(deliverableLetter);
 
   return registry;
 }

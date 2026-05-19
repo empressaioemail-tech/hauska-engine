@@ -1,6 +1,6 @@
 {
   "name": "@hauska-engine/atoms",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Engine-side atom-instance registry. Consumes @hauska-engine/atom-contract-pin pre-Sync-1, swaps to @hauska/atom-contract on Sync 1. Binds Bump 1 atom-type definitions (code-section, code-definition, code-amendment, code-cross-reference, code-edition, jurisdiction-corpus) to runtime atom instances per jurisdiction ingest.",

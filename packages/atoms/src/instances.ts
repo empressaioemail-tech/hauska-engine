@@ -431,13 +431,175 @@ export const ATTACHED_DOCUMENT_SCHEMA = z.object({
   accessPolicy: ACCESS_POLICY_SCHEMA,
 });
 
+// ---------------------------------------------------------------------------
+// L3 — `deliverable-letter` atom
+// ---------------------------------------------------------------------------
+//
+// The comment-response letter as a classified atom: structured sections
+// with per-section provenance back to the L1 / L2 / finding / adjudication
+// atoms that fed each section. DOCX/PDF rendering is a downstream consumer
+// (L6) of this atom — the render pipeline reads the structured sections;
+// the atom itself never carries rendered bytes.
+
 /**
- * Union of Cortex (L-surface) atom instances. Grows as L3-L6 land.
+ * Letter section categories. A complete (sendable) letter carries a
+ * `cover`, an `intro`, and a `signature`; `per-comment-response`
+ * sections are variable (zero or more, one per addressed comment).
+ */
+export type LetterSectionKind =
+  | "cover"
+  | "intro"
+  | "per-comment-response"
+  | "signature";
+
+export const LETTER_SECTION_KINDS: ReadonlyArray<LetterSectionKind> = [
+  "cover",
+  "intro",
+  "per-comment-response",
+  "signature",
+];
+
+/** Sections required for a letter to be considered complete / sendable. */
+export const REQUIRED_LETTER_SECTION_KINDS: ReadonlyArray<LetterSectionKind> = [
+  "cover",
+  "intro",
+  "signature",
+];
+
+/**
+ * Per-section provenance — the L1 / L2 / finding / adjudication atoms
+ * that fed this section's content. Empty arrays are valid (a `cover`
+ * section typically cites nothing). Provenance is per-section, not
+ * per-letter, so a `per-comment-response` section names exactly the
+ * finding + response-task + adjudication it answers.
+ */
+export interface LetterSectionProvenance {
+  /** L1 `response-task` atom entityIds. */
+  responseTaskIds: ReadonlyArray<string>;
+  /** L2 `sheet-content-extraction` atom entityIds. */
+  sheetContentExtractionIds: ReadonlyArray<string>;
+  /** Finding atom entityIds (finding atoms are produced product-side). */
+  findingIds: ReadonlyArray<string>;
+  /** Adjudication-state atom entityIds. */
+  adjudicationStateIds: ReadonlyArray<string>;
+}
+
+/** One structured section of a deliverable letter. */
+export interface LetterSection {
+  kind: LetterSectionKind;
+  /** Section heading (e.g. "Response to Comment 7"). May be empty. */
+  heading: string;
+  /** Section body text. */
+  content: string;
+  /** Atoms that fed this section. */
+  provenance: LetterSectionProvenance;
+}
+
+/** Lifecycle status of a deliverable letter. */
+export type DeliverableLetterStatus = "draft" | "sent";
+
+export const DELIVERABLE_LETTER_STATUSES: ReadonlyArray<DeliverableLetterStatus> = [
+  "draft",
+  "sent",
+];
+
+/**
+ * L3 — `deliverable-letter` atom.
+ *
+ * The comment-response letter as a classified atom. Structured sections
+ * carry per-section provenance; the L6 render pipeline turns this into
+ * a DOCX/PDF. Per the 2026-05-19 Lane A.2 dispatch the atom is the
+ * single source of truth for letter content + status; declared
+ * eventTypes (`deliverable-letter.drafted` / `.section-revised` /
+ * `.sent`) supply the audit chain.
+ */
+export interface DeliverableLetterAtomInstance extends BaseAtomInstance {
+  entityType: "deliverable-letter";
+  /** Engagement this letter belongs to. */
+  engagementId: string;
+  /** Human letter title. */
+  title: string;
+  /** Lifecycle status. */
+  status: DeliverableLetterStatus;
+  /** Client actor receiving the letter (ADR-015). Null while drafting. */
+  recipientActorId: string | null;
+  /** Ordered structured sections. Array order is the letter order. */
+  sections: ReadonlyArray<LetterSection>;
+  /** ISO-8601 timestamp the letter was created. */
+  createdAt: string;
+  /** ISO-8601 timestamp the letter entered `"sent"`. Null otherwise. */
+  sentAt: string | null;
+  /** Architect / staff member who authored the letter (ADR-015). */
+  actorId: string | null;
+  /** Actor accountable for the engagement; may differ from `actorId`. */
+  principalActorId: string | null;
+  /** Access tier per ADR-017. Default `"tenant-private"`. */
+  accessPolicy?: AccessPolicy;
+}
+
+/**
+ * Section-completeness check for a deliverable letter. A letter is
+ * complete (sendable) when every kind in `REQUIRED_LETTER_SECTION_KINDS`
+ * is present at least once. The L6 render pipeline + UI gate the "send"
+ * action on this; a `draft` letter may legitimately be incomplete.
+ */
+export function deliverableLetterCompleteness(
+  sections: ReadonlyArray<LetterSection>,
+): { complete: boolean; missing: ReadonlyArray<LetterSectionKind> } {
+  const present = new Set(sections.map((s) => s.kind));
+  const missing = REQUIRED_LETTER_SECTION_KINDS.filter(
+    (kind) => !present.has(kind),
+  );
+  return { complete: missing.length === 0, missing };
+}
+
+const LETTER_SECTION_PROVENANCE_SCHEMA = z.object({
+  responseTaskIds: z.array(z.string()),
+  sheetContentExtractionIds: z.array(z.string()),
+  findingIds: z.array(z.string()),
+  adjudicationStateIds: z.array(z.string()),
+});
+
+/**
+ * Zod schema mirroring `DeliverableLetterAtomInstance`. Canonical
+ * boundary-validation surface for L3 cross-repo consumers (the L6
+ * render pipeline + the MCP tool + the UI).
+ */
+export const DELIVERABLE_LETTER_SCHEMA = z.object({
+  entityType: z.literal("deliverable-letter"),
+  entityId: z.string().min(1),
+  jurisdictionTenant: z.string().min(1),
+  fetchedAt: z.string().min(1),
+  sourceAdapter: z.string().min(1),
+  sourceUrl: z.string(),
+  contentHash: z.string().min(1),
+  engagementId: z.string().min(1),
+  title: z.string().min(1),
+  status: z.enum(["draft", "sent"]),
+  recipientActorId: z.string().nullable(),
+  sections: z.array(
+    z.object({
+      kind: z.enum(["cover", "intro", "per-comment-response", "signature"]),
+      heading: z.string(),
+      content: z.string(),
+      provenance: LETTER_SECTION_PROVENANCE_SCHEMA,
+    }),
+  ),
+  createdAt: z.string().min(1),
+  sentAt: z.string().nullable(),
+  actorId: z.string().nullable(),
+  principalActorId: z.string().nullable(),
+  accessPolicy: ACCESS_POLICY_SCHEMA,
+});
+
+/**
+ * Union of Cortex (L-surface) atom instances. Grows as L4-L6 land.
  */
 export type CortexAtomInstance =
   | ResponseTaskAtomInstance
   | SheetContentExtractionAtomInstance
-  | AttachedDocumentAtomInstance;
+  | AttachedDocumentAtomInstance
+  | DeliverableLetterAtomInstance;
 
 export type CortexAtomEntityType = CortexAtomInstance["entityType"];
 
@@ -445,6 +607,7 @@ export const CORTEX_ATOM_ENTITY_TYPES: ReadonlyArray<CortexAtomEntityType> = [
   "response-task",
   "sheet-content-extraction",
   "attached-document",
+  "deliverable-letter",
 ];
 
 /**
