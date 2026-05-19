@@ -29,6 +29,7 @@ import type {
   DeliverableLetterAtomInstance,
   DetailCalloutSpecAtomInstance,
   JurisdictionCorpusAtomInstance,
+  ProductSpecReferenceAtomInstance,
   ResponseTaskAtomInstance,
   SheetContentExtractionAtomInstance,
 } from "./instances.js";
@@ -659,6 +660,70 @@ export function bootstrapEngineAtomRegistry(
     },
   };
 
+  const productSpecReference: AtomRegistration<
+    "product-spec-reference",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "product-spec-reference",
+    domain: "cortex",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    composition: [],
+    eventTypes: [
+      "product-spec-reference.created",
+      "product-spec-reference.verified",
+      "product-spec-reference.status-changed",
+    ],
+    // ADR-017: product-spec references are engagement workflow data.
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"product-spec-reference">> => {
+      const inst = await lookup.get<ProductSpecReferenceAtomInstance>(
+        "product-spec-reference",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `product-spec-reference/${entityId}`,
+        ) as ContextSummary<"product-spec-reference">;
+      }
+      const product = `${inst.product.name} (${inst.product.manufacturer})`;
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `${product} — ${inst.esrNumber}, status: ${inst.status} (verified ${inst.lastVerifiedAt}).`,
+        `${inst.esrNumber} — ${inst.status}`,
+      );
+      return {
+        prose,
+        typed: {
+          productName: inst.product.name,
+          manufacturer: inst.product.manufacturer,
+          esrNumber: inst.esrNumber,
+          status: inst.status,
+          lastVerifiedAt: inst.lastVerifiedAt,
+          statusChangeCount: inst.statusHistory.length,
+          engagementId: inst.engagementId,
+          findingId: inst.findingId,
+          responseTaskId: inst.responseTaskId,
+          actorId: inst.actorId,
+          principalActorId: inst.principalActorId,
+        },
+        keyMetrics: [
+          { label: "ESR", value: inst.esrNumber },
+          { label: "Status", value: inst.status },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.lastVerifiedAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
   registry.register(codeSection);
   registry.register(codeDefinition);
   registry.register(codeAmendment);
@@ -670,6 +735,7 @@ export function bootstrapEngineAtomRegistry(
   registry.register(attachedDocument);
   registry.register(deliverableLetter);
   registry.register(detailCalloutSpec);
+  registry.register(productSpecReference);
 
   return registry;
 }

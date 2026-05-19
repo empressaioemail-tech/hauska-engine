@@ -2,6 +2,54 @@
 
 All notable changes to `@hauska-engine/atoms` are documented here.
 
+## [0.5.0] - 2026-05-19
+
+Lane A.2 Phase E — L5 atom shape.
+
+### Added — L5 `product-spec-reference` atom
+
+A reference to an ICC-ES-evaluated product spec (e.g. ESR-1234 for a
+rated connector or assembly) carrying live ICC-ES status. When the
+status changes upstream, the poller writes a new atom version and
+downstream findings that cite the product flag.
+
+- `ProductSpecStatus` enum: `active` / `withdrawn` / `expired` (mirrors
+  the ICC-ES public surface).
+- `ProductIdentifier` — structured `{ name, manufacturer }`, never
+  free-text.
+- `esrNumber` — Zod-validated against `ESR_NUMBER_RE` (`ESR-<digits>`).
+- `ProductSpecStatusChange` + inline `statusHistory` — an append-only
+  ESR-status-change chain so a consumer holding one atom version sees
+  the transition history without walking the version chain. Always
+  present; empty until the first verification is recorded.
+- `status` + `lastVerifiedAt` carry current state; the inherited
+  `BaseAtomInstance.sourceUrl` carries the ICC-ES listing URL (the
+  dispatch's `source_url`).
+- Source provenance: `engagementId`, `findingId`, `responseTaskId`.
+  ADR-015 actor linking via `actorId` + `principalActorId`.
+- Registration: domain `cortex`, five render modes (default `card`),
+  `accessPolicy: "tenant-private"` (ADR-017), leaf composition,
+  eventTypes `product-spec-reference.created` / `.verified` /
+  `.status-changed`.
+- `PRODUCT_SPEC_REFERENCE_SCHEMA` Zod schema — canonical boundary
+  validation for the ICC-ES poller + MCP tool + UI.
+- 17-test conformance suite: schema + ESR-format validation,
+  `@ts-expect-error` widening rejection (status enum), status-change
+  history tests (an `active` atom → a `withdrawn` version preserves the
+  transition per ADR-011 — same DID, new contentHash, inline chain
+  grown by one), contextSummary round-trip.
+
+Live-verification mechanism per the dispatch: v1 is a periodic ICC-ES
+re-poll, not a webhook. The poller is runtime-layer work
+(legacy-design-tools per Sprint Amendment 6) and is NOT atom-shape
+scope — the atom only carries `status` + `lastVerifiedAt` +
+`statusHistory`; the poller writes status changes as new atom versions
+per ADR-011.
+
+Fires **Sync B(L5)** — unblocks Lane B (cc-agent-M
+`cortex/product_spec_reference_*` MCP tools) and Lane C (cc-agent-C L5
+UI surface).
+
 ## [0.4.0] - 2026-05-19
 
 Lane A.2 Phase D — L4 atom shape.
