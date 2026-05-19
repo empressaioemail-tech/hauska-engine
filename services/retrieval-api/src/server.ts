@@ -3,7 +3,41 @@ import { Hono, type Context, type Next } from "hono";
 import { z } from "zod";
 
 import { HybridRetrieval } from "@hauska-engine/retrieval";
-import { InMemoryStorage, type StoragePort } from "@hauska-engine/storage";
+import {
+  InMemoryStorage,
+  type AccessPolicy,
+  type StoragePort,
+} from "@hauska-engine/storage";
+
+const ACCESS_POLICY_VALUES: ReadonlyArray<AccessPolicy> = [
+  "public-free",
+  "public-paid",
+  "platform-internal",
+  "tenant-private",
+];
+
+function isAccessPolicy(value: string): value is AccessPolicy {
+  return (ACCESS_POLICY_VALUES as ReadonlyArray<string>).includes(value);
+}
+
+/**
+ * Parse a comma-separated `accessPolicies` query parameter into a typed
+ * array. Returns `undefined` when the param is absent (caller passes no
+ * filter), and an empty array when the param is present-but-empty (caller
+ * filters to nothing, which the storage layer honors by returning []).
+ * Unknown access-policy values are dropped; a tracked decision in
+ * preference to throwing 400, so additive future policies do not break
+ * older callers.
+ */
+function parseAccessPolicies(
+  raw: string | undefined,
+): ReadonlyArray<AccessPolicy> | undefined {
+  if (raw === undefined) return undefined;
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s): s is AccessPolicy => s.length > 0 && isAccessPolicy(s));
+}
 
 export interface ServerOptions {
   storage?: StoragePort;
@@ -87,7 +121,11 @@ export function buildApp(options: ServerOptions = {}): Hono {
 
   app.get("/jurisdictions", async (c) => {
     const qualityBarOnly = c.req.query("qualityBarOnly") === "true";
-    const statuses = await retrieval.listJurisdictions({ qualityBarOnly });
+    const accessPolicies = parseAccessPolicies(c.req.query("accessPolicies"));
+    const statuses = await retrieval.listJurisdictions({
+      qualityBarOnly,
+      ...(accessPolicies !== undefined ? { accessPolicies } : {}),
+    });
     return c.json({ jurisdictions: statuses });
   });
 

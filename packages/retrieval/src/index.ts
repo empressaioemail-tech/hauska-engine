@@ -15,6 +15,7 @@ import type {
   CodeAtomInstance,
 } from "@hauska-engine/atoms";
 import type {
+  AccessPolicy,
   AtomSearchResult,
   JurisdictionStatusSnapshot,
   StoragePort,
@@ -123,6 +124,14 @@ export class HybridRetrieval {
 
   async listJurisdictions(filter?: {
     qualityBarOnly?: boolean;
+    /**
+     * Access-policy allow-list (ADR-017 / `@hauska/atom-contract@^1.1.0`).
+     * Used by surfaces that gate on visibility:
+     * `MCP list_jurisdictions` for unauthenticated callers passes
+     * `["public-free"]`. Omitted = no access-policy filter. Snapshots
+     * whose `accessPolicy` is absent are treated as `"public-free"`.
+     */
+    accessPolicies?: ReadonlyArray<AccessPolicy>;
   }): Promise<ReadonlyArray<JurisdictionStatusSnapshot>> {
     return this.storage.listJurisdictionStatus(filter);
   }
