@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Pre-Sync-1 path-pin shim for @hauska/atom-contract. Mirrors the workspace-private @workspace/empressa-atom contract surface; flips to re-export from @hauska/atom-contract on Sync 1.",
+  "description": "Engine-side re-export shim over @hauska/atom-contract. Originally a pre-Sync-1 path-pin mirroring the workspace-private @workspace/empressa-atom surface; flipped to re-export the published npm package on Sync 1 (cc-agent-AC published @hauska/atom-contract@1.0.0).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,6 +17,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@hauska/atom-contract": "^1.0.0"
   },
   "devDependencies": {
     "typescript": "~5.7.2",
