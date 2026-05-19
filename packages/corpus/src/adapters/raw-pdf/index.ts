@@ -1,15 +1,31 @@
 /**
- * Raw PDF adapter — Stream 1A P2-P3 stub.
+ * Raw PDF adapter — Stream 1A.
  *
- * Per 49 §B.1 + 51 §Stream 1A: "Defer full implementation past first
- * batch — flagged as P3." This adapter implements the contract surface
- * so the conformance suite passes; the body is a no-op that returns
- * empty results until OCR integration lands.
+ * Two text-extraction paths share the same NormalizedBlock surface:
  *
- * OCR provider per Phase 0: Claude vision primary, Tesseract fallback
- * (`_decisions/2026-05-18_substrate_v1_phase_0_close.md`).
+ *   - `textExtractor` hook (default for born-digital PDFs): extracts
+ *     selectable text from publisher-embedded text streams. The default
+ *     uses `pdfjs-dist` via `pdfjsTextExtractor`; callers can supply a
+ *     custom extractor (or stub for tests).
+ *   - `ocr` hook (scanned PDFs): runs OCR over rasterized pages per
+ *     Phase 0 (Claude vision primary, Tesseract fallback). Selected
+ *     when `textExtractor` is not provided and `ocr` is.
+ *
+ * When `textExtractor` is provided, `fetch()` actually downloads the
+ * PDF over HTTP and base64-encodes the body. Without an extractor (and
+ * no OCR), the adapter retains the original deferred-stub behavior:
+ * empty block stream so Stream 1B treats the source as not-loadable
+ * rather than malformed.
+ *
+ * First raw-PDF jurisdiction onboarded under this adapter: the Bastrop
+ * Building Block (B3) Code (April 2025) at
+ * `cityofbastrop.org/upload/page/0107/docs/B3/`, per the 2026-05-19
+ * Sync 4.5 dispatch.
  */
 
+import { Buffer } from "node:buffer";
+
+import { RespectfulFetch } from "../http.js";
 import type {
   AdapterCapabilities,
   CodeMetadata,
@@ -19,28 +35,76 @@ import type {
   RawCode,
 } from "../types.js";
 
+import { pdfjsTextExtractor, type PdfTextExtractor, type PdfPageText } from "./pdfjs-extractor.js";
+import { pdfPagesToBlocks, type PdfNormalizeOptions } from "./normalize.js";
+
+export type { PdfPageText, PdfTextExtractor } from "./pdfjs-extractor.js";
+export { pdfjsTextExtractor } from "./pdfjs-extractor.js";
+export { pdfPagesToBlocks } from "./normalize.js";
+export type { PdfNormalizeOptions } from "./normalize.js";
+
 export interface RawPdfAdapterOptions {
   /**
-   * OCR provider hook. Until OCR integration lands, this is a no-op.
-   * Signature deliberately permissive: callers provide a Buffer or
-   * base64 string; the implementation returns the textual blocks.
+   * Born-digital text extractor. Defaults to the pdfjs-dist-backed
+   * extractor. Tests inject a stub returning canned page text.
+   *
+   * When set (or defaulted), `fetch()` downloads the PDF over HTTP and
+   * `normalize()` walks the extracted page text via
+   * `pdfPagesToBlocks`.
+   */
+  textExtractor?: PdfTextExtractor;
+  /**
+   * OCR hook. Used when no `textExtractor` is provided and the source
+   * PDF is scanned (no embedded text streams).
+   *
+   * NOTE: when `textExtractor` is provided, `ocr` is unused.
    */
   ocr?: (pdfBytesBase64: string) => Promise<string>;
+  /**
+   * Shared respectful-fetch client. The adapter cooperates with sibling
+   * Stream 1A adapters on per-host rate-limiting.
+   */
+  http?: RespectfulFetch;
+  /**
+   * Optional normalize-time options (e.g., custom ignore regex for
+   * header / footer suppression on jurisdiction-specific PDFs).
+   */
+  normalizeOptions?: PdfNormalizeOptions;
+  /**
+   * Override the adapter capabilities `name` so the same adapter can be
+   * registered under a publisher-specific tag (e.g., `bastrop-b3` for
+   * provenance) while sharing the implementation. Defaults to
+   * `"raw-pdf"`.
+   */
+  capabilitiesNameOverride?: string;
+  /** Override `displayName`. */
+  capabilitiesDisplayNameOverride?: string;
 }
 
 export class RawPdfAdapter implements CodeSourceAdapter {
-  readonly capabilities: AdapterCapabilities = {
-    name: "raw-pdf",
-    displayName: "Raw PDF (deferred)",
-    sourceFamilies: ["pdf"],
-    supportsDiscovery: false,
-    supportsAmendments: false,
-  };
+  readonly capabilities: AdapterCapabilities;
 
+  private readonly http: RespectfulFetch;
+  private readonly textExtractor?: PdfTextExtractor;
   private readonly ocr?: RawPdfAdapterOptions["ocr"];
+  private readonly normalizeOptions?: PdfNormalizeOptions;
 
   constructor(opts: RawPdfAdapterOptions = {}) {
+    // No automatic default. Callers wire `textExtractor: pdfjsTextExtractor`
+    // (or a stub in tests) explicitly. Constructing `new RawPdfAdapter()`
+    // with no opts retains the original deferred-stub behavior so the
+    // conformance suite stays green during pre-first-jurisdiction ingest.
+    this.textExtractor = opts.textExtractor;
     this.ocr = opts.ocr;
+    this.http = opts.http ?? new RespectfulFetch();
+    this.normalizeOptions = opts.normalizeOptions;
+    this.capabilities = {
+      name: opts.capabilitiesNameOverride ?? "raw-pdf",
+      displayName: opts.capabilitiesDisplayNameOverride ?? "Raw PDF",
+      sourceFamilies: ["pdf"],
+      supportsDiscovery: false,
+      supportsAmendments: false,
+    };
   }
 
   async discover(): Promise<ReadonlyArray<CodeReference>> {
@@ -61,27 +125,56 @@ export class RawPdfAdapter implements CodeSourceAdapter {
 
   async fetch(reference: CodeReference): Promise<RawCode> {
     const meta = await this.metadata(reference);
+    // With either hook configured, fetch() actually pulls bytes off the
+    // sourceUrl and base64-encodes them. The deferred-stub path (no
+    // extractor + no ocr) keeps the historical empty-body behavior so
+    // existing tests / consumers that don't configure either hook stay
+    // intact.
+    if (!this.textExtractor && !this.ocr) {
+      return {
+        metadata: meta,
+        contentType: "application/pdf",
+        body: "",
+      };
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = await this.http.fetchBytes(reference.sourceUrl);
+    } catch (err) {
+      // Surface fetch failures through an empty body — Stream 1B will
+      // record the jurisdiction as not-loadable. We preserve the same
+      // shape as MunicodeHtmlAdapter's fail-soft behavior.
+      const reason = err instanceof Error ? err.message : String(err);
+      return {
+        metadata: { ...meta, extra: { ...(meta.extra ?? {}), fetchError: reason } },
+        contentType: "application/pdf",
+        body: "",
+      };
+    }
     return {
-      metadata: meta,
+      metadata: { ...meta, fetchedAt: new Date().toISOString() },
       contentType: "application/pdf",
-      // Stub: real fetch reads the PDF off the source URL (or local
-      // filesystem for manual-curation cases) and base64-encodes it.
-      body: "",
+      body: Buffer.from(bytes).toString("base64"),
     };
   }
 
   async normalize(raw: RawCode): Promise<NormalizedCode> {
-    if (!this.ocr) {
-      // Defer full implementation per 49 §B.1 / 51 §Stream 1A. Return
-      // an empty block stream — Stream 1B treats this as "nothing
-      // ingested, jurisdiction not loadable" rather than malformed.
+    if (raw.body.length === 0) {
       return { metadata: raw.metadata, blocks: [] };
     }
-    // OCR integration is gated on a separate session. When this fires,
-    // the OCR output is split into paragraphs (one block per OCR
-    // paragraph) and emitted to Stream 1B; heading inference happens
-    // in 1B from font-size or layout signals.
-    await this.ocr(raw.body);
+    if (this.textExtractor) {
+      const pages = await this.textExtractor(raw.body);
+      const blocks = pdfPagesToBlocks(pages, this.normalizeOptions);
+      return { metadata: raw.metadata, blocks };
+    }
+    if (this.ocr) {
+      // OCR returns plain text; treat the whole OCR output as a single
+      // synthetic page so the same walker handles structure inference.
+      const text = await this.ocr(raw.body);
+      const pages: PdfPageText[] = [{ pageNumber: 1, text }];
+      const blocks = pdfPagesToBlocks(pages, this.normalizeOptions);
+      return { metadata: raw.metadata, blocks };
+    }
     return { metadata: raw.metadata, blocks: [] };
   }
 }

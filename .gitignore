@@ -39,3 +39,6 @@ ingest-cli-state.json
 
 # Generated fixtures (kept under git when explicitly added)
 *.fixture.local.json
+
+# Local recon scratch (downloaded source artifacts + probe scripts)
+.tmp-recon/
