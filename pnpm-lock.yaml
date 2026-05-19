@@ -22,6 +22,10 @@ importers:
         version: 2.1.9(@types/node@22.19.19)
 
   packages/atom-contract-pin:
+    dependencies:
+      '@hauska/atom-contract':
+        specifier: ^1.0.0
+        version: 1.0.0(@types/pg@8.20.0)(postgres@3.4.9)
     devDependencies:
       typescript:
         specifier: ~5.7.2
@@ -503,6 +507,10 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@hauska/atom-contract@1.0.0':
+    resolution: {integrity: sha512-nrlsTkIJEtxy9fLVzTjqhswlOQJ6n/5zB2Y7kyJtqLlxFiYJqtF4qiCf3VpHmemx8OzqToWSr1JiH/0fXvtEgA==}
+    engines: {node: '>=18.18.0'}
 
   '@hono/node-server@1.19.14':
     resolution: {integrity: sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw==}
@@ -1242,6 +1250,40 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.0':
     optional: true
+
+  '@hauska/atom-contract@1.0.0(@types/pg@8.20.0)(postgres@3.4.9)':
+    dependencies:
+      drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
+    transitivePeerDependencies:
+      - '@aws-sdk/client-rds-data'
+      - '@cloudflare/workers-types'
+      - '@electric-sql/pglite'
+      - '@libsql/client'
+      - '@libsql/client-wasm'
+      - '@neondatabase/serverless'
+      - '@op-engineering/op-sqlite'
+      - '@opentelemetry/api'
+      - '@planetscale/database'
+      - '@prisma/client'
+      - '@tidbcloud/serverless'
+      - '@types/better-sqlite3'
+      - '@types/pg'
+      - '@types/react'
+      - '@types/sql.js'
+      - '@vercel/postgres'
+      - '@xata.io/client'
+      - better-sqlite3
+      - bun-types
+      - expo-sqlite
+      - knex
+      - kysely
+      - mysql2
+      - pg
+      - postgres
+      - prisma
+      - react
+      - sql.js
+      - sqlite3
 
   '@hono/node-server@1.19.14(hono@4.12.19)':
     dependencies:
