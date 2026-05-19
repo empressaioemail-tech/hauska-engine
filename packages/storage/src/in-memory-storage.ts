@@ -128,6 +128,20 @@ export class InMemoryStorage implements StoragePort {
     return out;
   }
 
+  async getSectionsBySectionNumber(
+    jurisdictionTenant: string,
+    sectionNumber: string,
+  ): Promise<ReadonlyArray<Extract<CodeAtomInstance, { entityType: "code-section" }>>> {
+    const out: Array<Extract<CodeAtomInstance, { entityType: "code-section" }>> = [];
+    for (const inst of this.atoms.values()) {
+      if (inst.entityType !== "code-section") continue;
+      if (inst.jurisdictionTenant !== jurisdictionTenant) continue;
+      if (inst.sectionNumber !== sectionNumber) continue;
+      out.push(inst);
+    }
+    return out;
+  }
+
   async listJurisdictionStatus(filter?: {
     qualityBarOnly?: boolean;
   }): Promise<ReadonlyArray<JurisdictionStatusSnapshot>> {

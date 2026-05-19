@@ -76,6 +76,18 @@ export interface StoragePort {
   /** Hybrid search (structural + vector). */
   search(query: AtomQuery): Promise<ReadonlyArray<AtomSearchResult>>;
 
+  /**
+   * Exact section-number lookup. Returns every section atom in the
+   * jurisdiction whose `sectionNumber` matches `sectionNumber` verbatim.
+   * Used by the eval-harness coverage test where token-based fuzzy
+   * search introduces ties that displace the exact-section-number
+   * match from top-K.
+   */
+  getSectionsBySectionNumber(
+    jurisdictionTenant: string,
+    sectionNumber: string,
+  ): Promise<ReadonlyArray<Extract<CodeAtomInstance, { entityType: "code-section" }>>>;
+
   /** Graph traversal: outbound edges from an atom by link type. */
   traverse(
     fromAtomDid: string,

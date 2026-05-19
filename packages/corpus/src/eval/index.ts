@@ -112,7 +112,10 @@ async function runRetrievalTest(
 
 /**
  * Section-number retrievability test. Sample N section atoms; check
- * each is retrievable by its section number.
+ * each is retrievable by its exact section number via the storage's
+ * `getSectionsBySectionNumber` lookup (per ADR-010 §3 the Postgres
+ * index is the canonical structural lookup; fuzzy search is the
+ * different code path).
  */
 async function runCoverageTest(
   storage: StoragePort,
@@ -128,13 +131,13 @@ async function runCoverageTest(
   let retrievable = 0;
   for (const candidate of candidates) {
     if (!candidate.sectionNumber) continue;
-    const hits = await storage.search({
-      q: candidate.sectionNumber,
-      jurisdiction: jurisdictionTenant,
-      entityType: "code-section",
-      limit: 5,
-    });
-    if (hits.some((h) => h.atomDid === candidate.atomDid)) retrievable++;
+    const hits = await storage.getSectionsBySectionNumber(
+      jurisdictionTenant,
+      candidate.sectionNumber,
+    );
+    if (hits.some((h) => buildAtomDid(h.entityType, h.entityId).raw === candidate.atomDid)) {
+      retrievable++;
+    }
   }
   return { score: retrievable / candidates.length, sampled: candidates.length };
 }

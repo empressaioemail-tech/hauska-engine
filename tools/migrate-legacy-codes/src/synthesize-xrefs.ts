@@ -162,6 +162,18 @@ export function sniffCrossReferences(
       if (seenLabels.has(dedupeKey)) return;
       seenLabels.add(dedupeKey);
 
+      // Only emit code-cross-reference atoms for refs that resolve to
+      // an in-corpus section. ADR-010 defines code-cross-reference as
+      // an in-corpus pointer ("a typed link from one section to
+      // another"). Refs to external codes (IRC, IBC, etc.) are NOT
+      // code-cross-references; they're external citations that
+      // remain in the section body's prose. A future
+      // `external-citation` atom type can model them properly; for
+      // v1 we drop them rather than emit dangling atoms.
+      if (!targetSection) {
+        unresolvedCount++;
+        return;
+      }
       serial++;
       const xrefId = buildXrefId(
         section.jurisdictionTenant,
@@ -169,20 +181,14 @@ export function sniffCrossReferences(
         section.entityId,
         serial,
       );
-      const toSectionId = targetSection
-        ? targetSection.entityId
-        : buildSectionId(
-            section.jurisdictionTenant,
-            editionSlug,
-            normalizedLabel,
-          );
+      const toSectionId = targetSection.entityId;
       const referenceType = inferReferenceType(context);
       const inst: CodeCrossReferenceAtomInstance = {
         entityType: "code-cross-reference",
         entityId: xrefId,
         jurisdictionTenant: section.jurisdictionTenant,
         fromSectionId: section.entityId,
-        toSectionId: targetSection ? toSectionId : "",
+        toSectionId,
         referenceText: matchText.trim(),
         referenceContext: context,
         referenceType,
@@ -198,18 +204,14 @@ export function sniffCrossReferences(
         ),
       };
       crossReferences.push(inst);
-      if (targetSection) {
-        links.push({
-          fromEntityType: "code-section",
-          fromEntityId: section.entityId,
-          toEntityType: "code-section",
-          toEntityId: targetSection.entityId,
-          linkType: mapReferenceTypeToLinkType(referenceType),
-          context,
-        });
-      } else {
-        unresolvedCount++;
-      }
+      links.push({
+        fromEntityType: "code-section",
+        fromEntityId: section.entityId,
+        toEntityType: "code-section",
+        toEntityId: toSectionId,
+        linkType: mapReferenceTypeToLinkType(referenceType),
+        context,
+      });
     };
 
     // Reset regex state per section (global regex mutability).

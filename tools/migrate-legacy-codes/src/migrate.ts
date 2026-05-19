@@ -33,6 +33,13 @@ import {
 export interface MigrationFilter {
   jurisdictionKey?: string;
   codeBook?: string;
+  /**
+   * Optional explicit allow-list of code books within the jurisdiction.
+   * Mutually-supportive with `codeBook` (single). When provided,
+   * legacy code_atoms rows whose code_book is not in the list are
+   * dropped post-fetch.
+   */
+  codeBooks?: ReadonlyArray<string>;
 }
 
 export interface MigrationReport {
@@ -45,7 +52,7 @@ export interface MigrationReport {
   corporaSynthesized: number;
   crossReferencesSynthesized: number;
   crossReferencesResolved: number;
-  crossReferencesUnresolved: number;
+  crossReferencesUnresolvedSkipped: number;
   amendmentsSynthesized: number;
   definitionsSynthesized: number;
   /** Composition + cross-reference + amendment edges combined. */
@@ -79,7 +86,13 @@ export async function runMigration(
     sourceNameById.set(source.id, source.source_name);
   }
 
-  const rows = await options.legacy.readAtoms(options.filter ?? {});
+  const rawRows = await options.legacy.readAtoms(options.filter ?? {});
+  const allowedBooks = options.filter?.codeBooks
+    ? new Set(options.filter.codeBooks)
+    : null;
+  const rows = allowedBooks
+    ? rawRows.filter((r) => allowedBooks.has(r.code_book))
+    : rawRows;
   const transformResult = transformBatch(rows, { sourceNameById });
 
   const editionLabels = buildEditionLabelMap();
@@ -131,7 +144,11 @@ export async function runMigration(
     });
   }
 
-  const resolvedXrefs = xrefResult.crossReferences.length - xrefResult.unresolvedCount;
+  // Post-2026-05-19 policy: synthesize-xrefs only emits resolved
+  // refs; unresolvedCount tracks "would-be xrefs that didn't resolve"
+  // for diagnostic purposes but doesn't appear in the emitted
+  // crossReferences list.
+  const resolvedXrefs = xrefResult.crossReferences.length;
 
   return {
     report: {
@@ -144,7 +161,7 @@ export async function runMigration(
       corporaSynthesized: synthResult.corpora.length,
       crossReferencesSynthesized: xrefResult.crossReferences.length,
       crossReferencesResolved: resolvedXrefs,
-      crossReferencesUnresolved: xrefResult.unresolvedCount,
+      crossReferencesUnresolvedSkipped: xrefResult.unresolvedCount,
       amendmentsSynthesized: amendments.length,
       definitionsSynthesized: definitions.length,
       atomLinksEmitted: allLinks.length,

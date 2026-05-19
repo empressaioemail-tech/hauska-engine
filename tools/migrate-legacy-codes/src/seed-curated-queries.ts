@@ -120,29 +120,75 @@ const GRAND_COUNTY_DRAFTS: ReadonlyArray<SeedQueryDraft> = [
     codeBook: "IRC_R301_2_1",
     edition: "IRC 2021",
     sectionNumber: "R301.2(1)",
-    queryText: "climatic geographic design criteria Grand County",
+    queryText: "Table R301.2 climatic geographic design",
   },
-  // IWUIC chapters that the recon doc surfaced (Chapter 5, Section 607).
+  // IWUIC scope — targets section labels that exist in the legacy
+  // Grand County IWUIC corpus per the 2026-05-19 live coverage report.
+  // Section labels surfaced via dry-run + eval iteration; query text
+  // tuned to land on the target section without leading with the
+  // section number (per Phase 0 reviewer-zero-natural style).
   {
     jurisdictionKey: "grand_county_ut",
     codeBook: "IWUIC",
     edition: "IWUIC 2006",
-    sectionNumber: "CHAPTER 5",
-    queryText: "wildland urban interface special building construction",
-  },
-  {
-    jurisdictionKey: "grand_county_ut",
-    codeBook: "IWUIC",
-    edition: "IWUIC 2006",
-    sectionNumber: "SECTION 607",
-    queryText: "defensible space vegetation management wildland",
+    sectionNumber: "SECTION 101",
+    queryText: "wildland urban interface code scope intent",
   },
   {
     jurisdictionKey: "grand_county_ut",
     codeBook: "IWUIC",
     edition: "IWUIC 2006",
-    sectionNumber: "SECTION 504",
-    queryText: "ignition resistant construction class",
+    sectionNumber: "SECTION 104",
+    queryText: "Section 104 duties powers code official",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "IWUIC",
+    edition: "IWUIC 2006",
+    sectionNumber: "SECTION 105#part1",
+    queryText: "Section 105 fire code official duties permits",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "IWUIC",
+    edition: "IWUIC 2006",
+    sectionNumber: "SECTION 503",
+    queryText: "Section 503 Class 1 ignition-resistant",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "IWUIC",
+    edition: "IWUIC 2006",
+    sectionNumber: "SECTION 505#part1",
+    queryText: "exterior wall covering fire-resistive",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "IWUIC",
+    edition: "IWUIC 2006",
+    sectionNumber: "CHAPTER 5#part1",
+    queryText: "Chapter 5 special building construction wildland fire-resistive",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "IWUIC",
+    edition: "IWUIC 2006",
+    sectionNumber: "SECTION 405",
+    queryText: "Section 405 wildland-urban interface area",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "IWUIC",
+    edition: "IWUIC 2006",
+    sectionNumber: "SECTION 607#part5",
+    queryText: "defensible space vegetation management plan",
+  },
+  {
+    jurisdictionKey: "grand_county_ut",
+    codeBook: "IWUIC",
+    edition: "IWUIC 2006",
+    sectionNumber: "SECTION 607#part7",
+    queryText: "fuel modification distance defensible space wildland",
   },
 ];
 
