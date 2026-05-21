@@ -80,6 +80,22 @@ export interface PdfNormalizeOptions {
    * default suppresses common B3 boilerplate.
    */
   ignoreLineRegex?: RegExp;
+  /**
+   * Heading-recognition convention.
+   *
+   *   - `"caps-prefixed"` (default): all-caps `CHAPTER N` / `ARTICLE N`
+   *     / `SEC. N` labeling — the Bastrop Building Block (B3) Code and
+   *     Bastrop County Subdivision Regulations.
+   *   - `"decimal-numbered"`: decimal-dotted, mixed-case section numbers
+   *     (`10.101`, `10.303.2`, `10.1002.4`) with the chapter label
+   *     carried in a per-page running header rather than a standalone
+   *     heading line — the Hutto Unified Development Code (Chapter 16
+   *     of the Hutto Code of Ordinances, internally numbered `10.NNN`).
+   *
+   * Per 49 §B.2, per-source labeling quirks land as targeted normalizer
+   * conventions here, not as branches inside the extractor.
+   */
+  headingConvention?: "caps-prefixed" | "decimal-numbered";
 }
 
 const DEFAULT_IGNORE = /^(?:\s*\d+\s+of\s+\d+\s*$|INTRODUCTION\s*$)/i;
@@ -98,6 +114,9 @@ export function pdfPagesToBlocks(
   pages: ReadonlyArray<PdfPageText>,
   options: PdfNormalizeOptions = {},
 ): NormalizedBlock[] {
+  if (options.headingConvention === "decimal-numbered") {
+    return decimalNumberedPagesToBlocks(pages, options);
+  }
   const ignoreLine = options.ignoreLineRegex ?? DEFAULT_IGNORE;
   const blocks: NormalizedBlock[] = [];
   // Track the section we're currently inside so subsection paragraph
@@ -269,6 +288,128 @@ export function pdfPagesToBlocks(
       }
 
       emitParagraph(blocks, line, currentSubsectionLabel);
+    }
+  }
+  return blocks;
+}
+
+// --- Decimal-numbered convention (Hutto UDC) --------------------------
+
+// Decimal-dotted section labels: "10.101", "10.303.2", "10.1002.4.1".
+// The Hutto UDC is Chapter 16 of the Code of Ordinances, numbered in
+// the `10.NNN` namespace: a literal `10.` root, a 3+-digit second group
+// (the floor rejects line-leading measurements like "10.50 feet" and
+// stray decimals), then any number of further `.N` groups for the
+// 4-to-6-level-deep nested provisions. A future decimal-numbered city
+// in a different namespace would parameterize this root.
+const DECIMAL_SECTION_RE = /^§?\s*(10\.\d{3,}(?:\.\d+)*)\s+(\S.*)$/;
+// Per-page running header on body pages, e.g.
+// "Chapter 1 Introduction §10.101 Title". Carries the chapter label;
+// the section-ref tail (`§10.101 ...`) is incidental and dropped.
+const DECIMAL_RUNNING_HEADER_RE = /^Chapter\s+(\d+)\s+(.+?)\s+§\s*\d/i;
+// Front-matter / running-header boilerplate suppressed on every page.
+const DECIMAL_IGNORE_RE =
+  /^(?:City of Hutto\b.*|Revised\s+[A-Za-z]+\s+\d{4}|Unified Development Code Ordinance Amendments|Contents|\d{1,4})$/i;
+
+/**
+ * Walk extracted PDF page text for a code that numbers sections with a
+ * decimal-dotted, mixed-case convention (the Hutto UDC). Two structural
+ * signals differ from the caps-prefixed walker:
+ *
+ *   - The chapter label lives only in the per-page running header
+ *     ("Chapter 3 Zoning §10.301 ..."), not as a standalone heading.
+ *     We open one chapter container each time the running-header
+ *     chapter number changes.
+ *   - Section headings carry no "SEC." prefix and are mixed case
+ *     ("10.303.2 SF-R residential: single household rural estate"), so
+ *     the all-caps gate does not apply.
+ *
+ * Front matter (cover, ordinance-amendment table, table of contents)
+ * precedes the body. TOC entries match the section pattern but carry a
+ * trailing page-reference number; the first body heading does not. The
+ * `bodyStarted` latch flips on the running header or the first
+ * non-TOC-tail section line, so front matter is skipped without
+ * hard-coding a page range.
+ */
+function decimalNumberedPagesToBlocks(
+  pages: ReadonlyArray<PdfPageText>,
+  options: PdfNormalizeOptions,
+): NormalizedBlock[] {
+  const ignoreLine = options.ignoreLineRegex ?? DECIMAL_IGNORE_RE;
+  const blocks: NormalizedBlock[] = [];
+  let bodyStarted = false;
+  let currentChapter: string | null = null;
+
+  for (const page of pages) {
+    const rawLines = page.text.split(/\n+/).map((l) => l.trim());
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i] ?? "";
+      if (!line) continue;
+
+      // Running header — open a chapter container on change, drop line.
+      const headerMatch = line.match(DECIMAL_RUNNING_HEADER_RE);
+      if (headerMatch) {
+        bodyStarted = true;
+        const chapterLabel = headerMatch[1] ?? "";
+        const chapterTitle = (headerMatch[2] ?? "").trim();
+        if (chapterLabel && chapterLabel !== currentChapter) {
+          currentChapter = chapterLabel;
+          blocks.push({
+            kind: "heading",
+            depth: 1,
+            text: `Chapter ${chapterLabel}${chapterTitle ? ` ${chapterTitle}` : ""}`,
+            sourceAnchor: `#p${page.pageNumber}-chapter-${slug(chapterLabel)}`,
+          });
+        }
+        continue;
+      }
+
+      const sectionMatch = line.match(DECIMAL_SECTION_RE);
+      // Body-start latch: the first section-shaped line without a
+      // trailing TOC page reference marks the end of the front matter.
+      if (sectionMatch && !bodyStarted && !TOC_TAIL_RE.test(line)) {
+        bodyStarted = true;
+      }
+      if (!bodyStarted) continue;
+      if (ignoreLine.test(line)) continue;
+
+      if (sectionMatch) {
+        // Per-chapter mini-tables-of-contents repeat the section
+        // headings as a run of `10.NNN Title <page>` lines. They match
+        // the section pattern but carry a trailing page reference and
+        // are followed by another heading-shaped line, whereas a real
+        // body heading is followed by rule prose. Skip the mini-TOC
+        // entry so the real body heading (with its rule text) is the
+        // one atomized.
+        if (TOC_TAIL_RE.test(line)) {
+          let j = i + 1;
+          while (j < rawLines.length && !rawLines[j]) j++;
+          const next = rawLines[j] ?? "";
+          if (
+            next &&
+            (DECIMAL_SECTION_RE.test(next) ||
+              DECIMAL_RUNNING_HEADER_RE.test(next))
+          ) {
+            continue;
+          }
+        }
+        const label = sectionMatch[1] ?? "";
+        const title = (sectionMatch[2] ?? "").trim();
+        // No `label` field set — the extractor's splitHeadingLabel
+        // parses "10.303.2 Title" via its numeric branch into
+        // (sectionNumber, title). All numbered units land at depth 3
+        // (section) so each is an independently retrievable
+        // `code-section` atom, consistent with the B3 walker.
+        blocks.push({
+          kind: "heading",
+          depth: 3,
+          text: `${label} ${title}`,
+          sourceAnchor: `#p${page.pageNumber}-section-${slug(label)}`,
+        });
+        continue;
+      }
+
+      emitParagraph(blocks, line, undefined);
     }
   }
   return blocks;
