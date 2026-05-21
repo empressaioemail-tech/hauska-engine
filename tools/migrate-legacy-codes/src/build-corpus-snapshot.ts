@@ -59,6 +59,15 @@ import {
   ELGIN_JURISDICTION,
 } from "./elgin-curated-queries.js";
 import {
+  buildRoundRockCuratedQueries,
+  ROUND_ROCK_CHAPTER_FILTER,
+  ROUND_ROCK_CLIENT_ID,
+  ROUND_ROCK_EDITION_LABEL,
+  ROUND_ROCK_JURISDICTION,
+  ROUND_ROCK_JURISDICTION_NAME,
+  ROUND_ROCK_LIBRARY_SLUG,
+} from "./round-rock-curated-queries.js";
+import {
   buildHuttoUdcCuratedQueries,
   HUTTO_UDC_EDITION_LABEL,
   HUTTO_UDC_JURISDICTION,
@@ -178,6 +187,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         normalizeOptions: { headingConvention: "decimal-numbered" },
       });
       return buildHuttoUdcCuratedQueries();
+    },
+  },
+  {
+    tenant: ROUND_ROCK_JURISDICTION,
+    label: "Round Rock Zoning and Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: ROUND_ROCK_JURISDICTION,
+        jurisdictionName: ROUND_ROCK_JURISDICTION_NAME,
+        editionLabel: ROUND_ROCK_EDITION_LABEL,
+        clientId: ROUND_ROCK_CLIENT_ID,
+        librarySlug: ROUND_ROCK_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(ROUND_ROCK_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 250,
+        accessPolicy: "platform-internal",
+      });
+      return buildRoundRockCuratedQueries();
     },
   },
   {
