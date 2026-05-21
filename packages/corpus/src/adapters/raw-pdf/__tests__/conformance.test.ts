@@ -294,6 +294,163 @@ describe("RawPdfAdapter — decimal-numbered convention (Hutto UDC)", () => {
   });
 });
 
+// Synthetic fixture in the Taylor "Taylor Made" Land Development Code
+// layout: a front-matter table of contents, then body pages whose
+// chapter label is a standalone all-caps heading (repeated as a running
+// header) and whose sections use chapter-scoped decimal numbering
+// (`1.1`, `1.2.1`, `1.9.1.1`, `2.1`). Publisher running-header
+// boilerplate and `chapter - page` page-number lines are interleaved.
+const TAYLOR_FIXTURE_PAGES: ReadonlyArray<PdfPageText> = [
+  {
+    pageNumber: 4,
+    text: [
+      "TAYLOR MADE LAND DEVELOPMENT ORDINANCE 4",
+      "TABLE OF CONTENTS",
+      "CHAPTER 1 - INTENT & GENERAL PROVISIONS 6",
+      "1.1 TITLE 7",
+      "1.2 PURPOSE 7",
+      "CHAPTER 2 - DEVELOPMENT PROCESS 20",
+    ].join("\n"),
+  },
+  {
+    pageNumber: 7,
+    text: [
+      "TAYLOR MADE LAND DEVELOPMENT ORDINANCE",
+      "CHAPTER 1 - INTENT AND GENERAL PROVISIONS",
+      "1 - 7",
+      "1.1 TITLE.",
+      "This Ordinance shall be known as the Land Development Code.",
+      "1.2 PURPOSE.",
+      "1.2.1 The purpose of this LDC is to align policies.",
+      "This code shall be read together with Section 1.1 for naming.",
+    ].join("\n"),
+  },
+  {
+    pageNumber: 8,
+    text: [
+      "TAYLOR MADE LAND DEVELOPMENT ORDINANCE",
+      "CHAPTER 1 - INTENT AND GENERAL PROVISIONS",
+      "1 - 8",
+      "1.9.1.1 Any annexed land shall be classified P2 Rural.",
+      "Reclassification follows the procedure in this Chapter.",
+      // Flowchart fragment: "LOTS OVER 2.5 ACRES" split across boxes.
+      // The decimal-leading "2.5 ACRES" must not promote to a heading.
+      "LOTS OVER",
+      "2.5 ACRES",
+    ].join("\n"),
+  },
+  {
+    pageNumber: 21,
+    text: [
+      "TAYLOR MADE LAND DEVELOPMENT ORDINANCE",
+      "CHAPTER 2 - DEVELOPMENT PROCESS",
+      "2 - 21",
+      "2.1 PROCESS OVERVIEW.",
+      "The development process begins with a pre-application meeting.",
+    ].join("\n"),
+  },
+];
+
+const taylorExtractor: PdfTextExtractor = async () => TAYLOR_FIXTURE_PAGES;
+
+const taylorAdapter = new RawPdfAdapter({
+  textExtractor: taylorExtractor,
+  http: new StubBytesFetch(stubBytes),
+  normalizeOptions: {
+    headingConvention: "chapter-decimal",
+    ignoreLineRegex: /^TAYLOR MADE LAND DEVELOPMENT ORDINANCE/i,
+  },
+  capabilitiesNameOverride: "taylor-ldc-pdf",
+});
+
+describe("RawPdfAdapter — chapter-decimal convention (Taylor LDC)", () => {
+  it("opens chapter containers from standalone all-caps headings", async () => {
+    const raw = await taylorAdapter.fetch(fixtureReference);
+    const normalized = await taylorAdapter.normalize(raw);
+    const chapters = normalized.blocks
+      .filter((b) => b.kind === "heading" && b.depth === 1)
+      .map((b) => (b.kind === "heading" ? b.text : ""));
+    // The chapter-1 heading repeats as a running header on page 8; it
+    // must be emitted exactly once. Chapter 2 opens on page 21.
+    expect(chapters).toEqual([
+      "Chapter 1 INTENT AND GENERAL PROVISIONS",
+      "Chapter 2 DEVELOPMENT PROCESS",
+    ]);
+  });
+
+  it("emits chapter-scoped decimal section headings at depth 3", async () => {
+    const raw = await taylorAdapter.fetch(fixtureReference);
+    const normalized = await taylorAdapter.normalize(raw);
+    const sections = normalized.blocks
+      .filter((b) => b.kind === "heading" && b.depth === 3)
+      .map((b) => (b.kind === "heading" ? b.text : ""));
+    expect(sections).toEqual([
+      "1.1 TITLE.",
+      "1.2 PURPOSE.",
+      "1.2.1 The purpose of this LDC is to align policies.",
+      "1.9.1.1 Any annexed land shall be classified P2 Rural.",
+      "2.1 PROCESS OVERVIEW.",
+    ]);
+  });
+
+  it("skips the table of contents and its page-referenced entries", async () => {
+    const raw = await taylorAdapter.fetch(fixtureReference);
+    const normalized = await taylorAdapter.normalize(raw);
+    // No TOC entry (heading-like text + trailing page number) survives,
+    // and the "TABLE OF CONTENTS" label itself is dropped.
+    const polluted = normalized.blocks.some((b) => {
+      const text =
+        b.kind === "heading" || b.kind === "paragraph" ? b.text : "";
+      return /\s\d{1,4}$/.test(text) || /^TABLE OF CONTENTS$/i.test(text);
+    });
+    expect(polluted).toBe(false);
+  });
+
+  it("suppresses running-header boilerplate and page-number lines", async () => {
+    const raw = await taylorAdapter.fetch(fixtureReference);
+    const normalized = await taylorAdapter.normalize(raw);
+    const noisy = normalized.blocks.some((b) => {
+      const text =
+        b.kind === "heading" || b.kind === "paragraph" ? b.text : "";
+      return (
+        /^TAYLOR MADE LAND DEVELOPMENT ORDINANCE/i.test(text) ||
+        /^\d{1,2}\s*-\s*\d{1,4}$/.test(text)
+      );
+    });
+    expect(noisy).toBe(false);
+  });
+
+  it("captures rule prose and cross-references in the body", async () => {
+    const raw = await taylorAdapter.fetch(fixtureReference);
+    const normalized = await taylorAdapter.normalize(raw);
+    const paragraphs = normalized.blocks
+      .filter((b) => b.kind === "paragraph")
+      .map((b) => (b.kind === "paragraph" ? b.text : ""));
+    expect(paragraphs).toContain(
+      "This Ordinance shall be known as the Land Development Code.",
+    );
+    const xrefLabels = normalized.blocks
+      .filter((b) => b.kind === "cross-reference")
+      .map((x) => (x.kind === "cross-reference" ? x.targetSectionLabel : ""));
+    expect(xrefLabels).toContain("1.1");
+  });
+
+  it("does not promote a decimal measurement to a section heading", async () => {
+    const raw = await taylorAdapter.fetch(fixtureReference);
+    const normalized = await taylorAdapter.normalize(raw);
+    // "2.5 ACRES" is a flowchart quantity, not a section. It must not
+    // appear as a heading; it stays in the block stream as body prose.
+    const headingTexts = normalized.blocks
+      .filter((b) => b.kind === "heading")
+      .map((b) => (b.kind === "heading" ? b.text : ""));
+    expect(headingTexts.some((t) => /^2\.5\b/.test(t))).toBe(false);
+    const paragraphTexts = normalized.blocks
+      .filter((b) => b.kind === "paragraph")
+      .map((b) => (b.kind === "paragraph" ? b.text : ""));
+    expect(paragraphTexts).toContain("2.5 ACRES");
+  });
+});
+
 describe("RawPdfAdapter — deferred-stub behavior (no hooks)", () => {
   // Preserves the original empty-blocks behavior when callers
   // explicitly opt out of both hooks. Used by the early conformance
