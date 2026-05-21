@@ -363,6 +363,10 @@ export function atomize(
           entityType: "code-amendment",
           entityId: amendId,
           jurisdictionTenant,
+          // Stream 1B's extractor produces in-jurisdiction amendment
+          // records; the ADR-019 Layer 2 jurisdictional overlay is
+          // emitted by the layered-substrate ingest path, not here.
+          amendmentScope: "temporal",
           ordinanceId: node.ordinanceId,
           effectiveDate: node.effectiveDate,
           authority: node.authority,

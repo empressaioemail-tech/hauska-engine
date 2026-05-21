@@ -188,23 +188,34 @@ export function bootstrapEngineAtomRegistry(
     contextSummary: async (entityId: string, scope: Scope): Promise<ContextSummary<"code-amendment">> => {
       const inst = await lookup.get<CodeAmendmentAtomInstance>("code-amendment", entityId);
       if (!inst) return notFoundSummary(`code-amendment/${entityId}`) as ContextSummary<"code-amendment">;
+      const scopeLabel =
+        inst.amendmentScope === "jurisdictional-overlay"
+          ? `jurisdictional overlay (${inst.overlayOperation})`
+          : "temporal amendment";
       const { prose, scopeFiltered } = audienceLensesProse(
         scope,
-        `Ordinance ${inst.ordinanceId} (effective ${inst.effectiveDate}, ${inst.authority}). ${inst.amendmentText}`,
-        `Ordinance ${inst.ordinanceId}`,
+        `Ordinance ${inst.ordinanceId} — ${scopeLabel}, effective ${inst.effectiveDate}, ${inst.authority}. ${inst.amendmentText}`,
+        `Ordinance ${inst.ordinanceId} (${scopeLabel})`,
       );
       return {
         prose,
         typed: {
           ordinanceId: inst.ordinanceId,
+          amendmentScope: inst.amendmentScope,
           effectiveDate: inst.effectiveDate,
           authority: inst.authority,
           affectedSectionIds: inst.affectedSectionIds,
           jurisdictionTenant: inst.jurisdictionTenant,
+          ...(inst.amendmentScope === "jurisdictional-overlay"
+            ? {
+                baseEditionId: inst.baseEditionId,
+                overlayOperation: inst.overlayOperation,
+              }
+            : {}),
         },
         keyMetrics: [
           { label: "Ordinance", value: inst.ordinanceId },
-          { label: "Effective", value: inst.effectiveDate },
+          { label: "Scope", value: inst.amendmentScope },
         ],
         relatedAtoms: [],
         historyProvenance: {

@@ -48,16 +48,161 @@ export interface CodeDefinitionAtomInstance extends BaseAtomInstance {
   scope: "section" | "chapter" | "code";
 }
 
-export interface CodeAmendmentAtomInstance extends BaseAtomInstance {
+/**
+ * Distinguishes the two roles a `code-amendment` atom plays.
+ *
+ *  - `"temporal"` — an ordinance modifying a section over time within
+ *    its own jurisdiction (the original Bump 1 semantics; the doc 49
+ *    §B.5 version-tracking case).
+ *  - `"jurisdictional-overlay"` — Layer 2 of the ADR-019 layered code
+ *    substrate: a jurisdiction's local modification of a shared Layer 1
+ *    model-code base section. The jurisdiction's effective rule is the
+ *    base section composed with this overlay.
+ *
+ * Per the ADR-019 §Open decisions resolution, the layered substrate
+ * extends the existing `code-amendment` type with this discriminant
+ * rather than introducing a distinct atom type: the entity-type-enum
+ * surface (storage schema, retrieval-api zod enum, registry, search
+ * filters) is unchanged, and a city adoption ordinance already carries
+ * an `ordinanceId` / `effectiveDate` / `authority` exactly as a
+ * temporal amendment does.
+ */
+export type AmendmentScope = "temporal" | "jurisdictional-overlay";
+
+export const AMENDMENT_SCOPES: ReadonlyArray<AmendmentScope> = [
+  "temporal",
+  "jurisdictional-overlay",
+];
+
+/**
+ * How a jurisdictional overlay relates to the Layer 1 base section it
+ * targets. The operation drives effective-rule composition:
+ *
+ *  - `"modify"`  — the base section's requirements change in part; the
+ *    effective rule is the base section composed with the overlay.
+ *  - `"replace"` — the base section is wholly superseded; the effective
+ *    rule is the overlay text alone.
+ *  - `"add"`     — a local section with no model-code parent is added;
+ *    the effective rule is the overlay alone (no base).
+ *  - `"delete"`  — the base section is struck (not adopted); the
+ *    effective rule is nothing.
+ */
+export type OverlayOperation = "modify" | "replace" | "add" | "delete";
+
+export const OVERLAY_OPERATIONS: ReadonlyArray<OverlayOperation> = [
+  "modify",
+  "replace",
+  "add",
+  "delete",
+];
+
+/** Fields shared by both `code-amendment` scopes. */
+export interface CodeAmendmentBaseFields extends BaseAtomInstance {
   entityType: "code-amendment";
+  /** Enacting / adopting ordinance identifier. */
   ordinanceId: string;
+  /** ISO-8601 effective date. */
   effectiveDate: string;
+  /** Enacting authority (e.g. the city council). */
   authority: string;
+  /**
+   * Section atoms this amendment affects. A temporal amendment names
+   * same-jurisdiction section atoms; a jurisdictional overlay names the
+   * shared Layer 1 base `code-section` atoms it modifies.
+   */
   affectedSectionIds: ReadonlyArray<string>;
   amendmentText: string;
-  /** Prior CID being superseded per ADR-011 chain semantics. Empty for first ingest. */
+}
+
+/**
+ * Temporal `code-amendment` — original Bump 1 semantics. An ordinance
+ * modifying a section within its own jurisdiction over time.
+ */
+export interface TemporalCodeAmendmentInstance extends CodeAmendmentBaseFields {
+  amendmentScope: "temporal";
+  /** Prior CID being superseded per ADR-011 chain semantics. Null for first ingest. */
   replacesSectionContentHash: string | null;
 }
+
+/**
+ * Jurisdictional-overlay `code-amendment` — Layer 2 of the ADR-019
+ * layered code substrate. A jurisdiction's local modification of a
+ * shared Layer 1 model-code base section.
+ */
+export interface JurisdictionalOverlayAmendmentInstance
+  extends CodeAmendmentBaseFields {
+  amendmentScope: "jurisdictional-overlay";
+  /** The shared Layer 1 `code-edition` entityId this overlay amends. */
+  baseEditionId: string;
+  /** How the overlay relates to the base section (drives composition). */
+  overlayOperation: OverlayOperation;
+}
+
+/**
+ * A `code-amendment` atom, discriminated on `amendmentScope`. Temporal
+ * amendments and jurisdictional overlays share one `entityType` and one
+ * registry registration; the discriminant carries the difference.
+ */
+export type CodeAmendmentAtomInstance =
+  | TemporalCodeAmendmentInstance
+  | JurisdictionalOverlayAmendmentInstance;
+
+/** True when the amendment is a Layer 2 jurisdictional overlay. */
+export function isJurisdictionalOverlay(
+  amendment: CodeAmendmentAtomInstance,
+): amendment is JurisdictionalOverlayAmendmentInstance {
+  return amendment.amendmentScope === "jurisdictional-overlay";
+}
+
+/** True when the amendment is a temporal (same-jurisdiction) amendment. */
+export function isTemporalAmendment(
+  amendment: CodeAmendmentAtomInstance,
+): amendment is TemporalCodeAmendmentInstance {
+  return amendment.amendmentScope === "temporal";
+}
+
+/** Base-atom fields common to every Bump 1 code-atom Zod schema. */
+const CODE_ATOM_BASE_SHAPE = {
+  entityId: z.string().min(1),
+  jurisdictionTenant: z.string().min(1),
+  fetchedAt: z.string().min(1),
+  sourceAdapter: z.string().min(1),
+  sourceUrl: z.string(),
+  contentHash: z.string().min(1),
+} as const;
+
+const CODE_AMENDMENT_BASE_SHAPE = {
+  ...CODE_ATOM_BASE_SHAPE,
+  entityType: z.literal("code-amendment"),
+  ordinanceId: z.string().min(1),
+  effectiveDate: z.string().min(1),
+  authority: z.string().min(1),
+  affectedSectionIds: z.array(z.string()),
+  amendmentText: z.string(),
+} as const;
+
+/**
+ * Zod schema mirroring `CodeAmendmentAtomInstance`. The first
+ * boundary-validation schema for a Bump 1 code atom, added with the
+ * ADR-019 discriminated-union extension so the temporal / overlay split
+ * is conformance-checkable. `discriminatedUnion` keys on
+ * `amendmentScope` and rejects a payload whose field set does not match
+ * its scope (a temporal amendment carrying `baseEditionId`, an overlay
+ * missing `overlayOperation`, etc.).
+ */
+export const CODE_AMENDMENT_SCHEMA = z.discriminatedUnion("amendmentScope", [
+  z.object({
+    ...CODE_AMENDMENT_BASE_SHAPE,
+    amendmentScope: z.literal("temporal"),
+    replacesSectionContentHash: z.string().nullable(),
+  }),
+  z.object({
+    ...CODE_AMENDMENT_BASE_SHAPE,
+    amendmentScope: z.literal("jurisdictional-overlay"),
+    baseEditionId: z.string().min(1),
+    overlayOperation: z.enum(["modify", "replace", "add", "delete"]),
+  }),
+]);
 
 export interface CodeCrossReferenceAtomInstance extends BaseAtomInstance {
   entityType: "code-cross-reference";
