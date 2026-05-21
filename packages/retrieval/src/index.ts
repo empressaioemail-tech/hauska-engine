@@ -21,6 +21,10 @@ import type {
   StoragePort,
 } from "@hauska-engine/storage";
 
+import { resolveEffectiveRule, type EffectiveSection } from "./effective-rule.js";
+
+export * from "./effective-rule.js";
+
 export interface SearchInput {
   q: string;
   jurisdiction?: string;
@@ -120,6 +124,19 @@ export class HybridRetrieval {
       return { status, permitAtoms };
     }
     return { status };
+  }
+
+  /**
+   * Resolve the ADR-019 effective rule for a Layer 1 base section in a
+   * jurisdiction: the base section composed with that jurisdiction's
+   * Layer 2 overlays. This is the "what does the IRC require for X in
+   * jurisdiction Y" query path.
+   */
+  async resolveEffectiveRule(input: {
+    jurisdictionTenant: string;
+    baseSectionId: string;
+  }): Promise<EffectiveSection> {
+    return resolveEffectiveRule(this.storage, input);
   }
 
   async listJurisdictions(filter?: {
