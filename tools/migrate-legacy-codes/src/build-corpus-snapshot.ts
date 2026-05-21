@@ -74,6 +74,14 @@ import {
   HUTTO_UDC_JURISDICTION_NAME,
   HUTTO_UDC_PDF_URL,
 } from "./hutto-udc-curated-queries.js";
+import {
+  buildTaylorLdcCuratedQueries,
+  TAYLOR_LDC_EDITION_LABEL,
+  TAYLOR_LDC_JURISDICTION,
+  TAYLOR_LDC_JURISDICTION_NAME,
+  TAYLOR_LDC_NORMALIZE_OPTIONS,
+  TAYLOR_LDC_PDF_URL,
+} from "./taylor-ldc-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -206,6 +214,24 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildRoundRockCuratedQueries();
+    },
+  },
+  {
+    tenant: TAYLOR_LDC_JURISDICTION,
+    label: "Taylor Land Development Code (Path PDF / chapter-decimal)",
+    async run(storage) {
+      await runPathPdfIngest({
+        storage,
+        jurisdictionTenant: TAYLOR_LDC_JURISDICTION,
+        jurisdictionName: TAYLOR_LDC_JURISDICTION_NAME,
+        editionLabel: TAYLOR_LDC_EDITION_LABEL,
+        pdfUrl: TAYLOR_LDC_PDF_URL,
+        accessPolicy: "platform-internal",
+        capabilitiesName: "taylor-ldc-pdf",
+        capabilitiesDisplayName: "Taylor LDC (PDF)",
+        normalizeOptions: TAYLOR_LDC_NORMALIZE_OPTIONS,
+      });
+      return buildTaylorLdcCuratedQueries();
     },
   },
   {

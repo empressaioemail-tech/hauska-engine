@@ -66,6 +66,14 @@ import {
   ROUND_ROCK_LIBRARY_SLUG,
 } from "./round-rock-curated-queries.js";
 import {
+  buildTaylorLdcCuratedQueries,
+  TAYLOR_LDC_EDITION_LABEL,
+  TAYLOR_LDC_JURISDICTION,
+  TAYLOR_LDC_JURISDICTION_NAME,
+  TAYLOR_LDC_NORMALIZE_OPTIONS,
+  TAYLOR_LDC_PDF_URL,
+} from "./taylor-ldc-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1074,6 +1082,95 @@ program
   .description("Print the Round Rock curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildRoundRockCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-pdf-ingest-taylor")
+  .description(
+    "Sync 5 Tier 1: Path PDF ingest of the City of Taylor 'Taylor Made' Land Development Code (Revised September 2024) from the city-hosted born-digital PDF via the chapter-decimal heading convention. Layer 3 bespoke local code; tagged platform-internal per Path A (non-partnered). Taylor's Municode Chapter 21 only adopts this LDC by reference, so the substantive code is the external PDF — not a Path C source.",
+  )
+  .option("--pdf-url <url>", "Override the Taylor LDC PDF URL", TAYLOR_LDC_PDF_URL)
+  .option(
+    "--show-sections",
+    "Also print all ingested section entityIds + section numbers + titles.",
+  )
+  .action(async (opts: { pdfUrl: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathPdfIngest({
+      storage,
+      jurisdictionTenant: TAYLOR_LDC_JURISDICTION,
+      jurisdictionName: TAYLOR_LDC_JURISDICTION_NAME,
+      editionLabel: TAYLOR_LDC_EDITION_LABEL,
+      pdfUrl: opts.pdfUrl,
+      accessPolicy: "platform-internal",
+      capabilitiesName: "taylor-ldc-pdf",
+      capabilitiesDisplayName: "Taylor LDC (PDF)",
+      normalizeOptions: TAYLOR_LDC_NORMALIZE_OPTIONS,
+    });
+    const output: Record<string, unknown> = { pathPdfIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-pdf-eval-taylor")
+  .description(
+    "Sync 5 Tier 1: Path PDF end-to-end — ingest the Taylor LDC + run the curated-query eval against the B.4 quality bar (90% top-3 / 100% section-number / 95% cross-reference).",
+  )
+  .option("--pdf-url <url>", "Override the Taylor LDC PDF URL", TAYLOR_LDC_PDF_URL)
+  .option(
+    "--queries-file <path>",
+    "Optional JSON file of curated queries to use instead of the seed set",
+  )
+  .action(async (opts: { pdfUrl: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathPdfIngest({
+      storage,
+      jurisdictionTenant: TAYLOR_LDC_JURISDICTION,
+      jurisdictionName: TAYLOR_LDC_JURISDICTION_NAME,
+      editionLabel: TAYLOR_LDC_EDITION_LABEL,
+      pdfUrl: opts.pdfUrl,
+      accessPolicy: "platform-internal",
+      capabilitiesName: "taylor-ldc-pdf",
+      capabilitiesDisplayName: "Taylor LDC (PDF)",
+      normalizeOptions: TAYLOR_LDC_NORMALIZE_OPTIONS,
+    });
+
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildTaylorLdcCuratedQueries();
+    }
+
+    const report = await evaluate({
+      storage,
+      jurisdictionTenant: TAYLOR_LDC_JURISDICTION,
+      queries,
+    });
+
+    console.log(
+      JSON.stringify(
+        { pathPdfIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+        null,
+        2,
+      ),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-taylor-ldc-queries")
+  .description("Print the Taylor LDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildTaylorLdcCuratedQueries(), null, 2));
   });
 
 program
