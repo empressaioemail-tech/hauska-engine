@@ -180,6 +180,24 @@ export class InMemoryStorage implements StoragePort {
     return out;
   }
 
+  async getJurisdictionalOverlays(
+    jurisdictionTenant: string,
+    baseSectionId: string,
+  ): Promise<ReadonlyArray<import("@hauska-engine/atoms").JurisdictionalOverlayAmendmentInstance>> {
+    const out: Array<
+      import("@hauska-engine/atoms").JurisdictionalOverlayAmendmentInstance
+    > = [];
+    for (const inst of this.atoms.values()) {
+      if (inst.entityType !== "code-amendment") continue;
+      if (inst.amendmentScope !== "jurisdictional-overlay") continue;
+      if (inst.jurisdictionTenant !== jurisdictionTenant) continue;
+      if (!inst.affectedSectionIds.includes(baseSectionId)) continue;
+      out.push(inst);
+    }
+    out.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
+    return out;
+  }
+
   async listJurisdictionStatus(filter?: {
     qualityBarOnly?: boolean;
     accessPolicies?: ReadonlyArray<import("@hauska-engine/atoms").AccessPolicy>;

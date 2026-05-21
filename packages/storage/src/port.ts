@@ -10,7 +10,10 @@
  * never know which back-end is wired underneath.
  */
 
-import type { AtomLink } from "@hauska-engine/atoms";
+import type {
+  AtomLink,
+  JurisdictionalOverlayAmendmentInstance,
+} from "@hauska-engine/atoms";
 
 import type {
   AccessPolicy,
@@ -95,6 +98,20 @@ export interface StoragePort {
     jurisdictionTenant: string,
     sectionNumber: string,
   ): Promise<ReadonlyArray<Extract<CodeAtomInstance, { entityType: "code-section" }>>>;
+
+  /**
+   * Return a jurisdiction's ADR-019 Layer 2 overlay amendments targeting
+   * a given Layer 1 base `code-section`. Used by effective-rule
+   * composition: every `code-amendment` whose `amendmentScope` is
+   * `"jurisdictional-overlay"`, whose `jurisdictionTenant` matches, and
+   * whose `affectedSectionIds` includes `baseSectionId`. Returned
+   * ascending by `effectiveDate` so the composition step can apply them
+   * in order without re-sorting.
+   */
+  getJurisdictionalOverlays(
+    jurisdictionTenant: string,
+    baseSectionId: string,
+  ): Promise<ReadonlyArray<JurisdictionalOverlayAmendmentInstance>>;
 
   /** Graph traversal: outbound edges from an atom by link type. */
   traverse(
