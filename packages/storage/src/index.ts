@@ -13,6 +13,7 @@ export * from "./ipfs-port.js";
 export * from "./content-hash.js";
 export * from "./in-process-cache.js";
 export * from "./in-memory-storage.js";
+export * from "./snapshot.js";
 
 // Re-export AccessPolicy so consumers of the storage port (retrieval,
 // retrieval-api, MCP server type-mirrors) don't need a transitive

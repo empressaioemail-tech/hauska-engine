@@ -61,6 +61,7 @@ import {
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
 } from "./seed-curated-queries.js";
+import { buildCorpusSnapshot } from "./build-corpus-snapshot.js";
 
 function resolveDatabaseUrl(explicit: string | undefined): string {
   const url = explicit || process.env.LEGACY_DATABASE_URL || process.env.DATABASE_URL;
@@ -952,6 +953,55 @@ function parsePageRange(
     : Math.min(totalPages, from);
   return { from, to };
 }
+
+program
+  .command("build-corpus-snapshot")
+  .description(
+    "Run every onboarded jurisdiction's live ingest + eval, merge into one corpus, and write a versioned CorpusSnapshot JSON. The retrieval-api Cloud Run service boots from this artifact (Lane E Phase E0).",
+  )
+  .option(
+    "--out <path>",
+    "Output path for the snapshot JSON.",
+    "services/retrieval-api/corpus/snapshot.json",
+  )
+  .action(async (opts: { out: string }) => {
+    const { snapshot, outcomes } = await buildCorpusSnapshot({
+      outPath: opts.out,
+    });
+    console.log(
+      JSON.stringify(
+        {
+          outPath: opts.out,
+          generatedAt: snapshot.generatedAt,
+          atomCount: snapshot.atoms.length,
+          linkCount: snapshot.links.length,
+          jurisdictionCount: snapshot.jurisdictionStatus.length,
+          jurisdictions: snapshot.jurisdictionStatus.map((s) => ({
+            tenant: s.jurisdictionTenant,
+            name: s.jurisdictionName,
+            atomCount: s.atomCount,
+            qualityBar: s.qualityBar,
+            accessPolicy: s.accessPolicy,
+          })),
+          ingestOutcomes: outcomes.map((o) => ({
+            label: o.label,
+            ok: o.ok,
+            sectionsIngested: o.sectionsIngested,
+            evalPassed: o.evalReport?.passed ?? null,
+            error: o.error,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+    if (snapshot.jurisdictionStatus.length === 0) {
+      console.error(
+        "build-corpus-snapshot: no jurisdiction ingested — empty snapshot",
+      );
+      process.exitCode = 4;
+    }
+  });
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(

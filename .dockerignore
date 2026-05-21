@@ -1,0 +1,29 @@
+# Reinstalled inside the image from the lockfile.
+**/node_modules
+.pnpm-store
+
+# VCS + CI metadata.
+.git
+.github
+
+# Build output + caches.
+**/dist
+**/build
+**/*.tsbuildinfo
+.turbo
+coverage
+.nyc_output
+
+# Local recon scratch + downloaded source artifacts.
+.tmp-recon
+.ipfs-cache
+
+# Secrets + local state — never bake into the image. The retrieval-api
+# reads CORPUS_SNAPSHOT_PATH, not the legacy database.
+.env
+.env.*
+ingest-cli-state.json
+services/pipeline-runner/.local
+
+# Logs.
+*.log
