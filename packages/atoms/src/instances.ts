@@ -34,7 +34,45 @@ export interface CodeSectionAtomInstance extends BaseAtomInstance {
   sectionNumber: string;
   title: string;
   subsectionPath: string | null;
+  /**
+   * The section's text content.
+   *
+   * For a hosted section — Layer 2 / Layer 3 jurisdiction-authored
+   * code, or a fully-licensed Layer 1 edition — this is the verbatim
+   * normative text.
+   *
+   * For a Layer 1 model-code section on the ADR-019 interim deep-link
+   * footing (`verbatimTextDeepLink` set), this is the reasoning layer:
+   * Hauska's structural summary of what the section governs. The
+   * verbatim normative text is NOT here; it lives at the deep-link.
+   */
   bodyText: string;
+  /**
+   * ADR-019 interim deep-link footing. When set, this is a Layer 1
+   * model-code base section whose verbatim normative text is not
+   * hosted: it is deep-linked to the publisher's free public viewer
+   * (ICC's code viewer, NFPA's free access) at this URL, and
+   * `bodyText` carries the reasoning layer instead. Absent for hosted
+   * sections. The field clears (and `bodyText` becomes verbatim) only
+   * if a licensing partnership flips the edition to full-text hosting
+   * — ADR-019 decision 6, out of scope for the interim substrate.
+   */
+  verbatimTextDeepLink?: string;
+}
+
+/**
+ * True when a section is on the ADR-019 interim deep-link footing: its
+ * verbatim normative text is deep-linked, not hosted, and `bodyText` is
+ * the reasoning layer. Layer 1 model-code base sections are; Layer 2
+ * and Layer 3 jurisdiction-authored sections are not.
+ */
+export function isDeepLinkFootingSection(
+  section: CodeSectionAtomInstance,
+): boolean {
+  return (
+    typeof section.verbatimTextDeepLink === "string" &&
+    section.verbatimTextDeepLink.length > 0
+  );
 }
 
 export interface CodeDefinitionAtomInstance extends BaseAtomInstance {
@@ -203,6 +241,22 @@ export const CODE_AMENDMENT_SCHEMA = z.discriminatedUnion("amendmentScope", [
     overlayOperation: z.enum(["modify", "replace", "add", "delete"]),
   }),
 ]);
+
+/**
+ * Zod schema mirroring `CodeSectionAtomInstance`. `verbatimTextDeepLink`
+ * is optional and, when present, must be a URL — its presence marks the
+ * ADR-019 interim deep-link footing.
+ */
+export const CODE_SECTION_SCHEMA = z.object({
+  ...CODE_ATOM_BASE_SHAPE,
+  entityType: z.literal("code-section"),
+  codeEditionId: z.string().min(1),
+  sectionNumber: z.string(),
+  title: z.string(),
+  subsectionPath: z.string().nullable(),
+  bodyText: z.string(),
+  verbatimTextDeepLink: z.string().url().optional(),
+});
 
 export interface CodeCrossReferenceAtomInstance extends BaseAtomInstance {
   entityType: "code-cross-reference";
