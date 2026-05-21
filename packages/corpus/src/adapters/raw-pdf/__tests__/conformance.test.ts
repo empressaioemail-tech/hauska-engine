@@ -184,6 +184,116 @@ describe("RawPdfAdapter — content-specific (B3 fixture)", () => {
   });
 });
 
+// Synthetic fixture in the Hutto UDC layout: a front-matter table of
+// contents, then body pages whose chapter label lives in the running
+// header and whose sections use the decimal-dotted `10.NNN` numbering.
+// Page 16 also carries a per-chapter mini-table-of-contents run that
+// must be skipped in favor of the real headings.
+const HUTTO_FIXTURE_PAGES: ReadonlyArray<PdfPageText> = [
+  {
+    pageNumber: 5,
+    text: [
+      "City of Hutto Unified Development Code",
+      "Revised March 2024",
+      "Contents",
+      "10.101 Title 1",
+      "10.102 Purpose 1",
+    ].join("\n"),
+  },
+  {
+    pageNumber: 16,
+    text: [
+      "Chapter 1 Introduction §10.101 Title",
+      "1",
+      "City of Hutto Unified Development Code",
+      "Revised March 2024",
+      "10.101 Title 1",
+      "10.102 Purpose 1",
+      "10.101 Title",
+      "This ordinance is known as the Hutto UDC.",
+      "10.102 Purpose",
+      "This code is enacted to promote orderly development. See §10.101 for naming.",
+    ].join("\n"),
+  },
+  {
+    pageNumber: 44,
+    text: [
+      "Chapter 2 Development review §10.201 General rules",
+      "44",
+      "City of Hutto Unified Development Code",
+      "Revised March 2024",
+      "10.201 General rules",
+      "All development shall comply with this code.",
+    ].join("\n"),
+  },
+];
+
+const huttoExtractor: PdfTextExtractor = async () => HUTTO_FIXTURE_PAGES;
+
+const huttoAdapter = new RawPdfAdapter({
+  textExtractor: huttoExtractor,
+  http: new StubBytesFetch(stubBytes),
+  normalizeOptions: { headingConvention: "decimal-numbered" },
+  capabilitiesNameOverride: "hutto-udc-pdf",
+});
+
+describe("RawPdfAdapter — decimal-numbered convention (Hutto UDC)", () => {
+  it("opens chapter containers from the per-page running header", async () => {
+    const raw = await huttoAdapter.fetch(fixtureReference);
+    const normalized = await huttoAdapter.normalize(raw);
+    const chapters = normalized.blocks
+      .filter((b) => b.kind === "heading" && b.depth === 1)
+      .map((b) => (b.kind === "heading" ? b.text : ""));
+    expect(chapters).toEqual([
+      "Chapter 1 Introduction",
+      "Chapter 2 Development review",
+    ]);
+  });
+
+  it("emits decimal-numbered section headings at depth 3", async () => {
+    const raw = await huttoAdapter.fetch(fixtureReference);
+    const normalized = await huttoAdapter.normalize(raw);
+    const sections = normalized.blocks
+      .filter((b) => b.kind === "heading" && b.depth === 3)
+      .map((b) => (b.kind === "heading" ? b.text : ""));
+    expect(sections).toEqual([
+      "10.101 Title",
+      "10.102 Purpose",
+      "10.201 General rules",
+    ]);
+  });
+
+  it("skips front matter and per-chapter mini-table-of-contents runs", async () => {
+    const raw = await huttoAdapter.fetch(fixtureReference);
+    const normalized = await huttoAdapter.normalize(raw);
+    // TOC / mini-TOC entries carry a trailing page number; none should
+    // survive as a heading or paragraph block.
+    const polluted = normalized.blocks.some((b) => {
+      const text =
+        b.kind === "heading" || b.kind === "paragraph" ? b.text : "";
+      return /^10\.\d+ .*\s\d+$/.test(text);
+    });
+    expect(polluted).toBe(false);
+    const hasContents = normalized.blocks.some(
+      (b) => b.kind === "paragraph" && b.text === "Contents",
+    );
+    expect(hasContents).toBe(false);
+  });
+
+  it("captures rule prose and cross-references in the body", async () => {
+    const raw = await huttoAdapter.fetch(fixtureReference);
+    const normalized = await huttoAdapter.normalize(raw);
+    const paragraphs = normalized.blocks
+      .filter((b) => b.kind === "paragraph")
+      .map((b) => (b.kind === "paragraph" ? b.text : ""));
+    expect(paragraphs).toContain("This ordinance is known as the Hutto UDC.");
+    const xrefLabels = normalized.blocks
+      .filter((b) => b.kind === "cross-reference")
+      .map((x) => (x.kind === "cross-reference" ? x.targetSectionLabel : ""));
+    expect(xrefLabels).toContain("10.101");
+  });
+});
+
 describe("RawPdfAdapter — deferred-stub behavior (no hooks)", () => {
   // Preserves the original empty-blocks behavior when callers
   // explicitly opt out of both hooks. Used by the early conformance

@@ -39,6 +39,13 @@ import {
   B3_EDITION_LABEL,
 } from "./b3-curated-queries.js";
 import {
+  buildHuttoUdcCuratedQueries,
+  HUTTO_UDC_EDITION_LABEL,
+  HUTTO_UDC_JURISDICTION,
+  HUTTO_UDC_JURISDICTION_NAME,
+  HUTTO_UDC_PDF_URL,
+} from "./hutto-udc-curated-queries.js";
+import {
   buildBastropCountyCuratedQueries,
   BASTROP_COUNTY_SUBDIVISION_REGS_URL,
   BC_EDITION_LABEL,
@@ -717,6 +724,100 @@ program
   .description("Print the Bastrop County curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildBastropCountyCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-pdf-ingest-hutto-udc")
+  .description(
+    "Path PDF: ingest the City of Hutto Unified Development Code (Chapter 16, Revised March 2024) born-digital PDF via the decimal-numbered B.2 heading convention. Tagged platform-internal per Path A (Hutto partnership-pending per the 2026-05-20 prioritized-ingest decision). Writes to in-memory storage; no Neon dependency.",
+  )
+  .option("--pdf-url <url>", "Override the Hutto UDC PDF URL", HUTTO_UDC_PDF_URL)
+  .option(
+    "--show-sections",
+    "Also print all ingested section entityIds + section numbers + titles.",
+  )
+  .action(async (opts: { pdfUrl: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathPdfIngest({
+      storage,
+      jurisdictionTenant: HUTTO_UDC_JURISDICTION,
+      jurisdictionName: HUTTO_UDC_JURISDICTION_NAME,
+      editionLabel: HUTTO_UDC_EDITION_LABEL,
+      pdfUrl: opts.pdfUrl,
+      accessPolicy: "platform-internal",
+      capabilitiesName: "hutto-udc-pdf",
+      capabilitiesDisplayName: "Hutto UDC (PDF)",
+      normalizeOptions: { headingConvention: "decimal-numbered" },
+    });
+    const output: Record<string, unknown> = { pathPdfIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-pdf-eval-hutto-udc")
+  .description(
+    "Path PDF end-to-end: ingest the Hutto UDC + run the curated-query eval. HUTTO.4 fire path against the B.4 quality bar (90% top-3 / 100% section-number / 95% cross-reference).",
+  )
+  .option("--pdf-url <url>", "Override the Hutto UDC PDF URL", HUTTO_UDC_PDF_URL)
+  .option(
+    "--queries-file <path>",
+    "Optional JSON file of curated queries to use instead of the Hutto UDC seed set",
+  )
+  .action(async (opts: { pdfUrl: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathPdfIngest({
+      storage,
+      jurisdictionTenant: HUTTO_UDC_JURISDICTION,
+      jurisdictionName: HUTTO_UDC_JURISDICTION_NAME,
+      editionLabel: HUTTO_UDC_EDITION_LABEL,
+      pdfUrl: opts.pdfUrl,
+      accessPolicy: "platform-internal",
+      capabilitiesName: "hutto-udc-pdf",
+      capabilitiesDisplayName: "Hutto UDC (PDF)",
+      normalizeOptions: { headingConvention: "decimal-numbered" },
+    });
+
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      const raw = await fs.readFile(opts.queriesFile, "utf8");
+      queries = JSON.parse(raw) as CuratedQuery[];
+    } else {
+      queries = buildHuttoUdcCuratedQueries();
+    }
+
+    const report = await evaluate({
+      storage,
+      jurisdictionTenant: HUTTO_UDC_JURISDICTION,
+      queries,
+    });
+
+    console.log(
+      JSON.stringify(
+        {
+          pathPdfIngest: ingest.report,
+          eval: report,
+          huttoUdcLoaded: report.passed,
+        },
+        null,
+        2,
+      ),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-hutto-udc-queries")
+  .description("Print the Hutto UDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildHuttoUdcCuratedQueries(), null, 2));
   });
 
 const ELGIN_DEFAULT_CHAPTER_FILTER = "subdivisions|zoning|site developments";

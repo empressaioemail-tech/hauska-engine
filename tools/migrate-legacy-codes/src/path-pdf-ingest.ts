@@ -20,6 +20,7 @@ import {
   RawPdfAdapter,
   pdfjsTextExtractor,
   type CodeReference,
+  type PdfNormalizeOptions,
   type PdfTextExtractor,
 } from "@hauska-engine/corpus/adapters";
 import { atomize, type AtomizationResult } from "@hauska-engine/corpus/atomization";
@@ -47,6 +48,15 @@ export interface PathPdfIngestOptions {
    * raw-PDF jurisdictions share the registry. Optional.
    */
   capabilitiesName?: string;
+  /** Adapter capabilities display-name override. Optional. */
+  capabilitiesDisplayName?: string;
+  /**
+   * Normalize-time options forwarded to the RawPdfAdapter. Carries the
+   * per-source heading convention (`headingConvention`) and any custom
+   * header/footer suppression regex. Optional; the adapter defaults to
+   * the caps-prefixed B3 convention.
+   */
+  normalizeOptions?: PdfNormalizeOptions;
   /** Optional pre-configured adapter (lets tests stub the extractor). */
   adapter?: RawPdfAdapter;
   /**
@@ -96,7 +106,11 @@ export async function runPathPdfIngest(
     new RawPdfAdapter({
       textExtractor: options.textExtractor ?? pdfjsTextExtractor,
       capabilitiesNameOverride: options.capabilitiesName ?? "bastrop-b3-pdf",
-      capabilitiesDisplayNameOverride: "Bastrop B3 Code (PDF)",
+      capabilitiesDisplayNameOverride:
+        options.capabilitiesDisplayName ?? "Bastrop B3 Code (PDF)",
+      ...(options.normalizeOptions
+        ? { normalizeOptions: options.normalizeOptions }
+        : {}),
     });
 
   const reference: CodeReference = {
@@ -123,13 +137,27 @@ export async function runPathPdfIngest(
   // emit the same section twice, but the dedupe matches Path C
   // discipline so a future PDF source that does fan out (e.g., a multi-
   // volume code with overlapping appendix sections) doesn't surprise
-  // the storage layer.
-  const sectionSeen = new Set<string>();
-  const dedupedSections = rawAtomization.sections.filter((s) => {
-    if (sectionSeen.has(s.entityId)) return false;
-    sectionSeen.add(s.entityId);
-    return true;
-  });
+  // the storage layer. When the same section number IS emitted twice
+  // (e.g. a per-chapter mini-table-of-contents entry that survived the
+  // normalizer plus the real body heading), keep the instance with the
+  // most body text so the atom carries the rule prose, not a bare TOC
+  // line.
+  const richestByEntityId = new Map<
+    string,
+    typeof rawAtomization.sections[number]
+  >();
+  for (const s of rawAtomization.sections) {
+    const existing = richestByEntityId.get(s.entityId);
+    if (
+      !existing ||
+      (s.bodyText?.length ?? 0) > (existing.bodyText?.length ?? 0)
+    ) {
+      richestByEntityId.set(s.entityId, s);
+    }
+  }
+  const dedupedSections = rawAtomization.sections.filter(
+    (s) => richestByEntityId.get(s.entityId) === s,
+  );
   const dedupedEdition = {
     ...rawAtomization.edition,
     sectionIds: dedupedSections.map((s) => s.entityId),
