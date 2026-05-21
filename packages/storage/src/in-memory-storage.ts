@@ -17,6 +17,7 @@ import type {
   JurisdictionStatusSnapshot,
   StoragePort,
 } from "./port.js";
+import { CORPUS_SNAPSHOT_FORMAT, type CorpusSnapshot } from "./snapshot.js";
 
 export class InMemoryStorage implements StoragePort {
   private readonly atoms = new Map<string, CodeAtomInstance>();
@@ -199,6 +200,44 @@ export class InMemoryStorage implements StoragePort {
 
   async upsertJurisdictionStatus(snapshot: JurisdictionStatusSnapshot): Promise<void> {
     this.jurisdictionStatus.set(snapshot.jurisdictionTenant, snapshot);
+  }
+
+  /**
+   * Serialize the full corpus to a committable snapshot artifact.
+   * Atoms and links are emitted verbatim; CIDs are intentionally NOT
+   * carried — `importSnapshot` re-pins, recomputing each CID
+   * deterministically from `contentHash`, so a snapshot round-trip is
+   * stable without persisting a transient CID map.
+   */
+  exportSnapshot(provenance?: ReadonlyArray<string>): CorpusSnapshot {
+    return {
+      format: CORPUS_SNAPSHOT_FORMAT,
+      generatedAt: new Date().toISOString(),
+      ...(provenance ? { provenance } : {}),
+      atoms: Array.from(this.atoms.values()),
+      links: [...this.links],
+      jurisdictionStatus: Array.from(this.jurisdictionStatus.values()),
+    };
+  }
+
+  /**
+   * Hydrate this storage from a snapshot. Reuses `writeAtoms` /
+   * `writeAtomLinks` / `upsertJurisdictionStatus` so a hydrated storage
+   * is indistinguishable from one populated by a live ingest run.
+   */
+  async importSnapshot(snapshot: CorpusSnapshot): Promise<void> {
+    await this.writeAtoms(snapshot.atoms);
+    await this.writeAtomLinks(snapshot.links);
+    for (const status of snapshot.jurisdictionStatus) {
+      await this.upsertJurisdictionStatus(status);
+    }
+  }
+
+  /** Convenience constructor: a storage hydrated from a snapshot. */
+  static async fromSnapshot(snapshot: CorpusSnapshot): Promise<InMemoryStorage> {
+    const storage = new InMemoryStorage();
+    await storage.importSnapshot(snapshot);
+    return storage;
   }
 }
 
