@@ -25,3 +25,28 @@ export type {
   PdfNormalizeOptions,
   RawPdfAdapterOptions,
 } from "./raw-pdf/index.js";
+export {
+  IccCodeConnectAdapter,
+  ICC_MODEL_CODE_TENANT,
+  CodeConnectClient,
+  CodeConnectError,
+  codeConnectCredentialsFromEnv,
+  DEFAULT_CODE_CONNECT_TOKEN_URL,
+  DEFAULT_CODE_CONNECT_BASE_URL,
+} from "./icc-code-connect/index.js";
+export type {
+  IccCodeConnectAdapterOptions,
+  CodeConnectClientOptions,
+  CodeConnectFixtures,
+  CodeConnectMode,
+  CodeConnectTitle,
+  CodeConnectChapter,
+  CodeConnectSectionRef,
+  CodeConnectSection,
+  CodeConnectContentNode,
+  CodeConnectDefinedTerm,
+  CodeConnectSearchResult,
+  CodeConnectVersion,
+  IccCodeDocument,
+  OAuthTokenResponse,
+} from "./icc-code-connect/index.js";
