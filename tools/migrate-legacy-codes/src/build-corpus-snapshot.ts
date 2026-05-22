@@ -111,6 +111,15 @@ import {
   NEW_BRAUNFELS_JURISDICTION_NAME,
   NEW_BRAUNFELS_LIBRARY_SLUG,
 } from "./new-braunfels-curated-queries.js";
+import {
+  buildKilleenCuratedQueries,
+  KILLEEN_CHAPTER_FILTER,
+  KILLEEN_CLIENT_ID,
+  KILLEEN_EDITION_LABEL,
+  KILLEEN_JURISDICTION,
+  KILLEEN_JURISDICTION_NAME,
+  KILLEEN_LIBRARY_SLUG,
+} from "./killeen-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -328,6 +337,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildNewBraunfelsCuratedQueries();
+    },
+  },
+  {
+    tenant: KILLEEN_JURISDICTION,
+    label: "Killeen Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: KILLEEN_JURISDICTION,
+        jurisdictionName: KILLEEN_JURISDICTION_NAME,
+        editionLabel: KILLEEN_EDITION_LABEL,
+        clientId: KILLEEN_CLIENT_ID,
+        librarySlug: KILLEEN_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(KILLEEN_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildKilleenCuratedQueries();
     },
   },
   {
