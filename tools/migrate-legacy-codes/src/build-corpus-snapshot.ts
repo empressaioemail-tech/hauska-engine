@@ -111,6 +111,17 @@ import {
   NEW_BRAUNFELS_JURISDICTION_NAME,
   NEW_BRAUNFELS_LIBRARY_SLUG,
 } from "./new-braunfels-curated-queries.js";
+import {
+  buildAustinLdcCuratedQueries,
+  AUSTIN_LDC_CHAPTER_FILTER,
+  AUSTIN_LDC_CLIENT_ID,
+  AUSTIN_LDC_EDITION_LABEL,
+  AUSTIN_LDC_JURISDICTION,
+  AUSTIN_LDC_JURISDICTION_NAME,
+  AUSTIN_LDC_LIBRARY_CODE_PATH,
+  AUSTIN_LDC_LIBRARY_SLUG,
+  AUSTIN_LDC_PRODUCT_FILTER,
+} from "./austin-ldc-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -328,6 +339,27 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildNewBraunfelsCuratedQueries();
+    },
+  },
+  {
+    tenant: AUSTIN_LDC_JURISDICTION,
+    label: "Austin Land Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: AUSTIN_LDC_JURISDICTION,
+        jurisdictionName: AUSTIN_LDC_JURISDICTION_NAME,
+        editionLabel: AUSTIN_LDC_EDITION_LABEL,
+        clientId: AUSTIN_LDC_CLIENT_ID,
+        librarySlug: AUSTIN_LDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(AUSTIN_LDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(AUSTIN_LDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: AUSTIN_LDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: 8000,
+        accessPolicy: "platform-internal",
+      });
+      return buildAustinLdcCuratedQueries();
     },
   },
   {

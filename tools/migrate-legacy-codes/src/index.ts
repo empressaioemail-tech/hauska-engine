@@ -103,6 +103,17 @@ import {
   NEW_BRAUNFELS_LIBRARY_SLUG,
 } from "./new-braunfels-curated-queries.js";
 import {
+  buildAustinLdcCuratedQueries,
+  AUSTIN_LDC_CHAPTER_FILTER,
+  AUSTIN_LDC_CLIENT_ID,
+  AUSTIN_LDC_EDITION_LABEL,
+  AUSTIN_LDC_JURISDICTION,
+  AUSTIN_LDC_JURISDICTION_NAME,
+  AUSTIN_LDC_LIBRARY_CODE_PATH,
+  AUSTIN_LDC_LIBRARY_SLUG,
+  AUSTIN_LDC_PRODUCT_FILTER,
+} from "./austin-ldc-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1543,6 +1554,114 @@ program
   .description("Print the New Braunfels curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildNewBraunfelsCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-austin-ldc")
+  .description(
+    "Sync 5 Tier 2: Path C live re-ingest of the City of Austin Land Development Code from the Municode JSON API (clientId 1113, product 'Land Development Code'). Austin publishes the LDC as a separate Municode product from its Code of Ordinances; productNameFilter selects it. Title 25 (Land Development) + Title 30 (Austin/Travis County Subdivision Regulations). Layer 3 bespoke local code; tagged platform-internal per Path A.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    AUSTIN_LDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "8000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: AUSTIN_LDC_JURISDICTION,
+        jurisdictionName: AUSTIN_LDC_JURISDICTION_NAME,
+        editionLabel: AUSTIN_LDC_EDITION_LABEL,
+        clientId: AUSTIN_LDC_CLIENT_ID,
+        librarySlug: AUSTIN_LDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(AUSTIN_LDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: AUSTIN_LDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-austin-ldc")
+  .description(
+    "Sync 5 Tier 2: Path C end-to-end — live Austin LDC re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    AUSTIN_LDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "8000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: AUSTIN_LDC_JURISDICTION,
+        jurisdictionName: AUSTIN_LDC_JURISDICTION_NAME,
+        editionLabel: AUSTIN_LDC_EDITION_LABEL,
+        clientId: AUSTIN_LDC_CLIENT_ID,
+        librarySlug: AUSTIN_LDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(AUSTIN_LDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: AUSTIN_LDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildAustinLdcCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: AUSTIN_LDC_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-austin-ldc-queries")
+  .description("Print the Austin LDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildAustinLdcCuratedQueries(), null, 2));
   });
 
 program
