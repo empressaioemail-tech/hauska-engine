@@ -102,6 +102,15 @@ import {
   GEORGETOWN_UDC_LIBRARY_SLUG,
   GEORGETOWN_UDC_PRODUCT_FILTER,
 } from "./georgetown-udc-curated-queries.js";
+import {
+  buildNewBraunfelsCuratedQueries,
+  NEW_BRAUNFELS_CHAPTER_FILTER,
+  NEW_BRAUNFELS_CLIENT_ID,
+  NEW_BRAUNFELS_EDITION_LABEL,
+  NEW_BRAUNFELS_JURISDICTION,
+  NEW_BRAUNFELS_JURISDICTION_NAME,
+  NEW_BRAUNFELS_LIBRARY_SLUG,
+} from "./new-braunfels-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -300,6 +309,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildGeorgetownUdcCuratedQueries();
+    },
+  },
+  {
+    tenant: NEW_BRAUNFELS_JURISDICTION,
+    label: "New Braunfels Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: NEW_BRAUNFELS_JURISDICTION,
+        jurisdictionName: NEW_BRAUNFELS_JURISDICTION_NAME,
+        editionLabel: NEW_BRAUNFELS_EDITION_LABEL,
+        clientId: NEW_BRAUNFELS_CLIENT_ID,
+        librarySlug: NEW_BRAUNFELS_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(NEW_BRAUNFELS_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildNewBraunfelsCuratedQueries();
     },
   },
   {
