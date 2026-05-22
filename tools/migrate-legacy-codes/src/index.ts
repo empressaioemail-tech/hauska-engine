@@ -112,6 +112,15 @@ import {
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
 import {
+  buildCopperasCoveCuratedQueries,
+  COPPERAS_COVE_CHAPTER_FILTER,
+  COPPERAS_COVE_CLIENT_ID,
+  COPPERAS_COVE_EDITION_LABEL,
+  COPPERAS_COVE_JURISDICTION,
+  COPPERAS_COVE_JURISDICTION_NAME,
+  COPPERAS_COVE_LIBRARY_SLUG,
+} from "./copperas-cove-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1656,6 +1665,108 @@ program
   .description("Print the Killeen curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildKilleenCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-copperas-cove")
+  .description(
+    "Sync 5 Tier 2: Path C live re-ingest of the City of Copperas Cove land-development chapters (Sign Regulations Ch 16.5, Subdivisions Ch 17.5, Zoning Ch 20) from the Municode JSON API (clientId 1761). Tagged platform-internal.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    COPPERAS_COVE_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: COPPERAS_COVE_JURISDICTION,
+        jurisdictionName: COPPERAS_COVE_JURISDICTION_NAME,
+        editionLabel: COPPERAS_COVE_EDITION_LABEL,
+        clientId: COPPERAS_COVE_CLIENT_ID,
+        librarySlug: COPPERAS_COVE_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-copperas-cove")
+  .description("Sync 5 Tier 2: Copperas Cove re-ingest + curated-query eval.")
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    COPPERAS_COVE_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: COPPERAS_COVE_JURISDICTION,
+        jurisdictionName: COPPERAS_COVE_JURISDICTION_NAME,
+        editionLabel: COPPERAS_COVE_EDITION_LABEL,
+        clientId: COPPERAS_COVE_CLIENT_ID,
+        librarySlug: COPPERAS_COVE_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildCopperasCoveCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: COPPERAS_COVE_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-copperas-cove-queries")
+  .description("Print the Copperas Cove curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildCopperasCoveCuratedQueries(), null, 2));
   });
 
 program

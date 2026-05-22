@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildCopperasCoveCuratedQueries,
+  COPPERAS_COVE_CHAPTER_FILTER,
+  COPPERAS_COVE_CLIENT_ID,
+  COPPERAS_COVE_EDITION_LABEL,
+  COPPERAS_COVE_JURISDICTION,
+  COPPERAS_COVE_JURISDICTION_NAME,
+  COPPERAS_COVE_LIBRARY_SLUG,
+} from "./copperas-cove-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: COPPERAS_COVE_JURISDICTION,
+    label: "Copperas Cove Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: COPPERAS_COVE_JURISDICTION,
+        jurisdictionName: COPPERAS_COVE_JURISDICTION_NAME,
+        editionLabel: COPPERAS_COVE_EDITION_LABEL,
+        clientId: COPPERAS_COVE_CLIENT_ID,
+        librarySlug: COPPERAS_COVE_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(COPPERAS_COVE_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 400,
+        accessPolicy: "platform-internal",
+      });
+      return buildCopperasCoveCuratedQueries();
     },
   },
   {
