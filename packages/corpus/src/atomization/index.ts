@@ -110,6 +110,34 @@ function buildSectionId(
   return `${jurisdictionTenant}/${editionSlug}/${slugify(normalizeSectionLabel(sectionNumber))}`;
 }
 
+/**
+ * Derive a disambiguation prefix for a section whose bare entityId
+ * collides with another section's. Embedded-ordinance exhibits (e.g.
+ * Leander's Subdivision / Zoning Exhibit A) number sections with bare
+ * integers that restart per article — `Sec. 1.` exists in Article I,
+ * II, III ... — so `<tenant>/<edition>/1` is not unique.
+ *
+ * The section's `sourceAnchor` carries a globally-unique, path-encoding
+ * identifier: a Municode TOC `Doc.Id` ("CH14ZO_EXHIBIT_AZOOR_ARTIIIUSCO
+ * _S1SFINMIRU") or a raw-PDF page anchor ("#p5-section-1"). For a
+ * Municode anchor, the segment before the last `_` is the containing
+ * chapter/article path; for any other anchor the whole anchor is used.
+ */
+function disambiguatorFromAnchor(sourceAnchor: string | undefined): string | null {
+  if (!sourceAnchor) return null;
+  const raw = sourceAnchor.replace(/^#/, "");
+  if (!raw) return null;
+  // Municode Doc.Id — drop the section's own trailing `_`-segment to
+  // leave the containing chapter/article path.
+  if (raw.includes("_")) {
+    const container = raw.split("_").slice(0, -1).join("_");
+    const slug = slugify(container);
+    if (slug) return slug;
+  }
+  const slug = slugify(raw);
+  return slug || null;
+}
+
 function buildEditionId(jurisdictionTenant: string, editionLabel: string): string {
   return `${jurisdictionTenant}/${slugify(editionLabel)}`;
 }
@@ -168,15 +196,68 @@ export function atomize(
   const sectionIdByLabel = new Map<string, string>();
   let xrefSerial = 0;
 
+  // --- entityId disambiguation pre-pass --------------------------------
+  // A bare-numbered section ("Sec. 9.") in an embedded-ordinance exhibit
+  // shares its `<tenant>/<edition>/<num>` entityId with the same bare
+  // number in another article. Without disambiguation the storage write
+  // keeps only one, silently dropping content. Pre-scan every section
+  // node: where ≥2 *distinct* sections (distinct `sourceAnchor`) compute
+  // the same bare entityId, re-key each by its containing chapter/article
+  // path. A corpus whose section numbers are self-scoping (decimal or
+  // chapter-hyphenated — Round Rock, Hutto, Bastrop, Taylor) has no such
+  // group, so every entityId is byte-identical to the pre-fix output.
+  const realSectionNodes: SectionNode[] = [];
+  (function collectSections(node: StructuralNode | CodeTreeNode): void {
+    const children = "children" in node ? node.children : [];
+    for (const child of children) {
+      if (child.kind === "section") realSectionNodes.push(child);
+      collectSections(child);
+    }
+  })(tree);
+  const nodesByBareId = new Map<string, SectionNode[]>();
+  for (const node of realSectionNodes) {
+    const bareId = buildSectionId(
+      jurisdictionTenant,
+      editionSlug,
+      node.sectionNumber || node.title,
+    );
+    const bucket = nodesByBareId.get(bareId);
+    if (bucket) bucket.push(node);
+    else nodesByBareId.set(bareId, [node]);
+  }
+  const resolvedSectionId = new Map<SectionNode, string>();
+  for (const [bareId, group] of nodesByBareId) {
+    const distinctAnchors = new Set(group.map((n) => n.sourceAnchor ?? ""));
+    // A genuine collision needs ≥2 distinct sections. A single section
+    // re-emitted through overlapping TOC paths (same `sourceAnchor`) is
+    // a duplicate, not a collision — it keeps its bare id and the
+    // storage layer dedupes it.
+    if (distinctAnchors.size < 2) continue;
+    for (const node of group) {
+      const disc = disambiguatorFromAnchor(node.sourceAnchor);
+      if (!disc) continue; // unanchored — leave bare (no stable key)
+      const numberSlug = slugify(
+        normalizeSectionLabel(node.sectionNumber || node.title),
+      );
+      resolvedSectionId.set(
+        node,
+        `${jurisdictionTenant}/${editionSlug}/${disc}/${numberSlug}`,
+      );
+    }
+  }
+
   function walkSection(
     section: SectionNode,
     subsectionPath: string | null,
+    entityIdOverride?: string,
   ): void {
-    const sectionId = buildSectionId(
-      jurisdictionTenant,
-      editionSlug,
-      section.sectionNumber || section.title,
-    );
+    const sectionId =
+      entityIdOverride ??
+      buildSectionId(
+        jurisdictionTenant,
+        editionSlug,
+        section.sectionNumber || section.title,
+      );
     sectionIdByLabel.set(section.sectionNumber, sectionId);
     sectionIdByLabel.set(normalizeSectionLabel(section.sectionNumber), sectionId);
     const inst: CodeSectionAtomInstance = {
@@ -317,7 +398,7 @@ export function atomize(
         for (const child of node.children) visit(child, ctx);
         break;
       case "section":
-        walkSection(node, null);
+        walkSection(node, null, resolvedSectionId.get(node));
         break;
       case "subsection": {
         // Subsections live under sections; promote subsection paths
