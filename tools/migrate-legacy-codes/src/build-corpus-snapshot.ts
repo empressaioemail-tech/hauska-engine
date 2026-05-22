@@ -91,6 +91,17 @@ import {
   LEANDER_JURISDICTION_NAME,
   LEANDER_LIBRARY_SLUG,
 } from "./leander-curated-queries.js";
+import {
+  buildGeorgetownUdcCuratedQueries,
+  GEORGETOWN_UDC_CHAPTER_FILTER,
+  GEORGETOWN_UDC_CLIENT_ID,
+  GEORGETOWN_UDC_EDITION_LABEL,
+  GEORGETOWN_UDC_JURISDICTION,
+  GEORGETOWN_UDC_JURISDICTION_NAME,
+  GEORGETOWN_UDC_LIBRARY_CODE_PATH,
+  GEORGETOWN_UDC_LIBRARY_SLUG,
+  GEORGETOWN_UDC_PRODUCT_FILTER,
+} from "./georgetown-udc-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -264,6 +275,31 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildLeanderCuratedQueries();
+    },
+  },
+  {
+    tenant: GEORGETOWN_UDC_JURISDICTION,
+    label: "Georgetown Unified Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: GEORGETOWN_UDC_JURISDICTION,
+        jurisdictionName: GEORGETOWN_UDC_JURISDICTION_NAME,
+        editionLabel: GEORGETOWN_UDC_EDITION_LABEL,
+        clientId: GEORGETOWN_UDC_CLIENT_ID,
+        librarySlug: GEORGETOWN_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(GEORGETOWN_UDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(GEORGETOWN_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: GEORGETOWN_UDC_LIBRARY_CODE_PATH,
+        // Georgetown's UDC fans out to 16 chapters of multi-level
+        // SECTION/Sec. units; an 800 cap clears the leaf count with
+        // headroom (the per-parent fetch dedup keeps actual requests
+        // well below it).
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildGeorgetownUdcCuratedQueries();
     },
   },
   {
