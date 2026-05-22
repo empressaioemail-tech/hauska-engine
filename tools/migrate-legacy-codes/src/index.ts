@@ -94,6 +94,15 @@ import {
   GEORGETOWN_UDC_PRODUCT_FILTER,
 } from "./georgetown-udc-curated-queries.js";
 import {
+  buildNewBraunfelsCuratedQueries,
+  NEW_BRAUNFELS_CHAPTER_FILTER,
+  NEW_BRAUNFELS_CLIENT_ID,
+  NEW_BRAUNFELS_EDITION_LABEL,
+  NEW_BRAUNFELS_JURISDICTION,
+  NEW_BRAUNFELS_JURISDICTION_NAME,
+  NEW_BRAUNFELS_LIBRARY_SLUG,
+} from "./new-braunfels-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1421,6 +1430,119 @@ program
   .description("Print the Georgetown UDC curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildGeorgetownUdcCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-new-braunfels")
+  .description(
+    "Sync 5 Tier 2: Path C live re-ingest of the City of New Braunfels land-development chapters (Community Development, Planning, Signs, Subdivision Platting, Zoning) from the Municode JSON API (clientId 3504). Layer 3 bespoke local code; tagged platform-internal per Path A (non-partnered).",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    NEW_BRAUNFELS_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option(
+    "--show-sections",
+    "Also print all ingested section entityIds + section numbers + titles.",
+  )
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: NEW_BRAUNFELS_JURISDICTION,
+        jurisdictionName: NEW_BRAUNFELS_JURISDICTION_NAME,
+        editionLabel: NEW_BRAUNFELS_EDITION_LABEL,
+        clientId: NEW_BRAUNFELS_CLIENT_ID,
+        librarySlug: NEW_BRAUNFELS_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-new-braunfels")
+  .description(
+    "Sync 5 Tier 2: Path C end-to-end — live New Braunfels re-ingest + curated-query eval against the B.4 quality bar (90% top-3 / 100% section-number / 95% cross-reference).",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    NEW_BRAUNFELS_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option(
+    "--queries-file <path>",
+    "Optional JSON file of curated queries to use instead of the seed set",
+  )
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: NEW_BRAUNFELS_JURISDICTION,
+        jurisdictionName: NEW_BRAUNFELS_JURISDICTION_NAME,
+        editionLabel: NEW_BRAUNFELS_EDITION_LABEL,
+        clientId: NEW_BRAUNFELS_CLIENT_ID,
+        librarySlug: NEW_BRAUNFELS_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildNewBraunfelsCuratedQueries();
+      }
+
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: NEW_BRAUNFELS_JURISDICTION,
+        queries,
+      });
+
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-new-braunfels-queries")
+  .description("Print the New Braunfels curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildNewBraunfelsCuratedQueries(), null, 2));
   });
 
 program
