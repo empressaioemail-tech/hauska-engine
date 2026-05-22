@@ -23,6 +23,10 @@
       "types": "./src/atomization/index.ts",
       "import": "./src/atomization/index.ts"
     },
+    "./model-code": {
+      "types": "./src/model-code/index.ts",
+      "import": "./src/model-code/index.ts"
+    },
     "./eval": {
       "types": "./src/eval/index.ts",
       "import": "./src/eval/index.ts"

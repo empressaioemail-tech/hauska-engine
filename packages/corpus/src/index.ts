@@ -9,6 +9,7 @@
 export * as adapters from "./adapters/index.js";
 export * as extraction from "./extraction/index.js";
 export * as atomization from "./atomization/index.js";
+export * as modelCode from "./model-code/index.js";
 export * as evalHarness from "./eval/index.js";
 export * as versionTracking from "./version-tracking/index.js";
 export * as curatedQueries from "./curated-queries/index.js";
