@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildManorCuratedQueries,
+  MANOR_CHAPTER_FILTER,
+  MANOR_CLIENT_ID,
+  MANOR_EDITION_LABEL,
+  MANOR_JURISDICTION,
+  MANOR_JURISDICTION_NAME,
+  MANOR_LIBRARY_SLUG,
+} from "./manor-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: MANOR_JURISDICTION,
+    label: "Manor Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: MANOR_JURISDICTION,
+        jurisdictionName: MANOR_JURISDICTION_NAME,
+        editionLabel: MANOR_EDITION_LABEL,
+        clientId: MANOR_CLIENT_ID,
+        librarySlug: MANOR_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(MANOR_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildManorCuratedQueries();
     },
   },
   {
