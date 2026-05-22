@@ -83,6 +83,17 @@ import {
   LEANDER_LIBRARY_SLUG,
 } from "./leander-curated-queries.js";
 import {
+  buildGeorgetownUdcCuratedQueries,
+  GEORGETOWN_UDC_CHAPTER_FILTER,
+  GEORGETOWN_UDC_CLIENT_ID,
+  GEORGETOWN_UDC_EDITION_LABEL,
+  GEORGETOWN_UDC_JURISDICTION,
+  GEORGETOWN_UDC_JURISDICTION_NAME,
+  GEORGETOWN_UDC_LIBRARY_CODE_PATH,
+  GEORGETOWN_UDC_LIBRARY_SLUG,
+  GEORGETOWN_UDC_PRODUCT_FILTER,
+} from "./georgetown-udc-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1293,6 +1304,123 @@ program
   .description("Print the Taylor LDC curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildTaylorLdcCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-georgetown")
+  .description(
+    "Sync 5 Tier 1: Path C live re-ingest of the City of Georgetown Unified Development Code from the Municode JSON API (clientId 12078, product 'Unified Development Code'). Georgetown publishes the UDC as a separate Municode product from its Code of Ordinances, so the ingest selects it via productNameFilter. Layer 3 bespoke local code; tagged platform-internal per Path A (non-partnered).",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    GEORGETOWN_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option(
+    "--show-sections",
+    "Also print all ingested section entityIds + section numbers + titles.",
+  )
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: GEORGETOWN_UDC_JURISDICTION,
+        jurisdictionName: GEORGETOWN_UDC_JURISDICTION_NAME,
+        editionLabel: GEORGETOWN_UDC_EDITION_LABEL,
+        clientId: GEORGETOWN_UDC_CLIENT_ID,
+        librarySlug: GEORGETOWN_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(GEORGETOWN_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: GEORGETOWN_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-georgetown")
+  .description(
+    "Sync 5 Tier 1: Path C end-to-end — live Georgetown UDC re-ingest + curated-query eval against the B.4 quality bar (90% top-3 / 100% section-number / 95% cross-reference).",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    GEORGETOWN_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option(
+    "--queries-file <path>",
+    "Optional JSON file of curated queries to use instead of the seed set",
+  )
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: GEORGETOWN_UDC_JURISDICTION,
+        jurisdictionName: GEORGETOWN_UDC_JURISDICTION_NAME,
+        editionLabel: GEORGETOWN_UDC_EDITION_LABEL,
+        clientId: GEORGETOWN_UDC_CLIENT_ID,
+        librarySlug: GEORGETOWN_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(GEORGETOWN_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: GEORGETOWN_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildGeorgetownUdcCuratedQueries();
+      }
+
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: GEORGETOWN_UDC_JURISDICTION,
+        queries,
+      });
+
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-georgetown-udc-queries")
+  .description("Print the Georgetown UDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildGeorgetownUdcCuratedQueries(), null, 2));
   });
 
 program

@@ -54,6 +54,18 @@ export interface MunicodeHtmlAdapterOptions {
    * to (e.g.) the Unified Development Code chapter only.
    */
   chapterFilter?: RegExp;
+  /**
+   * Selects which Municode code PRODUCT to walk when one clientId
+   * publishes more than one. `ClientContent` returns a `codes[]` array;
+   * the JSON walker defaults to `codes[0]`, which is fine for the common
+   * single-product city. Georgetown, TX publishes its Code of Ordinances
+   * and its Unified Development Code as two separate products under one
+   * clientId — `codes[0]` is the Code of Ordinances, so the UDC ingest
+   * must select the second product by name. When set, the first `codes`
+   * entry whose `productName` matches is used; when unset, `codes[0]` —
+   * byte-identical to the pre-existing single-product behavior.
+   */
+  productNameFilter?: RegExp;
   /** Maximum leaf-content fetches (politeness ceiling). Defaults to 60. */
   maxLeafFetches?: number;
   /** Maximum TOC recursion depth. Defaults to 6. */
@@ -98,6 +110,7 @@ export class MunicodeHtmlAdapter implements CodeSourceAdapter {
   private readonly librarySlug?: string;
   private readonly stateAbbr?: string;
   private readonly chapterFilter?: RegExp;
+  private readonly productNameFilter?: RegExp;
   private readonly maxLeafFetches: number;
   private readonly maxTocDepth: number;
   private readonly jsonClient?: MunicodeJsonClient;
@@ -109,6 +122,7 @@ export class MunicodeHtmlAdapter implements CodeSourceAdapter {
     this.librarySlug = opts.librarySlug;
     this.stateAbbr = opts.stateAbbr;
     this.chapterFilter = opts.chapterFilter;
+    this.productNameFilter = opts.productNameFilter;
     this.maxLeafFetches = opts.maxLeafFetches ?? 60;
     this.maxTocDepth = opts.maxTocDepth ?? 6;
     this.jsonClient = opts.jsonClient;
@@ -199,7 +213,14 @@ export class MunicodeHtmlAdapter implements CodeSourceAdapter {
     if (!this.clientId) return null;
     const client = this.getOrBuildJsonClient();
     const clientContent = await client.getClientContent(this.clientId);
-    const product = clientContent?.codes?.[0];
+    const codes = clientContent?.codes ?? [];
+    // Default to codes[0] (the common single-product city); when a
+    // productNameFilter is set, pick the first matching product so a
+    // multi-product clientId (Georgetown: Code of Ordinances + UDC) can
+    // be walked at the right one.
+    const product = this.productNameFilter
+      ? codes.find((c) => this.productNameFilter!.test(c.productName))
+      : codes[0];
     if (!product) return null;
     return await client.getLatestJob(product.productId);
   }

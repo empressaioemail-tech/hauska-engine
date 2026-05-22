@@ -238,3 +238,64 @@ describe("MunicodeHtmlAdapter — JSON mode per-parent fetch dedup", () => {
     expect(headings.length).toBeGreaterThanOrEqual(6);
   });
 });
+
+// A clientId that publishes TWO code products — the Georgetown, TX shape
+// (Code of Ordinances + a separate Unified Development Code). `getLatestJob`
+// records which productId it was asked for so the test can assert the
+// productNameFilter steered the walk to the right product.
+class TwoProductJsonClient extends MunicodeJsonClient {
+  public latestJobProductId: number | null = null;
+
+  override async getClientContent() {
+    return {
+      codes: [
+        { productName: "Code of Ordinances", productId: 500 },
+        { productName: "Unified Development Code", productId: 501 },
+      ],
+    };
+  }
+  override async getLatestJob(productId: number) {
+    this.latestJobProductId = productId;
+    return { Id: 7, Name: "Supplement 3", ProductId: productId };
+  }
+  override async getTocChildren(): Promise<MunicodeTocNode[]> {
+    return [];
+  }
+  override async getCodesContent(): Promise<MunicodeContentEnvelope> {
+    return { Docs: [], PdfUrl: null, ShowToc: false };
+  }
+}
+
+describe("MunicodeHtmlAdapter — multi-product code selection", () => {
+  const ref: CodeReference = {
+    sourceId: "500:test:TX:test-udc",
+    jurisdictionTenant: "test_tx",
+    editionLabel: "Test Code",
+    sourceUrl: "https://library.municode.com/tx/test/codes/code_of_ordinances",
+  };
+
+  it("defaults to codes[0] when no productNameFilter is set", async () => {
+    const stub = new TwoProductJsonClient();
+    const adapter = new MunicodeHtmlAdapter({
+      clientId: 12078,
+      librarySlug: "test",
+      stateAbbr: "TX",
+      jsonClient: stub,
+    });
+    await adapter.fetch(ref);
+    expect(stub.latestJobProductId).toBe(500);
+  });
+
+  it("selects the matching product when productNameFilter is set", async () => {
+    const stub = new TwoProductJsonClient();
+    const adapter = new MunicodeHtmlAdapter({
+      clientId: 12078,
+      librarySlug: "test",
+      stateAbbr: "TX",
+      jsonClient: stub,
+      productNameFilter: /unified development code/i,
+    });
+    await adapter.fetch(ref);
+    expect(stub.latestJobProductId).toBe(501);
+  });
+});

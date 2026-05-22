@@ -40,6 +40,19 @@ export interface PathCIngestOptions {
    * point is to scope the walk to the UDC / zoning subtree.
    */
   chapterFilter: RegExp;
+  /**
+   * Optional Municode code-PRODUCT selector. When a clientId publishes
+   * more than one code product (Georgetown: Code of Ordinances + a
+   * separate Unified Development Code), this regex picks the product by
+   * `productName`; unset walks the first product, the common case.
+   */
+  productNameFilter?: RegExp;
+  /**
+   * Municode library code-path segment used to build the canonical
+   * `sourceUrl` (`/codes/<path>`). Defaults to `code_of_ordinances`;
+   * Georgetown's UDC is published at `/codes/unified_development_code`.
+   */
+  libraryCodePath?: string;
   /** Per-run leaf-fetch budget. Defaults to 60. */
   maxLeafFetches?: number;
   /** Optional pre-configured adapter (lets tests stub the walker). */
@@ -96,16 +109,20 @@ export async function runPathCIngest(
       librarySlug: options.librarySlug,
       stateAbbr: options.stateAbbr,
       chapterFilter: options.chapterFilter,
+      ...(options.productNameFilter !== undefined
+        ? { productNameFilter: options.productNameFilter }
+        : {}),
       ...(options.maxLeafFetches !== undefined
         ? { maxLeafFetches: options.maxLeafFetches }
         : {}),
     });
 
+  const libraryCodePath = options.libraryCodePath ?? "code_of_ordinances";
   const reference: CodeReference = {
     sourceId: `${options.clientId}:${options.librarySlug}:${options.stateAbbr}:${options.jurisdictionTenant}-udc`,
     jurisdictionTenant: options.jurisdictionTenant,
     editionLabel: options.editionLabel,
-    sourceUrl: `https://library.municode.com/${options.stateAbbr.toLowerCase()}/${options.librarySlug}/codes/code_of_ordinances`,
+    sourceUrl: `https://library.municode.com/${options.stateAbbr.toLowerCase()}/${options.librarySlug}/codes/${libraryCodePath}`,
   };
 
   const raw = await adapter.fetch(reference);
