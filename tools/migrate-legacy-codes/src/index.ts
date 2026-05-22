@@ -74,6 +74,15 @@ import {
   TAYLOR_LDC_PDF_URL,
 } from "./taylor-ldc-curated-queries.js";
 import {
+  buildLeanderCuratedQueries,
+  LEANDER_CHAPTER_FILTER,
+  LEANDER_CLIENT_ID,
+  LEANDER_EDITION_LABEL,
+  LEANDER_JURISDICTION,
+  LEANDER_JURISDICTION_NAME,
+  LEANDER_LIBRARY_SLUG,
+} from "./leander-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1082,6 +1091,119 @@ program
   .description("Print the Round Rock curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildRoundRockCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-leander")
+  .description(
+    "Sync 5 Tier 1: Path C live re-ingest of Leander's Subdivision (Chapter 10) and Zoning (Chapter 14) regulations from the Municode JSON API (clientId 2988). Leander embeds both as Exhibit A ordinances with bare-numbered sections; the PR #22 disambiguation re-keys the colliding ones. Layer 3 bespoke local code; tagged platform-internal per Path A (non-partnered).",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    LEANDER_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option(
+    "--show-sections",
+    "Also print all ingested section entityIds + section numbers + titles.",
+  )
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: LEANDER_JURISDICTION,
+        jurisdictionName: LEANDER_JURISDICTION_NAME,
+        editionLabel: LEANDER_EDITION_LABEL,
+        clientId: LEANDER_CLIENT_ID,
+        librarySlug: LEANDER_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-leander")
+  .description(
+    "Sync 5 Tier 1: Path C end-to-end — live Leander re-ingest + curated-query eval against the B.4 quality bar (90% top-3 / 100% section-number / 95% cross-reference).",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    LEANDER_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option(
+    "--queries-file <path>",
+    "Optional JSON file of curated queries to use instead of the seed set",
+  )
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: LEANDER_JURISDICTION,
+        jurisdictionName: LEANDER_JURISDICTION_NAME,
+        editionLabel: LEANDER_EDITION_LABEL,
+        clientId: LEANDER_CLIENT_ID,
+        librarySlug: LEANDER_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildLeanderCuratedQueries();
+      }
+
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: LEANDER_JURISDICTION,
+        queries,
+      });
+
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-leander-queries")
+  .description("Print the Leander curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildLeanderCuratedQueries(), null, 2));
   });
 
 program

@@ -264,10 +264,17 @@ function tokenize(s: string): ReadonlyArray<string> {
   // intact: "36-7", "46-1", "5.04(b)", "R301.1" all stay single tokens.
   // Without `-` in the keep-set the anchor-boost match for Municode-
   // style chapter-number labels (e.g. "36-7.") would never fire.
+  //
+  // Single-character tokens are dropped as noise (stray "a", "I" from
+  // "(a)" / Roman numerals) — EXCEPT a lone digit, which is a real
+  // section-number anchor. Embedded-ordinance exhibits (Leander's
+  // Subdivision / Zoning Exhibit A) number sections with bare integers
+  // `1.`-`9.`; dropping the digit would silently disable the
+  // section-number boost for every one of them.
   return s
     .split(/[^a-z0-9.-]+/i)
     .map((t) => t.toLowerCase())
-    .filter((t) => t.length >= 2);
+    .filter((t) => t.length >= 2 || /^[0-9]$/.test(t));
 }
 
 function buildResult(

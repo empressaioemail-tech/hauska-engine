@@ -12,6 +12,11 @@ import { describe, expect, it } from "vitest";
 import { runAdapterConformance } from "../../__fixtures__/conformance.js";
 import { RespectfulFetch } from "../../http.js";
 import { MunicodeHtmlAdapter } from "../index.js";
+import {
+  MunicodeJsonClient,
+  type MunicodeContentEnvelope,
+  type MunicodeTocNode,
+} from "../json-client.js";
 import type { CodeReference, RawCode } from "../../types.js";
 
 class StubFetch extends RespectfulFetch {
@@ -100,5 +105,136 @@ describe("MunicodeHtmlAdapter — content-specific", () => {
       (b) => b.kind === "amendment-record",
     );
     expect(amendments.length).toBe(1);
+  });
+});
+
+// Stub JSON client: a one-chapter / two-article / six-section TOC.
+// `getCodesContent` records every call and returns the whole article's
+// Docs for any leaf within it — mirroring Municode's real fan-out.
+class StubJsonClient extends MunicodeJsonClient {
+  public readonly codesContentCalls: string[] = [];
+
+  override async getClientContent() {
+    return { codes: [{ productName: "Code of Ordinances", productId: 100 }] };
+  }
+  override async getLatestJob() {
+    return { Id: 9, Name: "Supplement 1", ProductId: 100 };
+  }
+  override async getTocChildren(
+    _jobId: number,
+    _productId: number,
+    nodeId?: string,
+  ): Promise<MunicodeTocNode[]> {
+    const n = (
+      Id: string,
+      Heading: string,
+      ParentId: string,
+      HasChildren: boolean,
+    ): MunicodeTocNode => ({
+      Id,
+      Heading,
+      ParentId,
+      NodeDepth: 1,
+      HasChildren,
+      DocOrderId: 0,
+    });
+    if (!nodeId) return [n("CH1", "CHAPTER 1 - ZONING", "", true)];
+    if (nodeId === "CH1")
+      return [
+        n("CH1_ART1", "ARTICLE I. - GENERAL", "CH1", true),
+        n("CH1_ART2", "ARTICLE II. - DISTRICTS", "CH1", true),
+      ];
+    if (nodeId === "CH1_ART1")
+      return [
+        n("CH1_ART1_S1", "Sec. 1. - Authority", "CH1_ART1", false),
+        n("CH1_ART1_S2", "Sec. 2. - Purpose", "CH1_ART1", false),
+        n("CH1_ART1_S3", "Sec. 3. - Scope", "CH1_ART1", false),
+      ];
+    if (nodeId === "CH1_ART2")
+      return [
+        n("CH1_ART2_S1", "Sec. 1. - Residential", "CH1_ART2", false),
+        n("CH1_ART2_S2", "Sec. 2. - Commercial", "CH1_ART2", false),
+        n("CH1_ART2_S3", "Sec. 3. - Industrial", "CH1_ART2", false),
+      ];
+    return [];
+  }
+  override async getCodesContent(
+    _jobId: number,
+    _productId: number,
+    nodeId: string,
+  ): Promise<MunicodeContentEnvelope> {
+    this.codesContentCalls.push(nodeId);
+    const doc = (Id: string, Title: string, Content: string) => ({
+      Id,
+      Title,
+      Content,
+      NodeDepth: 3,
+      DocOrderId: 0,
+      TitleHtml: null,
+      IsAmended: false,
+      IsUpdated: false,
+    });
+    const docs =
+      nodeId.startsWith("CH1_ART1")
+        ? [
+            doc("CH1_ART1_S1", "Sec. 1. - Authority", "<p>Authority for these regulations.</p>"),
+            doc("CH1_ART1_S2", "Sec. 2. - Purpose", "<p>Purpose of this article.</p>"),
+            doc("CH1_ART1_S3", "Sec. 3. - Scope", "<p>Scope of application.</p>"),
+          ]
+        : [
+            doc("CH1_ART2_S1", "Sec. 1. - Residential", "<p>Residential district rules.</p>"),
+            doc("CH1_ART2_S2", "Sec. 2. - Commercial", "<p>Commercial district rules.</p>"),
+            doc("CH1_ART2_S3", "Sec. 3. - Industrial", "<p>Industrial district rules.</p>"),
+          ];
+    return { Docs: docs, PdfUrl: null, ShowToc: false };
+  }
+}
+
+describe("MunicodeHtmlAdapter — JSON mode per-parent fetch dedup", () => {
+  const jsonReference: CodeReference = {
+    sourceId: "100:test:TX:test-udc",
+    jurisdictionTenant: "test_tx",
+    editionLabel: "Test Code",
+    sourceUrl: "https://library.municode.com/tx/test/codes/code_of_ordinances",
+  };
+
+  it("issues one CodesContent fetch per parent article, not per leaf", async () => {
+    const stub = new StubJsonClient();
+    const jsonAdapter = new MunicodeHtmlAdapter({
+      clientId: 100,
+      librarySlug: "test",
+      stateAbbr: "TX",
+      jsonClient: stub,
+    });
+    const raw = await jsonAdapter.fetch(jsonReference);
+    // Six leaf sections under two parent articles -> two fetches.
+    expect(stub.codesContentCalls).toHaveLength(2);
+    // Every section still reaches the assembled body — the per-article
+    // fan-out means one fetch carries all of its siblings.
+    for (const title of [
+      "Authority",
+      "Purpose",
+      "Scope",
+      "Residential",
+      "Commercial",
+      "Industrial",
+    ]) {
+      expect(raw.body).toContain(title);
+    }
+  });
+
+  it("atomizes all six sections after the deduped fetch", async () => {
+    const stub = new StubJsonClient();
+    const jsonAdapter = new MunicodeHtmlAdapter({
+      clientId: 100,
+      librarySlug: "test",
+      stateAbbr: "TX",
+      jsonClient: stub,
+    });
+    const raw = await jsonAdapter.fetch(jsonReference);
+    const normalized = await jsonAdapter.normalize(raw);
+    const headings = normalized.blocks.filter((b) => b.kind === "heading");
+    // Two article h2s + six section h3s survive the walk.
+    expect(headings.length).toBeGreaterThanOrEqual(6);
   });
 });

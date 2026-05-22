@@ -234,19 +234,47 @@ export class MunicodeHtmlAdapter implements CodeSourceAdapter {
       leaves.push(...visited);
       leafBudget -= visited.length;
     }
-    // Fetch content for each leaf node up to the budget.
+    // Municode's CodesContent endpoint returns every Doc in the leaf's
+    // containing article (often its whole chapter), not just the leaf
+    // itself. Group leaves by ParentId and, within a group, skip a leaf
+    // once its own Id has already appeared among the Docs of an earlier
+    // sibling's envelope — one fetch then covers the whole article.
+    // A large code (Leander's Subdivision + Zoning exhibits run to ~550
+    // leaf nodes) otherwise issues hundreds of redundant per-section
+    // requests, which throttle out and silently drop the tail articles.
+    //
+    // A leaf left uncovered — because its envelope was narrow, or an
+    // earlier sibling's fetch failed — is still fetched in turn, so a
+    // transient drop self-heals and a source whose envelopes carry only
+    // the requested leaf degrades gracefully to one fetch per leaf.
+    const byParent = new Map<string, MunicodeTocNode[]>();
+    for (const leaf of leaves) {
+      const group = byParent.get(leaf.ParentId);
+      if (group) group.push(leaf);
+      else byParent.set(leaf.ParentId, [leaf]);
+    }
     const contentEnvelopes: Array<{
       node: MunicodeTocNode;
       envelope: MunicodeContentEnvelope | null;
     }> = [];
-    for (const leaf of leaves.slice(0, this.maxLeafFetches)) {
-      let envelope: MunicodeContentEnvelope | null = null;
-      try {
-        envelope = await client.getCodesContent(job.Id, job.ProductId, leaf.Id);
-      } catch {
-        envelope = null;
+    let fetchCount = 0;
+    for (const group of byParent.values()) {
+      const coveredDocIds = new Set<string>();
+      for (const leaf of group) {
+        if (fetchCount >= this.maxLeafFetches) break;
+        if (coveredDocIds.has(leaf.Id)) continue;
+        fetchCount += 1;
+        let envelope: MunicodeContentEnvelope | null = null;
+        try {
+          envelope = await client.getCodesContent(job.Id, job.ProductId, leaf.Id);
+        } catch {
+          envelope = null;
+        }
+        contentEnvelopes.push({ node: leaf, envelope });
+        if (envelope) {
+          for (const doc of envelope.Docs) coveredDocIds.add(doc.Id);
+        }
       }
-      contentEnvelopes.push({ node: leaf, envelope });
     }
     const body = this.assembleHtmlFromEnvelopes(contentEnvelopes);
     // Preserve operator-supplied editionLabel (the reference's editionLabel
