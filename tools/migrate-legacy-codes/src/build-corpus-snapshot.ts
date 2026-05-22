@@ -82,6 +82,15 @@ import {
   TAYLOR_LDC_NORMALIZE_OPTIONS,
   TAYLOR_LDC_PDF_URL,
 } from "./taylor-ldc-curated-queries.js";
+import {
+  buildLeanderCuratedQueries,
+  LEANDER_CHAPTER_FILTER,
+  LEANDER_CLIENT_ID,
+  LEANDER_EDITION_LABEL,
+  LEANDER_JURISDICTION,
+  LEANDER_JURISDICTION_NAME,
+  LEANDER_LIBRARY_SLUG,
+} from "./leander-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -232,6 +241,29 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         normalizeOptions: TAYLOR_LDC_NORMALIZE_OPTIONS,
       });
       return buildTaylorLdcCuratedQueries();
+    },
+  },
+  {
+    tenant: LEANDER_JURISDICTION,
+    label: "Leander Subdivision + Zoning (Path C / Municode, disambiguated)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: LEANDER_JURISDICTION,
+        jurisdictionName: LEANDER_JURISDICTION_NAME,
+        editionLabel: LEANDER_EDITION_LABEL,
+        clientId: LEANDER_CLIENT_ID,
+        librarySlug: LEANDER_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(LEANDER_CHAPTER_FILTER, "i"),
+        // Leander's Subdivision + Zoning exhibits fan out to ~550 leaf
+        // TOC nodes; an 800 cap clears the truncation boundary so every
+        // article's content ingests reliably (a 400 cap dropped the
+        // tail articles intermittently).
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildLeanderCuratedQueries();
     },
   },
   {
