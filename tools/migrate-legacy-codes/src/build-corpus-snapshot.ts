@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildBrownsvilleCuratedQueries,
+  BROWNSVILLE_CHAPTER_FILTER,
+  BROWNSVILLE_CLIENT_ID,
+  BROWNSVILLE_EDITION_LABEL,
+  BROWNSVILLE_JURISDICTION,
+  BROWNSVILLE_JURISDICTION_NAME,
+  BROWNSVILLE_LIBRARY_SLUG,
+} from "./brownsville-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: BROWNSVILLE_JURISDICTION,
+    label: "Brownsville Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: BROWNSVILLE_JURISDICTION,
+        jurisdictionName: BROWNSVILLE_JURISDICTION_NAME,
+        editionLabel: BROWNSVILLE_EDITION_LABEL,
+        clientId: BROWNSVILLE_CLIENT_ID,
+        librarySlug: BROWNSVILLE_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(BROWNSVILLE_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 2000,
+        accessPolicy: "platform-internal",
+      });
+      return buildBrownsvilleCuratedQueries();
     },
   },
   {
