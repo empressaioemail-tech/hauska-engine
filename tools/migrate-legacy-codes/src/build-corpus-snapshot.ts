@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildWimberleyCuratedQueries,
+  WIMBERLEY_CHAPTER_FILTER,
+  WIMBERLEY_CLIENT_ID,
+  WIMBERLEY_EDITION_LABEL,
+  WIMBERLEY_JURISDICTION,
+  WIMBERLEY_JURISDICTION_NAME,
+  WIMBERLEY_LIBRARY_SLUG,
+} from "./wimberley-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: WIMBERLEY_JURISDICTION,
+    label: "Wimberley Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: WIMBERLEY_JURISDICTION,
+        jurisdictionName: WIMBERLEY_JURISDICTION_NAME,
+        editionLabel: WIMBERLEY_EDITION_LABEL,
+        clientId: WIMBERLEY_CLIENT_ID,
+        librarySlug: WIMBERLEY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(WIMBERLEY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 400,
+        accessPolicy: "platform-internal",
+      });
+      return buildWimberleyCuratedQueries();
     },
   },
   {
