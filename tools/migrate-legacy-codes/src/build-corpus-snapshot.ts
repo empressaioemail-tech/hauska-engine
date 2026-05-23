@@ -120,6 +120,17 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildSchertzUdcCuratedQueries,
+  SCHERTZ_UDC_CHAPTER_FILTER,
+  SCHERTZ_UDC_CLIENT_ID,
+  SCHERTZ_UDC_EDITION_LABEL,
+  SCHERTZ_UDC_JURISDICTION,
+  SCHERTZ_UDC_JURISDICTION_NAME,
+  SCHERTZ_UDC_LIBRARY_CODE_PATH,
+  SCHERTZ_UDC_LIBRARY_SLUG,
+  SCHERTZ_UDC_PRODUCT_FILTER,
+} from "./schertz-udc-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +367,27 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: SCHERTZ_UDC_JURISDICTION,
+    label: "Schertz Unified Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SCHERTZ_UDC_JURISDICTION,
+        jurisdictionName: SCHERTZ_UDC_JURISDICTION_NAME,
+        editionLabel: SCHERTZ_UDC_EDITION_LABEL,
+        clientId: SCHERTZ_UDC_CLIENT_ID,
+        librarySlug: SCHERTZ_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SCHERTZ_UDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(SCHERTZ_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SCHERTZ_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: 2000,
+        accessPolicy: "platform-internal",
+      });
+      return buildSchertzUdcCuratedQueries();
     },
   },
   {
