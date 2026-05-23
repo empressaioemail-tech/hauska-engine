@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildLiveOakCuratedQueries,
+  LIVE_OAK_CHAPTER_FILTER,
+  LIVE_OAK_CLIENT_ID,
+  LIVE_OAK_EDITION_LABEL,
+  LIVE_OAK_JURISDICTION,
+  LIVE_OAK_JURISDICTION_NAME,
+  LIVE_OAK_LIBRARY_SLUG,
+} from "./live-oak-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: LIVE_OAK_JURISDICTION,
+    label: "Live Oak Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: LIVE_OAK_JURISDICTION,
+        jurisdictionName: LIVE_OAK_JURISDICTION_NAME,
+        editionLabel: LIVE_OAK_EDITION_LABEL,
+        clientId: LIVE_OAK_CLIENT_ID,
+        librarySlug: LIVE_OAK_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(LIVE_OAK_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1000,
+        accessPolicy: "platform-internal",
+      });
+      return buildLiveOakCuratedQueries();
     },
   },
   {
