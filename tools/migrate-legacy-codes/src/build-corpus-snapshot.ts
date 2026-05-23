@@ -120,6 +120,17 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildSanAntonioUdcCuratedQueries,
+  SAN_ANTONIO_UDC_CHAPTER_FILTER,
+  SAN_ANTONIO_UDC_CLIENT_ID,
+  SAN_ANTONIO_UDC_EDITION_LABEL,
+  SAN_ANTONIO_UDC_JURISDICTION,
+  SAN_ANTONIO_UDC_JURISDICTION_NAME,
+  SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+  SAN_ANTONIO_UDC_LIBRARY_SLUG,
+  SAN_ANTONIO_UDC_PRODUCT_FILTER,
+} from "./san-antonio-udc-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +367,27 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: SAN_ANTONIO_UDC_JURISDICTION,
+    label: "San Antonio Unified Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAN_ANTONIO_UDC_JURISDICTION,
+        jurisdictionName: SAN_ANTONIO_UDC_JURISDICTION_NAME,
+        editionLabel: SAN_ANTONIO_UDC_EDITION_LABEL,
+        clientId: SAN_ANTONIO_UDC_CLIENT_ID,
+        librarySlug: SAN_ANTONIO_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SAN_ANTONIO_UDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(SAN_ANTONIO_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: 8000,
+        accessPolicy: "platform-internal",
+      });
+      return buildSanAntonioUdcCuratedQueries();
     },
   },
   {

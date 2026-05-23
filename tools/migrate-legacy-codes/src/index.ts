@@ -112,6 +112,17 @@ import {
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
 import {
+  buildSanAntonioUdcCuratedQueries,
+  SAN_ANTONIO_UDC_CHAPTER_FILTER,
+  SAN_ANTONIO_UDC_CLIENT_ID,
+  SAN_ANTONIO_UDC_EDITION_LABEL,
+  SAN_ANTONIO_UDC_JURISDICTION,
+  SAN_ANTONIO_UDC_JURISDICTION_NAME,
+  SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+  SAN_ANTONIO_UDC_LIBRARY_SLUG,
+  SAN_ANTONIO_UDC_PRODUCT_FILTER,
+} from "./san-antonio-udc-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1656,6 +1667,114 @@ program
   .description("Print the Killeen curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildKilleenCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-san-antonio-udc")
+  .description(
+    "Sync 5 TX-metros: Path C live re-ingest of the City of San Antonio Unified Development Code from the Municode JSON API (clientId 11525, product 'Unified Development Code'). San Antonio publishes the UDC as a separate Municode product from its Code of Ordinances; productNameFilter selects it. Articles I-IX + substantive Appendices. Layer 3 bespoke local code; tagged platform-internal per Path A.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    SAN_ANTONIO_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "8000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAN_ANTONIO_UDC_JURISDICTION,
+        jurisdictionName: SAN_ANTONIO_UDC_JURISDICTION_NAME,
+        editionLabel: SAN_ANTONIO_UDC_EDITION_LABEL,
+        clientId: SAN_ANTONIO_UDC_CLIENT_ID,
+        librarySlug: SAN_ANTONIO_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(SAN_ANTONIO_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-san-antonio-udc")
+  .description(
+    "Sync 5 TX-metros: Path C end-to-end — live San Antonio UDC re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    SAN_ANTONIO_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "8000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAN_ANTONIO_UDC_JURISDICTION,
+        jurisdictionName: SAN_ANTONIO_UDC_JURISDICTION_NAME,
+        editionLabel: SAN_ANTONIO_UDC_EDITION_LABEL,
+        clientId: SAN_ANTONIO_UDC_CLIENT_ID,
+        librarySlug: SAN_ANTONIO_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(SAN_ANTONIO_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildSanAntonioUdcCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: SAN_ANTONIO_UDC_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-san-antonio-udc-queries")
+  .description("Print the San Antonio UDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildSanAntonioUdcCuratedQueries(), null, 2));
   });
 
 program
