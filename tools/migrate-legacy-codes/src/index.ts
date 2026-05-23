@@ -112,6 +112,15 @@ import {
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
 import {
+  buildCrowleyCuratedQueries,
+  CROWLEY_CHAPTER_FILTER,
+  CROWLEY_CLIENT_ID,
+  CROWLEY_EDITION_LABEL,
+  CROWLEY_JURISDICTION,
+  CROWLEY_JURISDICTION_NAME,
+  CROWLEY_LIBRARY_SLUG,
+} from "./crowley-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1657,6 +1666,70 @@ program
   .action(() => {
     console.log(JSON.stringify(buildKilleenCuratedQueries(), null, 2));
   });
+
+program
+  .command("path-c-ingest-crowley")
+  .description("Sync 5 TX-metros: Path C live re-ingest of the City of Crowley development regulations from the Municode JSON API (clientId 1823). Eleven top-level CoO dev chapters + Appendix A. Layer 3; platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", CROWLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: CROWLEY_JURISDICTION,
+      jurisdictionName: CROWLEY_JURISDICTION_NAME,
+      editionLabel: CROWLEY_EDITION_LABEL,
+      clientId: CROWLEY_CLIENT_ID,
+      librarySlug: CROWLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-crowley")
+  .description("Sync 5 TX-metros: Path C end-to-end Crowley.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", CROWLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: CROWLEY_JURISDICTION,
+      jurisdictionName: CROWLEY_JURISDICTION_NAME,
+      editionLabel: CROWLEY_EDITION_LABEL,
+      clientId: CROWLEY_CLIENT_ID,
+      librarySlug: CROWLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildCrowleyCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: CROWLEY_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-crowley-queries")
+  .description("Print the Crowley curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildCrowleyCuratedQueries(), null, 2)); });
 
 program
   .command("build-corpus-snapshot")

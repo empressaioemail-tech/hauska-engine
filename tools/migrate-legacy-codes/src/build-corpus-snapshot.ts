@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildCrowleyCuratedQueries,
+  CROWLEY_CHAPTER_FILTER,
+  CROWLEY_CLIENT_ID,
+  CROWLEY_EDITION_LABEL,
+  CROWLEY_JURISDICTION,
+  CROWLEY_JURISDICTION_NAME,
+  CROWLEY_LIBRARY_SLUG,
+} from "./crowley-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: CROWLEY_JURISDICTION,
+    label: "Crowley Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: CROWLEY_JURISDICTION,
+        jurisdictionName: CROWLEY_JURISDICTION_NAME,
+        editionLabel: CROWLEY_EDITION_LABEL,
+        clientId: CROWLEY_CLIENT_ID,
+        librarySlug: CROWLEY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(CROWLEY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildCrowleyCuratedQueries();
     },
   },
   {
