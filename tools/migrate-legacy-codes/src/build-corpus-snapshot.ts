@@ -120,6 +120,17 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildBoerneUdcCuratedQueries,
+  BOERNE_UDC_CHAPTER_FILTER,
+  BOERNE_UDC_CLIENT_ID,
+  BOERNE_UDC_EDITION_LABEL,
+  BOERNE_UDC_JURISDICTION,
+  BOERNE_UDC_JURISDICTION_NAME,
+  BOERNE_UDC_LIBRARY_CODE_PATH,
+  BOERNE_UDC_LIBRARY_SLUG,
+  BOERNE_UDC_PRODUCT_FILTER,
+} from "./boerne-udc-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +367,27 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: BOERNE_UDC_JURISDICTION,
+    label: "Boerne Unified Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: BOERNE_UDC_JURISDICTION,
+        jurisdictionName: BOERNE_UDC_JURISDICTION_NAME,
+        editionLabel: BOERNE_UDC_EDITION_LABEL,
+        clientId: BOERNE_UDC_CLIENT_ID,
+        librarySlug: BOERNE_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(BOERNE_UDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(BOERNE_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: BOERNE_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildBoerneUdcCuratedQueries();
     },
   },
   {
