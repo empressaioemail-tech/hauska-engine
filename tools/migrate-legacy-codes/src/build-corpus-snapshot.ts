@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildMissionCuratedQueries,
+  MISSION_CHAPTER_FILTER,
+  MISSION_CLIENT_ID,
+  MISSION_EDITION_LABEL,
+  MISSION_JURISDICTION,
+  MISSION_JURISDICTION_NAME,
+  MISSION_LIBRARY_SLUG,
+} from "./mission-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: MISSION_JURISDICTION,
+    label: "Mission Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: MISSION_JURISDICTION,
+        jurisdictionName: MISSION_JURISDICTION_NAME,
+        editionLabel: MISSION_EDITION_LABEL,
+        clientId: MISSION_CLIENT_ID,
+        librarySlug: MISSION_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(MISSION_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildMissionCuratedQueries();
     },
   },
   {
