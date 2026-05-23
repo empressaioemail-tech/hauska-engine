@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildSaginawCuratedQueries,
+  SAGINAW_CHAPTER_FILTER,
+  SAGINAW_CLIENT_ID,
+  SAGINAW_EDITION_LABEL,
+  SAGINAW_JURISDICTION,
+  SAGINAW_JURISDICTION_NAME,
+  SAGINAW_LIBRARY_SLUG,
+} from "./saginaw-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: SAGINAW_JURISDICTION,
+    label: "Saginaw Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAGINAW_JURISDICTION,
+        jurisdictionName: SAGINAW_JURISDICTION_NAME,
+        editionLabel: SAGINAW_EDITION_LABEL,
+        clientId: SAGINAW_CLIENT_ID,
+        librarySlug: SAGINAW_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SAGINAW_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildSaginawCuratedQueries();
     },
   },
   {
