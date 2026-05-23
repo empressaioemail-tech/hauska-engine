@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildConverseCuratedQueries,
+  CONVERSE_CHAPTER_FILTER,
+  CONVERSE_CLIENT_ID,
+  CONVERSE_EDITION_LABEL,
+  CONVERSE_JURISDICTION,
+  CONVERSE_JURISDICTION_NAME,
+  CONVERSE_LIBRARY_SLUG,
+} from "./converse-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: CONVERSE_JURISDICTION,
+    label: "Converse Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: CONVERSE_JURISDICTION,
+        jurisdictionName: CONVERSE_JURISDICTION_NAME,
+        editionLabel: CONVERSE_EDITION_LABEL,
+        clientId: CONVERSE_CLIENT_ID,
+        librarySlug: CONVERSE_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(CONVERSE_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildConverseCuratedQueries();
     },
   },
   {
