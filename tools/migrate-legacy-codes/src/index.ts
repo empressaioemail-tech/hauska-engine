@@ -112,6 +112,15 @@ import {
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
 import {
+  buildLagoVistaCuratedQueries,
+  LAGO_VISTA_CHAPTER_FILTER,
+  LAGO_VISTA_CLIENT_ID,
+  LAGO_VISTA_EDITION_LABEL,
+  LAGO_VISTA_JURISDICTION,
+  LAGO_VISTA_JURISDICTION_NAME,
+  LAGO_VISTA_LIBRARY_SLUG,
+} from "./lago-vista-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1657,6 +1666,72 @@ program
   .action(() => {
     console.log(JSON.stringify(buildKilleenCuratedQueries(), null, 2));
   });
+
+program
+  .command("path-c-ingest-lago-vista")
+  .description("Sync 5 Tier 2: Path C live re-ingest of the City of Lago Vista land-development chapters (Site Development Ch 3.5, Signs Ch 5, Subdivision Regulation Ch 10, Zoning Ch 14, Growth Management Ch 15) from the Municode JSON API (clientId 2904). Exhibit-ordinance pattern in Ch 10/14. Tagged platform-internal.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", LAGO_VISTA_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LAGO_VISTA_JURISDICTION,
+      jurisdictionName: LAGO_VISTA_JURISDICTION_NAME,
+      editionLabel: LAGO_VISTA_EDITION_LABEL,
+      clientId: LAGO_VISTA_CLIENT_ID,
+      librarySlug: LAGO_VISTA_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-lago-vista")
+  .description("Sync 5 Tier 2: Lago Vista re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", LAGO_VISTA_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LAGO_VISTA_JURISDICTION,
+      jurisdictionName: LAGO_VISTA_JURISDICTION_NAME,
+      editionLabel: LAGO_VISTA_EDITION_LABEL,
+      clientId: LAGO_VISTA_CLIENT_ID,
+      librarySlug: LAGO_VISTA_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildLagoVistaCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: LAGO_VISTA_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-lago-vista-queries")
+  .description("Print the Lago Vista curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildLagoVistaCuratedQueries(), null, 2)); });
 
 program
   .command("build-corpus-snapshot")

@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildLagoVistaCuratedQueries,
+  LAGO_VISTA_CHAPTER_FILTER,
+  LAGO_VISTA_CLIENT_ID,
+  LAGO_VISTA_EDITION_LABEL,
+  LAGO_VISTA_JURISDICTION,
+  LAGO_VISTA_JURISDICTION_NAME,
+  LAGO_VISTA_LIBRARY_SLUG,
+} from "./lago-vista-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: LAGO_VISTA_JURISDICTION,
+    label: "Lago Vista Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: LAGO_VISTA_JURISDICTION,
+        jurisdictionName: LAGO_VISTA_JURISDICTION_NAME,
+        editionLabel: LAGO_VISTA_EDITION_LABEL,
+        clientId: LAGO_VISTA_CLIENT_ID,
+        librarySlug: LAGO_VISTA_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(LAGO_VISTA_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildLagoVistaCuratedQueries();
     },
   },
   {
