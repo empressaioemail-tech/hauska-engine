@@ -112,6 +112,15 @@ import {
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
 import {
+  buildKellerCuratedQueries,
+  KELLER_CHAPTER_FILTER,
+  KELLER_CLIENT_ID,
+  KELLER_EDITION_LABEL,
+  KELLER_JURISDICTION,
+  KELLER_JURISDICTION_NAME,
+  KELLER_LIBRARY_SLUG,
+} from "./keller-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1657,6 +1666,70 @@ program
   .action(() => {
     console.log(JSON.stringify(buildKilleenCuratedQueries(), null, 2));
   });
+
+program
+  .command("path-c-ingest-keller")
+  .description("Sync 5 TX-metros: Path C live re-ingest of the City of Keller Unified Development Code from the Municode JSON API (clientId 2809). UDC lives at top-level under `PART III - UNIFIED DEVELOPMENT CODE`; the chapter filter targets that wrapper. Layer 3; platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", KELLER_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: KELLER_JURISDICTION,
+      jurisdictionName: KELLER_JURISDICTION_NAME,
+      editionLabel: KELLER_EDITION_LABEL,
+      clientId: KELLER_CLIENT_ID,
+      librarySlug: KELLER_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-keller")
+  .description("Sync 5 TX-metros: Path C end-to-end Keller.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", KELLER_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: KELLER_JURISDICTION,
+      jurisdictionName: KELLER_JURISDICTION_NAME,
+      editionLabel: KELLER_EDITION_LABEL,
+      clientId: KELLER_CLIENT_ID,
+      librarySlug: KELLER_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildKellerCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: KELLER_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-keller-queries")
+  .description("Print the Keller curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildKellerCuratedQueries(), null, 2)); });
 
 program
   .command("build-corpus-snapshot")

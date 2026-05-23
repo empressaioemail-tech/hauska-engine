@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildKellerCuratedQueries,
+  KELLER_CHAPTER_FILTER,
+  KELLER_CLIENT_ID,
+  KELLER_EDITION_LABEL,
+  KELLER_JURISDICTION,
+  KELLER_JURISDICTION_NAME,
+  KELLER_LIBRARY_SLUG,
+} from "./keller-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: KELLER_JURISDICTION,
+    label: "Keller Unified Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: KELLER_JURISDICTION,
+        jurisdictionName: KELLER_JURISDICTION_NAME,
+        editionLabel: KELLER_EDITION_LABEL,
+        clientId: KELLER_CLIENT_ID,
+        librarySlug: KELLER_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(KELLER_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 2000,
+        accessPolicy: "platform-internal",
+      });
+      return buildKellerCuratedQueries();
     },
   },
   {
