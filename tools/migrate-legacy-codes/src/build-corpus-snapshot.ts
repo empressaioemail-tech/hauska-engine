@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildRollingwoodCuratedQueries,
+  ROLLINGWOOD_CHAPTER_FILTER,
+  ROLLINGWOOD_CLIENT_ID,
+  ROLLINGWOOD_EDITION_LABEL,
+  ROLLINGWOOD_JURISDICTION,
+  ROLLINGWOOD_JURISDICTION_NAME,
+  ROLLINGWOOD_LIBRARY_SLUG,
+} from "./rollingwood-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: ROLLINGWOOD_JURISDICTION,
+    label: "Rollingwood Land Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: ROLLINGWOOD_JURISDICTION,
+        jurisdictionName: ROLLINGWOOD_JURISDICTION_NAME,
+        editionLabel: ROLLINGWOOD_EDITION_LABEL,
+        clientId: ROLLINGWOOD_CLIENT_ID,
+        librarySlug: ROLLINGWOOD_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(ROLLINGWOOD_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 400,
+        accessPolicy: "platform-internal",
+      });
+      return buildRollingwoodCuratedQueries();
     },
   },
   {

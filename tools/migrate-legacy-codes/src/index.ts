@@ -112,6 +112,15 @@ import {
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
 import {
+  buildRollingwoodCuratedQueries,
+  ROLLINGWOOD_CHAPTER_FILTER,
+  ROLLINGWOOD_CLIENT_ID,
+  ROLLINGWOOD_EDITION_LABEL,
+  ROLLINGWOOD_JURISDICTION,
+  ROLLINGWOOD_JURISDICTION_NAME,
+  ROLLINGWOOD_LIBRARY_SLUG,
+} from "./rollingwood-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1657,6 +1666,72 @@ program
   .action(() => {
     console.log(JSON.stringify(buildKilleenCuratedQueries(), null, 2));
   });
+
+program
+  .command("path-c-ingest-rollingwood")
+  .description("Sync 5 Tier 2: Path C live re-ingest of the City of Rollingwood Part II Land Development Code (Municode clientId 12936). Tagged platform-internal.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", ROLLINGWOOD_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: ROLLINGWOOD_JURISDICTION,
+      jurisdictionName: ROLLINGWOOD_JURISDICTION_NAME,
+      editionLabel: ROLLINGWOOD_EDITION_LABEL,
+      clientId: ROLLINGWOOD_CLIENT_ID,
+      librarySlug: ROLLINGWOOD_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-rollingwood")
+  .description("Sync 5 Tier 2: Rollingwood re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", ROLLINGWOOD_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: ROLLINGWOOD_JURISDICTION,
+      jurisdictionName: ROLLINGWOOD_JURISDICTION_NAME,
+      editionLabel: ROLLINGWOOD_EDITION_LABEL,
+      clientId: ROLLINGWOOD_CLIENT_ID,
+      librarySlug: ROLLINGWOOD_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildRollingwoodCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: ROLLINGWOOD_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-rollingwood-queries")
+  .description("Print the Rollingwood curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildRollingwoodCuratedQueries(), null, 2)); });
 
 program
   .command("build-corpus-snapshot")
