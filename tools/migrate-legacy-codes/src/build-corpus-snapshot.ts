@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildLockhartCuratedQueries,
+  LOCKHART_CHAPTER_FILTER,
+  LOCKHART_CLIENT_ID,
+  LOCKHART_EDITION_LABEL,
+  LOCKHART_JURISDICTION,
+  LOCKHART_JURISDICTION_NAME,
+  LOCKHART_LIBRARY_SLUG,
+} from "./lockhart-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: LOCKHART_JURISDICTION,
+    label: "Lockhart Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: LOCKHART_JURISDICTION,
+        jurisdictionName: LOCKHART_JURISDICTION_NAME,
+        editionLabel: LOCKHART_EDITION_LABEL,
+        clientId: LOCKHART_CLIENT_ID,
+        librarySlug: LOCKHART_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(LOCKHART_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 400,
+        accessPolicy: "platform-internal",
+      });
+      return buildLockhartCuratedQueries();
     },
   },
   {
