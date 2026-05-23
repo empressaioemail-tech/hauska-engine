@@ -112,6 +112,15 @@ import {
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
 import {
+  buildDrippingSpringsCuratedQueries,
+  DRIPPING_SPRINGS_CHAPTER_FILTER,
+  DRIPPING_SPRINGS_CLIENT_ID,
+  DRIPPING_SPRINGS_EDITION_LABEL,
+  DRIPPING_SPRINGS_JURISDICTION,
+  DRIPPING_SPRINGS_JURISDICTION_NAME,
+  DRIPPING_SPRINGS_LIBRARY_SLUG,
+} from "./dripping-springs-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1657,6 +1666,72 @@ program
   .action(() => {
     console.log(JSON.stringify(buildKilleenCuratedQueries(), null, 2));
   });
+
+program
+  .command("path-c-ingest-dripping-springs")
+  .description("Sync 5 Tier 2: Path C live re-ingest of the City of Dripping Springs land-development chapters (Signs Ch 26, Subdivisions+Site Dev Ch 28, Zoning Ch 30) from the Municode JSON API (clientId 15829). Exhibit pattern in Ch 28/30. Tagged platform-internal.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", DRIPPING_SPRINGS_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: DRIPPING_SPRINGS_JURISDICTION,
+      jurisdictionName: DRIPPING_SPRINGS_JURISDICTION_NAME,
+      editionLabel: DRIPPING_SPRINGS_EDITION_LABEL,
+      clientId: DRIPPING_SPRINGS_CLIENT_ID,
+      librarySlug: DRIPPING_SPRINGS_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-dripping-springs")
+  .description("Sync 5 Tier 2: Dripping Springs re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", DRIPPING_SPRINGS_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: DRIPPING_SPRINGS_JURISDICTION,
+      jurisdictionName: DRIPPING_SPRINGS_JURISDICTION_NAME,
+      editionLabel: DRIPPING_SPRINGS_EDITION_LABEL,
+      clientId: DRIPPING_SPRINGS_CLIENT_ID,
+      librarySlug: DRIPPING_SPRINGS_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildDrippingSpringsCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: DRIPPING_SPRINGS_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-dripping-springs-queries")
+  .description("Print the Dripping Springs curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildDrippingSpringsCuratedQueries(), null, 2)); });
 
 program
   .command("build-corpus-snapshot")

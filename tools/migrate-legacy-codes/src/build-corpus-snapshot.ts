@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildDrippingSpringsCuratedQueries,
+  DRIPPING_SPRINGS_CHAPTER_FILTER,
+  DRIPPING_SPRINGS_CLIENT_ID,
+  DRIPPING_SPRINGS_EDITION_LABEL,
+  DRIPPING_SPRINGS_JURISDICTION,
+  DRIPPING_SPRINGS_JURISDICTION_NAME,
+  DRIPPING_SPRINGS_LIBRARY_SLUG,
+} from "./dripping-springs-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: DRIPPING_SPRINGS_JURISDICTION,
+    label: "Dripping Springs Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: DRIPPING_SPRINGS_JURISDICTION,
+        jurisdictionName: DRIPPING_SPRINGS_JURISDICTION_NAME,
+        editionLabel: DRIPPING_SPRINGS_EDITION_LABEL,
+        clientId: DRIPPING_SPRINGS_CLIENT_ID,
+        librarySlug: DRIPPING_SPRINGS_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(DRIPPING_SPRINGS_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildDrippingSpringsCuratedQueries();
     },
   },
   {
