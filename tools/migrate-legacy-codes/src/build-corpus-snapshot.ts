@@ -129,6 +129,193 @@ import {
   COPPERAS_COVE_JURISDICTION_NAME,
   COPPERAS_COVE_LIBRARY_SLUG,
 } from "./copperas-cove-curated-queries.js";
+import {
+  buildAustinLdcCuratedQueries,
+  AUSTIN_LDC_CHAPTER_FILTER,
+  AUSTIN_LDC_CLIENT_ID,
+  AUSTIN_LDC_EDITION_LABEL,
+  AUSTIN_LDC_JURISDICTION,
+  AUSTIN_LDC_JURISDICTION_NAME,
+  AUSTIN_LDC_LIBRARY_CODE_PATH,
+  AUSTIN_LDC_LIBRARY_SLUG,
+  AUSTIN_LDC_PRODUCT_FILTER,
+} from "./austin-ldc-curated-queries.js";
+
+import {
+  buildManorCuratedQueries,
+  MANOR_CHAPTER_FILTER,
+  MANOR_CLIENT_ID,
+  MANOR_EDITION_LABEL,
+  MANOR_JURISDICTION,
+  MANOR_JURISDICTION_NAME,
+  MANOR_LIBRARY_SLUG,
+} from "./manor-curated-queries.js";
+
+import {
+  buildLockhartCuratedQueries,
+  LOCKHART_CHAPTER_FILTER,
+  LOCKHART_CLIENT_ID,
+  LOCKHART_EDITION_LABEL,
+  LOCKHART_JURISDICTION,
+  LOCKHART_JURISDICTION_NAME,
+  LOCKHART_LIBRARY_SLUG,
+} from "./lockhart-curated-queries.js";
+
+import {
+  buildLagoVistaCuratedQueries,
+  LAGO_VISTA_CHAPTER_FILTER,
+  LAGO_VISTA_CLIENT_ID,
+  LAGO_VISTA_EDITION_LABEL,
+  LAGO_VISTA_JURISDICTION,
+  LAGO_VISTA_JURISDICTION_NAME,
+  LAGO_VISTA_LIBRARY_SLUG,
+} from "./lago-vista-curated-queries.js";
+
+import {
+  buildDrippingSpringsCuratedQueries,
+  DRIPPING_SPRINGS_CHAPTER_FILTER,
+  DRIPPING_SPRINGS_CLIENT_ID,
+  DRIPPING_SPRINGS_EDITION_LABEL,
+  DRIPPING_SPRINGS_JURISDICTION,
+  DRIPPING_SPRINGS_JURISDICTION_NAME,
+  DRIPPING_SPRINGS_LIBRARY_SLUG,
+} from "./dripping-springs-curated-queries.js";
+
+import {
+  buildWimberleyCuratedQueries,
+  WIMBERLEY_CHAPTER_FILTER,
+  WIMBERLEY_CLIENT_ID,
+  WIMBERLEY_EDITION_LABEL,
+  WIMBERLEY_JURISDICTION,
+  WIMBERLEY_JURISDICTION_NAME,
+  WIMBERLEY_LIBRARY_SLUG,
+} from "./wimberley-curated-queries.js";
+
+import {
+  buildRollingwoodCuratedQueries,
+  ROLLINGWOOD_CHAPTER_FILTER,
+  ROLLINGWOOD_CLIENT_ID,
+  ROLLINGWOOD_EDITION_LABEL,
+  ROLLINGWOOD_JURISDICTION,
+  ROLLINGWOOD_JURISDICTION_NAME,
+  ROLLINGWOOD_LIBRARY_SLUG,
+} from "./rollingwood-curated-queries.js";
+
+import {
+  buildSanAntonioUdcCuratedQueries,
+  SAN_ANTONIO_UDC_CHAPTER_FILTER,
+  SAN_ANTONIO_UDC_CLIENT_ID,
+  SAN_ANTONIO_UDC_EDITION_LABEL,
+  SAN_ANTONIO_UDC_JURISDICTION,
+  SAN_ANTONIO_UDC_JURISDICTION_NAME,
+  SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+  SAN_ANTONIO_UDC_LIBRARY_SLUG,
+  SAN_ANTONIO_UDC_PRODUCT_FILTER,
+} from "./san-antonio-udc-curated-queries.js";
+
+import {
+  buildBoerneUdcCuratedQueries,
+  BOERNE_UDC_CHAPTER_FILTER,
+  BOERNE_UDC_CLIENT_ID,
+  BOERNE_UDC_EDITION_LABEL,
+  BOERNE_UDC_JURISDICTION,
+  BOERNE_UDC_JURISDICTION_NAME,
+  BOERNE_UDC_LIBRARY_CODE_PATH,
+  BOERNE_UDC_LIBRARY_SLUG,
+  BOERNE_UDC_PRODUCT_FILTER,
+} from "./boerne-udc-curated-queries.js";
+
+import {
+  buildBrownsvilleCuratedQueries,
+  BROWNSVILLE_CHAPTER_FILTER,
+  BROWNSVILLE_CLIENT_ID,
+  BROWNSVILLE_EDITION_LABEL,
+  BROWNSVILLE_JURISDICTION,
+  BROWNSVILLE_JURISDICTION_NAME,
+  BROWNSVILLE_LIBRARY_SLUG,
+} from "./brownsville-curated-queries.js";
+
+import {
+  buildMissionCuratedQueries,
+  MISSION_CHAPTER_FILTER,
+  MISSION_CLIENT_ID,
+  MISSION_EDITION_LABEL,
+  MISSION_JURISDICTION,
+  MISSION_JURISDICTION_NAME,
+  MISSION_LIBRARY_SLUG,
+} from "./mission-curated-queries.js";
+
+import {
+  buildSchertzUdcCuratedQueries,
+  SCHERTZ_UDC_CHAPTER_FILTER,
+  SCHERTZ_UDC_CLIENT_ID,
+  SCHERTZ_UDC_EDITION_LABEL,
+  SCHERTZ_UDC_JURISDICTION,
+  SCHERTZ_UDC_JURISDICTION_NAME,
+  SCHERTZ_UDC_LIBRARY_CODE_PATH,
+  SCHERTZ_UDC_LIBRARY_SLUG,
+  SCHERTZ_UDC_PRODUCT_FILTER,
+} from "./schertz-udc-curated-queries.js";
+
+import {
+  buildSaginawCuratedQueries,
+  SAGINAW_CHAPTER_FILTER,
+  SAGINAW_CLIENT_ID,
+  SAGINAW_EDITION_LABEL,
+  SAGINAW_JURISDICTION,
+  SAGINAW_JURISDICTION_NAME,
+  SAGINAW_LIBRARY_SLUG,
+} from "./saginaw-curated-queries.js";
+
+import {
+  buildLiveOakCuratedQueries,
+  LIVE_OAK_CHAPTER_FILTER,
+  LIVE_OAK_CLIENT_ID,
+  LIVE_OAK_EDITION_LABEL,
+  LIVE_OAK_JURISDICTION,
+  LIVE_OAK_JURISDICTION_NAME,
+  LIVE_OAK_LIBRARY_SLUG,
+} from "./live-oak-curated-queries.js";
+
+import {
+  buildKellerCuratedQueries,
+  KELLER_CHAPTER_FILTER,
+  KELLER_CLIENT_ID,
+  KELLER_EDITION_LABEL,
+  KELLER_JURISDICTION,
+  KELLER_JURISDICTION_NAME,
+  KELLER_LIBRARY_SLUG,
+} from "./keller-curated-queries.js";
+
+import {
+  buildCrowleyCuratedQueries,
+  CROWLEY_CHAPTER_FILTER,
+  CROWLEY_CLIENT_ID,
+  CROWLEY_EDITION_LABEL,
+  CROWLEY_JURISDICTION,
+  CROWLEY_JURISDICTION_NAME,
+  CROWLEY_LIBRARY_SLUG,
+} from "./crowley-curated-queries.js";
+
+import {
+  buildConverseCuratedQueries,
+  CONVERSE_CHAPTER_FILTER,
+  CONVERSE_CLIENT_ID,
+  CONVERSE_EDITION_LABEL,
+  CONVERSE_JURISDICTION,
+  CONVERSE_JURISDICTION_NAME,
+  CONVERSE_LIBRARY_SLUG,
+} from "./converse-curated-queries.js";
+
+import {
+  buildCedarHillCuratedQueries,
+  CEDAR_HILL_CHAPTER_FILTER,
+  CEDAR_HILL_CLIENT_ID,
+  CEDAR_HILL_EDITION_LABEL,
+  CEDAR_HILL_JURISDICTION,
+  CEDAR_HILL_JURISDICTION_NAME,
+  CEDAR_HILL_LIBRARY_SLUG,
+} from "./cedar-hill-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -384,6 +571,373 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildCopperasCoveCuratedQueries();
+    },
+  },
+{
+    tenant: AUSTIN_LDC_JURISDICTION,
+    label: "Austin Land Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: AUSTIN_LDC_JURISDICTION,
+        jurisdictionName: AUSTIN_LDC_JURISDICTION_NAME,
+        editionLabel: AUSTIN_LDC_EDITION_LABEL,
+        clientId: AUSTIN_LDC_CLIENT_ID,
+        librarySlug: AUSTIN_LDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(AUSTIN_LDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(AUSTIN_LDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: AUSTIN_LDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: 8000,
+        accessPolicy: "platform-internal",
+      });
+      return buildAustinLdcCuratedQueries();
+    },
+  },
+
+  {
+    tenant: MANOR_JURISDICTION,
+    label: "Manor Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: MANOR_JURISDICTION,
+        jurisdictionName: MANOR_JURISDICTION_NAME,
+        editionLabel: MANOR_EDITION_LABEL,
+        clientId: MANOR_CLIENT_ID,
+        librarySlug: MANOR_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(MANOR_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildManorCuratedQueries();
+    },
+  },
+
+  {
+    tenant: LOCKHART_JURISDICTION,
+    label: "Lockhart Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: LOCKHART_JURISDICTION,
+        jurisdictionName: LOCKHART_JURISDICTION_NAME,
+        editionLabel: LOCKHART_EDITION_LABEL,
+        clientId: LOCKHART_CLIENT_ID,
+        librarySlug: LOCKHART_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(LOCKHART_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 400,
+        accessPolicy: "platform-internal",
+      });
+      return buildLockhartCuratedQueries();
+    },
+  },
+
+  {
+    tenant: LAGO_VISTA_JURISDICTION,
+    label: "Lago Vista Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: LAGO_VISTA_JURISDICTION,
+        jurisdictionName: LAGO_VISTA_JURISDICTION_NAME,
+        editionLabel: LAGO_VISTA_EDITION_LABEL,
+        clientId: LAGO_VISTA_CLIENT_ID,
+        librarySlug: LAGO_VISTA_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(LAGO_VISTA_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildLagoVistaCuratedQueries();
+    },
+  },
+
+  {
+    tenant: DRIPPING_SPRINGS_JURISDICTION,
+    label: "Dripping Springs Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: DRIPPING_SPRINGS_JURISDICTION,
+        jurisdictionName: DRIPPING_SPRINGS_JURISDICTION_NAME,
+        editionLabel: DRIPPING_SPRINGS_EDITION_LABEL,
+        clientId: DRIPPING_SPRINGS_CLIENT_ID,
+        librarySlug: DRIPPING_SPRINGS_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(DRIPPING_SPRINGS_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildDrippingSpringsCuratedQueries();
+    },
+  },
+
+  {
+    tenant: WIMBERLEY_JURISDICTION,
+    label: "Wimberley Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: WIMBERLEY_JURISDICTION,
+        jurisdictionName: WIMBERLEY_JURISDICTION_NAME,
+        editionLabel: WIMBERLEY_EDITION_LABEL,
+        clientId: WIMBERLEY_CLIENT_ID,
+        librarySlug: WIMBERLEY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(WIMBERLEY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 400,
+        accessPolicy: "platform-internal",
+      });
+      return buildWimberleyCuratedQueries();
+    },
+  },
+
+  {
+    tenant: ROLLINGWOOD_JURISDICTION,
+    label: "Rollingwood Land Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: ROLLINGWOOD_JURISDICTION,
+        jurisdictionName: ROLLINGWOOD_JURISDICTION_NAME,
+        editionLabel: ROLLINGWOOD_EDITION_LABEL,
+        clientId: ROLLINGWOOD_CLIENT_ID,
+        librarySlug: ROLLINGWOOD_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(ROLLINGWOOD_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 400,
+        accessPolicy: "platform-internal",
+      });
+      return buildRollingwoodCuratedQueries();
+    },
+  },
+
+  {
+    tenant: SAN_ANTONIO_UDC_JURISDICTION,
+    label: "San Antonio Unified Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAN_ANTONIO_UDC_JURISDICTION,
+        jurisdictionName: SAN_ANTONIO_UDC_JURISDICTION_NAME,
+        editionLabel: SAN_ANTONIO_UDC_EDITION_LABEL,
+        clientId: SAN_ANTONIO_UDC_CLIENT_ID,
+        librarySlug: SAN_ANTONIO_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SAN_ANTONIO_UDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(SAN_ANTONIO_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: 8000,
+        accessPolicy: "platform-internal",
+      });
+      return buildSanAntonioUdcCuratedQueries();
+    },
+  },
+
+  {
+    tenant: BOERNE_UDC_JURISDICTION,
+    label: "Boerne Unified Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: BOERNE_UDC_JURISDICTION,
+        jurisdictionName: BOERNE_UDC_JURISDICTION_NAME,
+        editionLabel: BOERNE_UDC_EDITION_LABEL,
+        clientId: BOERNE_UDC_CLIENT_ID,
+        librarySlug: BOERNE_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(BOERNE_UDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(BOERNE_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: BOERNE_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+      });
+      return buildBoerneUdcCuratedQueries();
+    },
+  },
+
+  {
+    tenant: BROWNSVILLE_JURISDICTION,
+    label: "Brownsville Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: BROWNSVILLE_JURISDICTION,
+        jurisdictionName: BROWNSVILLE_JURISDICTION_NAME,
+        editionLabel: BROWNSVILLE_EDITION_LABEL,
+        clientId: BROWNSVILLE_CLIENT_ID,
+        librarySlug: BROWNSVILLE_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(BROWNSVILLE_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 2000,
+        accessPolicy: "platform-internal",
+      });
+      return buildBrownsvilleCuratedQueries();
+    },
+  },
+
+  {
+    tenant: MISSION_JURISDICTION,
+    label: "Mission Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: MISSION_JURISDICTION,
+        jurisdictionName: MISSION_JURISDICTION_NAME,
+        editionLabel: MISSION_EDITION_LABEL,
+        clientId: MISSION_CLIENT_ID,
+        librarySlug: MISSION_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(MISSION_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildMissionCuratedQueries();
+    },
+  },
+
+  {
+    tenant: SCHERTZ_UDC_JURISDICTION,
+    label: "Schertz Unified Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SCHERTZ_UDC_JURISDICTION,
+        jurisdictionName: SCHERTZ_UDC_JURISDICTION_NAME,
+        editionLabel: SCHERTZ_UDC_EDITION_LABEL,
+        clientId: SCHERTZ_UDC_CLIENT_ID,
+        librarySlug: SCHERTZ_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SCHERTZ_UDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(SCHERTZ_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SCHERTZ_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: 2000,
+        accessPolicy: "platform-internal",
+      });
+      return buildSchertzUdcCuratedQueries();
+    },
+  },
+
+  {
+    tenant: SAGINAW_JURISDICTION,
+    label: "Saginaw Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAGINAW_JURISDICTION,
+        jurisdictionName: SAGINAW_JURISDICTION_NAME,
+        editionLabel: SAGINAW_EDITION_LABEL,
+        clientId: SAGINAW_CLIENT_ID,
+        librarySlug: SAGINAW_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SAGINAW_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildSaginawCuratedQueries();
+    },
+  },
+
+  {
+    tenant: LIVE_OAK_JURISDICTION,
+    label: "Live Oak Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: LIVE_OAK_JURISDICTION,
+        jurisdictionName: LIVE_OAK_JURISDICTION_NAME,
+        editionLabel: LIVE_OAK_EDITION_LABEL,
+        clientId: LIVE_OAK_CLIENT_ID,
+        librarySlug: LIVE_OAK_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(LIVE_OAK_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1000,
+        accessPolicy: "platform-internal",
+      });
+      return buildLiveOakCuratedQueries();
+    },
+  },
+
+  {
+    tenant: KELLER_JURISDICTION,
+    label: "Keller Unified Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: KELLER_JURISDICTION,
+        jurisdictionName: KELLER_JURISDICTION_NAME,
+        editionLabel: KELLER_EDITION_LABEL,
+        clientId: KELLER_CLIENT_ID,
+        librarySlug: KELLER_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(KELLER_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 2000,
+        accessPolicy: "platform-internal",
+      });
+      return buildKellerCuratedQueries();
+    },
+  },
+
+  {
+    tenant: CROWLEY_JURISDICTION,
+    label: "Crowley Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: CROWLEY_JURISDICTION,
+        jurisdictionName: CROWLEY_JURISDICTION_NAME,
+        editionLabel: CROWLEY_EDITION_LABEL,
+        clientId: CROWLEY_CLIENT_ID,
+        librarySlug: CROWLEY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(CROWLEY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildCrowleyCuratedQueries();
+    },
+  },
+
+  {
+    tenant: CONVERSE_JURISDICTION,
+    label: "Converse Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: CONVERSE_JURISDICTION,
+        jurisdictionName: CONVERSE_JURISDICTION_NAME,
+        editionLabel: CONVERSE_EDITION_LABEL,
+        clientId: CONVERSE_CLIENT_ID,
+        librarySlug: CONVERSE_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(CONVERSE_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildConverseCuratedQueries();
+    },
+  },
+
+  {
+    tenant: CEDAR_HILL_JURISDICTION,
+    label: "Cedar Hill Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: CEDAR_HILL_JURISDICTION,
+        jurisdictionName: CEDAR_HILL_JURISDICTION_NAME,
+        editionLabel: CEDAR_HILL_EDITION_LABEL,
+        clientId: CEDAR_HILL_CLIENT_ID,
+        librarySlug: CEDAR_HILL_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(CEDAR_HILL_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+      });
+      return buildCedarHillCuratedQueries();
     },
   },
   {
