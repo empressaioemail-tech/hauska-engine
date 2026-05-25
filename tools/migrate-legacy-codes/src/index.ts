@@ -121,6 +121,193 @@ import {
   COPPERAS_COVE_LIBRARY_SLUG,
 } from "./copperas-cove-curated-queries.js";
 import {
+  buildAustinLdcCuratedQueries,
+  AUSTIN_LDC_CHAPTER_FILTER,
+  AUSTIN_LDC_CLIENT_ID,
+  AUSTIN_LDC_EDITION_LABEL,
+  AUSTIN_LDC_JURISDICTION,
+  AUSTIN_LDC_JURISDICTION_NAME,
+  AUSTIN_LDC_LIBRARY_CODE_PATH,
+  AUSTIN_LDC_LIBRARY_SLUG,
+  AUSTIN_LDC_PRODUCT_FILTER,
+} from "./austin-ldc-curated-queries.js";
+
+import {
+  buildManorCuratedQueries,
+  MANOR_CHAPTER_FILTER,
+  MANOR_CLIENT_ID,
+  MANOR_EDITION_LABEL,
+  MANOR_JURISDICTION,
+  MANOR_JURISDICTION_NAME,
+  MANOR_LIBRARY_SLUG,
+} from "./manor-curated-queries.js";
+
+import {
+  buildLockhartCuratedQueries,
+  LOCKHART_CHAPTER_FILTER,
+  LOCKHART_CLIENT_ID,
+  LOCKHART_EDITION_LABEL,
+  LOCKHART_JURISDICTION,
+  LOCKHART_JURISDICTION_NAME,
+  LOCKHART_LIBRARY_SLUG,
+} from "./lockhart-curated-queries.js";
+
+import {
+  buildLagoVistaCuratedQueries,
+  LAGO_VISTA_CHAPTER_FILTER,
+  LAGO_VISTA_CLIENT_ID,
+  LAGO_VISTA_EDITION_LABEL,
+  LAGO_VISTA_JURISDICTION,
+  LAGO_VISTA_JURISDICTION_NAME,
+  LAGO_VISTA_LIBRARY_SLUG,
+} from "./lago-vista-curated-queries.js";
+
+import {
+  buildDrippingSpringsCuratedQueries,
+  DRIPPING_SPRINGS_CHAPTER_FILTER,
+  DRIPPING_SPRINGS_CLIENT_ID,
+  DRIPPING_SPRINGS_EDITION_LABEL,
+  DRIPPING_SPRINGS_JURISDICTION,
+  DRIPPING_SPRINGS_JURISDICTION_NAME,
+  DRIPPING_SPRINGS_LIBRARY_SLUG,
+} from "./dripping-springs-curated-queries.js";
+
+import {
+  buildWimberleyCuratedQueries,
+  WIMBERLEY_CHAPTER_FILTER,
+  WIMBERLEY_CLIENT_ID,
+  WIMBERLEY_EDITION_LABEL,
+  WIMBERLEY_JURISDICTION,
+  WIMBERLEY_JURISDICTION_NAME,
+  WIMBERLEY_LIBRARY_SLUG,
+} from "./wimberley-curated-queries.js";
+
+import {
+  buildRollingwoodCuratedQueries,
+  ROLLINGWOOD_CHAPTER_FILTER,
+  ROLLINGWOOD_CLIENT_ID,
+  ROLLINGWOOD_EDITION_LABEL,
+  ROLLINGWOOD_JURISDICTION,
+  ROLLINGWOOD_JURISDICTION_NAME,
+  ROLLINGWOOD_LIBRARY_SLUG,
+} from "./rollingwood-curated-queries.js";
+
+import {
+  buildSanAntonioUdcCuratedQueries,
+  SAN_ANTONIO_UDC_CHAPTER_FILTER,
+  SAN_ANTONIO_UDC_CLIENT_ID,
+  SAN_ANTONIO_UDC_EDITION_LABEL,
+  SAN_ANTONIO_UDC_JURISDICTION,
+  SAN_ANTONIO_UDC_JURISDICTION_NAME,
+  SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+  SAN_ANTONIO_UDC_LIBRARY_SLUG,
+  SAN_ANTONIO_UDC_PRODUCT_FILTER,
+} from "./san-antonio-udc-curated-queries.js";
+
+import {
+  buildBoerneUdcCuratedQueries,
+  BOERNE_UDC_CHAPTER_FILTER,
+  BOERNE_UDC_CLIENT_ID,
+  BOERNE_UDC_EDITION_LABEL,
+  BOERNE_UDC_JURISDICTION,
+  BOERNE_UDC_JURISDICTION_NAME,
+  BOERNE_UDC_LIBRARY_CODE_PATH,
+  BOERNE_UDC_LIBRARY_SLUG,
+  BOERNE_UDC_PRODUCT_FILTER,
+} from "./boerne-udc-curated-queries.js";
+
+import {
+  buildBrownsvilleCuratedQueries,
+  BROWNSVILLE_CHAPTER_FILTER,
+  BROWNSVILLE_CLIENT_ID,
+  BROWNSVILLE_EDITION_LABEL,
+  BROWNSVILLE_JURISDICTION,
+  BROWNSVILLE_JURISDICTION_NAME,
+  BROWNSVILLE_LIBRARY_SLUG,
+} from "./brownsville-curated-queries.js";
+
+import {
+  buildMissionCuratedQueries,
+  MISSION_CHAPTER_FILTER,
+  MISSION_CLIENT_ID,
+  MISSION_EDITION_LABEL,
+  MISSION_JURISDICTION,
+  MISSION_JURISDICTION_NAME,
+  MISSION_LIBRARY_SLUG,
+} from "./mission-curated-queries.js";
+
+import {
+  buildSchertzUdcCuratedQueries,
+  SCHERTZ_UDC_CHAPTER_FILTER,
+  SCHERTZ_UDC_CLIENT_ID,
+  SCHERTZ_UDC_EDITION_LABEL,
+  SCHERTZ_UDC_JURISDICTION,
+  SCHERTZ_UDC_JURISDICTION_NAME,
+  SCHERTZ_UDC_LIBRARY_CODE_PATH,
+  SCHERTZ_UDC_LIBRARY_SLUG,
+  SCHERTZ_UDC_PRODUCT_FILTER,
+} from "./schertz-udc-curated-queries.js";
+
+import {
+  buildSaginawCuratedQueries,
+  SAGINAW_CHAPTER_FILTER,
+  SAGINAW_CLIENT_ID,
+  SAGINAW_EDITION_LABEL,
+  SAGINAW_JURISDICTION,
+  SAGINAW_JURISDICTION_NAME,
+  SAGINAW_LIBRARY_SLUG,
+} from "./saginaw-curated-queries.js";
+
+import {
+  buildLiveOakCuratedQueries,
+  LIVE_OAK_CHAPTER_FILTER,
+  LIVE_OAK_CLIENT_ID,
+  LIVE_OAK_EDITION_LABEL,
+  LIVE_OAK_JURISDICTION,
+  LIVE_OAK_JURISDICTION_NAME,
+  LIVE_OAK_LIBRARY_SLUG,
+} from "./live-oak-curated-queries.js";
+
+import {
+  buildKellerCuratedQueries,
+  KELLER_CHAPTER_FILTER,
+  KELLER_CLIENT_ID,
+  KELLER_EDITION_LABEL,
+  KELLER_JURISDICTION,
+  KELLER_JURISDICTION_NAME,
+  KELLER_LIBRARY_SLUG,
+} from "./keller-curated-queries.js";
+
+import {
+  buildCrowleyCuratedQueries,
+  CROWLEY_CHAPTER_FILTER,
+  CROWLEY_CLIENT_ID,
+  CROWLEY_EDITION_LABEL,
+  CROWLEY_JURISDICTION,
+  CROWLEY_JURISDICTION_NAME,
+  CROWLEY_LIBRARY_SLUG,
+} from "./crowley-curated-queries.js";
+
+import {
+  buildConverseCuratedQueries,
+  CONVERSE_CHAPTER_FILTER,
+  CONVERSE_CLIENT_ID,
+  CONVERSE_EDITION_LABEL,
+  CONVERSE_JURISDICTION,
+  CONVERSE_JURISDICTION_NAME,
+  CONVERSE_LIBRARY_SLUG,
+} from "./converse-curated-queries.js";
+
+import {
+  buildCedarHillCuratedQueries,
+  CEDAR_HILL_CHAPTER_FILTER,
+  CEDAR_HILL_CLIENT_ID,
+  CEDAR_HILL_EDITION_LABEL,
+  CEDAR_HILL_JURISDICTION,
+  CEDAR_HILL_JURISDICTION_NAME,
+  CEDAR_HILL_LIBRARY_SLUG,
+} from "./cedar-hill-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1767,6 +1954,1541 @@ program
   .description("Print the Copperas Cove curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildCopperasCoveCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-austin-ldc")
+  .description(
+    "Sync 5 Tier 2: Path C live re-ingest of the City of Austin Land Development Code from the Municode JSON API (clientId 1113, product 'Land Development Code'). Austin publishes the LDC as a separate Municode product from its Code of Ordinances; productNameFilter selects it. Title 25 (Land Development) + Title 30 (Austin/Travis County Subdivision Regulations). Layer 3 bespoke local code; tagged platform-internal per Path A.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    AUSTIN_LDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "8000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: AUSTIN_LDC_JURISDICTION,
+        jurisdictionName: AUSTIN_LDC_JURISDICTION_NAME,
+        editionLabel: AUSTIN_LDC_EDITION_LABEL,
+        clientId: AUSTIN_LDC_CLIENT_ID,
+        librarySlug: AUSTIN_LDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(AUSTIN_LDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: AUSTIN_LDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-austin-ldc")
+  .description(
+    "Sync 5 Tier 2: Path C end-to-end — live Austin LDC re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    AUSTIN_LDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "8000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: AUSTIN_LDC_JURISDICTION,
+        jurisdictionName: AUSTIN_LDC_JURISDICTION_NAME,
+        editionLabel: AUSTIN_LDC_EDITION_LABEL,
+        clientId: AUSTIN_LDC_CLIENT_ID,
+        librarySlug: AUSTIN_LDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(AUSTIN_LDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: AUSTIN_LDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildAustinLdcCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: AUSTIN_LDC_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-austin-ldc-queries")
+  .description("Print the Austin LDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildAustinLdcCuratedQueries(), null, 2));
+  });
+
+
+program
+  .command("path-c-ingest-manor")
+  .description("Sync 5 Tier 2: Path C live re-ingest of the City of Manor land-development chapters (Subdivision Regulation Ch 10, Zoning Ch 14, Site Development Ch 15) from the Municode JSON API (clientId 15968). Exhibit-ordinance pattern (Leander-style). Tagged platform-internal.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", MANOR_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: MANOR_JURISDICTION,
+        jurisdictionName: MANOR_JURISDICTION_NAME,
+        editionLabel: MANOR_EDITION_LABEL,
+        clientId: MANOR_CLIENT_ID,
+        librarySlug: MANOR_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-manor")
+  .description("Sync 5 Tier 2: Manor re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", MANOR_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: MANOR_JURISDICTION,
+        jurisdictionName: MANOR_JURISDICTION_NAME,
+        editionLabel: MANOR_EDITION_LABEL,
+        clientId: MANOR_CLIENT_ID,
+        librarySlug: MANOR_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildManorCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: MANOR_JURISDICTION,
+        queries,
+      });
+      console.log(JSON.stringify(
+        { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+        null, 2,
+      ));
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-manor-queries")
+  .description("Print the Manor curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildManorCuratedQueries(), null, 2));
+  });
+
+
+program
+  .command("path-c-ingest-lockhart")
+  .description("Sync 5 Tier 2: Path C live re-ingest of the City of Lockhart land-development chapters (Signs Ch 46, Subdivision Regulations Ch 52, Zoning Ch 64) from the Municode JSON API (clientId 3055). Tagged platform-internal.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", LOCKHART_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LOCKHART_JURISDICTION,
+      jurisdictionName: LOCKHART_JURISDICTION_NAME,
+      editionLabel: LOCKHART_EDITION_LABEL,
+      clientId: LOCKHART_CLIENT_ID,
+      librarySlug: LOCKHART_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-lockhart")
+  .description("Sync 5 Tier 2: Lockhart re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", LOCKHART_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LOCKHART_JURISDICTION,
+      jurisdictionName: LOCKHART_JURISDICTION_NAME,
+      editionLabel: LOCKHART_EDITION_LABEL,
+      clientId: LOCKHART_CLIENT_ID,
+      librarySlug: LOCKHART_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildLockhartCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: LOCKHART_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-lockhart-queries")
+  .description("Print the Lockhart curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildLockhartCuratedQueries(), null, 2)); });
+
+
+program
+  .command("path-c-ingest-lago-vista")
+  .description("Sync 5 Tier 2: Path C live re-ingest of the City of Lago Vista land-development chapters (Site Development Ch 3.5, Signs Ch 5, Subdivision Regulation Ch 10, Zoning Ch 14, Growth Management Ch 15) from the Municode JSON API (clientId 2904). Exhibit-ordinance pattern in Ch 10/14. Tagged platform-internal.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", LAGO_VISTA_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LAGO_VISTA_JURISDICTION,
+      jurisdictionName: LAGO_VISTA_JURISDICTION_NAME,
+      editionLabel: LAGO_VISTA_EDITION_LABEL,
+      clientId: LAGO_VISTA_CLIENT_ID,
+      librarySlug: LAGO_VISTA_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-lago-vista")
+  .description("Sync 5 Tier 2: Lago Vista re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", LAGO_VISTA_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LAGO_VISTA_JURISDICTION,
+      jurisdictionName: LAGO_VISTA_JURISDICTION_NAME,
+      editionLabel: LAGO_VISTA_EDITION_LABEL,
+      clientId: LAGO_VISTA_CLIENT_ID,
+      librarySlug: LAGO_VISTA_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildLagoVistaCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: LAGO_VISTA_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-lago-vista-queries")
+  .description("Print the Lago Vista curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildLagoVistaCuratedQueries(), null, 2)); });
+
+
+program
+  .command("path-c-ingest-dripping-springs")
+  .description("Sync 5 Tier 2: Path C live re-ingest of the City of Dripping Springs land-development chapters (Signs Ch 26, Subdivisions+Site Dev Ch 28, Zoning Ch 30) from the Municode JSON API (clientId 15829). Exhibit pattern in Ch 28/30. Tagged platform-internal.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", DRIPPING_SPRINGS_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: DRIPPING_SPRINGS_JURISDICTION,
+      jurisdictionName: DRIPPING_SPRINGS_JURISDICTION_NAME,
+      editionLabel: DRIPPING_SPRINGS_EDITION_LABEL,
+      clientId: DRIPPING_SPRINGS_CLIENT_ID,
+      librarySlug: DRIPPING_SPRINGS_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-dripping-springs")
+  .description("Sync 5 Tier 2: Dripping Springs re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", DRIPPING_SPRINGS_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: DRIPPING_SPRINGS_JURISDICTION,
+      jurisdictionName: DRIPPING_SPRINGS_JURISDICTION_NAME,
+      editionLabel: DRIPPING_SPRINGS_EDITION_LABEL,
+      clientId: DRIPPING_SPRINGS_CLIENT_ID,
+      librarySlug: DRIPPING_SPRINGS_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildDrippingSpringsCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: DRIPPING_SPRINGS_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-dripping-springs-queries")
+  .description("Print the Dripping Springs curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildDrippingSpringsCuratedQueries(), null, 2)); });
+
+
+program
+  .command("path-c-ingest-wimberley")
+  .description("Sync 5 Tier 2: Path C live re-ingest of the City of Wimberley Chapter 9 Planning and Development Regulations (Municode clientId 16024). Tagged platform-internal.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", WIMBERLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: WIMBERLEY_JURISDICTION,
+      jurisdictionName: WIMBERLEY_JURISDICTION_NAME,
+      editionLabel: WIMBERLEY_EDITION_LABEL,
+      clientId: WIMBERLEY_CLIENT_ID,
+      librarySlug: WIMBERLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-wimberley")
+  .description("Sync 5 Tier 2: Wimberley re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", WIMBERLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: WIMBERLEY_JURISDICTION,
+      jurisdictionName: WIMBERLEY_JURISDICTION_NAME,
+      editionLabel: WIMBERLEY_EDITION_LABEL,
+      clientId: WIMBERLEY_CLIENT_ID,
+      librarySlug: WIMBERLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildWimberleyCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: WIMBERLEY_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-wimberley-queries")
+  .description("Print the Wimberley curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildWimberleyCuratedQueries(), null, 2)); });
+
+
+program
+  .command("path-c-ingest-rollingwood")
+  .description("Sync 5 Tier 2: Path C live re-ingest of the City of Rollingwood Part II Land Development Code (Municode clientId 12936). Tagged platform-internal.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", ROLLINGWOOD_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: ROLLINGWOOD_JURISDICTION,
+      jurisdictionName: ROLLINGWOOD_JURISDICTION_NAME,
+      editionLabel: ROLLINGWOOD_EDITION_LABEL,
+      clientId: ROLLINGWOOD_CLIENT_ID,
+      librarySlug: ROLLINGWOOD_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-rollingwood")
+  .description("Sync 5 Tier 2: Rollingwood re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex.", ROLLINGWOOD_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "400")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: ROLLINGWOOD_JURISDICTION,
+      jurisdictionName: ROLLINGWOOD_JURISDICTION_NAME,
+      editionLabel: ROLLINGWOOD_EDITION_LABEL,
+      clientId: ROLLINGWOOD_CLIENT_ID,
+      librarySlug: ROLLINGWOOD_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildRollingwoodCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: ROLLINGWOOD_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-rollingwood-queries")
+  .description("Print the Rollingwood curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildRollingwoodCuratedQueries(), null, 2)); });
+
+
+program
+  .command("path-c-ingest-san-antonio-udc")
+  .description(
+    "Sync 5 TX-metros: Path C live re-ingest of the City of San Antonio Unified Development Code from the Municode JSON API (clientId 11525, product 'Unified Development Code'). San Antonio publishes the UDC as a separate Municode product from its Code of Ordinances; productNameFilter selects it. Articles I-IX + substantive Appendices. Layer 3 bespoke local code; tagged platform-internal per Path A.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    SAN_ANTONIO_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "8000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAN_ANTONIO_UDC_JURISDICTION,
+        jurisdictionName: SAN_ANTONIO_UDC_JURISDICTION_NAME,
+        editionLabel: SAN_ANTONIO_UDC_EDITION_LABEL,
+        clientId: SAN_ANTONIO_UDC_CLIENT_ID,
+        librarySlug: SAN_ANTONIO_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(SAN_ANTONIO_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-san-antonio-udc")
+  .description(
+    "Sync 5 TX-metros: Path C end-to-end — live San Antonio UDC re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    SAN_ANTONIO_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "8000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAN_ANTONIO_UDC_JURISDICTION,
+        jurisdictionName: SAN_ANTONIO_UDC_JURISDICTION_NAME,
+        editionLabel: SAN_ANTONIO_UDC_EDITION_LABEL,
+        clientId: SAN_ANTONIO_UDC_CLIENT_ID,
+        librarySlug: SAN_ANTONIO_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(SAN_ANTONIO_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SAN_ANTONIO_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildSanAntonioUdcCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: SAN_ANTONIO_UDC_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-san-antonio-udc-queries")
+  .description("Print the San Antonio UDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildSanAntonioUdcCuratedQueries(), null, 2));
+  });
+
+
+program
+  .command("path-c-ingest-boerne-udc")
+  .description(
+    "Sync 5 TX-metros: Path C live re-ingest of the City of Boerne Unified Development Code from the Municode JSON API (clientId 1332, product 'Unified Development Code'). Boerne publishes its UDC as a separate Municode product from its Code of Ordinances; productNameFilter selects it. Nine UDC chapters (1-9). Layer 3 bespoke local code; tagged platform-internal per Path A.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    BOERNE_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: BOERNE_UDC_JURISDICTION,
+        jurisdictionName: BOERNE_UDC_JURISDICTION_NAME,
+        editionLabel: BOERNE_UDC_EDITION_LABEL,
+        clientId: BOERNE_UDC_CLIENT_ID,
+        librarySlug: BOERNE_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(BOERNE_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: BOERNE_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-boerne-udc")
+  .description(
+    "Sync 5 TX-metros: Path C end-to-end — live Boerne UDC re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    BOERNE_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: BOERNE_UDC_JURISDICTION,
+        jurisdictionName: BOERNE_UDC_JURISDICTION_NAME,
+        editionLabel: BOERNE_UDC_EDITION_LABEL,
+        clientId: BOERNE_UDC_CLIENT_ID,
+        librarySlug: BOERNE_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(BOERNE_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: BOERNE_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildBoerneUdcCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: BOERNE_UDC_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-boerne-udc-queries")
+  .description("Print the Boerne UDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildBoerneUdcCuratedQueries(), null, 2));
+  });
+
+
+program
+  .command("path-c-ingest-brownsville")
+  .description(
+    "Sync 5 TX-metros: Path C live re-ingest of the City of Brownsville development regulations from the Municode JSON API (clientId 1440). Mixed-shape dev surface: chapter-style CoO chapters (18, 46, 86, 102, 308, 314, 328) + UDO-style ARTICLE 1-5 (General Provisions, Administration and Review Procedures, Subdivision Regulations, Zoning Regulations, Supplemental Regulations). Layer 3 bespoke local code; tagged platform-internal per Path A.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    BROWNSVILLE_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: BROWNSVILLE_JURISDICTION,
+        jurisdictionName: BROWNSVILLE_JURISDICTION_NAME,
+        editionLabel: BROWNSVILLE_EDITION_LABEL,
+        clientId: BROWNSVILLE_CLIENT_ID,
+        librarySlug: BROWNSVILLE_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-brownsville")
+  .description(
+    "Sync 5 TX-metros: Path C end-to-end — live Brownsville re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    BROWNSVILLE_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: BROWNSVILLE_JURISDICTION,
+        jurisdictionName: BROWNSVILLE_JURISDICTION_NAME,
+        editionLabel: BROWNSVILLE_EDITION_LABEL,
+        clientId: BROWNSVILLE_CLIENT_ID,
+        librarySlug: BROWNSVILLE_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildBrownsvilleCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: BROWNSVILLE_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-brownsville-queries")
+  .description("Print the Brownsville curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildBrownsvilleCuratedQueries(), null, 2));
+  });
+
+
+program
+  .command("path-c-ingest-mission")
+  .description(
+    "Sync 5 TX-metros: Path C live re-ingest of the City of Mission development regulations from the Municode JSON API (clientId 3334). Top-level CoO chapters covering Buildings, Flood Damage, Manufactured Homes, Planning/Zoning procedures, Signs, Streets, Subdivisions, Utilities + Appendix A Zoning. Layer 3 bespoke local code; tagged platform-internal per Path A.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    MISSION_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: MISSION_JURISDICTION,
+        jurisdictionName: MISSION_JURISDICTION_NAME,
+        editionLabel: MISSION_EDITION_LABEL,
+        clientId: MISSION_CLIENT_ID,
+        librarySlug: MISSION_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-mission")
+  .description(
+    "Sync 5 TX-metros: Path C end-to-end — live Mission re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    MISSION_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: MISSION_JURISDICTION,
+        jurisdictionName: MISSION_JURISDICTION_NAME,
+        editionLabel: MISSION_EDITION_LABEL,
+        clientId: MISSION_CLIENT_ID,
+        librarySlug: MISSION_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildMissionCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: MISSION_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-mission-queries")
+  .description("Print the Mission curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildMissionCuratedQueries(), null, 2));
+  });
+
+
+program
+  .command("path-c-ingest-schertz-udc")
+  .description(
+    "Sync 5 TX-metros: Path C live re-ingest of the City of Schertz Unified Development Code from the Municode JSON API (clientId 4260). Schertz publishes its UDC as a separate Municode product (productId 14745). Top-level TOC carries a single wrapper node 'SCHERTZ UNIFIED DEVELOPMENT CODE' containing 16 Articles (1-16). Layer 3 bespoke local code; tagged platform-internal per Path A.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    SCHERTZ_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: SCHERTZ_UDC_JURISDICTION,
+        jurisdictionName: SCHERTZ_UDC_JURISDICTION_NAME,
+        editionLabel: SCHERTZ_UDC_EDITION_LABEL,
+        clientId: SCHERTZ_UDC_CLIENT_ID,
+        librarySlug: SCHERTZ_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(SCHERTZ_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SCHERTZ_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-schertz-udc")
+  .description(
+    "Sync 5 TX-metros: Path C end-to-end — live Schertz UDC re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    SCHERTZ_UDC_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: SCHERTZ_UDC_JURISDICTION,
+        jurisdictionName: SCHERTZ_UDC_JURISDICTION_NAME,
+        editionLabel: SCHERTZ_UDC_EDITION_LABEL,
+        clientId: SCHERTZ_UDC_CLIENT_ID,
+        librarySlug: SCHERTZ_UDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        productNameFilter: new RegExp(SCHERTZ_UDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SCHERTZ_UDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildSchertzUdcCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: SCHERTZ_UDC_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-schertz-udc-queries")
+  .description("Print the Schertz UDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildSchertzUdcCuratedQueries(), null, 2));
+  });
+
+
+program
+  .command("path-c-ingest-saginaw")
+  .description(
+    "Sync 5 TX-metros: Path C live re-ingest of the City of Saginaw development regulations from the Municode JSON API (clientId 4174). Five CoO chapters + Appendices A (Zoning) and B (Subdivisions). Layer 3 bespoke local code; tagged platform-internal per Path A.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    SAGINAW_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAGINAW_JURISDICTION,
+        jurisdictionName: SAGINAW_JURISDICTION_NAME,
+        editionLabel: SAGINAW_EDITION_LABEL,
+        clientId: SAGINAW_CLIENT_ID,
+        librarySlug: SAGINAW_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-saginaw")
+  .description(
+    "Sync 5 TX-metros: Path C end-to-end — live Saginaw re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    SAGINAW_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: SAGINAW_JURISDICTION,
+        jurisdictionName: SAGINAW_JURISDICTION_NAME,
+        editionLabel: SAGINAW_EDITION_LABEL,
+        clientId: SAGINAW_CLIENT_ID,
+        librarySlug: SAGINAW_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildSaginawCuratedQueries();
+      }
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: SAGINAW_JURISDICTION,
+        queries,
+      });
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-saginaw-queries")
+  .description("Print the Saginaw curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildSaginawCuratedQueries(), null, 2));
+  });
+
+
+program
+  .command("path-c-ingest-live-oak")
+  .description("Sync 5 TX-metros: Path C live re-ingest of the City of Live Oak development regulations from the Municode JSON API (clientId 11903). Seven top-level CoO chapters covering Buildings/Floods/Property Maintenance/Streets/Subdivision/Utilities/Zoning. Layer 3; platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", LIVE_OAK_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LIVE_OAK_JURISDICTION,
+      jurisdictionName: LIVE_OAK_JURISDICTION_NAME,
+      editionLabel: LIVE_OAK_EDITION_LABEL,
+      clientId: LIVE_OAK_CLIENT_ID,
+      librarySlug: LIVE_OAK_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-live-oak")
+  .description("Sync 5 TX-metros: Path C end-to-end Live Oak.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", LIVE_OAK_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LIVE_OAK_JURISDICTION,
+      jurisdictionName: LIVE_OAK_JURISDICTION_NAME,
+      editionLabel: LIVE_OAK_EDITION_LABEL,
+      clientId: LIVE_OAK_CLIENT_ID,
+      librarySlug: LIVE_OAK_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildLiveOakCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: LIVE_OAK_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-live-oak-queries")
+  .description("Print the Live Oak curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildLiveOakCuratedQueries(), null, 2)); });
+
+
+program
+  .command("path-c-ingest-keller")
+  .description("Sync 5 TX-metros: Path C live re-ingest of the City of Keller Unified Development Code from the Municode JSON API (clientId 2809). UDC lives at top-level under `PART III - UNIFIED DEVELOPMENT CODE`; the chapter filter targets that wrapper. Layer 3; platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", KELLER_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: KELLER_JURISDICTION,
+      jurisdictionName: KELLER_JURISDICTION_NAME,
+      editionLabel: KELLER_EDITION_LABEL,
+      clientId: KELLER_CLIENT_ID,
+      librarySlug: KELLER_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-keller")
+  .description("Sync 5 TX-metros: Path C end-to-end Keller.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", KELLER_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: KELLER_JURISDICTION,
+      jurisdictionName: KELLER_JURISDICTION_NAME,
+      editionLabel: KELLER_EDITION_LABEL,
+      clientId: KELLER_CLIENT_ID,
+      librarySlug: KELLER_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildKellerCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: KELLER_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-keller-queries")
+  .description("Print the Keller curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildKellerCuratedQueries(), null, 2)); });
+
+
+program
+  .command("path-c-ingest-crowley")
+  .description("Sync 5 TX-metros: Path C live re-ingest of the City of Crowley development regulations from the Municode JSON API (clientId 1823). Eleven top-level CoO dev chapters + Appendix A. Layer 3; platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", CROWLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: CROWLEY_JURISDICTION,
+      jurisdictionName: CROWLEY_JURISDICTION_NAME,
+      editionLabel: CROWLEY_EDITION_LABEL,
+      clientId: CROWLEY_CLIENT_ID,
+      librarySlug: CROWLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-crowley")
+  .description("Sync 5 TX-metros: Path C end-to-end Crowley.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", CROWLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: CROWLEY_JURISDICTION,
+      jurisdictionName: CROWLEY_JURISDICTION_NAME,
+      editionLabel: CROWLEY_EDITION_LABEL,
+      clientId: CROWLEY_CLIENT_ID,
+      librarySlug: CROWLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildCrowleyCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: CROWLEY_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-crowley-queries")
+  .description("Print the Crowley curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildCrowleyCuratedQueries(), null, 2)); });
+
+
+program
+  .command("path-c-ingest-converse")
+  .description("Sync 5 TX-metros: Path C live re-ingest of the City of Converse development regulations from the Municode JSON API (clientId 1749). Ten top-level CoO dev chapters. Layer 3; platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", CONVERSE_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: CONVERSE_JURISDICTION,
+      jurisdictionName: CONVERSE_JURISDICTION_NAME,
+      editionLabel: CONVERSE_EDITION_LABEL,
+      clientId: CONVERSE_CLIENT_ID,
+      librarySlug: CONVERSE_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-converse")
+  .description("Sync 5 TX-metros: Path C end-to-end Converse.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", CONVERSE_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: CONVERSE_JURISDICTION,
+      jurisdictionName: CONVERSE_JURISDICTION_NAME,
+      editionLabel: CONVERSE_EDITION_LABEL,
+      clientId: CONVERSE_CLIENT_ID,
+      librarySlug: CONVERSE_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildConverseCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: CONVERSE_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-converse-queries")
+  .description("Print the Converse curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildConverseCuratedQueries(), null, 2)); });
+
+
+program
+  .command("path-c-ingest-cedar-hill")
+  .description(
+    "Sprint 40i / QA-60: Path C live re-ingest of Cedar Hill land-development chapters (Buildings, Flood, Natural Resources, Planning, Subdivision, Zoning) from Municode JSON API (clientId 1568). Primary substrate for QA-58 Cedar Hill geocode; tagged platform-internal.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    CEDAR_HILL_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: CEDAR_HILL_JURISDICTION,
+        jurisdictionName: CEDAR_HILL_JURISDICTION_NAME,
+        editionLabel: CEDAR_HILL_EDITION_LABEL,
+        clientId: CEDAR_HILL_CLIENT_ID,
+        librarySlug: CEDAR_HILL_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-cedar-hill")
+  .description(
+    "Sprint 40i / QA-60: Path C end-to-end — live Cedar Hill re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    CEDAR_HILL_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: CEDAR_HILL_JURISDICTION,
+        jurisdictionName: CEDAR_HILL_JURISDICTION_NAME,
+        editionLabel: CEDAR_HILL_EDITION_LABEL,
+        clientId: CEDAR_HILL_CLIENT_ID,
+        librarySlug: CEDAR_HILL_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildCedarHillCuratedQueries();
+      }
+
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: CEDAR_HILL_JURISDICTION,
+        queries,
+      });
+
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-cedar-hill-queries")
+  .description("Print the Cedar Hill curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildCedarHillCuratedQueries(), null, 2));
   });
 
 program
