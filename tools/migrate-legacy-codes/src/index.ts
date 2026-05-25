@@ -112,6 +112,15 @@ import {
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
 import {
+  buildCedarHillCuratedQueries,
+  CEDAR_HILL_CHAPTER_FILTER,
+  CEDAR_HILL_CLIENT_ID,
+  CEDAR_HILL_EDITION_LABEL,
+  CEDAR_HILL_JURISDICTION,
+  CEDAR_HILL_JURISDICTION_NAME,
+  CEDAR_HILL_LIBRARY_SLUG,
+} from "./cedar-hill-curated-queries.js";
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -1656,6 +1665,113 @@ program
   .description("Print the Killeen curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildKilleenCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-cedar-hill")
+  .description(
+    "Sprint 40i / QA-60: Path C live re-ingest of Cedar Hill land-development chapters (Buildings, Flood, Natural Resources, Planning, Subdivision, Zoning) from Municode JSON API (clientId 1568). Primary substrate for QA-58 Cedar Hill geocode; tagged platform-internal.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    CEDAR_HILL_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathCIngest({
+        storage,
+        jurisdictionTenant: CEDAR_HILL_JURISDICTION,
+        jurisdictionName: CEDAR_HILL_JURISDICTION_NAME,
+        editionLabel: CEDAR_HILL_EDITION_LABEL,
+        clientId: CEDAR_HILL_CLIENT_ID,
+        librarySlug: CEDAR_HILL_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+      const output: Record<string, unknown> = { pathCIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-c-eval-cedar-hill")
+  .description(
+    "Sprint 40i / QA-60: Path C end-to-end — live Cedar Hill re-ingest + curated-query eval against the B.4 quality bar.",
+  )
+  .option(
+    "--chapter-filter <regex>",
+    "Top-level TOC chapter filter regex (case-insensitive).",
+    CEDAR_HILL_CHAPTER_FILTER,
+  )
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(
+    async (opts: {
+      chapterFilter: string;
+      maxLeafFetches: string;
+      queriesFile?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      const ingest = await runPathCIngest({
+        storage,
+        jurisdictionTenant: CEDAR_HILL_JURISDICTION,
+        jurisdictionName: CEDAR_HILL_JURISDICTION_NAME,
+        editionLabel: CEDAR_HILL_EDITION_LABEL,
+        clientId: CEDAR_HILL_CLIENT_ID,
+        librarySlug: CEDAR_HILL_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+        accessPolicy: "platform-internal",
+      });
+
+      let queries: ReadonlyArray<CuratedQuery>;
+      if (opts.queriesFile) {
+        const fs = await import("node:fs/promises");
+        queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+      } else {
+        queries = buildCedarHillCuratedQueries();
+      }
+
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: CEDAR_HILL_JURISDICTION,
+        queries,
+      });
+
+      console.log(
+        JSON.stringify(
+          { pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("export-cedar-hill-queries")
+  .description("Print the Cedar Hill curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildCedarHillCuratedQueries(), null, 2));
   });
 
 program

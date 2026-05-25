@@ -120,6 +120,15 @@ import {
   KILLEEN_JURISDICTION_NAME,
   KILLEEN_LIBRARY_SLUG,
 } from "./killeen-curated-queries.js";
+import {
+  buildCedarHillCuratedQueries,
+  CEDAR_HILL_CHAPTER_FILTER,
+  CEDAR_HILL_CLIENT_ID,
+  CEDAR_HILL_EDITION_LABEL,
+  CEDAR_HILL_JURISDICTION,
+  CEDAR_HILL_JURISDICTION_NAME,
+  CEDAR_HILL_LIBRARY_SLUG,
+} from "./cedar-hill-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -356,6 +365,25 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildKilleenCuratedQueries();
+    },
+  },
+  {
+    tenant: CEDAR_HILL_JURISDICTION,
+    label: "Cedar Hill Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: CEDAR_HILL_JURISDICTION,
+        jurisdictionName: CEDAR_HILL_JURISDICTION_NAME,
+        editionLabel: CEDAR_HILL_EDITION_LABEL,
+        clientId: CEDAR_HILL_CLIENT_ID,
+        librarySlug: CEDAR_HILL_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(CEDAR_HILL_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+      });
+      return buildCedarHillCuratedQueries();
     },
   },
   {
