@@ -308,6 +308,16 @@ import {
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
 import {
+  buildAnthonyCuratedQueries,
+  ANTHONY_CHAPTER_FILTER,
+  ANTHONY_CLIENT_ID,
+  ANTHONY_EDITION_LABEL,
+  ANTHONY_JURISDICTION,
+  ANTHONY_JURISDICTION_NAME,
+  ANTHONY_LIBRARY_SLUG,
+} from "./anthony-curated-queries.js";
+
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -3490,6 +3500,72 @@ program
   .action(() => {
     console.log(JSON.stringify(buildCedarHillCuratedQueries(), null, 2));
   });
+
+
+program
+  .command("path-c-ingest-anthony")
+  .description("Sync 5 lane central: Path C live re-ingest of Anthony municipal code development titles (clientId 1045). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", ANTHONY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: ANTHONY_JURISDICTION,
+      jurisdictionName: ANTHONY_JURISDICTION_NAME,
+      editionLabel: ANTHONY_EDITION_LABEL,
+      clientId: ANTHONY_CLIENT_ID,
+      librarySlug: ANTHONY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-anthony")
+  .description("Sync 5 lane central: Path C end-to-end Anthony municipal code development titles.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", ANTHONY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: ANTHONY_JURISDICTION,
+      jurisdictionName: ANTHONY_JURISDICTION_NAME,
+      editionLabel: ANTHONY_EDITION_LABEL,
+      clientId: ANTHONY_CLIENT_ID,
+      librarySlug: ANTHONY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildAnthonyCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: ANTHONY_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-anthony-queries")
+  .description("Print the Anthony curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildAnthonyCuratedQueries(), null, 2)); });
+
 
 program
   .command("build-corpus-snapshot")

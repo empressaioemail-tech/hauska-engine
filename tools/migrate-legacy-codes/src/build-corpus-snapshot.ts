@@ -316,6 +316,16 @@ import {
   CEDAR_HILL_JURISDICTION_NAME,
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
+import {
+  buildAnthonyCuratedQueries,
+  ANTHONY_CHAPTER_FILTER,
+  ANTHONY_CLIENT_ID,
+  ANTHONY_EDITION_LABEL,
+  ANTHONY_JURISDICTION,
+  ANTHONY_JURISDICTION_NAME,
+  ANTHONY_LIBRARY_SLUG,
+} from "./anthony-curated-queries.js";
+
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -918,6 +928,26 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildConverseCuratedQueries();
+    },
+  },
+
+  {
+    tenant: ANTHONY_JURISDICTION,
+    label: "Anthony municipal code development titles (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: ANTHONY_JURISDICTION,
+        jurisdictionName: ANTHONY_JURISDICTION_NAME,
+        editionLabel: ANTHONY_EDITION_LABEL,
+        clientId: ANTHONY_CLIENT_ID,
+        librarySlug: ANTHONY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(ANTHONY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildAnthonyCuratedQueries();
     },
   },
 
