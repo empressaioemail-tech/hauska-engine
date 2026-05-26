@@ -308,6 +308,16 @@ import {
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
 import {
+  buildSocorroCuratedQueries,
+  SOCORRO_CHAPTER_FILTER,
+  SOCORRO_CLIENT_ID,
+  SOCORRO_EDITION_LABEL,
+  SOCORRO_JURISDICTION,
+  SOCORRO_JURISDICTION_NAME,
+  SOCORRO_LIBRARY_SLUG,
+} from "./socorro-curated-queries.js";
+
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -3490,6 +3500,72 @@ program
   .action(() => {
     console.log(JSON.stringify(buildCedarHillCuratedQueries(), null, 2));
   });
+
+
+program
+  .command("path-c-ingest-socorro")
+  .description("Sync 5 lane central: Path C live re-ingest of Socorro development regulations (clientId 4371). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", SOCORRO_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SOCORRO_JURISDICTION,
+      jurisdictionName: SOCORRO_JURISDICTION_NAME,
+      editionLabel: SOCORRO_EDITION_LABEL,
+      clientId: SOCORRO_CLIENT_ID,
+      librarySlug: SOCORRO_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-socorro")
+  .description("Sync 5 lane central: Path C end-to-end Socorro development regulations.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", SOCORRO_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SOCORRO_JURISDICTION,
+      jurisdictionName: SOCORRO_JURISDICTION_NAME,
+      editionLabel: SOCORRO_EDITION_LABEL,
+      clientId: SOCORRO_CLIENT_ID,
+      librarySlug: SOCORRO_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildSocorroCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: SOCORRO_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-socorro-queries")
+  .description("Print the Socorro curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildSocorroCuratedQueries(), null, 2)); });
+
 
 program
   .command("build-corpus-snapshot")

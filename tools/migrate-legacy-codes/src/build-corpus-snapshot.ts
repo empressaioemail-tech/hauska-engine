@@ -316,6 +316,16 @@ import {
   CEDAR_HILL_JURISDICTION_NAME,
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
+import {
+  buildSocorroCuratedQueries,
+  SOCORRO_CHAPTER_FILTER,
+  SOCORRO_CLIENT_ID,
+  SOCORRO_EDITION_LABEL,
+  SOCORRO_JURISDICTION,
+  SOCORRO_JURISDICTION_NAME,
+  SOCORRO_LIBRARY_SLUG,
+} from "./socorro-curated-queries.js";
+
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -918,6 +928,26 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildConverseCuratedQueries();
+    },
+  },
+
+  {
+    tenant: SOCORRO_JURISDICTION,
+    label: "Socorro development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SOCORRO_JURISDICTION,
+        jurisdictionName: SOCORRO_JURISDICTION_NAME,
+        editionLabel: SOCORRO_EDITION_LABEL,
+        clientId: SOCORRO_CLIENT_ID,
+        librarySlug: SOCORRO_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SOCORRO_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildSocorroCuratedQueries();
     },
   },
 
