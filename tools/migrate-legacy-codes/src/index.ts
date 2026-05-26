@@ -133,6 +133,18 @@ import {
 } from "./austin-ldc-curated-queries.js";
 
 import {
+  buildSugarLandLdcCuratedQueries,
+  SUGAR_LAND_LDC_CHAPTER_FILTER,
+  SUGAR_LAND_LDC_CLIENT_ID,
+  SUGAR_LAND_LDC_EDITION_LABEL,
+  SUGAR_LAND_LDC_JURISDICTION,
+  SUGAR_LAND_LDC_JURISDICTION_NAME,
+  SUGAR_LAND_LDC_LIBRARY_CODE_PATH,
+  SUGAR_LAND_LDC_LIBRARY_SLUG,
+  SUGAR_LAND_LDC_PRODUCT_FILTER,
+} from "./sugar-land-ldc-curated-queries.js";
+
+import {
   buildManorCuratedQueries,
   MANOR_CHAPTER_FILTER,
   MANOR_CLIENT_ID,
@@ -2062,6 +2074,82 @@ program
   .description("Print the Austin LDC curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildAustinLdcCuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-sugar-land-ldc")
+  .description(
+    "Sync 5 Houston lane: Path C live re-ingest of Sugar Land Land Development Code (clientId 4527, separate LDC product). platform-internal per Path A.",
+  )
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter.", SUGAR_LAND_LDC_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "3000")
+  .option("--show-sections", "Print ingested sections.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SUGAR_LAND_LDC_JURISDICTION,
+      jurisdictionName: SUGAR_LAND_LDC_JURISDICTION_NAME,
+      editionLabel: SUGAR_LAND_LDC_EDITION_LABEL,
+      clientId: SUGAR_LAND_LDC_CLIENT_ID,
+      librarySlug: SUGAR_LAND_LDC_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      productNameFilter: new RegExp(SUGAR_LAND_LDC_PRODUCT_FILTER, "i"),
+      libraryCodePath: SUGAR_LAND_LDC_LIBRARY_CODE_PATH,
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-sugar-land-ldc")
+  .description("Sync 5 Houston lane: Path C end-to-end Sugar Land LDC.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter.", SUGAR_LAND_LDC_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "3000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SUGAR_LAND_LDC_JURISDICTION,
+      jurisdictionName: SUGAR_LAND_LDC_JURISDICTION_NAME,
+      editionLabel: SUGAR_LAND_LDC_EDITION_LABEL,
+      clientId: SUGAR_LAND_LDC_CLIENT_ID,
+      librarySlug: SUGAR_LAND_LDC_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      productNameFilter: new RegExp(SUGAR_LAND_LDC_PRODUCT_FILTER, "i"),
+      libraryCodePath: SUGAR_LAND_LDC_LIBRARY_CODE_PATH,
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildSugarLandLdcCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: SUGAR_LAND_LDC_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-sugar-land-ldc-queries")
+  .description("Print the Sugar Land LDC curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildSugarLandLdcCuratedQueries(), null, 2));
   });
 
 
