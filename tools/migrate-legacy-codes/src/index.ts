@@ -330,6 +330,97 @@ import {
 } from "./el-paso-title-18-curated-queries.js";
 
 import {
+  buildElPasoTitle19CuratedQueries,
+  buildElPasoTitle19MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_19_EDITION_LABEL,
+  EL_PASO_TITLE_19_CHAPTER_FILTER,
+} from "./el-paso-title-19-curated-queries.js";
+
+import {
+  buildElPasoTitle20CuratedQueries,
+  buildElPasoTitle20MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_20_EDITION_LABEL,
+  EL_PASO_TITLE_20_CHAPTER_FILTER,
+} from "./el-paso-title-20-curated-queries.js";
+
+import {
+  buildElPasoTitle21CuratedQueries,
+  buildElPasoTitle21MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_21_EDITION_LABEL,
+  EL_PASO_TITLE_21_CHAPTER_FILTER,
+} from "./el-paso-title-21-curated-queries.js";
+
+import {
+  buildPharrCuratedQueries,
+  PHARR_CHAPTER_FILTER,
+  PHARR_CLIENT_ID,
+  PHARR_EDITION_LABEL,
+  PHARR_JURISDICTION,
+  PHARR_JURISDICTION_NAME,
+  PHARR_LIBRARY_SLUG,
+} from "./pharr-curated-queries.js";
+
+import {
+  buildPlanoCuratedQueries,
+  PLANO_CHAPTER_FILTER,
+  PLANO_CLIENT_ID,
+  PLANO_EDITION_LABEL,
+  PLANO_JURISDICTION,
+  PLANO_JURISDICTION_NAME,
+  PLANO_LIBRARY_SLUG,
+} from "./plano-curated-queries.js";
+
+import {
+  buildSelmaCuratedQueries,
+  SELMA_CHAPTER_FILTER,
+  SELMA_CLIENT_ID,
+  SELMA_EDITION_LABEL,
+  SELMA_JURISDICTION,
+  SELMA_JURISDICTION_NAME,
+  SELMA_LIBRARY_SLUG,
+} from "./selma-curated-queries.js";
+
+import {
+  buildUniversalCityCuratedQueries,
+  UNIVERSAL_CITY_CHAPTER_FILTER,
+  UNIVERSAL_CITY_CLIENT_ID,
+  UNIVERSAL_CITY_EDITION_LABEL,
+  UNIVERSAL_CITY_JURISDICTION,
+  UNIVERSAL_CITY_JURISDICTION_NAME,
+  UNIVERSAL_CITY_LIBRARY_SLUG,
+} from "./universal-city-curated-queries.js";
+
+import {
+  buildLeonValleyCuratedQueries,
+  LEON_VALLEY_CHAPTER_FILTER,
+  LEON_VALLEY_CLIENT_ID,
+  LEON_VALLEY_EDITION_LABEL,
+  LEON_VALLEY_JURISDICTION,
+  LEON_VALLEY_JURISDICTION_NAME,
+  LEON_VALLEY_LIBRARY_SLUG,
+} from "./leon-valley-curated-queries.js";
+
+import {
+  buildAnthonyCuratedQueries,
+  ANTHONY_CHAPTER_FILTER,
+  ANTHONY_CLIENT_ID,
+  ANTHONY_EDITION_LABEL,
+  ANTHONY_JURISDICTION,
+  ANTHONY_JURISDICTION_NAME,
+  ANTHONY_LIBRARY_SLUG,
+} from "./anthony-curated-queries.js";
+
+import {
+  buildSocorroCuratedQueries,
+  SOCORRO_CHAPTER_FILTER,
+  SOCORRO_CLIENT_ID,
+  SOCORRO_EDITION_LABEL,
+  SOCORRO_JURISDICTION,
+  SOCORRO_JURISDICTION_NAME,
+  SOCORRO_LIBRARY_SLUG,
+} from "./socorro-curated-queries.js";
+
+import {
   buildCedarHillCuratedQueries,
   CEDAR_HILL_CHAPTER_FILTER,
   CEDAR_HILL_CLIENT_ID,
@@ -3649,6 +3740,694 @@ program
   .action(() => {
     console.log(JSON.stringify(buildElPasoTitle18CuratedQueries(), null, 2));
   });
+
+program
+  .command("path-c-ingest-el-paso-title-19")
+  .description("Sync 5 lane West: El Paso CoO Title 19 — Subdivision and Development Plats (per-Title slice).")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_19_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--show-sections", "Print ingested sections.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_TITLE_19_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle19MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-el-paso-title-19")
+  .description("Sync 5 lane West: El Paso Title 19 ingest + eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_19_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_TITLE_19_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle19MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildElPasoTitle19CuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: EL_PASO_JURISDICTION, queries });
+    console.log(
+      JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-el-paso-title-19-queries")
+  .description("Print El Paso Title 19 curated-query JSON.")
+  .action(() => {
+    console.log(JSON.stringify(buildElPasoTitle19CuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-el-paso-title-20")
+  .description("Sync 5 lane West: El Paso CoO Title 20 — Zoning (per-Title slice).")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_20_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print ingested sections.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_TITLE_20_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle20MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-el-paso-title-20")
+  .description("Sync 5 lane West: El Paso Title 20 ingest + eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_20_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_TITLE_20_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle20MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildElPasoTitle20CuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: EL_PASO_JURISDICTION, queries });
+    console.log(
+      JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-el-paso-title-20-queries")
+  .description("Print El Paso Title 20 curated-query JSON.")
+  .action(() => {
+    console.log(JSON.stringify(buildElPasoTitle20CuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-el-paso-title-21")
+  .description("Sync 5 lane West: El Paso CoO Title 21 — SmartCode (per-Title slice).")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_21_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--show-sections", "Print ingested sections.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_TITLE_21_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle21MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-el-paso-title-21")
+  .description("Sync 5 lane West: El Paso Title 21 SmartCode ingest + eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_21_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_TITLE_21_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle21MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildElPasoTitle21CuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: EL_PASO_JURISDICTION, queries });
+    console.log(
+      JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-el-paso-title-21-queries")
+  .description("Print El Paso Title 21 curated-query JSON.")
+  .action(() => {
+    console.log(JSON.stringify(buildElPasoTitle21CuratedQueries(), null, 2));
+  });
+
+program
+  .command("path-c-ingest-pharr")
+  .description("Sync 5 lane central: Path C live re-ingest of Pharr development regulations (clientId 3842). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", PHARR_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: PHARR_JURISDICTION,
+      jurisdictionName: PHARR_JURISDICTION_NAME,
+      editionLabel: PHARR_EDITION_LABEL,
+      clientId: PHARR_CLIENT_ID,
+      librarySlug: PHARR_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-pharr")
+  .description("Sync 5 lane central: Path C end-to-end Pharr development regulations.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", PHARR_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: PHARR_JURISDICTION,
+      jurisdictionName: PHARR_JURISDICTION_NAME,
+      editionLabel: PHARR_EDITION_LABEL,
+      clientId: PHARR_CLIENT_ID,
+      librarySlug: PHARR_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildPharrCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: PHARR_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-pharr-queries")
+  .description("Print the Pharr curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildPharrCuratedQueries(), null, 2)); });
+
+program
+  .command("path-c-ingest-plano")
+  .description(
+    "Sync 5 lane North: Path C live re-ingest of Plano, TX development regulations (Ch. 6, 16, Appendix A) from Municode JSON API (clientId 3886). platform-internal.",
+  )
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", PLANO_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: PLANO_JURISDICTION,
+      jurisdictionName: PLANO_JURISDICTION_NAME,
+      editionLabel: PLANO_EDITION_LABEL,
+      clientId: PLANO_CLIENT_ID,
+      librarySlug: PLANO_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-plano")
+  .description("Sync 5 lane North: Path C end-to-end Plano re-ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", PLANO_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "2000")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: PLANO_JURISDICTION,
+      jurisdictionName: PLANO_JURISDICTION_NAME,
+      editionLabel: PLANO_EDITION_LABEL,
+      clientId: PLANO_CLIENT_ID,
+      librarySlug: PLANO_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildPlanoCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: PLANO_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-plano-queries")
+  .description("Print the Plano curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildPlanoCuratedQueries(), null, 2)); });
+
+program
+  .command("path-c-ingest-selma")
+  .description("Sync 5 lane central: Path C live re-ingest of Selma land development regulations (clientId 12820). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", SELMA_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SELMA_JURISDICTION,
+      jurisdictionName: SELMA_JURISDICTION_NAME,
+      editionLabel: SELMA_EDITION_LABEL,
+      clientId: SELMA_CLIENT_ID,
+      librarySlug: SELMA_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-selma")
+  .description("Sync 5 lane central: Path C end-to-end Selma land development regulations.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", SELMA_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SELMA_JURISDICTION,
+      jurisdictionName: SELMA_JURISDICTION_NAME,
+      editionLabel: SELMA_EDITION_LABEL,
+      clientId: SELMA_CLIENT_ID,
+      librarySlug: SELMA_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildSelmaCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: SELMA_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-selma-queries")
+  .description("Print the Selma curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildSelmaCuratedQueries(), null, 2)); });
+
+program
+  .command("path-c-ingest-universal-city")
+  .description("Sync 5 lane central: Path C live re-ingest of Universal City development regulations (clientId 4708). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", UNIVERSAL_CITY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: UNIVERSAL_CITY_JURISDICTION,
+      jurisdictionName: UNIVERSAL_CITY_JURISDICTION_NAME,
+      editionLabel: UNIVERSAL_CITY_EDITION_LABEL,
+      clientId: UNIVERSAL_CITY_CLIENT_ID,
+      librarySlug: UNIVERSAL_CITY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-universal-city")
+  .description("Sync 5 lane central: Path C end-to-end Universal City development regulations.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", UNIVERSAL_CITY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: UNIVERSAL_CITY_JURISDICTION,
+      jurisdictionName: UNIVERSAL_CITY_JURISDICTION_NAME,
+      editionLabel: UNIVERSAL_CITY_EDITION_LABEL,
+      clientId: UNIVERSAL_CITY_CLIENT_ID,
+      librarySlug: UNIVERSAL_CITY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildUniversalCityCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: UNIVERSAL_CITY_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-universal-city-queries")
+  .description("Print the Universal City curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildUniversalCityCuratedQueries(), null, 2)); });
+
+program
+  .command("path-c-ingest-leon-valley")
+  .description("Sync 5 lane central: Path C live re-ingest of Leon Valley development regulations (clientId 3008). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", LEON_VALLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LEON_VALLEY_JURISDICTION,
+      jurisdictionName: LEON_VALLEY_JURISDICTION_NAME,
+      editionLabel: LEON_VALLEY_EDITION_LABEL,
+      clientId: LEON_VALLEY_CLIENT_ID,
+      librarySlug: LEON_VALLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-leon-valley")
+  .description("Sync 5 lane central: Path C end-to-end Leon Valley development regulations.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", LEON_VALLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LEON_VALLEY_JURISDICTION,
+      jurisdictionName: LEON_VALLEY_JURISDICTION_NAME,
+      editionLabel: LEON_VALLEY_EDITION_LABEL,
+      clientId: LEON_VALLEY_CLIENT_ID,
+      librarySlug: LEON_VALLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildLeonValleyCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: LEON_VALLEY_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-leon-valley-queries")
+  .description("Print the Leon Valley curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildLeonValleyCuratedQueries(), null, 2)); });
+
+program
+  .command("path-c-ingest-anthony")
+  .description("Sync 5 lane central: Path C live re-ingest of Anthony municipal code development titles (clientId 1045). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", ANTHONY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: ANTHONY_JURISDICTION,
+      jurisdictionName: ANTHONY_JURISDICTION_NAME,
+      editionLabel: ANTHONY_EDITION_LABEL,
+      clientId: ANTHONY_CLIENT_ID,
+      librarySlug: ANTHONY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-anthony")
+  .description("Sync 5 lane central: Path C end-to-end Anthony municipal code development titles.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", ANTHONY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: ANTHONY_JURISDICTION,
+      jurisdictionName: ANTHONY_JURISDICTION_NAME,
+      editionLabel: ANTHONY_EDITION_LABEL,
+      clientId: ANTHONY_CLIENT_ID,
+      librarySlug: ANTHONY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildAnthonyCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: ANTHONY_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-anthony-queries")
+  .description("Print the Anthony curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildAnthonyCuratedQueries(), null, 2)); });
+
+program
+  .command("path-c-ingest-socorro")
+  .description("Sync 5 lane central: Path C live re-ingest of Socorro development regulations (clientId 4371). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", SOCORRO_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SOCORRO_JURISDICTION,
+      jurisdictionName: SOCORRO_JURISDICTION_NAME,
+      editionLabel: SOCORRO_EDITION_LABEL,
+      clientId: SOCORRO_CLIENT_ID,
+      librarySlug: SOCORRO_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-socorro")
+  .description("Sync 5 lane central: Path C end-to-end Socorro development regulations.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", SOCORRO_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SOCORRO_JURISDICTION,
+      jurisdictionName: SOCORRO_JURISDICTION_NAME,
+      editionLabel: SOCORRO_EDITION_LABEL,
+      clientId: SOCORRO_CLIENT_ID,
+      librarySlug: SOCORRO_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildSocorroCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: SOCORRO_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-socorro-queries")
+  .description("Print the Socorro curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildSocorroCuratedQueries(), null, 2)); });
 
 program
   .command("path-c-ingest-watauga")
