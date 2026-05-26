@@ -335,6 +335,29 @@ import {
   WATAUGA_JURISDICTION_NAME,
   WATAUGA_LIBRARY_SLUG,
 } from "./watauga-curated-queries.js";
+
+import {
+  buildPasadenaCuratedQueries,
+  PASADENA_CHAPTER_FILTER,
+  PASADENA_CLIENT_ID,
+  PASADENA_EDITION_LABEL,
+  PASADENA_JURISDICTION,
+  PASADENA_JURISDICTION_NAME,
+  PASADENA_LIBRARY_SLUG,
+} from "./pasadena-curated-queries.js";
+
+import {
+  buildSugarLandLdcCuratedQueries,
+  SUGAR_LAND_LDC_CHAPTER_FILTER,
+  SUGAR_LAND_LDC_CLIENT_ID,
+  SUGAR_LAND_LDC_EDITION_LABEL,
+  SUGAR_LAND_LDC_JURISDICTION,
+  SUGAR_LAND_LDC_JURISDICTION_NAME,
+  SUGAR_LAND_LDC_LIBRARY_CODE_PATH,
+  SUGAR_LAND_LDC_LIBRARY_SLUG,
+  SUGAR_LAND_LDC_PRODUCT_FILTER,
+} from "./sugar-land-ldc-curated-queries.js";
+
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -1001,6 +1024,49 @@ const UNITS: ReadonlyArray<IngestUnit> = [
       return buildWataugaCuratedQueries();
     },
   },
+
+  {
+    tenant: PASADENA_JURISDICTION,
+    label: "Pasadena Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: PASADENA_JURISDICTION,
+        jurisdictionName: PASADENA_JURISDICTION_NAME,
+        editionLabel: PASADENA_EDITION_LABEL,
+        clientId: PASADENA_CLIENT_ID,
+        librarySlug: PASADENA_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(PASADENA_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 2000,
+        accessPolicy: "platform-internal",
+      });
+      return buildPasadenaCuratedQueries();
+    },
+  },
+
+  {
+    tenant: SUGAR_LAND_LDC_JURISDICTION,
+    label: "Sugar Land Land Development Code (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SUGAR_LAND_LDC_JURISDICTION,
+        jurisdictionName: SUGAR_LAND_LDC_JURISDICTION_NAME,
+        editionLabel: SUGAR_LAND_LDC_EDITION_LABEL,
+        clientId: SUGAR_LAND_LDC_CLIENT_ID,
+        librarySlug: SUGAR_LAND_LDC_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SUGAR_LAND_LDC_CHAPTER_FILTER, "i"),
+        productNameFilter: new RegExp(SUGAR_LAND_LDC_PRODUCT_FILTER, "i"),
+        libraryCodePath: SUGAR_LAND_LDC_LIBRARY_CODE_PATH,
+        maxLeafFetches: 3000,
+        accessPolicy: "platform-internal",
+      });
+      return buildSugarLandLdcCuratedQueries();
+    },
+  },
+
   {
     tenant: "grand_county_ut",
     label: "Grand County (Path B / legacy Neon)",
