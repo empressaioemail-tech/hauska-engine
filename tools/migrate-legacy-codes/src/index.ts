@@ -299,6 +299,15 @@ import {
 } from "./converse-curated-queries.js";
 
 import {
+  buildElPasoTitle20CuratedQueries,
+  buildElPasoTitle20MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_20_EDITION_LABEL,
+  EL_PASO_JURISDICTION,
+  EL_PASO_JURISDICTION_NAME,
+  EL_PASO_TITLE_20_CHAPTER_FILTER,
+} from "./el-paso-title-20-curated-queries.js";
+
+import {
   buildCedarHillCuratedQueries,
   CEDAR_HILL_CHAPTER_FILTER,
   CEDAR_HILL_CLIENT_ID,
@@ -3383,6 +3392,83 @@ program
   .description("Print the Converse curated-query JSON to stdout.")
   .action(() => { console.log(JSON.stringify(buildConverseCuratedQueries(), null, 2)); });
 
+program
+  .command("path-c-ingest-el-paso-title-20")
+  .description("Sync 5 lane West: El Paso CoO Title 20 — Zoning (per-Title slice).")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_20_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--show-sections", "Print ingested sections.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_TITLE_20_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle20MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-el-paso-title-20")
+  .description("Sync 5 lane West: El Paso Title 20 ingest + eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_20_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1500")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_TITLE_20_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle20MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildElPasoTitle20CuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: EL_PASO_JURISDICTION, queries });
+    console.log(
+      JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-el-paso-title-20-queries")
+  .description("Print El Paso Title 20 curated-query JSON.")
+  .action(() => {
+    console.log(JSON.stringify(buildElPasoTitle20CuratedQueries(), null, 2));
+  });
 
 program
   .command("path-c-ingest-cedar-hill")

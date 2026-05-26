@@ -308,6 +308,15 @@ import {
 } from "./converse-curated-queries.js";
 
 import {
+  buildElPasoTitle20CuratedQueries,
+  buildElPasoTitle20MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_20_EDITION_LABEL,
+  EL_PASO_JURISDICTION,
+  EL_PASO_JURISDICTION_NAME,
+  EL_PASO_TITLE_20_CHAPTER_FILTER,
+} from "./el-paso-title-20-curated-queries.js";
+
+import {
   buildCedarHillCuratedQueries,
   CEDAR_HILL_CHAPTER_FILTER,
   CEDAR_HILL_CLIENT_ID,
@@ -918,6 +927,28 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildConverseCuratedQueries();
+    },
+  },
+
+  {
+    tenant: EL_PASO_JURISDICTION,
+    label: "El Paso CoO Title 20 — Zoning (Path C / Municode)",
+    async run(storage) {
+      const chapterFilter = new RegExp(EL_PASO_TITLE_20_CHAPTER_FILTER, "i");
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: EL_PASO_JURISDICTION,
+        jurisdictionName: EL_PASO_JURISDICTION_NAME,
+        editionLabel: EL_PASO_TITLE_20_EDITION_LABEL,
+        clientId: 2066,
+        librarySlug: "el_paso",
+        stateAbbr: "TX",
+        chapterFilter,
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+        adapter: buildElPasoTitle20MunicodeAdapter({ chapterFilter, maxLeafFetches: 1500 }),
+      });
+      return buildElPasoTitle20CuratedQueries();
     },
   },
 
