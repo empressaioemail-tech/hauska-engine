@@ -5,12 +5,9 @@ catalog tools have a stable read-only endpoint (Lane E Phase E0).
 
 ## Where it runs
 
-- **Project:** `legacy-design-tools-prod` — the GCP project that already
-  hosts the sibling engine-adjacent services `cortex-api` and
-  `api-server`. No Hauska-named project exists yet; reusing the
-  established project means no new project / billing-account setup
-  (billing is already live there). When a dedicated Hauska Inc. project
-  is stood up, the service redeploys unchanged.
+- **Project:** `hauska-prod-497015` — production Hauska data plane
+  (retrieval-api, MCP server). The interim `legacy-design-tools-prod`
+  deploy was torn down 2026-05-21; do not target that project.
 - **Region:** `us-central1` (matches the sibling services).
 - **Service name:** `hauska-retrieval-api`.
 
@@ -63,7 +60,7 @@ this repo.
 ```bash
 gcloud run deploy hauska-retrieval-api \
   --source . \
-  --project=legacy-design-tools-prod \
+  --project=hauska-prod-497015 \
   --region=us-central1 \
   --allow-unauthenticated \
   --port=8080 \
