@@ -316,6 +316,16 @@ import {
   CEDAR_HILL_JURISDICTION_NAME,
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
+
+import {
+  buildWataugaCuratedQueries,
+  WATAUGA_CHAPTER_FILTER,
+  WATAUGA_CLIENT_ID,
+  WATAUGA_EDITION_LABEL,
+  WATAUGA_JURISDICTION,
+  WATAUGA_JURISDICTION_NAME,
+  WATAUGA_LIBRARY_SLUG,
+} from "./watauga-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -938,6 +948,26 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildCedarHillCuratedQueries();
+    },
+  },
+
+  {
+    tenant: WATAUGA_JURISDICTION,
+    label: "Watauga Land Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: WATAUGA_JURISDICTION,
+        jurisdictionName: WATAUGA_JURISDICTION_NAME,
+        editionLabel: WATAUGA_EDITION_LABEL,
+        clientId: WATAUGA_CLIENT_ID,
+        librarySlug: WATAUGA_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(WATAUGA_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildWataugaCuratedQueries();
     },
   },
   {
