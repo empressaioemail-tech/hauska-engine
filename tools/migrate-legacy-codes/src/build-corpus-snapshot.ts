@@ -317,6 +317,97 @@ import {
 } from "./el-paso-title-18-curated-queries.js";
 
 import {
+  buildElPasoTitle19CuratedQueries,
+  buildElPasoTitle19MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_19_EDITION_LABEL,
+  EL_PASO_TITLE_19_CHAPTER_FILTER,
+} from "./el-paso-title-19-curated-queries.js";
+
+import {
+  buildElPasoTitle20CuratedQueries,
+  buildElPasoTitle20MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_20_EDITION_LABEL,
+  EL_PASO_TITLE_20_CHAPTER_FILTER,
+} from "./el-paso-title-20-curated-queries.js";
+
+import {
+  buildElPasoTitle21CuratedQueries,
+  buildElPasoTitle21MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_21_EDITION_LABEL,
+  EL_PASO_TITLE_21_CHAPTER_FILTER,
+} from "./el-paso-title-21-curated-queries.js";
+
+import {
+  buildPharrCuratedQueries,
+  PHARR_CHAPTER_FILTER,
+  PHARR_CLIENT_ID,
+  PHARR_EDITION_LABEL,
+  PHARR_JURISDICTION,
+  PHARR_JURISDICTION_NAME,
+  PHARR_LIBRARY_SLUG,
+} from "./pharr-curated-queries.js";
+
+import {
+  buildSelmaCuratedQueries,
+  SELMA_CHAPTER_FILTER,
+  SELMA_CLIENT_ID,
+  SELMA_EDITION_LABEL,
+  SELMA_JURISDICTION,
+  SELMA_JURISDICTION_NAME,
+  SELMA_LIBRARY_SLUG,
+} from "./selma-curated-queries.js";
+
+import {
+  buildUniversalCityCuratedQueries,
+  UNIVERSAL_CITY_CHAPTER_FILTER,
+  UNIVERSAL_CITY_CLIENT_ID,
+  UNIVERSAL_CITY_EDITION_LABEL,
+  UNIVERSAL_CITY_JURISDICTION,
+  UNIVERSAL_CITY_JURISDICTION_NAME,
+  UNIVERSAL_CITY_LIBRARY_SLUG,
+} from "./universal-city-curated-queries.js";
+
+import {
+  buildLeonValleyCuratedQueries,
+  LEON_VALLEY_CHAPTER_FILTER,
+  LEON_VALLEY_CLIENT_ID,
+  LEON_VALLEY_EDITION_LABEL,
+  LEON_VALLEY_JURISDICTION,
+  LEON_VALLEY_JURISDICTION_NAME,
+  LEON_VALLEY_LIBRARY_SLUG,
+} from "./leon-valley-curated-queries.js";
+
+import {
+  buildAnthonyCuratedQueries,
+  ANTHONY_CHAPTER_FILTER,
+  ANTHONY_CLIENT_ID,
+  ANTHONY_EDITION_LABEL,
+  ANTHONY_JURISDICTION,
+  ANTHONY_JURISDICTION_NAME,
+  ANTHONY_LIBRARY_SLUG,
+} from "./anthony-curated-queries.js";
+
+import {
+  buildSocorroCuratedQueries,
+  SOCORRO_CHAPTER_FILTER,
+  SOCORRO_CLIENT_ID,
+  SOCORRO_EDITION_LABEL,
+  SOCORRO_JURISDICTION,
+  SOCORRO_JURISDICTION_NAME,
+  SOCORRO_LIBRARY_SLUG,
+} from "./socorro-curated-queries.js";
+
+import {
+  buildPlanoCuratedQueries,
+  PLANO_CHAPTER_FILTER,
+  PLANO_CLIENT_ID,
+  PLANO_EDITION_LABEL,
+  PLANO_JURISDICTION,
+  PLANO_JURISDICTION_NAME,
+  PLANO_LIBRARY_SLUG,
+} from "./plano-curated-queries.js";
+
+import {
   buildCedarHillCuratedQueries,
   CEDAR_HILL_CHAPTER_FILTER,
   CEDAR_HILL_CLIENT_ID,
@@ -986,6 +1077,192 @@ const UNITS: ReadonlyArray<IngestUnit> = [
   },
 
   {
+    tenant: EL_PASO_JURISDICTION,
+    label: "El Paso CoO Title 19 — Subdivision and Development Plats (Path C / Municode)",
+    async run(storage) {
+      const chapterFilter = new RegExp(EL_PASO_TITLE_19_CHAPTER_FILTER, "i");
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: EL_PASO_JURISDICTION,
+        jurisdictionName: EL_PASO_JURISDICTION_NAME,
+        editionLabel: EL_PASO_TITLE_19_EDITION_LABEL,
+        clientId: 2066,
+        librarySlug: "el_paso",
+        stateAbbr: "TX",
+        chapterFilter,
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+        adapter: buildElPasoTitle19MunicodeAdapter({ chapterFilter, maxLeafFetches: 1200 }),
+      });
+      return buildElPasoTitle19CuratedQueries();
+    },
+  },
+
+  {
+    tenant: EL_PASO_JURISDICTION,
+    label: "El Paso CoO Title 20 — Zoning (Path C / Municode)",
+    async run(storage) {
+      const chapterFilter = new RegExp(EL_PASO_TITLE_20_CHAPTER_FILTER, "i");
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: EL_PASO_JURISDICTION,
+        jurisdictionName: EL_PASO_JURISDICTION_NAME,
+        editionLabel: EL_PASO_TITLE_20_EDITION_LABEL,
+        clientId: 2066,
+        librarySlug: "el_paso",
+        stateAbbr: "TX",
+        chapterFilter,
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+        adapter: buildElPasoTitle20MunicodeAdapter({ chapterFilter, maxLeafFetches: 1500 }),
+      });
+      return buildElPasoTitle20CuratedQueries();
+    },
+  },
+
+  {
+    tenant: EL_PASO_JURISDICTION,
+    label: "El Paso CoO Title 21 — SmartCode (Path C / Municode)",
+    async run(storage) {
+      const chapterFilter = new RegExp(EL_PASO_TITLE_21_CHAPTER_FILTER, "i");
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: EL_PASO_JURISDICTION,
+        jurisdictionName: EL_PASO_JURISDICTION_NAME,
+        editionLabel: EL_PASO_TITLE_21_EDITION_LABEL,
+        clientId: 2066,
+        librarySlug: "el_paso",
+        stateAbbr: "TX",
+        chapterFilter,
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+        adapter: buildElPasoTitle21MunicodeAdapter({ chapterFilter, maxLeafFetches: 800 }),
+      });
+      return buildElPasoTitle21CuratedQueries();
+    },
+  },
+
+  {
+    tenant: PHARR_JURISDICTION,
+    label: "Pharr development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: PHARR_JURISDICTION,
+        jurisdictionName: PHARR_JURISDICTION_NAME,
+        editionLabel: PHARR_EDITION_LABEL,
+        clientId: PHARR_CLIENT_ID,
+        librarySlug: PHARR_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(PHARR_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildPharrCuratedQueries();
+    },
+  },
+
+  {
+    tenant: SELMA_JURISDICTION,
+    label: "Selma land development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SELMA_JURISDICTION,
+        jurisdictionName: SELMA_JURISDICTION_NAME,
+        editionLabel: SELMA_EDITION_LABEL,
+        clientId: SELMA_CLIENT_ID,
+        librarySlug: SELMA_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SELMA_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+      });
+      return buildSelmaCuratedQueries();
+    },
+  },
+
+  {
+    tenant: UNIVERSAL_CITY_JURISDICTION,
+    label: "Universal City development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: UNIVERSAL_CITY_JURISDICTION,
+        jurisdictionName: UNIVERSAL_CITY_JURISDICTION_NAME,
+        editionLabel: UNIVERSAL_CITY_EDITION_LABEL,
+        clientId: UNIVERSAL_CITY_CLIENT_ID,
+        librarySlug: UNIVERSAL_CITY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(UNIVERSAL_CITY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+      });
+      return buildUniversalCityCuratedQueries();
+    },
+  },
+
+  {
+    tenant: LEON_VALLEY_JURISDICTION,
+    label: "Leon Valley development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: LEON_VALLEY_JURISDICTION,
+        jurisdictionName: LEON_VALLEY_JURISDICTION_NAME,
+        editionLabel: LEON_VALLEY_EDITION_LABEL,
+        clientId: LEON_VALLEY_CLIENT_ID,
+        librarySlug: LEON_VALLEY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(LEON_VALLEY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+      });
+      return buildLeonValleyCuratedQueries();
+    },
+  },
+
+  {
+    tenant: ANTHONY_JURISDICTION,
+    label: "Anthony municipal code development titles (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: ANTHONY_JURISDICTION,
+        jurisdictionName: ANTHONY_JURISDICTION_NAME,
+        editionLabel: ANTHONY_EDITION_LABEL,
+        clientId: ANTHONY_CLIENT_ID,
+        librarySlug: ANTHONY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(ANTHONY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildAnthonyCuratedQueries();
+    },
+  },
+
+  {
+    tenant: SOCORRO_JURISDICTION,
+    label: "Socorro development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SOCORRO_JURISDICTION,
+        jurisdictionName: SOCORRO_JURISDICTION_NAME,
+        editionLabel: SOCORRO_EDITION_LABEL,
+        clientId: SOCORRO_CLIENT_ID,
+        librarySlug: SOCORRO_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SOCORRO_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildSocorroCuratedQueries();
+    },
+  },
+
+  {
     tenant: CEDAR_HILL_JURISDICTION,
     label: "Cedar Hill Development Regulations (Path C / Municode)",
     async run(storage) {
@@ -1002,6 +1279,26 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildCedarHillCuratedQueries();
+    },
+  },
+
+  {
+    tenant: PLANO_JURISDICTION,
+    label: "Plano Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: PLANO_JURISDICTION,
+        jurisdictionName: PLANO_JURISDICTION_NAME,
+        editionLabel: PLANO_EDITION_LABEL,
+        clientId: PLANO_CLIENT_ID,
+        librarySlug: PLANO_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(PLANO_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 2000,
+        accessPolicy: "platform-internal",
+      });
+      return buildPlanoCuratedQueries();
     },
   },
 
