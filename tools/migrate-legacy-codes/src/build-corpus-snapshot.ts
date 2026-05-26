@@ -308,6 +308,15 @@ import {
 } from "./converse-curated-queries.js";
 
 import {
+  buildElPasoTitle18CuratedQueries,
+  buildElPasoTitle18MunicodeAdapter,
+  EL_PASO_EDITION_LABEL,
+  EL_PASO_JURISDICTION,
+  EL_PASO_JURISDICTION_NAME,
+  EL_PASO_TITLE_18_CHAPTER_FILTER,
+} from "./el-paso-title-18-curated-queries.js";
+
+import {
   buildCedarHillCuratedQueries,
   CEDAR_HILL_CHAPTER_FILTER,
   CEDAR_HILL_CLIENT_ID,
@@ -918,6 +927,28 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildConverseCuratedQueries();
+    },
+  },
+
+  {
+    tenant: EL_PASO_JURISDICTION,
+    label: "El Paso CoO Title 18 — Building and Construction (Path C / Municode)",
+    async run(storage) {
+      const chapterFilter = new RegExp(EL_PASO_TITLE_18_CHAPTER_FILTER, "i");
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: EL_PASO_JURISDICTION,
+        jurisdictionName: EL_PASO_JURISDICTION_NAME,
+        editionLabel: EL_PASO_EDITION_LABEL,
+        clientId: 2066,
+        librarySlug: "el_paso",
+        stateAbbr: "TX",
+        chapterFilter,
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+        adapter: buildElPasoTitle18MunicodeAdapter({ chapterFilter, maxLeafFetches: 1200 }),
+      });
+      return buildElPasoTitle18CuratedQueries();
     },
   },
 
