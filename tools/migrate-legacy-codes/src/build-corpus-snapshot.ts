@@ -316,6 +316,16 @@ import {
   CEDAR_HILL_JURISDICTION_NAME,
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
+import {
+  buildUniversalCityCuratedQueries,
+  UNIVERSAL_CITY_CHAPTER_FILTER,
+  UNIVERSAL_CITY_CLIENT_ID,
+  UNIVERSAL_CITY_EDITION_LABEL,
+  UNIVERSAL_CITY_JURISDICTION,
+  UNIVERSAL_CITY_JURISDICTION_NAME,
+  UNIVERSAL_CITY_LIBRARY_SLUG,
+} from "./universal-city-curated-queries.js";
+
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -918,6 +928,26 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildConverseCuratedQueries();
+    },
+  },
+
+  {
+    tenant: UNIVERSAL_CITY_JURISDICTION,
+    label: "Universal City development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: UNIVERSAL_CITY_JURISDICTION,
+        jurisdictionName: UNIVERSAL_CITY_JURISDICTION_NAME,
+        editionLabel: UNIVERSAL_CITY_EDITION_LABEL,
+        clientId: UNIVERSAL_CITY_CLIENT_ID,
+        librarySlug: UNIVERSAL_CITY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(UNIVERSAL_CITY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+      });
+      return buildUniversalCityCuratedQueries();
     },
   },
 
