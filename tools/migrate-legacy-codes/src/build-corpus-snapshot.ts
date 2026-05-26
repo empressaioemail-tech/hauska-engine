@@ -308,6 +308,15 @@ import {
 } from "./converse-curated-queries.js";
 
 import {
+  buildElPasoTitle21CuratedQueries,
+  buildElPasoTitle21MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_21_EDITION_LABEL,
+  EL_PASO_JURISDICTION,
+  EL_PASO_JURISDICTION_NAME,
+  EL_PASO_TITLE_21_CHAPTER_FILTER,
+} from "./el-paso-title-21-curated-queries.js";
+
+import {
   buildCedarHillCuratedQueries,
   CEDAR_HILL_CHAPTER_FILTER,
   CEDAR_HILL_CLIENT_ID,
@@ -918,6 +927,28 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildConverseCuratedQueries();
+    },
+  },
+
+  {
+    tenant: EL_PASO_JURISDICTION,
+    label: "El Paso CoO Title 21 — SmartCode (Path C / Municode)",
+    async run(storage) {
+      const chapterFilter = new RegExp(EL_PASO_TITLE_21_CHAPTER_FILTER, "i");
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: EL_PASO_JURISDICTION,
+        jurisdictionName: EL_PASO_JURISDICTION_NAME,
+        editionLabel: EL_PASO_TITLE_21_EDITION_LABEL,
+        clientId: 2066,
+        librarySlug: "el_paso",
+        stateAbbr: "TX",
+        chapterFilter,
+        maxLeafFetches: 800,
+        accessPolicy: "platform-internal",
+        adapter: buildElPasoTitle21MunicodeAdapter({ chapterFilter, maxLeafFetches: 800 }),
+      });
+      return buildElPasoTitle21CuratedQueries();
     },
   },
 

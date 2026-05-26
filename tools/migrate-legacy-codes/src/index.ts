@@ -299,6 +299,15 @@ import {
 } from "./converse-curated-queries.js";
 
 import {
+  buildElPasoTitle21CuratedQueries,
+  buildElPasoTitle21MunicodeAdapter,
+  EL_PASO_EDITION_LABEL as EL_PASO_TITLE_21_EDITION_LABEL,
+  EL_PASO_JURISDICTION,
+  EL_PASO_JURISDICTION_NAME,
+  EL_PASO_TITLE_21_CHAPTER_FILTER,
+} from "./el-paso-title-21-curated-queries.js";
+
+import {
   buildCedarHillCuratedQueries,
   CEDAR_HILL_CHAPTER_FILTER,
   CEDAR_HILL_CLIENT_ID,
@@ -3383,6 +3392,42 @@ program
   .description("Print the Converse curated-query JSON to stdout.")
   .action(() => { console.log(JSON.stringify(buildConverseCuratedQueries(), null, 2)); });
 
+program
+  .command("path-c-eval-el-paso-title-21")
+  .description("Sync 5 lane West: El Paso Title 21 SmartCode ingest + eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_21_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "800")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_TITLE_21_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle21MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    const queries = buildElPasoTitle21CuratedQueries();
+    const report = await evaluate({ storage, jurisdictionTenant: EL_PASO_JURISDICTION, queries });
+    console.log(
+      JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-el-paso-title-21-queries")
+  .description("Print El Paso Title 21 curated-query JSON.")
+  .action(() => {
+    console.log(JSON.stringify(buildElPasoTitle21CuratedQueries(), null, 2));
+  });
 
 program
   .command("path-c-ingest-cedar-hill")
