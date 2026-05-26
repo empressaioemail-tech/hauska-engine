@@ -308,6 +308,16 @@ import {
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
 import {
+  buildSelmaCuratedQueries,
+  SELMA_CHAPTER_FILTER,
+  SELMA_CLIENT_ID,
+  SELMA_EDITION_LABEL,
+  SELMA_JURISDICTION,
+  SELMA_JURISDICTION_NAME,
+  SELMA_LIBRARY_SLUG,
+} from "./selma-curated-queries.js";
+
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -3490,6 +3500,72 @@ program
   .action(() => {
     console.log(JSON.stringify(buildCedarHillCuratedQueries(), null, 2));
   });
+
+
+program
+  .command("path-c-ingest-selma")
+  .description("Sync 5 lane central: Path C live re-ingest of Selma land development regulations (clientId 12820). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", SELMA_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SELMA_JURISDICTION,
+      jurisdictionName: SELMA_JURISDICTION_NAME,
+      editionLabel: SELMA_EDITION_LABEL,
+      clientId: SELMA_CLIENT_ID,
+      librarySlug: SELMA_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-selma")
+  .description("Sync 5 lane central: Path C end-to-end Selma land development regulations.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", SELMA_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: SELMA_JURISDICTION,
+      jurisdictionName: SELMA_JURISDICTION_NAME,
+      editionLabel: SELMA_EDITION_LABEL,
+      clientId: SELMA_CLIENT_ID,
+      librarySlug: SELMA_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildSelmaCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: SELMA_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-selma-queries")
+  .description("Print the Selma curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildSelmaCuratedQueries(), null, 2)); });
+
 
 program
   .command("build-corpus-snapshot")

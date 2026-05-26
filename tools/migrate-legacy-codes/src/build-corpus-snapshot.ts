@@ -316,6 +316,16 @@ import {
   CEDAR_HILL_JURISDICTION_NAME,
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
+import {
+  buildSelmaCuratedQueries,
+  SELMA_CHAPTER_FILTER,
+  SELMA_CLIENT_ID,
+  SELMA_EDITION_LABEL,
+  SELMA_JURISDICTION,
+  SELMA_JURISDICTION_NAME,
+  SELMA_LIBRARY_SLUG,
+} from "./selma-curated-queries.js";
+
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -918,6 +928,26 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildConverseCuratedQueries();
+    },
+  },
+
+  {
+    tenant: SELMA_JURISDICTION,
+    label: "Selma land development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: SELMA_JURISDICTION,
+        jurisdictionName: SELMA_JURISDICTION_NAME,
+        editionLabel: SELMA_EDITION_LABEL,
+        clientId: SELMA_CLIENT_ID,
+        librarySlug: SELMA_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(SELMA_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+      });
+      return buildSelmaCuratedQueries();
     },
   },
 
