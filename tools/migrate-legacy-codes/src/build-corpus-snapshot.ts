@@ -316,6 +316,77 @@ import {
   CEDAR_HILL_JURISDICTION_NAME,
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
+
+import {
+  buildPharrCuratedQueries,
+  PHARR_CHAPTER_FILTER,
+  PHARR_CLIENT_ID,
+  PHARR_EDITION_LABEL,
+  PHARR_JURISDICTION,
+  PHARR_JURISDICTION_NAME,
+  PHARR_LIBRARY_SLUG,
+} from "./pharr-curated-queries.js";
+
+import {
+  buildCiboloCuratedQueries,
+  CIBOLO_CHAPTER_FILTER,
+  CIBOLO_CLIENT_ID,
+  CIBOLO_EDITION_LABEL,
+  CIBOLO_JURISDICTION,
+  CIBOLO_JURISDICTION_NAME,
+  CIBOLO_LIBRARY_SLUG,
+} from "./cibolo-curated-queries.js";
+
+import {
+  buildSelmaCuratedQueries,
+  SELMA_CHAPTER_FILTER,
+  SELMA_CLIENT_ID,
+  SELMA_EDITION_LABEL,
+  SELMA_JURISDICTION,
+  SELMA_JURISDICTION_NAME,
+  SELMA_LIBRARY_SLUG,
+} from "./selma-curated-queries.js";
+
+import {
+  buildUniversalCityCuratedQueries,
+  UNIVERSAL_CITY_CHAPTER_FILTER,
+  UNIVERSAL_CITY_CLIENT_ID,
+  UNIVERSAL_CITY_EDITION_LABEL,
+  UNIVERSAL_CITY_JURISDICTION,
+  UNIVERSAL_CITY_JURISDICTION_NAME,
+  UNIVERSAL_CITY_LIBRARY_SLUG,
+} from "./universal-city-curated-queries.js";
+
+import {
+  buildLeonValleyCuratedQueries,
+  LEON_VALLEY_CHAPTER_FILTER,
+  LEON_VALLEY_CLIENT_ID,
+  LEON_VALLEY_EDITION_LABEL,
+  LEON_VALLEY_JURISDICTION,
+  LEON_VALLEY_JURISDICTION_NAME,
+  LEON_VALLEY_LIBRARY_SLUG,
+} from "./leon-valley-curated-queries.js";
+
+import {
+  buildAnthonyCuratedQueries,
+  ANTHONY_CHAPTER_FILTER,
+  ANTHONY_CLIENT_ID,
+  ANTHONY_EDITION_LABEL,
+  ANTHONY_JURISDICTION,
+  ANTHONY_JURISDICTION_NAME,
+  ANTHONY_LIBRARY_SLUG,
+} from "./anthony-curated-queries.js";
+
+import {
+  buildSocorroCuratedQueries,
+  SOCORRO_CHAPTER_FILTER,
+  SOCORRO_CLIENT_ID,
+  SOCORRO_EDITION_LABEL,
+  SOCORRO_JURISDICTION,
+  SOCORRO_JURISDICTION_NAME,
+  SOCORRO_LIBRARY_SLUG,
+} from "./socorro-curated-queries.js";
+
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -920,6 +991,32 @@ const UNITS: ReadonlyArray<IngestUnit> = [
       return buildConverseCuratedQueries();
     },
   },
+
+  {
+    tenant: PHARR_JURISDICTION,
+    label: "Pharr development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: PHARR_JURISDICTION,
+        jurisdictionName: PHARR_JURISDICTION_NAME,
+        editionLabel: PHARR_EDITION_LABEL,
+        clientId: PHARR_CLIENT_ID,
+        librarySlug: PHARR_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(PHARR_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1500,
+        accessPolicy: "platform-internal",
+      });
+      return buildPharrCuratedQueries();
+    },
+  },
+
+
+
+
+
+
 
   {
     tenant: CEDAR_HILL_JURISDICTION,
