@@ -308,6 +308,16 @@ import {
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
 import {
+  buildLeonValleyCuratedQueries,
+  LEON_VALLEY_CHAPTER_FILTER,
+  LEON_VALLEY_CLIENT_ID,
+  LEON_VALLEY_EDITION_LABEL,
+  LEON_VALLEY_JURISDICTION,
+  LEON_VALLEY_JURISDICTION_NAME,
+  LEON_VALLEY_LIBRARY_SLUG,
+} from "./leon-valley-curated-queries.js";
+
+import {
   buildSeedCuratedQueries,
   curatedQueriesForJurisdiction,
   curatedQueriesForJurisdictionAndBooks,
@@ -3490,6 +3500,72 @@ program
   .action(() => {
     console.log(JSON.stringify(buildCedarHillCuratedQueries(), null, 2));
   });
+
+
+program
+  .command("path-c-ingest-leon-valley")
+  .description("Sync 5 lane central: Path C live re-ingest of Leon Valley development regulations (clientId 3008). platform-internal per Path A.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", LEON_VALLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--show-sections", "Print all ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LEON_VALLEY_JURISDICTION,
+      jurisdictionName: LEON_VALLEY_JURISDICTION_NAME,
+      editionLabel: LEON_VALLEY_EDITION_LABEL,
+      clientId: LEON_VALLEY_CLIENT_ID,
+      librarySlug: LEON_VALLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({ entityId: s.entityId, sectionNumber: s.sectionNumber, title: s.title }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-leon-valley")
+  .description("Sync 5 lane central: Path C end-to-end Leon Valley development regulations.")
+  .option("--chapter-filter <regex>", "Top-level TOC chapter filter regex (case-insensitive).", LEON_VALLEY_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: LEON_VALLEY_JURISDICTION,
+      jurisdictionName: LEON_VALLEY_JURISDICTION_NAME,
+      editionLabel: LEON_VALLEY_EDITION_LABEL,
+      clientId: LEON_VALLEY_CLIENT_ID,
+      librarySlug: LEON_VALLEY_LIBRARY_SLUG,
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildLeonValleyCuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: LEON_VALLEY_JURISDICTION, queries });
+    console.log(JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2));
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-leon-valley-queries")
+  .description("Print the LeonValley curated-query JSON to stdout.")
+  .action(() => { console.log(JSON.stringify(buildLeonValleyCuratedQueries(), null, 2)); });
+
 
 program
   .command("build-corpus-snapshot")

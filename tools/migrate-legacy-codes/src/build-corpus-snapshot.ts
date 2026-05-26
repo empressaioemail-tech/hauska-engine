@@ -316,6 +316,16 @@ import {
   CEDAR_HILL_JURISDICTION_NAME,
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
+import {
+  buildLeonValleyCuratedQueries,
+  LEON_VALLEY_CHAPTER_FILTER,
+  LEON_VALLEY_CLIENT_ID,
+  LEON_VALLEY_EDITION_LABEL,
+  LEON_VALLEY_JURISDICTION,
+  LEON_VALLEY_JURISDICTION_NAME,
+  LEON_VALLEY_LIBRARY_SLUG,
+} from "./leon-valley-curated-queries.js";
+
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -918,6 +928,26 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildConverseCuratedQueries();
+    },
+  },
+
+  {
+    tenant: LEON_VALLEY_JURISDICTION,
+    label: "Leon Valley development regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: LEON_VALLEY_JURISDICTION,
+        jurisdictionName: LEON_VALLEY_JURISDICTION_NAME,
+        editionLabel: LEON_VALLEY_EDITION_LABEL,
+        clientId: LEON_VALLEY_CLIENT_ID,
+        librarySlug: LEON_VALLEY_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(LEON_VALLEY_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 1200,
+        accessPolicy: "platform-internal",
+      });
+      return buildLeonValleyCuratedQueries();
     },
   },
 
