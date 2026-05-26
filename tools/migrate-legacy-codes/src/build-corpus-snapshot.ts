@@ -316,6 +316,16 @@ import {
   CEDAR_HILL_JURISDICTION_NAME,
   CEDAR_HILL_LIBRARY_SLUG,
 } from "./cedar-hill-curated-queries.js";
+
+import {
+  buildPlanoCuratedQueries,
+  PLANO_CHAPTER_FILTER,
+  PLANO_CLIENT_ID,
+  PLANO_EDITION_LABEL,
+  PLANO_JURISDICTION,
+  PLANO_JURISDICTION_NAME,
+  PLANO_LIBRARY_SLUG,
+} from "./plano-curated-queries.js";
 import { curatedQueriesForJurisdiction } from "./seed-curated-queries.js";
 
 const BASTROP_B3_PDF_URL =
@@ -938,6 +948,26 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildCedarHillCuratedQueries();
+    },
+  },
+
+  {
+    tenant: PLANO_JURISDICTION,
+    label: "Plano Development Regulations (Path C / Municode)",
+    async run(storage) {
+      await runPathCIngest({
+        storage,
+        jurisdictionTenant: PLANO_JURISDICTION,
+        jurisdictionName: PLANO_JURISDICTION_NAME,
+        editionLabel: PLANO_EDITION_LABEL,
+        clientId: PLANO_CLIENT_ID,
+        librarySlug: PLANO_LIBRARY_SLUG,
+        stateAbbr: "TX",
+        chapterFilter: new RegExp(PLANO_CHAPTER_FILTER, "i"),
+        maxLeafFetches: 2000,
+        accessPolicy: "platform-internal",
+      });
+      return buildPlanoCuratedQueries();
     },
   },
   {

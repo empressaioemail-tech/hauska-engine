@@ -97,7 +97,7 @@ export class MunicodeJsonClient {
       new RespectfulFetch({
         // 1.5s spacing matches the legacy adapter's default; well under
         // Municode's documented thresholds.
-        maxRequestsPerSecondPerHost: 0.7,
+        maxRequestsPerSecondPerHost: 0.5,
         userAgent: "Hauska-CodeAtoms/0.1 (+nick@hauska.io) hauska-engine",
       });
     this.baseUrl = opts.baseUrl ?? MUNICODE_API_BASE;
