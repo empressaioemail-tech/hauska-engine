@@ -299,6 +299,15 @@ import {
 } from "./converse-curated-queries.js";
 
 import {
+  buildElPasoTitle18CuratedQueries,
+  buildElPasoTitle18MunicodeAdapter,
+  EL_PASO_EDITION_LABEL,
+  EL_PASO_JURISDICTION,
+  EL_PASO_JURISDICTION_NAME,
+  EL_PASO_TITLE_18_CHAPTER_FILTER,
+} from "./el-paso-title-18-curated-queries.js";
+
+import {
   buildCedarHillCuratedQueries,
   CEDAR_HILL_CHAPTER_FILTER,
   CEDAR_HILL_CLIENT_ID,
@@ -3383,6 +3392,86 @@ program
   .description("Print the Converse curated-query JSON to stdout.")
   .action(() => { console.log(JSON.stringify(buildConverseCuratedQueries(), null, 2)); });
 
+program
+  .command("path-c-ingest-el-paso-title-18")
+  .description(
+    "Sync 5 lane West: Path C live ingest of El Paso CoO Title 18 — Building and Construction (Municode clientId 2066). Per-Title slice; platform-internal.",
+  )
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_18_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--show-sections", "Print ingested section entityIds + numbers + titles.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; showSections?: boolean }) => {
+    const storage = new InMemoryStorage();
+    const result = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter: new RegExp(opts.chapterFilter, "i"),
+      maxLeafFetches: Number(opts.maxLeafFetches),
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle18MunicodeAdapter({
+        chapterFilter: new RegExp(opts.chapterFilter, "i"),
+        maxLeafFetches: Number(opts.maxLeafFetches),
+      }),
+    });
+    const output: Record<string, unknown> = { pathCIngest: result.report };
+    if (opts.showSections) {
+      output.sections = result.atomization.sections.map((s) => ({
+        entityId: s.entityId,
+        sectionNumber: s.sectionNumber,
+        title: s.title,
+      }));
+    }
+    console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("path-c-eval-el-paso-title-18")
+  .description("Sync 5 lane West: Path C end-to-end — El Paso Title 18 ingest + curated-query eval.")
+  .option("--chapter-filter <regex>", "Top-level TOC filter.", EL_PASO_TITLE_18_CHAPTER_FILTER)
+  .option("--max-leaf-fetches <n>", "Cap on per-section Municode fetches", "1200")
+  .option("--queries-file <path>", "Optional JSON file of curated queries.")
+  .action(async (opts: { chapterFilter: string; maxLeafFetches: string; queriesFile?: string }) => {
+    const storage = new InMemoryStorage();
+    const chapterFilter = new RegExp(opts.chapterFilter, "i");
+    const maxLeafFetches = Number(opts.maxLeafFetches);
+    const ingest = await runPathCIngest({
+      storage,
+      jurisdictionTenant: EL_PASO_JURISDICTION,
+      jurisdictionName: EL_PASO_JURISDICTION_NAME,
+      editionLabel: EL_PASO_EDITION_LABEL,
+      clientId: 2066,
+      librarySlug: "el_paso",
+      stateAbbr: "TX",
+      chapterFilter,
+      maxLeafFetches,
+      accessPolicy: "platform-internal",
+      adapter: buildElPasoTitle18MunicodeAdapter({ chapterFilter, maxLeafFetches }),
+    });
+    let queries: ReadonlyArray<CuratedQuery>;
+    if (opts.queriesFile) {
+      const fs = await import("node:fs/promises");
+      queries = JSON.parse(await fs.readFile(opts.queriesFile, "utf8")) as CuratedQuery[];
+    } else {
+      queries = buildElPasoTitle18CuratedQueries();
+    }
+    const report = await evaluate({ storage, jurisdictionTenant: EL_PASO_JURISDICTION, queries });
+    console.log(
+      JSON.stringify({ pathCIngest: ingest.report, eval: report, syncFiveReady: report.passed }, null, 2),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("export-el-paso-title-18-queries")
+  .description("Print the El Paso Title 18 curated-query JSON to stdout.")
+  .action(() => {
+    console.log(JSON.stringify(buildElPasoTitle18CuratedQueries(), null, 2));
+  });
 
 program
   .command("path-c-ingest-cedar-hill")
