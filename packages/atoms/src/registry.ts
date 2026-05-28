@@ -33,6 +33,10 @@ import type {
   ProductSpecReferenceAtomInstance,
   ResponseTaskAtomInstance,
   SheetContentExtractionAtomInstance,
+  BriefRunAtomInstance,
+  PropertyWorkspaceAtomInstance,
+  WorkspaceAttachmentAtomInstance,
+  WorkspaceShareEdgeAtomInstance,
 } from "./instances.js";
 import { deliverableLetterCompleteness } from "./instances.js";
 
@@ -808,5 +812,259 @@ export function bootstrapEngineAtomRegistry(
   registry.register(productSpecReference);
   registry.register(deliverableLetterRender);
 
+  // -------------------------------------------------------------------
+  // Brokerage workspace atoms — V1 per 2026-05-28 dispatch.
+  // -------------------------------------------------------------------
+
+  const propertyWorkspace: AtomRegistration<
+    "property-workspace",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "property-workspace",
+    domain: "brokerage",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    composition: [
+      {
+        childEntityType: "workspace-attachment",
+        childMode: "compact",
+        dataKey: "attachments",
+        forwardRef: true,
+      },
+      {
+        childEntityType: "brief-run",
+        childMode: "compact",
+        dataKey: "briefRuns",
+        forwardRef: true,
+      },
+      {
+        childEntityType: "workspace-share-edge",
+        childMode: "compact",
+        dataKey: "shareEdges",
+        forwardRef: true,
+      },
+    ],
+    eventTypes: [
+      "property-workspace.created",
+      "property-workspace.updated",
+      "property-workspace.shared",
+    ],
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"property-workspace">> => {
+      const inst = await lookup.get<PropertyWorkspaceAtomInstance>(
+        "property-workspace",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `property-workspace/${entityId}`,
+        ) as ContextSummary<"property-workspace">;
+      }
+      const addr = `${inst.address.line1}, ${inst.address.city}, ${inst.address.stateOrProvince}`;
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `Property workspace at ${addr}. Owner ${inst.owner.did}, ${inst.collaborators.length} collaborator(s), ${inst.listingUrls.length} listing URL(s).`,
+        addr,
+      );
+      return {
+        prose,
+        typed: {
+          did: inst.did,
+          addressLine1: inst.address.line1,
+          city: inst.address.city,
+          ownerDid: inst.owner.did,
+          collaboratorCount: inst.collaborators.length,
+          listingUrlCount: inst.listingUrls.length,
+          updatedAt: inst.updatedAt,
+        },
+        keyMetrics: [
+          { label: "Owner", value: inst.owner.did },
+          { label: "Listings", value: inst.listingUrls.length },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.updatedAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
+  const briefRun: AtomRegistration<
+    "brief-run",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "brief-run",
+    domain: "brokerage",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    composition: [],
+    eventTypes: ["brief-run.generated", "brief-run.revised"],
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"brief-run">> => {
+      const inst = await lookup.get<BriefRunAtomInstance>("brief-run", entityId);
+      if (!inst) {
+        return notFoundSummary(`brief-run/${entityId}`) as ContextSummary<"brief-run">;
+      }
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `Brief run for ${inst.workspaceDid} — confidence ${inst.confidence}, ${inst.citationRefs.length} citation(s), generated ${inst.generatedAt}.`,
+        `Brief (${Math.round(inst.confidence * 100)}% confidence)`,
+      );
+      return {
+        prose,
+        typed: {
+          did: inst.did,
+          workspaceDid: inst.workspaceDid,
+          confidence: inst.confidence,
+          citationCount: inst.citationRefs.length,
+          generatedAt: inst.generatedAt,
+        },
+        keyMetrics: [
+          { label: "Confidence", value: inst.confidence },
+          { label: "Citations", value: inst.citationRefs.length },
+        ],
+        relatedAtoms: inst.citationRefs.map((ref) => ({
+          kind: "atom" as const,
+          entityType: parseCitationEntityType(ref.citationDid),
+          entityId: parseCitationEntityId(ref.citationDid),
+          displayLabel: ref.sourceType,
+        })),
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.generatedAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
+  const workspaceAttachment: AtomRegistration<
+    "workspace-attachment",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "workspace-attachment",
+    domain: "brokerage",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "card",
+    composition: [],
+    eventTypes: ["workspace-attachment.added", "workspace-attachment.updated"],
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"workspace-attachment">> => {
+      const inst = await lookup.get<WorkspaceAttachmentAtomInstance>(
+        "workspace-attachment",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `workspace-attachment/${entityId}`,
+        ) as ContextSummary<"workspace-attachment">;
+      }
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `${inst.kind} attachment on ${inst.workspaceDid} uploaded by ${inst.uploader.did}.`,
+        `${inst.kind} attachment`,
+      );
+      return {
+        prose,
+        typed: {
+          did: inst.did,
+          workspaceDid: inst.workspaceDid,
+          kind: inst.kind,
+          uploaderDid: inst.uploader.did,
+          uri: inst.uri ?? null,
+        },
+        keyMetrics: [
+          { label: "Kind", value: inst.kind },
+          { label: "Workspace", value: inst.workspaceDid },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.updatedAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
+  const workspaceShareEdge: AtomRegistration<
+    "workspace-share-edge",
+    ["card", "compact", "inline", "expanded", "focus"]
+  > = {
+    entityType: "workspace-share-edge",
+    domain: "brokerage",
+    supportedModes: ["card", "compact", "inline", "expanded", "focus"] as const,
+    defaultMode: "compact",
+    composition: [],
+    eventTypes: ["workspace-share-edge.created", "workspace-share-edge.revoked"],
+    accessPolicy: "tenant-private",
+    contextSummary: async (
+      entityId: string,
+      scope: Scope,
+    ): Promise<ContextSummary<"workspace-share-edge">> => {
+      const inst = await lookup.get<WorkspaceShareEdgeAtomInstance>(
+        "workspace-share-edge",
+        entityId,
+      );
+      if (!inst) {
+        return notFoundSummary(
+          `workspace-share-edge/${entityId}`,
+        ) as ContextSummary<"workspace-share-edge">;
+      }
+      const { prose, scopeFiltered } = audienceLensesProse(
+        scope,
+        `Share edge ${inst.fromUserDid} → ${inst.toUserDid} on ${inst.workspaceDid} at ${inst.sharedAt}. Reshare ${inst.consentFlags.canReshare ? "allowed" : "denied"}.`,
+        `Share ${inst.fromUserDid} → ${inst.toUserDid}`,
+      );
+      return {
+        prose,
+        typed: {
+          did: inst.did,
+          fromUserDid: inst.fromUserDid,
+          toUserDid: inst.toUserDid,
+          workspaceDid: inst.workspaceDid,
+          sharedAt: inst.sharedAt,
+          consentFlags: inst.consentFlags,
+        },
+        keyMetrics: [
+          { label: "From", value: inst.fromUserDid },
+          { label: "To", value: inst.toUserDid },
+        ],
+        relatedAtoms: [],
+        historyProvenance: {
+          latestEventId: `${inst.entityId}@${inst.contentHash}`,
+          latestEventAt: inst.sharedAt,
+        },
+        scopeFiltered,
+      };
+    },
+  };
+
+  registry.register(propertyWorkspace);
+  registry.register(briefRun);
+  registry.register(workspaceAttachment);
+  registry.register(workspaceShareEdge);
+
   return registry;
+}
+
+function parseCitationEntityId(citationDid: string): string {
+  const parts = citationDid.split(":");
+  return parts.slice(3).join(":");
+}
+
+function parseCitationEntityType(citationDid: string): string {
+  const parts = citationDid.split(":");
+  return parts[2] ?? "unknown";
 }
