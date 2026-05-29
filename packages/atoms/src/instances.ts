@@ -1330,6 +1330,29 @@ export const CORTEX_ATOM_ENTITY_TYPES: ReadonlyArray<CortexAtomEntityType> = [
  * (Bump 1) plus Cortex L-surface atoms. Storage / retrieval / registry
  * consumers key off this union.
  */
-export type AtomInstance = CodeAtomInstance | CortexAtomInstance;
+import type { WorkspaceAtomInstance } from "./workspace-instances.js";
+
+export type {
+  WorkspaceAtomInstance,
+  WorkspaceAtomEntityType,
+  PropertyWorkspaceAtomInstance,
+  BriefRunAtomInstance,
+  WorkspaceAttachmentAtomInstance,
+  WorkspaceShareEdgeAtomInstance,
+} from "./workspace-instances.js";
+export {
+  WORKSPACE_ATOM_ENTITY_TYPES,
+  WORKSPACE_JURISDICTION_TENANT,
+  WORKSPACE_SOURCE_ADAPTER,
+  PROPERTY_WORKSPACE_INSTANCE_SCHEMA,
+  BRIEF_RUN_INSTANCE_SCHEMA,
+  WORKSPACE_ATTACHMENT_INSTANCE_SCHEMA,
+  WORKSPACE_SHARE_EDGE_INSTANCE_SCHEMA,
+} from "./workspace-instances.js";
+
+export type AtomInstance =
+  | CodeAtomInstance
+  | CortexAtomInstance
+  | WorkspaceAtomInstance;
 
 export type AtomEntityType = AtomInstance["entityType"];

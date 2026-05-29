@@ -32,6 +32,7 @@
  */
 
 export * from "./instances.js";
+export * from "./workspace-instances.js";
 export * from "./registry.js";
 export * from "./atom-link.js";
 export * from "./did.js";
