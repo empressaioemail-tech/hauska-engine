@@ -77,7 +77,7 @@ ship source-direct exports per `REPO_NOTES.md`).
 
 ```bash
 curl -s https://<service-url>/health
-curl -s https://<service-url>/healthz
+curl -s https://<service-url>/healthz/
 curl -s -H "Authorization: Bearer <key>" \
   "https://<service-url>/jurisdictions?qualityBarOnly=true"
 curl -s -H "Authorization: Bearer <key>" \
@@ -90,6 +90,8 @@ Observability surface per [`76e_platform_observability_sprint`](../../doc_repo/7
 
 - **`corpus`** — atom count from the loaded snapshot (`storage.countAtoms()`). Zero count → HTTP 503 / `status: fail`.
 - **`db`** — substrate Neon liveness via `SELECT 1` when `SUBSTRATE_DATABASE_URL` (or `DATABASE_URL`) is set. When unset, `db.status` is `not_configured` and overall status is `warn` (snapshot-only mode).
+
+**Cloud Run note:** Google Front End reserves exact `/healthz` (no trailing slash) and returns a platform 404 before the request reaches the container. Use **`/healthz/`** (trailing slash) for uptime checks and hub polling on Cloud Run; the handler and signal emit are identical.
 
 Wire the substrate Neon URL at deploy time when the Postgres-backed storage back-end lands:
 

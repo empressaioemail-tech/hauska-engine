@@ -15,6 +15,15 @@ import {
   httpStatusForHealthz,
 } from "./healthz.js";
 
+function isPublicHealthPath(path: string): boolean {
+  return (
+    path === "/health" ||
+    path === "/healthz" ||
+    path === "/healthz/" ||
+    path === "/ready"
+  );
+}
+
 const ACCESS_POLICY_VALUES: ReadonlyArray<AccessPolicy> = [
   "public-free",
   "public-paid",
@@ -65,9 +74,7 @@ export function buildApp(options: ServerOptions = {}): Hono {
 
   app.use("*", async (c: Context, next: Next) => {
     const path = c.req.path;
-    if (path === "/health" || path === "/healthz" || path === "/ready") {
-      return next();
-    }
+    if (isPublicHealthPath(path)) return next();
     if (!apiKey) return next();
     const auth = c.req.header("authorization");
     if (auth !== `Bearer ${apiKey}`) {
@@ -90,14 +97,19 @@ export function buildApp(options: ServerOptions = {}): Hono {
     }
   });
 
-  app.get("/healthz", async (c) => {
+  async function healthzHandler(c: Context) {
     const payload = await buildHealthzPayload({
       storage,
       substrateDatabaseUrl,
     });
     emitHealthzSignal(payload);
     return c.json(payload, httpStatusForHealthz(payload.status));
-  });
+  }
+
+  app.get("/healthz", healthzHandler);
+  // Cloud Run's GFE reserves exact `/healthz` (no trailing slash); `/healthz/`
+  // reaches the container and satisfies the observability contract.
+  app.get("/healthz/", healthzHandler);
 
   const searchSchema = z.object({
     q: z.string().default(""),

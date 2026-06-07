@@ -113,4 +113,14 @@ describe("GET /healthz", () => {
     const res = await app.request("/healthz");
     expect(res.status).toBe(200);
   });
+
+  it("serves /healthz/ for Cloud Run GFE workaround", async () => {
+    const storage = new InMemoryStorage();
+    await storage.writeAtoms([testSection({ entityId: "test/5", contentHash: "mno" })]);
+    const app = buildApp({ storage, apiKey: "" });
+    const res = await app.request("/healthz/");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.status).toBe("warn");
+  });
 });
