@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { Buffer } from "node:buffer";
+
 /**
  * Path PDF: live re-ingestion of a publisher-hosted, born-digital PDF
  * via the Stream 1A RawPdfAdapter.
@@ -42,6 +45,12 @@ export interface PathPdfIngestOptions {
   editionLabel: string;
   /** PDF source URL (the publisher's canonical link for citation). */
   pdfUrl: string;
+  /**
+   * Optional local PDF path. When set, bytes are read from disk instead
+   * of fetched over HTTP (useful for hermetic tests and environments
+   * where .gov TLS revocation checks fail).
+   */
+  localPdfPath?: string;
   /**
    * Adapter capabilities name override. Defaults to a publisher-specific
    * tag (`bastrop-b3-pdf`) for atom-provenance clarity when multiple
@@ -120,7 +129,13 @@ export async function runPathPdfIngest(
     sourceUrl: options.pdfUrl,
   };
 
-  const raw = await adapter.fetch(reference);
+  const raw = options.localPdfPath
+    ? {
+        metadata: await adapter.metadata(reference),
+        contentType: "application/pdf" as const,
+        body: readFileSync(options.localPdfPath).toString("base64"),
+      }
+    : await adapter.fetch(reference);
   const normalized = await adapter.normalize(raw);
   const tree = buildCodeTree({
     ...normalized,

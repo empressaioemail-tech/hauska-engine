@@ -15,18 +15,22 @@ import { buildAtomDid, parseAtomDid } from "@hauska-engine/atoms";
 import { InMemoryStorage } from "@hauska-engine/storage";
 
 import {
+  A117_2021_TITLE_ID,
   ICC_CODE_CONNECT_FIXTURES,
   IRC_2021_TITLE_ID,
 } from "../../adapters/icc-code-connect/__fixtures__/irc-2021.js";
 import { evaluate } from "../../eval/index.js";
 import { extractModelCodeAtoms } from "../extractor.js";
 import {
+  A117_2021_CURATED_QUERIES,
+  ICC_CREDENTIAL_PENDING_EDITIONS,
   IRC_2021_CURATED_QUERIES,
   LAYER_1_CURATED_QUERIES,
   LAYER_1_QUALITY_BAR,
 } from "../eval-rubric.js";
 
 const IRC_2021 = ICC_CODE_CONNECT_FIXTURES.documents[IRC_2021_TITLE_ID]!;
+const A117_2021 = ICC_CODE_CONNECT_FIXTURES.documents[A117_2021_TITLE_ID]!;
 
 describe("LAYER_1_QUALITY_BAR", () => {
   it("is the strict 1.0/1.0/1.0 bar of the Sync 4/4.5/5 ingests", () => {
@@ -67,6 +71,33 @@ describe("IRC 2021 curated query set", () => {
     for (const q of IRC_2021_CURATED_QUERIES) {
       expect(sectionDids.has(q.expectedAtomDid)).toBe(true);
     }
+  });
+});
+
+describe("ICC credential-pending editions", () => {
+  it("lists IRC 2021 and A117.1 2021 as wired but not live-ingested", () => {
+    expect(ICC_CREDENTIAL_PENDING_EDITIONS.map((e) => e.titleId)).toEqual([
+      "IRC2021",
+      "A11712021",
+    ]);
+  });
+});
+
+describe("A117.1 2021 curated query set (credential-pending)", () => {
+  it("every expectedAtomDid resolves to a section the extractor emits", async () => {
+    const { sections } = await extractModelCodeAtoms(A117_2021);
+    const sectionDids = new Set(
+      sections.map((s) => buildAtomDid("code-section", s.entityId).raw),
+    );
+    for (const q of A117_2021_CURATED_QUERIES) {
+      expect(sectionDids.has(q.expectedAtomDid)).toBe(true);
+    }
+  });
+
+  it("is registered in the LAYER_1_CURATED_QUERIES edition map", () => {
+    expect(
+      LAYER_1_CURATED_QUERIES["2021 Accessible and Usable Buildings and Facilities"],
+    ).toBe(A117_2021_CURATED_QUERIES);
   });
 });
 

@@ -99,11 +99,21 @@ export interface PdfNormalizeOptions {
    *     `decimal-numbered`: the chapter signal is a typeset heading line
    *     (not a running-header tail) and the section root is the chapter
    *     index rather than a fixed `10.` namespace.
+   *   - `"federal-accessibility"`: DOJ 2010 ADA Standards and the HUD
+   *     Fair Housing Act Design Manual — `ADA CHAPTER N: TITLE` running
+   *     headers, three-digit ADA section headings (`101 Purpose`), dotted
+   *     technical sections (`101.1 General`, `404.2.3`), and FHA
+   *     chapter-scoped decimals with optional title on the next line
+   *     (`1.10` / `Accessible Primary Use Entrance`).
    *
    * Per 49 §B.2, per-source labeling quirks land as targeted normalizer
    * conventions here, not as branches inside the extractor.
    */
-  headingConvention?: "caps-prefixed" | "decimal-numbered" | "chapter-decimal";
+  headingConvention?:
+    | "caps-prefixed"
+    | "decimal-numbered"
+    | "chapter-decimal"
+    | "federal-accessibility";
 }
 
 const DEFAULT_IGNORE = /^(?:\s*\d+\s+of\s+\d+\s*$|INTRODUCTION\s*$)/i;
@@ -127,6 +137,9 @@ export function pdfPagesToBlocks(
   }
   if (options.headingConvention === "chapter-decimal") {
     return chapterDecimalPagesToBlocks(pages, options);
+  }
+  if (options.headingConvention === "federal-accessibility") {
+    return federalAccessibilityPagesToBlocks(pages, options);
   }
   const ignoreLine = options.ignoreLineRegex ?? DEFAULT_IGNORE;
   const blocks: NormalizedBlock[] = [];
@@ -546,6 +559,144 @@ function chapterDecimalPagesToBlocks(
           sourceAnchor: `#p${page.pageNumber}-section-${slug(label)}`,
         });
         continue;
+      }
+
+      emitParagraph(blocks, line, undefined);
+    }
+  }
+  return blocks;
+}
+
+// --- Federal accessibility standards (ADA 2010, FHA Design Manual) ---
+
+const FED_ACCESS_CHAPTER_RE =
+  /^(?:[\w\s:()/.\-–—]*\b)?CHAPTER\s+(\d+)\s*:\s*(.+?)\s*$/i;
+const FED_ACCESS_PART_CHAPTER_RE =
+  /^PART\s+(?:ONE|TWO|THREE)\s*:\s*CHAPTER\s+(\d+)\s*$/i;
+const FED_ACCESS_ADA_SECTION_RE =
+  /^(\d{3})\s+([A-Za-z][\w\s,/()-]{2,})\s*$/;
+const FED_ACCESS_DOTTED_SECTION_RE =
+  /^(\d{1,3}(?:\.\d+)+)\s+([A-Za-z].+)$/;
+const FED_ACCESS_BARE_SECTION_RE = /^(\d{1,2}\.\d{1,3})$/;
+const FED_ACCESS_RUNNING_BOILERPLATE_RE =
+  /^(?:AMERICANS WITH DISABILITIES ACT:|FAIR HOUSING ACT DESIGN MANUAL|DEPARTMENT OF JUSTICE|U\.?\s*S\.?\s*DEPARTMENT OF HOUSING)/i;
+
+/**
+ * Walk born-digital federal accessibility PDFs (2010 ADA Standards,
+ * FHA Design Manual). Onboarded per the 2026-06-07 accessibility
+ * corpus ingest dispatch.
+ */
+function federalAccessibilityPagesToBlocks(
+  pages: ReadonlyArray<PdfPageText>,
+  options: PdfNormalizeOptions,
+): NormalizedBlock[] {
+  const callerIgnore = options.ignoreLineRegex;
+  const blocks: NormalizedBlock[] = [];
+  let bodyStarted = false;
+  let currentChapter: string | null = null;
+  const emittedChapters = new Set<string>();
+
+  for (const page of pages) {
+    const rawLines = page.text.split(/\n+/).map((l) => l.trim());
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i] ?? "";
+      if (!line) continue;
+      if (PAGE_MARKER_RE.test(line)) continue;
+      if (FED_ACCESS_RUNNING_BOILERPLATE_RE.test(line)) continue;
+      if (callerIgnore?.test(line)) continue;
+
+      const partChapter = line.match(FED_ACCESS_PART_CHAPTER_RE);
+      if (partChapter && isAllCapsLine(line)) {
+        bodyStarted = true;
+        const label = partChapter[1] ?? "";
+        if (label && label !== currentChapter && !emittedChapters.has(`part-${label}`)) {
+          currentChapter = label;
+          emittedChapters.add(`part-${label}`);
+          blocks.push({
+            kind: "heading",
+            depth: 1,
+            text: `Chapter ${label}`,
+            sourceAnchor: `#p${page.pageNumber}-chapter-${slug(label)}`,
+          });
+        }
+        continue;
+      }
+
+      const chapterMatch = line.match(FED_ACCESS_CHAPTER_RE);
+      if (
+        chapterMatch &&
+        isAllCapsLine(line) &&
+        !/^see\b/i.test(line.trim())
+      ) {
+        bodyStarted = true;
+        const label = chapterMatch[1] ?? "";
+        const title = (chapterMatch[2] ?? "").trim();
+        const chapterKey = `ada-${label}`;
+        if (label && label !== currentChapter && !emittedChapters.has(chapterKey)) {
+          currentChapter = label;
+          emittedChapters.add(chapterKey);
+          blocks.push({
+            kind: "heading",
+            depth: 1,
+            text: `Chapter ${label}${title ? ` ${title}` : ""}`,
+            sourceAnchor: `#p${page.pageNumber}-chapter-${slug(label)}`,
+          });
+        }
+        continue;
+      }
+
+      if (!bodyStarted) continue;
+
+      const adaSection = line.match(FED_ACCESS_ADA_SECTION_RE);
+      if (adaSection && !TOC_TAIL_RE.test(line)) {
+        const label = adaSection[1] ?? "";
+        const title = (adaSection[2] ?? "").trim();
+        blocks.push({
+          kind: "heading",
+          depth: 2,
+          text: `${label} ${title}`,
+          sourceAnchor: `#p${page.pageNumber}-section-${slug(label)}`,
+        });
+        continue;
+      }
+
+      const dotted = line.match(FED_ACCESS_DOTTED_SECTION_RE);
+      if (dotted && !TOC_TAIL_RE.test(line)) {
+        const label = dotted[1] ?? "";
+        const title = (dotted[2] ?? "").trim();
+        if (!/[A-Za-z]/.test(title)) {
+          emitParagraph(blocks, line, undefined);
+          continue;
+        }
+        blocks.push({
+          kind: "heading",
+          depth: 3,
+          text: `${label} ${title}`,
+          sourceAnchor: `#p${page.pageNumber}-section-${slug(label)}`,
+        });
+        continue;
+      }
+
+      const bare = line.match(FED_ACCESS_BARE_SECTION_RE);
+      if (bare && !TOC_TAIL_RE.test(line)) {
+        const label = bare[1] ?? "";
+        const next = (rawLines[i + 1] ?? "").trim();
+        if (
+          next &&
+          /^[A-Za-z]/.test(next) &&
+          !/^\d/.test(next) &&
+          !TOC_TAIL_RE.test(next) &&
+          !FED_ACCESS_PART_CHAPTER_RE.test(next)
+        ) {
+          blocks.push({
+            kind: "heading",
+            depth: 3,
+            text: `${label} ${next}`,
+            sourceAnchor: `#p${page.pageNumber}-section-${slug(label)}`,
+          });
+          i++;
+          continue;
+        }
       }
 
       emitParagraph(blocks, line, undefined);

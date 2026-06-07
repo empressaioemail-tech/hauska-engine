@@ -44,6 +44,7 @@ describe("IccCodeConnectAdapter — content (IRC 2021 fixture)", () => {
       "IRC2018",
       "IBC2021",
       "IECC2021",
+      "A11712021",
     ]);
     expect(refs.every((r) => r.jurisdictionTenant === "icc-model-code")).toBe(
       true,

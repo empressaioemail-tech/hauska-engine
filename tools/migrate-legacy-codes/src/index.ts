@@ -39,6 +39,23 @@ import {
   B3_EDITION_LABEL,
 } from "./b3-curated-queries.js";
 import {
+  ADA_2010_EDITION_LABEL,
+  ADA_2010_PDF_URL,
+  FHA_DESIGN_MANUAL_EDITION_LABEL,
+  FHA_DESIGN_MANUAL_PDF_MIRROR_URL,
+  FHA_DESIGN_MANUAL_PDF_URL,
+  FEDERAL_ACCESSIBILITY_NORMALIZE_OPTIONS,
+  FEDERAL_ACCESSIBILITY_TENANT,
+} from "./accessibility-standards.js";
+import {
+  buildAda2010CuratedQueries,
+  ADA_2010_QUALITY_BAR,
+} from "./ada-2010-curated-queries.js";
+import {
+  buildFhaDesignManualCuratedQueries,
+  FHA_DESIGN_MANUAL_QUALITY_BAR,
+} from "./fha-design-manual-curated-queries.js";
+import {
   buildHuttoUdcCuratedQueries,
   HUTTO_UDC_EDITION_LABEL,
   HUTTO_UDC_JURISDICTION,
@@ -1013,6 +1030,277 @@ program
       ),
     );
     if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("path-pdf-ingest-ada-2010")
+  .description(
+    "Path PDF: ingest the 2010 ADA Standards for Accessible Design (DOJ). Layer 1 federal-accessibility corpus; public-free.",
+  )
+  .option("--pdf-url <url>", "Override the ADA PDF URL", ADA_2010_PDF_URL)
+  .option(
+    "--local-pdf <path>",
+    "Read PDF bytes from a local file instead of fetching over HTTP",
+  )
+  .option(
+    "--show-sections",
+    "Also print ingested section entityIds + section numbers + titles",
+  )
+  .action(
+    async (opts: {
+      pdfUrl: string;
+      localPdf?: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      const result = await runPathPdfIngest({
+        storage,
+        jurisdictionTenant: FEDERAL_ACCESSIBILITY_TENANT,
+        jurisdictionName: "Federal Accessibility Standards",
+        editionLabel: ADA_2010_EDITION_LABEL,
+        pdfUrl: opts.pdfUrl,
+        localPdfPath: opts.localPdf,
+        capabilitiesName: "doj-ada-2010-pdf",
+        capabilitiesDisplayName: "DOJ ADA 2010 Standards (PDF)",
+        normalizeOptions: FEDERAL_ACCESSIBILITY_NORMALIZE_OPTIONS,
+        accessPolicy: "public-free",
+      });
+      const output: Record<string, unknown> = { pathPdfIngest: result.report };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-pdf-eval-ada-2010")
+  .description(
+    "Path PDF end-to-end: ingest 2010 ADA Standards + run curated-query eval (Layer 1 quality bar).",
+  )
+  .option("--pdf-url <url>", "Override the ADA PDF URL", ADA_2010_PDF_URL)
+  .option(
+    "--local-pdf <path>",
+    "Read PDF bytes from a local file instead of fetching over HTTP",
+  )
+  .action(async (opts: { pdfUrl: string; localPdf?: string }) => {
+    const storage = new InMemoryStorage();
+    const ingest = await runPathPdfIngest({
+      storage,
+      jurisdictionTenant: FEDERAL_ACCESSIBILITY_TENANT,
+      jurisdictionName: "Federal Accessibility Standards",
+      editionLabel: ADA_2010_EDITION_LABEL,
+      pdfUrl: opts.pdfUrl,
+      localPdfPath: opts.localPdf,
+      capabilitiesName: "doj-ada-2010-pdf",
+      capabilitiesDisplayName: "DOJ ADA 2010 Standards (PDF)",
+      normalizeOptions: FEDERAL_ACCESSIBILITY_NORMALIZE_OPTIONS,
+      accessPolicy: "public-free",
+    });
+    const report = await evaluate({
+      storage,
+      jurisdictionTenant: FEDERAL_ACCESSIBILITY_TENANT,
+      queries: buildAda2010CuratedQueries(),
+      thresholds: ADA_2010_QUALITY_BAR,
+    });
+    console.log(
+      JSON.stringify(
+        {
+          pathPdfIngest: ingest.report,
+          eval: report,
+          accessibilityReady: report.passed,
+        },
+        null,
+        2,
+      ),
+    );
+    if (!report.passed) process.exitCode = 4;
+  });
+
+program
+  .command("path-pdf-ingest-fha-design-manual")
+  .description(
+    "Path PDF: ingest the HUD Fair Housing Act Design Manual (April 1998). Layer 1 federal-accessibility corpus; public-free.",
+  )
+  .option(
+    "--pdf-url <url>",
+    "Override the FHA Design Manual PDF URL",
+    FHA_DESIGN_MANUAL_PDF_URL,
+  )
+  .option(
+    "--pdf-mirror-url <url>",
+    "Fallback mirror URL when huduser.gov blocks fetch",
+    FHA_DESIGN_MANUAL_PDF_MIRROR_URL,
+  )
+  .option(
+    "--local-pdf <path>",
+    "Read PDF bytes from a local file instead of fetching over HTTP",
+  )
+  .option(
+    "--show-sections",
+    "Also print ingested section entityIds + section numbers + titles",
+  )
+  .action(
+    async (opts: {
+      pdfUrl: string;
+      pdfMirrorUrl: string;
+      localPdf?: string;
+      showSections?: boolean;
+    }) => {
+      const storage = new InMemoryStorage();
+      let pdfUrl = opts.pdfUrl;
+      const localPdfPath = opts.localPdf;
+      if (!localPdfPath) {
+        const { RawPdfAdapter, pdfjsTextExtractor } = await import(
+          "@hauska-engine/corpus/adapters"
+        );
+        const probe = new RawPdfAdapter({ textExtractor: pdfjsTextExtractor });
+        const probeRaw = await probe.fetch({
+          sourceId: "fha-probe",
+          jurisdictionTenant: FEDERAL_ACCESSIBILITY_TENANT,
+          editionLabel: FHA_DESIGN_MANUAL_EDITION_LABEL,
+          sourceUrl: pdfUrl,
+        });
+        if (!probeRaw.body) {
+          pdfUrl = opts.pdfMirrorUrl;
+        }
+      }
+      const result = await runPathPdfIngest({
+        storage,
+        jurisdictionTenant: FEDERAL_ACCESSIBILITY_TENANT,
+        jurisdictionName: "Federal Accessibility Standards",
+        editionLabel: FHA_DESIGN_MANUAL_EDITION_LABEL,
+        pdfUrl,
+        localPdfPath,
+        capabilitiesName: "hud-fha-design-manual-pdf",
+        capabilitiesDisplayName: "HUD FHA Design Manual (PDF)",
+        normalizeOptions: FEDERAL_ACCESSIBILITY_NORMALIZE_OPTIONS,
+        accessPolicy: "public-free",
+      });
+      const output: Record<string, unknown> = {
+        pathPdfIngest: result.report,
+        pdfUrlUsed: pdfUrl,
+      };
+      if (opts.showSections) {
+        output.sections = result.atomization.sections.map((s) => ({
+          entityId: s.entityId,
+          sectionNumber: s.sectionNumber,
+          title: s.title,
+        }));
+      }
+      console.log(JSON.stringify(output, null, 2));
+    },
+  );
+
+program
+  .command("path-pdf-eval-fha-design-manual")
+  .description(
+    "Path PDF end-to-end: ingest FHA Design Manual + run curated-query eval (Layer 1 quality bar).",
+  )
+  .option(
+    "--pdf-url <url>",
+    "Override the FHA Design Manual PDF URL",
+    FHA_DESIGN_MANUAL_PDF_URL,
+  )
+  .option(
+    "--pdf-mirror-url <url>",
+    "Fallback mirror URL when huduser.gov blocks fetch",
+    FHA_DESIGN_MANUAL_PDF_MIRROR_URL,
+  )
+  .option(
+    "--local-pdf <path>",
+    "Read PDF bytes from a local file instead of fetching over HTTP",
+  )
+  .action(
+    async (opts: {
+      pdfUrl: string;
+      pdfMirrorUrl: string;
+      localPdf?: string;
+    }) => {
+      const storage = new InMemoryStorage();
+      let pdfUrl = opts.pdfUrl;
+      let localPdfPath = opts.localPdf;
+      if (!localPdfPath) {
+        const { RawPdfAdapter, pdfjsTextExtractor } = await import(
+          "@hauska-engine/corpus/adapters"
+        );
+        const probe = new RawPdfAdapter({ textExtractor: pdfjsTextExtractor });
+        const probeRef = {
+          sourceId: "fha-probe",
+          jurisdictionTenant: FEDERAL_ACCESSIBILITY_TENANT,
+          editionLabel: FHA_DESIGN_MANUAL_EDITION_LABEL,
+          sourceUrl: pdfUrl,
+        };
+        const probeRaw = await probe.fetch(probeRef);
+        if (!probeRaw.body) {
+          pdfUrl = opts.pdfMirrorUrl;
+        }
+      }
+      const ingest = await runPathPdfIngest({
+        storage,
+        jurisdictionTenant: FEDERAL_ACCESSIBILITY_TENANT,
+        jurisdictionName: "Federal Accessibility Standards",
+        editionLabel: FHA_DESIGN_MANUAL_EDITION_LABEL,
+        pdfUrl,
+        localPdfPath,
+        capabilitiesName: "hud-fha-design-manual-pdf",
+        capabilitiesDisplayName: "HUD FHA Design Manual (PDF)",
+        normalizeOptions: FEDERAL_ACCESSIBILITY_NORMALIZE_OPTIONS,
+        accessPolicy: "public-free",
+      });
+      const report = await evaluate({
+        storage,
+        jurisdictionTenant: FEDERAL_ACCESSIBILITY_TENANT,
+        queries: buildFhaDesignManualCuratedQueries(),
+        thresholds: FHA_DESIGN_MANUAL_QUALITY_BAR,
+      });
+      console.log(
+        JSON.stringify(
+          {
+            pathPdfIngest: ingest.report,
+            pdfUrlUsed: pdfUrl,
+            eval: report,
+            accessibilityReady: report.passed,
+          },
+          null,
+          2,
+        ),
+      );
+      if (!report.passed) process.exitCode = 4;
+    },
+  );
+
+program
+  .command("icc-model-code-credential-pending")
+  .description(
+    "Report ICC Code Connect editions wired but awaiting OAuth credentials (IRC 2021 + A117.1 2021).",
+  )
+  .action(async () => {
+    const { ICC_CREDENTIAL_PENDING_EDITIONS } = await import(
+      "@hauska-engine/corpus/model-code"
+    );
+    const { IccCodeConnectAdapter } = await import(
+      "@hauska-engine/corpus/adapters"
+    );
+    const adapter = new IccCodeConnectAdapter();
+    console.log(
+      JSON.stringify(
+        {
+          adapterMode: adapter.mode,
+          credentialPendingEditions: ICC_CREDENTIAL_PENDING_EDITIONS,
+          envVarsRequired: [
+            "ICC_CODE_CONNECT_CLIENT_ID",
+            "ICC_CODE_CONNECT_CLIENT_SECRET",
+          ],
+        },
+        null,
+        2,
+      ),
+    );
   });
 
 program
