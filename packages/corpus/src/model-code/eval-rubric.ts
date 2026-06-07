@@ -93,11 +93,63 @@ function buildSeedQueries(
 /** Edition label for the first-wave model-code edition. */
 export const IRC_2021_EDITION_LABEL = "2021 International Residential Code";
 
+/** Edition label for ICC A117.1 — credential-pending (Code Connect OAuth). */
+export const A117_2021_EDITION_LABEL =
+  "2021 Accessible and Usable Buildings and Facilities";
+
+/**
+ * Layer 1 editions staged on ICC Code Connect but not yet ingested from
+ * the live API. Populate `ICC_CODE_CONNECT_CLIENT_ID` /
+ * `ICC_CODE_CONNECT_CLIENT_SECRET` and run the model-code ingest path.
+ */
+export const ICC_CREDENTIAL_PENDING_EDITIONS: ReadonlyArray<{
+  titleId: string;
+  editionLabel: string;
+  codeAbbrev: string;
+  year: number;
+}> = [
+  {
+    titleId: "IRC2021",
+    editionLabel: IRC_2021_EDITION_LABEL,
+    codeAbbrev: "IRC",
+    year: 2021,
+  },
+  {
+    titleId: "A11712021",
+    editionLabel: A117_2021_EDITION_LABEL,
+    codeAbbrev: "A117.1",
+    year: 2021,
+  },
+];
+
 /**
  * Seed curated query set for the 2021 IRC — the first-wave edition of
  * the corpus-edition plan. Reviewer-realistic retrieval queries; each
  * names the governing section so the known answer is unambiguous.
  */
+export const A117_2021_CURATED_QUERIES: ReadonlyArray<CuratedQuery> =
+  buildSeedQueries(A117_2021_EDITION_LABEL, "a117-2021", [
+    {
+      sectionNumber: "403",
+      queryText:
+        "A117.1 Section 403 accessible routes connecting building entrances and spaces",
+    },
+    {
+      sectionNumber: "604",
+      queryText:
+        "ICC A117.1 604 water closets and toilet compartments accessibility",
+    },
+    {
+      sectionNumber: "609",
+      queryText: "A117.1 609 grab bars in toilet facilities mounting height",
+    },
+    {
+      sectionNumber: "101",
+      queryText:
+        "A117.1 101 purpose of accessible and usable buildings and facilities standard",
+    },
+  ]);
+
 export const IRC_2021_CURATED_QUERIES: ReadonlyArray<CuratedQuery> =
   buildSeedQueries(IRC_2021_EDITION_LABEL, "irc-2021", [
     {
@@ -139,4 +191,5 @@ export const LAYER_1_CURATED_QUERIES: Record<
   ReadonlyArray<CuratedQuery>
 > = {
   [IRC_2021_EDITION_LABEL]: IRC_2021_CURATED_QUERIES,
+  [A117_2021_EDITION_LABEL]: A117_2021_CURATED_QUERIES,
 };

@@ -16,6 +16,14 @@
 
 import type { CodeConnectFixtures } from "../code-connect-client.js";
 
+import {
+  A117_2021_DOCUMENT,
+  A117_2021_TITLE,
+  A117_2021_TITLE_ID,
+} from "./a117-2021.js";
+
+export { A117_2021_DOCUMENT, A117_2021_TITLE, A117_2021_TITLE_ID } from "./a117-2021.js";
+
 export const IRC_2021_TITLE_ID = "IRC2021";
 
 export const ICC_CODE_CONNECT_FIXTURES: CodeConnectFixtures = {
@@ -48,6 +56,7 @@ export const ICC_CODE_CONNECT_FIXTURES: CodeConnectFixtures = {
       year: 2021,
       versionStatus: "current",
     },
+    A117_2021_TITLE,
   ],
 
   documents: {
@@ -192,6 +201,7 @@ export const ICC_CODE_CONNECT_FIXTURES: CodeConnectFixtures = {
         },
       ],
     },
+    [A117_2021_TITLE_ID]: A117_2021_DOCUMENT,
   },
 
   search: {
