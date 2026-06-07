@@ -1,0 +1,25 @@
+{
+  "name": "@hauska-engine/adapters",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Site-context and subsurface adapters. Lift target from cortex-api lib/adapters per ADR-008 / sprint 56.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo 'no lint configured'"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
