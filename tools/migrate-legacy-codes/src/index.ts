@@ -445,6 +445,18 @@ import {
   curatedQueriesForJurisdictionAndBooks,
 } from "./seed-curated-queries.js";
 import { buildCorpusSnapshot } from "./build-corpus-snapshot.js";
+import {
+  defaultCoverageOutPath,
+  writeCentralTexasCoverageArtifact,
+} from "./export-central-texas-coverage.js";
+import {
+  countJsonlRows,
+  defaultPilotJsonlPath,
+  exportSnapshotJurisdictionToFile,
+} from "./snapshot-to-legacy-jsonl.js";
+import { loadNeonWarmupJsonlFile } from "./load-neon-warmup-jsonl.js";
+import { resolveHauskaEngineRoot } from "./repo-root.js";
+import { NEON_WARMUP_PILOT_KEYS } from "./central-texas-pilot-keys.js";
 
 function resolveDatabaseUrl(explicit: string | undefined): string {
   const url = explicit || process.env.LEGACY_DATABASE_URL || process.env.DATABASE_URL;
@@ -4639,6 +4651,140 @@ program
   .description("Print the Cedar Hill curated-query JSON to stdout.")
   .action(() => {
     console.log(JSON.stringify(buildCedarHillCuratedQueries(), null, 2));
+  });
+
+program
+  .command("export-central-texas-coverage")
+  .description(
+    "Write services/retrieval-api/corpus/central_texas_coverage.json from the committed corpus snapshot.",
+  )
+  .option(
+    "--snapshot <path>",
+    "Input corpus snapshot JSON",
+    "services/retrieval-api/corpus/snapshot.json",
+  )
+  .option(
+    "--out <path>",
+    "Output coverage registry JSON (default: services/retrieval-api/corpus/central_texas_coverage.json)",
+  )
+  .action(async (opts: { snapshot: string; out?: string }) => {
+    const root = resolveHauskaEngineRoot();
+    const snapshotPath = opts.snapshot.startsWith("/") || /^[A-Za-z]:/.test(opts.snapshot)
+      ? opts.snapshot
+      : `${root}/${opts.snapshot}`;
+    const outPath = opts.out
+      ? opts.out.startsWith("/") || /^[A-Za-z]:/.test(opts.out)
+        ? opts.out
+        : `${root}/${opts.out}`
+      : defaultCoverageOutPath(root);
+    const artifact = await writeCentralTexasCoverageArtifact({
+      snapshotPath,
+      outPath,
+    });
+    console.log(
+      JSON.stringify(
+        {
+          outPath,
+          keysMatchBaseline: artifact.keysMatchBaseline,
+          jurisdictionCount: artifact.jurisdictions.length,
+          pilot: NEON_WARMUP_PILOT_KEYS.map((k) => {
+            const row = artifact.jurisdictions.find((j) => j.jurisdictionKey === k);
+            return {
+              key: k,
+              sectionsWithBody: row?.sectionsWithBody ?? 0,
+            };
+          }),
+        },
+        null,
+        2,
+      ),
+    );
+  });
+
+program
+  .command("export-snapshot-jurisdiction-legacy")
+  .description(
+    "Export code-section atoms (non-empty body) from the corpus snapshot into cortex-api code_atoms JSONL.",
+  )
+  .requiredOption("--jurisdiction <key>", "jurisdiction_key slug, e.g. round_rock_tx")
+  .option(
+    "--snapshot <path>",
+    "Input corpus snapshot JSON",
+    "services/retrieval-api/corpus/snapshot.json",
+  )
+  .option("--out <path>", "Output JSONL path (default: tmp/neon-warmup-pilot/<key>.jsonl)")
+  .action(async (opts: { jurisdiction: string; snapshot: string; out?: string }) => {
+    const root = resolveHauskaEngineRoot();
+    const snapshotPath = opts.snapshot.startsWith("/") || /^[A-Za-z]:/.test(opts.snapshot)
+      ? opts.snapshot
+      : `${root}/${opts.snapshot}`;
+    const outPath =
+      opts.out ??
+      defaultPilotJsonlPath(root, opts.jurisdiction);
+    const result = await exportSnapshotJurisdictionToFile({
+      snapshotPath,
+      jurisdictionKey: opts.jurisdiction,
+      outPath,
+    });
+    console.log(JSON.stringify(result, null, 2));
+  });
+
+program
+  .command("export-neon-warmup-pilot-batch")
+  .description(
+    "Regenerate PB-001 pilot JSONL files under tools/migrate-legacy-codes/tmp/neon-warmup-pilot/.",
+  )
+  .option(
+    "--snapshot <path>",
+    "Input corpus snapshot JSON",
+    "services/retrieval-api/corpus/snapshot.json",
+  )
+  .action(async (opts: { snapshot: string }) => {
+    const root = resolveHauskaEngineRoot();
+    const snapshotPath = opts.snapshot.startsWith("/") || /^[A-Za-z]:/.test(opts.snapshot)
+      ? opts.snapshot
+      : `${root}/${opts.snapshot}`;
+    const results = [];
+    for (const key of NEON_WARMUP_PILOT_KEYS) {
+      const outPath = defaultPilotJsonlPath(root, key);
+      const result = await exportSnapshotJurisdictionToFile({
+        snapshotPath,
+        jurisdictionKey: key,
+        outPath,
+      });
+      results.push(result);
+    }
+    console.log(JSON.stringify({ keys: NEON_WARMUP_PILOT_KEYS, results }, null, 2));
+  });
+
+program
+  .command("load-neon-warmup-jsonl")
+  .description(
+    "Idempotent INSERT into cortex-api Postgres code_atoms from a warmup JSONL file (ON CONFLICT content_hash DO NOTHING).",
+  )
+  .requiredOption("--file <path>", "Path to <jurisdiction_key>.jsonl")
+  .option("--jurisdiction <key>", "Expected jurisdiction_key (validated per row)")
+  .option("--dry-run", "Parse and count only; no database writes", false)
+  .action(
+    async (opts: { file: string; jurisdiction?: string; dryRun?: boolean }) => {
+      const url = resolveDatabaseUrl(program.opts().databaseUrl);
+      const result = await loadNeonWarmupJsonlFile({
+        databaseUrl: url,
+        jsonlPath: opts.file,
+        jurisdictionKey: opts.jurisdiction,
+        dryRun: opts.dryRun ?? false,
+      });
+      console.log(JSON.stringify(result, null, 2));
+    },
+  );
+
+program
+  .command("verify-neon-warmup-jsonl")
+  .description("Count JSONL rows and compare to export stats (operator QA).")
+  .requiredOption("--file <path>", "Path to JSONL")
+  .action(async (opts: { file: string }) => {
+    const n = await countJsonlRows(opts.file);
+    console.log(JSON.stringify({ file: opts.file, rowCount: n }, null, 2));
   });
 
 program

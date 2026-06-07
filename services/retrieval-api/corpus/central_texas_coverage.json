@@ -1,0 +1,388 @@
+{
+  "format": "hauska-central-texas-coverage/1",
+  "generatedAt": "2026-05-29T02:39:22.873Z",
+  "snapshotGeneratedAt": "2026-05-26T17:26:12.400Z",
+  "keysMatchBaseline": false,
+  "baselineKeyCount": 35,
+  "jurisdictions": [
+    {
+      "jurisdictionKey": "austin_tx",
+      "atomCount": 2211,
+      "sectionsWithBody": 1810,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "bastrop_county_tx",
+      "atomCount": 17,
+      "sectionsWithBody": 17,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "bastrop_tx",
+      "atomCount": 193,
+      "sectionsWithBody": 191,
+      "eval": {
+        "top3Score": 0.95,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "boerne_tx",
+      "atomCount": 106,
+      "sectionsWithBody": 97,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "brownsville_tx",
+      "atomCount": 870,
+      "sectionsWithBody": 703,
+      "eval": {
+        "top3Score": 0.9,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "cedar_hill_tx",
+      "atomCount": 706,
+      "sectionsWithBody": 580,
+      "eval": {
+        "top3Score": 0.9130434782608695,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "converse_tx",
+      "atomCount": 610,
+      "sectionsWithBody": 440,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "copperas_cove_tx",
+      "atomCount": 133,
+      "sectionsWithBody": 111,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "crowley_tx",
+      "atomCount": 852,
+      "sectionsWithBody": 641,
+      "eval": {
+        "top3Score": 0.95,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "dripping_springs_tx",
+      "atomCount": 954,
+      "sectionsWithBody": 814,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "el_paso_tx",
+      "atomCount": 659,
+      "sectionsWithBody": 568,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "elgin_tx",
+      "atomCount": 266,
+      "sectionsWithBody": 196,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "georgetown_tx",
+      "atomCount": 658,
+      "sectionsWithBody": 571,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "grand_county_ut",
+      "atomCount": 285,
+      "sectionsWithBody": 285,
+      "eval": {
+        "top3Score": 0.9,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "hutto_tx",
+      "atomCount": 1741,
+      "sectionsWithBody": 1376,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "keller_tx",
+      "atomCount": 165,
+      "sectionsWithBody": 148,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "killeen_tx",
+      "atomCount": 637,
+      "sectionsWithBody": 501,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "lago_vista_tx",
+      "atomCount": 299,
+      "sectionsWithBody": 264,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "leander_tx",
+      "atomCount": 185,
+      "sectionsWithBody": 156,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "live_oak_tx",
+      "atomCount": 539,
+      "sectionsWithBody": 446,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "lockhart_tx",
+      "atomCount": 139,
+      "sectionsWithBody": 110,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "manor_tx",
+      "atomCount": 273,
+      "sectionsWithBody": 221,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "mission_tx",
+      "atomCount": 708,
+      "sectionsWithBody": 577,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "new_braunfels_tx",
+      "atomCount": 190,
+      "sectionsWithBody": 170,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "pasadena_tx",
+      "atomCount": 463,
+      "sectionsWithBody": 390,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "plano_tx",
+      "atomCount": 0,
+      "sectionsWithBody": 0
+    },
+    {
+      "jurisdictionKey": "rollingwood_tx",
+      "atomCount": 421,
+      "sectionsWithBody": 335,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "round_rock_tx",
+      "atomCount": 355,
+      "sectionsWithBody": 276,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "saginaw_tx",
+      "atomCount": 538,
+      "sectionsWithBody": 447,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "san_antonio_tx",
+      "atomCount": 941,
+      "sectionsWithBody": 827,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "schertz_tx",
+      "atomCount": 161,
+      "sectionsWithBody": 147,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "sugar_land_tx",
+      "atomCount": 542,
+      "sectionsWithBody": 429,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "taylor_tx",
+      "atomCount": 510,
+      "sectionsWithBody": 427,
+      "eval": {
+        "top3Score": 0.90625,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "watauga_tx",
+      "atomCount": 235,
+      "sectionsWithBody": 164,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    },
+    {
+      "jurisdictionKey": "wimberley_tx",
+      "atomCount": 237,
+      "sectionsWithBody": 195,
+      "eval": {
+        "top3Score": 1,
+        "sectionNumScore": 1,
+        "crossRefScore": 1,
+        "qualityBar": "passing"
+      }
+    }
+  ]
+}

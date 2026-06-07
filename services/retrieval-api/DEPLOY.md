@@ -82,3 +82,11 @@ curl -s -H "Authorization: Bearer <key>" \
 curl -s -H "Authorization: Bearer <key>" \
   "https://<service-url>/search?q=setback&limit=3"
 ```
+
+## Neon warmup (Property Brief / cortex-api)
+
+Substrate sections exported to LDT `code_atoms` for the PB-001 pilot batch:
+
+- JSONL: `tools/migrate-legacy-codes/tmp/neon-warmup-pilot/`
+- Operator runbook: [`docs/ldt-neon-warmup-runbook.md`](docs/ldt-neon-warmup-runbook.md)
+- Coverage registry: `corpus/central_texas_coverage.json` via `export-central-texas-coverage`
