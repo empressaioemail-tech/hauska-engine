@@ -1,0 +1,30 @@
+{
+  "$schema": "./schema.json",
+  "jurisdictionKey": "utah-unincorporated",
+  "jurisdictionDisplayName": "Utah — unincorporated default (statewide minimums)",
+  "note": "Fallback table for Utah parcels that fall outside a county-level zoning ordinance we have explicit district rows for. Values mirror Utah Code Title 17, Chapter 27a default agricultural/residential separations and the Utah Wildland-Urban Interface Code's defensible-space requirements. Used by the briefing engine when a UGRC parcel lookup succeeds but the resolved jurisdiction has no local-tier setback table.",
+  "districts": [
+    {
+      "district_name": "Default Unincorporated Residential",
+      "front_ft": 30,
+      "rear_ft": 30,
+      "side_ft": 10,
+      "side_corner_ft": 20,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 25,
+      "max_impervious_pct": 35,
+      "citation_url": "https://le.utah.gov/xcode/Title17/Chapter27A/17-27a.html"
+    },
+    {
+      "district_name": "Default Agricultural",
+      "front_ft": 50,
+      "rear_ft": 50,
+      "side_ft": 25,
+      "side_corner_ft": 50,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 10,
+      "max_impervious_pct": 15,
+      "citation_url": "https://le.utah.gov/xcode/Title17/Chapter27A/17-27a.html"
+    }
+  ]
+}

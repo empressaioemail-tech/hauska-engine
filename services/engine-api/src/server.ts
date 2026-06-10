@@ -6,6 +6,7 @@ import {
   parseGateFrontHeaders,
   type GateFrontContext,
 } from "./gate-front-context.js";
+import { buildSiteContextRoutes } from "./routes/site-context.js";
 
 export interface ServerOptions {
   config: EngineApiConfig;
@@ -52,15 +53,17 @@ export function buildApp(options: ServerOptions): Hono {
     c.json({
       status: "ok",
       service: "engine-api",
-      scaffold: true,
+      adapters: true,
       startedAt: config.startedAt,
     }),
   );
 
-  app.get("/ready", (c) => c.json({ status: "ready", scaffold: true }));
+  app.get("/ready", (c) => c.json({ status: "ready", adapters: true }));
 
-  // Reasoning routes land in the lift (sprint 56 steps 3–4). The
-  // gate-front middleware above is wired now so the seam is testable.
+  // Site-context adapters (sprint 56 step 3 / GTM A1).
+  app.route("/v1/site-context", buildSiteContextRoutes());
+
+  // Remaining reasoning routes land in step 4 (engine-core lift).
   app.all("/v1/*", (c) =>
     c.json(
       {
@@ -83,7 +86,7 @@ export function startServer(app: Hono, port: number): void {
       service: "engine-api",
       event: "server.started",
       port,
-      scaffold: true,
+      adapters: true,
       ts: new Date().toISOString(),
     }),
   );
