@@ -88,6 +88,7 @@ function resolveLocalKey(
   if (addr) {
     for (const [pair, key] of Object.entries(CITY_STATE_TO_LOCAL)) {
       const [c, s] = pair.split("|");
+      if (!c || !s) continue;
       if (
         addr.includes(`${c}, ${s}`) ||
         (addr.includes(c) && addr.includes(`, ${s}`))
@@ -143,7 +144,7 @@ function parseCityState(s: string | null | undefined): string | null {
   const parts = raw.split(",").map((p) => p.trim().toLowerCase());
   if (parts.length < 2) return null;
   const c = parts[0];
-  const s2 = parts[1].split(/\s+/)[0];
+  const s2 = parts[1]?.split(/\s+/)[0];
   if (!c || !s2) return null;
   return `${c}|${s2}`;
 }

@@ -100,7 +100,7 @@ export const femaNfhlAdapter: Adapter = {
         note: "Parcel does not intersect a mapped FEMA flood zone (treat as Zone X).",
       };
     }
-    const top = result.features[0];
+    const top = result.features[0]!;
     const attrs = top.attributes as {
       FLD_ZONE?: unknown;
       ZONE_SUBTY?: unknown;

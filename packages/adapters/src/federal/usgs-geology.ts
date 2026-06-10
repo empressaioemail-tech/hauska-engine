@@ -82,7 +82,7 @@ export const usgsGeologyAdapter: Adapter = {
       );
     }
 
-    const attrs = result.features[0].attributes;
+    const attrs = result.features[0]!.attributes;
     return {
       adapterKey: this.adapterKey,
       tier: this.tier,

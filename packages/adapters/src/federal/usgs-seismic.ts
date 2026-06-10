@@ -173,7 +173,7 @@ async function queryNearestFault(
     };
     const features = json.features;
     if (!Array.isArray(features) || features.length === 0) return null;
-    const attrs = features[0].attributes ?? {};
+    const attrs = features[0]!.attributes ?? {};
     return {
       faultName:
         pickString(attrs.fault_name) ?? pickString(attrs.section_name),

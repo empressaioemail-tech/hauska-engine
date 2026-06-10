@@ -248,7 +248,7 @@ export const usgsGroundwaterAdapter: Adapter = {
       };
     }
 
-    const nearest = sites[0];
+    const nearest = sites[0]!;
     const ivUrl = new URL(USGS_NWIS_IV_ENDPOINT);
     ivUrl.searchParams.set("format", "json");
     ivUrl.searchParams.set("sites", nearest.siteNo);
