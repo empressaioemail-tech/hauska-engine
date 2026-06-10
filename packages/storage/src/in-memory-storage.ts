@@ -257,6 +257,10 @@ export class InMemoryStorage implements StoragePort {
     await storage.importSnapshot(snapshot);
     return storage;
   }
+
+  async countAtoms(): Promise<number> {
+    return this.atoms.size;
+  }
 }
 
 function tokenize(s: string): ReadonlyArray<string> {

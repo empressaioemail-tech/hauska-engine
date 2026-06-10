@@ -9,6 +9,21 @@ import {
   type StoragePort,
 } from "@hauska-engine/storage";
 
+import {
+  buildHealthzPayload,
+  emitHealthzSignal,
+  httpStatusForHealthz,
+} from "./healthz.js";
+
+function isPublicHealthPath(path: string): boolean {
+  return (
+    path === "/health" ||
+    path === "/healthz" ||
+    path === "/healthz/" ||
+    path === "/ready"
+  );
+}
+
 const ACCESS_POLICY_VALUES: ReadonlyArray<AccessPolicy> = [
   "public-free",
   "public-paid",
@@ -44,19 +59,22 @@ export interface ServerOptions {
   storage?: StoragePort;
   /** Required `Authorization: Bearer` value. Empty disables the check (dev). */
   apiKey?: string;
+  /** Substrate Neon URL for `/healthz` db liveness; falls back to env. */
+  substrateDatabaseUrl?: string;
 }
 
 export function buildApp(options: ServerOptions = {}): Hono {
   const storage = options.storage ?? new InMemoryStorage();
   const retrieval = new HybridRetrieval(storage);
   const apiKey = options.apiKey ?? process.env.RETRIEVAL_API_KEY ?? "";
+  const substrateDatabaseUrl = options.substrateDatabaseUrl;
   const startedAt = new Date().toISOString();
 
   const app = new Hono();
 
   app.use("*", async (c: Context, next: Next) => {
     const path = c.req.path;
-    if (path === "/health" || path === "/ready") return next();
+    if (isPublicHealthPath(path)) return next();
     if (!apiKey) return next();
     const auth = c.req.header("authorization");
     if (auth !== `Bearer ${apiKey}`) {
@@ -78,6 +96,20 @@ export function buildApp(options: ServerOptions = {}): Hono {
       return c.json({ status: "degraded", error: String(err) }, 503);
     }
   });
+
+  async function healthzHandler(c: Context) {
+    const payload = await buildHealthzPayload({
+      storage,
+      substrateDatabaseUrl,
+    });
+    emitHealthzSignal(payload);
+    return c.json(payload, httpStatusForHealthz(payload.status));
+  }
+
+  app.get("/healthz", healthzHandler);
+  // Cloud Run's GFE reserves exact `/healthz` (no trailing slash); `/healthz/`
+  // reaches the container and satisfies the observability contract.
+  app.get("/healthz/", healthzHandler);
 
   const searchSchema = z.object({
     q: z.string().default(""),

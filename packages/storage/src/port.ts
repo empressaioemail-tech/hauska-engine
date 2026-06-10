@@ -133,4 +133,7 @@ export interface StoragePort {
   }): Promise<ReadonlyArray<JurisdictionStatusSnapshot>>;
 
   upsertJurisdictionStatus(snapshot: JurisdictionStatusSnapshot): Promise<void>;
+
+  /** Total atom instances loaded in this back-end (all entity types). */
+  countAtoms(): Promise<number>;
 }

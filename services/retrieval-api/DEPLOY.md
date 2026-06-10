@@ -42,7 +42,7 @@ dev/test convenience.
 ## Auth
 
 `Authorization: Bearer <RETRIEVAL_API_KEY>` is required on every route
-except `/health` and `/ready`. The service is deployed
+except `/health`, `/healthz`, and `/ready`. The service is deployed
 `--allow-unauthenticated` at the Cloud Run ingress layer (so the MCP
 server can reach it over public TLS without GCP IAM tokens); the Bearer
 key is the access gate. This keeps the retrieval-api the internal data
@@ -77,8 +77,26 @@ ship source-direct exports per `REPO_NOTES.md`).
 
 ```bash
 curl -s https://<service-url>/health
+curl -s https://<service-url>/healthz/
 curl -s -H "Authorization: Bearer <key>" \
   "https://<service-url>/jurisdictions?qualityBarOnly=true"
 curl -s -H "Authorization: Bearer <key>" \
   "https://<service-url>/search?q=setback&limit=3"
 ```
+
+## Health (`GET /healthz`)
+
+Observability surface per [`76e_platform_observability_sprint`](../../doc_repo/76e_platform_observability_sprint.md). Returns `{status, db, corpus}`:
+
+- **`corpus`** — atom count from the loaded snapshot (`storage.countAtoms()`). Zero count → HTTP 503 / `status: fail`.
+- **`db`** — substrate Neon liveness via `SELECT 1` when `SUBSTRATE_DATABASE_URL` (or `DATABASE_URL`) is set. When unset, `db.status` is `not_configured` and overall status is `warn` (snapshot-only mode).
+
+**Cloud Run note:** Google Front End reserves exact `/healthz` (no trailing slash) and returns a platform 404 before the request reaches the container. Use **`/healthz/`** (trailing slash) for uptime checks and hub polling on Cloud Run; the handler and signal emit are identical.
+
+Wire the substrate Neon URL at deploy time when the Postgres-backed storage back-end lands:
+
+```bash
+--set-secrets=SUBSTRATE_DATABASE_URL=substrate-database-url:latest
+```
+
+Each `/healthz` call emits one structured Cloud Logging line (`hauska_health=true`, `check: healthz`, `service: hauska-retrieval-api`) for the cc-agent-C health-watch hub.

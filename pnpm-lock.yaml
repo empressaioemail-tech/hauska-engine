@@ -253,10 +253,16 @@ importers:
       hono:
         specifier: ^4.6.14
         version: 4.12.19
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
       zod:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      '@hauska-engine/atoms':
+        specifier: workspace:*
+        version: link:../../packages/atoms
       '@hauska-engine/corpus':
         specifier: workspace:*
         version: link:../../packages/corpus
