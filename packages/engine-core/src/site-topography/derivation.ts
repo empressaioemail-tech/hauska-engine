@@ -4,6 +4,8 @@
  * stays in the cortex BFF.
  */
 
+/// <reference path="./d3-contour.d.ts" />
+
 import { contours as d3Contours } from "d3-contour";
 import { fromArrayBuffer as geotiffFromArrayBuffer } from "geotiff";
 
@@ -124,7 +126,7 @@ export function deriveContoursGeoJson(
     return [lng, lat];
   }
 
-  const features = rawContours.map((c) => {
+  const features = rawContours.map((c: { value: number; coordinates: unknown }) => {
     const remapped = (c.coordinates as unknown as number[][][][]).map(
       (polygon) => polygon.map((ring) => ring.map(remapPair)),
     );
