@@ -6,6 +6,9 @@ import {
   parseGateFrontHeaders,
   type GateFrontContext,
 } from "./gate-front-context.js";
+import { buildBriefingRoutes } from "./routes/briefing.js";
+import { buildFindingsRoutes } from "./routes/findings.js";
+import { buildHydrologyRoutes } from "./routes/hydrology.js";
 import { buildSiteContextRoutes } from "./routes/site-context.js";
 
 export interface ServerOptions {
@@ -54,21 +57,23 @@ export function buildApp(options: ServerOptions): Hono {
       status: "ok",
       service: "engine-api",
       adapters: true,
+      engineCore: true,
       startedAt: config.startedAt,
     }),
   );
 
-  app.get("/ready", (c) => c.json({ status: "ready", adapters: true }));
+  app.get("/ready", (c) => c.json({ status: "ready", engineCore: true }));
 
-  // Site-context adapters (sprint 56 step 3 / GTM A1).
   app.route("/v1/site-context", buildSiteContextRoutes());
+  app.route("/v1/briefing", buildBriefingRoutes());
+  app.route("/v1/findings", buildFindingsRoutes());
+  app.route("/v1/hydrology", buildHydrologyRoutes());
 
-  // Remaining reasoning routes land in step 4 (engine-core lift).
   app.all("/v1/*", (c) =>
     c.json(
       {
         error: "not_implemented",
-        message: "Reasoning endpoints scaffold only; engine lift pending",
+        message: "Unknown engine-api route",
         gateFront: c.get("gateFront"),
       },
       501,
@@ -86,7 +91,7 @@ export function startServer(app: Hono, port: number): void {
       service: "engine-api",
       event: "server.started",
       port,
-      adapters: true,
+      engineCore: true,
       ts: new Date().toISOString(),
     }),
   );

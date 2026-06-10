@@ -15,6 +15,7 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@hauska-engine/adapters": "workspace:*",
     "@hauska-engine/engine-core": "workspace:*",
     "@hono/node-server": "^1.13.7",

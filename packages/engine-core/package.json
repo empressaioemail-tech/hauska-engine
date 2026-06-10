@@ -1,24 +1,36 @@
 {
   "name": "@hauska-engine/engine-core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Reasoning engines (briefing, finding, hydrology, decomposition, precedence). Lift target from cortex-api lib/*-engine per ADR-008 / sprint 56.",
+  "description": "Reasoning engines (briefing, finding, decomposition, precedence, calibration). Lifted from cortex-api lib/*-engine per ADR-008 / sprint 56.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./briefing": {
+      "types": "./src/briefing/index.ts",
+      "import": "./src/briefing/index.ts"
+    },
+    "./finding": {
+      "types": "./src/finding/index.ts",
+      "import": "./src/finding/index.ts"
     }
   },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "lint": "echo 'no lint configured'"
   },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0"
+  },
   "devDependencies": {
+    "@types/node": "^22.10.5",
     "typescript": "~5.7.2",
     "vitest": "^2.1.8"
   }
