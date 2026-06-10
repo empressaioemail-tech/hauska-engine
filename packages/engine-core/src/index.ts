@@ -28,6 +28,36 @@ export {
   type AggregatedCalibration,
 } from "./calibration/compute.js";
 export { FINDING_OUTCOME_RECORDED_EVENT_TYPE } from "./calibration/findingOutcomeEventType.js";
+export {
+  canonicalOverlayAtomKey,
+  canonicalOverlayKeyFromCodeToken,
+  isReasoningOverlayAtomId,
+  overlayAtomLookupKey,
+  HAUSKA_CODE_SECTION_DID_PREFIX,
+} from "./calibration/overlayAtomKey.js";
+export type {
+  CalibrationRepositoryPort,
+  OverlayRowRecord,
+  JurisdictionTenantResolver,
+} from "./calibration/ports.js";
+export { InMemoryCalibrationRepository } from "./calibration/inMemoryPorts.js";
+export {
+  effectiveConfidence,
+  recomputeCalibrationOverlay,
+  ensureCorpusOverlayRow,
+  resolveOverlayCalibration,
+  listOverlayRows,
+  resolveOverlayKeyFromStructuredRef,
+  seedReasoningOverlayFromAtom,
+  invalidateStaleCalibrationForAtom,
+} from "./calibration/overlay.js";
+export {
+  collectCalibrationSignals,
+  loadAtomAccessContexts,
+} from "./calibration/signals.js";
+export { computeAttributionCoverage } from "./calibration/attribution.js";
+
+export * as siteTopography from "./site-topography/index.js";
 
 export {
   createGrokClient,

@@ -18,6 +18,14 @@
     "./finding": {
       "types": "./src/finding/index.ts",
       "import": "./src/finding/index.ts"
+    },
+    "./calibration": {
+      "types": "./src/calibration/overlay.ts",
+      "import": "./src/calibration/overlay.ts"
+    },
+    "./site-topography": {
+      "types": "./src/site-topography/index.ts",
+      "import": "./src/site-topography/index.ts"
     }
   },
   "scripts": {
@@ -27,7 +35,9 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0"
+    "@anthropic-ai/sdk": "^0.78.0",
+    "d3-contour": "^4.0.2",
+    "geotiff": "^2.1.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
