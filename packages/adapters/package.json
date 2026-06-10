@@ -1,24 +1,113 @@
 {
   "name": "@hauska-engine/adapters",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Site-context and subsurface adapters. Lift target from cortex-api lib/adapters per ADR-008 / sprint 56.",
+  "description": "Site-context and subsurface adapters (lifted from legacy-design-tools lib/adapters per ADR-008 / sprint 56).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "import": "./src/types.ts"
+    },
+    "./registry": {
+      "types": "./src/registry.ts",
+      "import": "./src/registry.ts"
+    },
+    "./eligibility": {
+      "types": "./src/eligibility.ts",
+      "import": "./src/eligibility.ts"
+    },
+    "./runner": {
+      "types": "./src/runner.ts",
+      "import": "./src/runner.ts"
+    },
+    "./cache": {
+      "types": "./src/cache.ts",
+      "import": "./src/cache.ts"
+    },
+    "./federal/fema-nfhl": {
+      "types": "./src/federal/fema-nfhl.ts",
+      "import": "./src/federal/fema-nfhl.ts"
+    },
+    "./federal/usgs-ned": {
+      "types": "./src/federal/usgs-ned.ts",
+      "import": "./src/federal/usgs-ned.ts"
+    },
+    "./federal/epa-ejscreen": {
+      "types": "./src/federal/epa-ejscreen.ts",
+      "import": "./src/federal/epa-ejscreen.ts"
+    },
+    "./federal/summaries": {
+      "types": "./src/federal/summaries.ts",
+      "import": "./src/federal/summaries.ts"
+    },
+    "./national/regrid": {
+      "types": "./src/national/regrid.ts",
+      "import": "./src/national/regrid.ts"
+    },
+    "./national/cotality": {
+      "types": "./src/national/cotality.ts",
+      "import": "./src/national/cotality.ts"
+    },
+    "./national/cotalityExtended": {
+      "types": "./src/national/cotalityExtended.ts",
+      "import": "./src/national/cotalityExtended.ts"
+    },
+    "./national/cotalityClient": {
+      "types": "./src/national/cotalityClient.ts",
+      "import": "./src/national/cotalityClient.ts"
+    },
+    "./state/utah": {
+      "types": "./src/state/utah.ts",
+      "import": "./src/state/utah.ts"
+    },
+    "./state/idaho": {
+      "types": "./src/state/idaho.ts",
+      "import": "./src/state/idaho.ts"
+    },
+    "./state/texas": {
+      "types": "./src/state/texas.ts",
+      "import": "./src/state/texas.ts"
+    },
+    "./state/summaries": {
+      "types": "./src/state/summaries.ts",
+      "import": "./src/state/summaries.ts"
+    },
+    "./local/grand-county-ut": {
+      "types": "./src/local/grand-county-ut.ts",
+      "import": "./src/local/grand-county-ut.ts"
+    },
+    "./local/lemhi-county-id": {
+      "types": "./src/local/lemhi-county-id.ts",
+      "import": "./src/local/lemhi-county-id.ts"
+    },
+    "./local/bastrop-tx": {
+      "types": "./src/local/bastrop-tx.ts",
+      "import": "./src/local/bastrop-tx.ts"
+    },
+    "./local/summaries": {
+      "types": "./src/local/summaries.ts",
+      "import": "./src/local/summaries.ts"
+    },
+    "./setbacks": {
+      "types": "./src/local/setbacks/index.ts",
+      "import": "./src/local/setbacks/index.ts"
     }
   },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "lint": "echo 'no lint configured'"
   },
   "devDependencies": {
+    "@types/node": "^22.10.5",
     "typescript": "~5.7.2",
     "vitest": "^2.1.8"
   }

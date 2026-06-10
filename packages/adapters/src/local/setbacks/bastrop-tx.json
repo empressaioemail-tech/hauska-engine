@@ -1,0 +1,117 @@
+{
+  "$schema": "./schema.json",
+  "jurisdictionKey": "bastrop-tx",
+  "jurisdictionDisplayName": "City of Bastrop, TX",
+  "districts": [
+    {
+      "district_name": "R-MD Residential Medium Density",
+      "front_ft": 25,
+      "rear_ft": 20,
+      "side_ft": 7.5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 40,
+      "max_impervious_pct": 55,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    },
+    {
+      "district_name": "R-LD Residential Low Density",
+      "front_ft": 30,
+      "rear_ft": 25,
+      "side_ft": 10,
+      "side_corner_ft": 20,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 35,
+      "max_impervious_pct": 50,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    },
+    {
+      "district_name": "R-HD Residential High Density",
+      "front_ft": 20,
+      "rear_ft": 15,
+      "side_ft": 5,
+      "side_corner_ft": 12,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 50,
+      "max_impervious_pct": 65,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    },
+    {
+      "district_name": "P Public/Institutional",
+      "front_ft": 25,
+      "rear_ft": 20,
+      "side_ft": 15,
+      "side_corner_ft": 20,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 50,
+      "max_impervious_pct": 70,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    },
+    {
+      "district_name": "CMU Commercial Mixed-Use",
+      "front_ft": 10,
+      "rear_ft": 10,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 50,
+      "max_lot_coverage_pct": 70,
+      "max_impervious_pct": 85,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    },
+    {
+      "district_name": "C-1 Local Commercial",
+      "front_ft": 15,
+      "rear_ft": 10,
+      "side_ft": 5,
+      "side_corner_ft": 10,
+      "max_height_ft": 40,
+      "max_lot_coverage_pct": 60,
+      "max_impervious_pct": 80,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    },
+    {
+      "district_name": "C-2 General Commercial",
+      "front_ft": 20,
+      "rear_ft": 15,
+      "side_ft": 10,
+      "side_corner_ft": 15,
+      "max_height_ft": 50,
+      "max_lot_coverage_pct": 65,
+      "max_impervious_pct": 85,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    },
+    {
+      "district_name": "I-1 Light Industrial",
+      "front_ft": 25,
+      "rear_ft": 15,
+      "side_ft": 10,
+      "side_corner_ft": 15,
+      "max_height_ft": 50,
+      "max_lot_coverage_pct": 65,
+      "max_impervious_pct": 80,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    },
+    {
+      "district_name": "I-2 Heavy Industrial",
+      "front_ft": 30,
+      "rear_ft": 20,
+      "side_ft": 15,
+      "side_corner_ft": 20,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 70,
+      "max_impervious_pct": 85,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    },
+    {
+      "district_name": "DT-1 Downtown Core",
+      "front_ft": 0,
+      "rear_ft": 5,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 90,
+      "max_impervious_pct": 95,
+      "citation_url": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances"
+    }
+  ]
+}

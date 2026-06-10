@@ -1,4 +1,14 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src/**/*"]
+  "compilerOptions": {
+    "composite": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src", "src/**/*.json"],
+  "exclude": ["src/__tests__/**", "src/__fixtures__/**"]
 }
