@@ -1,0 +1,17 @@
+{
+  "description": "Recorded hydrology worker output (native-d8) for a 12x12 sloped grid — regression fixture Phase 2D.2",
+  "input": {
+    "pourLng": -97.675,
+    "pourLat": 30.505,
+    "rainfallDepthMm": 101.6,
+    "accumulationThreshold": 2
+  },
+  "output": {
+    "status": "ok",
+    "library": "native-d8",
+    "routing": "d8",
+    "drainageZoneCountMin": 1,
+    "flowLineCountMin": 0,
+    "rainfallFeatureCountMin": 1
+  }
+}

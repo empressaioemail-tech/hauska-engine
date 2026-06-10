@@ -1,4 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src/**/*"]
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM"],
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src"],
+  "exclude": ["src/**/__tests__/**"]
 }

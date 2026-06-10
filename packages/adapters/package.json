@@ -98,6 +98,14 @@
     "./setbacks": {
       "types": "./src/local/setbacks/index.ts",
       "import": "./src/local/setbacks/index.ts"
+    },
+    "./hydrology": {
+      "types": "./src/hydrology/index.ts",
+      "import": "./src/hydrology/index.ts"
+    },
+    "./topography": {
+      "types": "./src/topography/index.ts",
+      "import": "./src/topography/index.ts"
     }
   },
   "scripts": {
