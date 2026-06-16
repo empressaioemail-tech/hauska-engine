@@ -31,7 +31,7 @@ function confidenceFromCodeSections(
     const asserted =
       section.webProvenance?.confidence ??
       assertedBaselineFromSourceType(
-        section.webProvenance?.verificationState === "verified-web-source"
+        section.webProvenance?.verificationState === "unverified-web-source"
           ? "web"
           : "api",
       );

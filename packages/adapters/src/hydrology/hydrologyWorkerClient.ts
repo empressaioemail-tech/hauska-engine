@@ -162,6 +162,13 @@ export async function runHydrologyWorker(
       rainfallDepthMm: req.rainfallDepthMm,
       accumulationThreshold: req.accumulationThreshold,
     });
+    if (native.status === "error") {
+      return {
+        status: "error",
+        code: native.code ?? "native-failed",
+        message: native.message ?? "native D8 hydrology failed",
+      };
+    }
     return native;
   }
 
@@ -193,7 +200,7 @@ export async function runHydrologyWorker(
       ...native,
       fallbackUsed: true,
       fallbackReason: result.message,
-    };
+    } satisfies HydrologyWorkerSuccess;
   } catch (err) {
     return {
       status: "error",

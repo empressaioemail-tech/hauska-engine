@@ -36,8 +36,8 @@ export interface HydrologyNativeInput {
   accumulationThreshold?: number;
 }
 
-export interface HydrologyNativeResult {
-  status: "ok" | "error";
+export interface HydrologyNativeSuccess {
+  status: "ok";
   library: "native-d8";
   libraryVersion: "1.0.0";
   routing: "d8";
@@ -46,9 +46,23 @@ export interface HydrologyNativeResult {
   flowLinesGeoJson: GeoJsonFeatureCollection;
   rainfallResultGeoJson: GeoJsonFeatureCollection | null;
   pourPoint: { lng: number; lat: number };
-  code?: string;
-  message?: string;
 }
+
+export interface HydrologyNativeError {
+  status: "error";
+  code: string;
+  message: string;
+  library: "native-d8";
+  libraryVersion: "1.0.0";
+  routing: "d8";
+  accumulationThreshold: number;
+  drainageZonesGeoJson: GeoJsonFeatureCollection;
+  flowLinesGeoJson: GeoJsonFeatureCollection;
+  rainfallResultGeoJson: GeoJsonFeatureCollection | null;
+  pourPoint: { lng: number; lat: number };
+}
+
+export type HydrologyNativeResult = HydrologyNativeSuccess | HydrologyNativeError;
 
 const D8_OFFSETS: ReadonlyArray<[number, number]> = [
   [0, 1],
