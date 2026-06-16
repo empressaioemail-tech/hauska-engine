@@ -274,6 +274,11 @@ export interface GenerateFindingsResult {
   generatedAt: Date;
   /** `mock` or `anthropic` — useful for tests + observability. */
   producer: FindingLlmMode;
+  /**
+   * ADR-019 precedence reconciliation when multiple standards apply to the
+   * same topic. Null when fewer than two reconcilable requirements.
+   */
+  precedence: import("./precedence/types.js").ReconcileRequirementsByTopicResult | null;
 }
 
 /**

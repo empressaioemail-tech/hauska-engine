@@ -36,6 +36,9 @@ export interface HydrologyWorkerSuccess {
   flowLinesGeoJson: GeoJsonFeatureCollection;
   rainfallResultGeoJson: GeoJsonFeatureCollection | null;
   pourPoint: { lng: number; lat: number };
+  /** True when pysheds was unavailable and native D8 fallback ran. */
+  fallbackUsed?: boolean;
+  fallbackReason?: string;
 }
 
 export type HydrologyWorkerResult =
@@ -52,6 +55,8 @@ const WORKER_REL = join(
   "hydrology-worker",
   "run.py",
 );
+
+const WORKER_TIMEOUT_MS = Number(process.env.HYDROLOGY_WORKER_TIMEOUT_MS ?? 45_000);
 
 function resolvePythonBin(): string {
   return process.env.HYDROLOGY_PYTHON?.trim() || "python3";
@@ -87,6 +92,17 @@ async function spawnPyshedsWorker(
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill("SIGTERM");
+      resolve({
+        status: "error",
+        code: "worker-timeout",
+        message: `pysheds worker exceeded ${WORKER_TIMEOUT_MS}ms`,
+      });
+    }, WORKER_TIMEOUT_MS);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
@@ -94,6 +110,9 @@ async function spawnPyshedsWorker(
       stderr += chunk.toString("utf8");
     });
     child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       resolve({
         status: "error",
         code: "spawn-failed",
@@ -101,6 +120,9 @@ async function spawnPyshedsWorker(
       });
     });
     child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       if (code !== 0) {
         resolve({
           status: "error",
@@ -150,8 +172,7 @@ export async function runHydrologyWorker(
     await writeFile(demPath, Buffer.from(req.demBytes));
     const result = await spawnPyshedsWorker(demPath, req);
     if (result.status === "ok") return result;
-    // Fall back to native when Python sidecar unavailable.
-    return runHydrologyNative({
+    const native = runHydrologyNative({
       width: req.width,
       height: req.height,
       elevation: req.elevation,
@@ -161,6 +182,18 @@ export async function runHydrologyWorker(
       rainfallDepthMm: req.rainfallDepthMm,
       accumulationThreshold: req.accumulationThreshold,
     });
+    if (native.status === "error") {
+      return {
+        status: "error",
+        code: native.code ?? "native-fallback-failed",
+        message: native.message ?? result.message,
+      };
+    }
+    return {
+      ...native,
+      fallbackUsed: true,
+      fallbackReason: result.message,
+    };
   } catch (err) {
     return {
       status: "error",

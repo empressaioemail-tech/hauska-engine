@@ -37,7 +37,7 @@ export interface HydrologyNativeInput {
 }
 
 export interface HydrologyNativeResult {
-  status: "ok";
+  status: "ok" | "error";
   library: "native-d8";
   libraryVersion: "1.0.0";
   routing: "d8";
@@ -46,6 +46,8 @@ export interface HydrologyNativeResult {
   flowLinesGeoJson: GeoJsonFeatureCollection;
   rainfallResultGeoJson: GeoJsonFeatureCollection | null;
   pourPoint: { lng: number; lat: number };
+  code?: string;
+  message?: string;
 }
 
 const D8_OFFSETS: ReadonlyArray<[number, number]> = [
@@ -318,6 +320,49 @@ export function runHydrologyNative(
 ): HydrologyNativeResult {
   const { width, height, elevation, catchmentBbox } = input;
   const threshold = input.accumulationThreshold ?? 50;
+
+  let minElev = Infinity;
+  let maxElev = -Infinity;
+  let finiteCount = 0;
+  for (let i = 0; i < elevation.length; i++) {
+    const z = elevation[i]!;
+    if (!isFiniteElev(z)) continue;
+    finiteCount++;
+    if (z < minElev) minElev = z;
+    if (z > maxElev) maxElev = z;
+  }
+  if (finiteCount === 0) {
+    return {
+      status: "error",
+      code: "nodata-dem",
+      message: "DEM contains no finite elevation cells",
+      library: "native-d8",
+      libraryVersion: "1.0.0",
+      routing: "d8",
+      accumulationThreshold: threshold,
+      drainageZonesGeoJson: { type: "FeatureCollection", features: [] },
+      flowLinesGeoJson: { type: "FeatureCollection", features: [] },
+      rainfallResultGeoJson: null,
+      pourPoint: { lng: input.pourLng, lat: input.pourLat },
+    };
+  }
+  if (maxElev - minElev < 0.05) {
+    return {
+      status: "error",
+      code: "flat-terrain",
+      message:
+        "Native D8 fallback cannot route on flat terrain; pysheds worker required",
+      library: "native-d8",
+      libraryVersion: "1.0.0",
+      routing: "d8",
+      accumulationThreshold: threshold,
+      drainageZonesGeoJson: { type: "FeatureCollection", features: [] },
+      flowLinesGeoJson: { type: "FeatureCollection", features: [] },
+      rainfallResultGeoJson: null,
+      pourPoint: { lng: input.pourLng, lat: input.pourLat },
+    };
+  }
+
   const filled = fillDepressions(elevation, width, height);
   const fdir = flowDirection(filled, width, height);
   const acc = accumulation(filled, fdir, width, height);

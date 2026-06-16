@@ -93,7 +93,11 @@ export function deriveContoursGeoJson(
   const replaced = new Float64Array(dem.values.length);
   for (let i = 0; i < dem.values.length; i++) {
     const v = dem.values[i]!;
-    replaced[i] = Number.isFinite(v) ? v : dem.minElevation;
+    // Sink nodata below the contour threshold range so d3-contour does not
+    // draw spurious rings along nodata/finite boundaries (USGS nodata-fill bug).
+    replaced[i] = Number.isFinite(v)
+      ? v
+      : dem.minElevation - intervalMeters * 2;
   }
   const startElev =
     Math.ceil(dem.minElevation / intervalMeters) * intervalMeters;

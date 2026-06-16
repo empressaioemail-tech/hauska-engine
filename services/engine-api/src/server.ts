@@ -7,9 +7,13 @@ import {
   type GateFrontContext,
 } from "./gate-front-context.js";
 import { buildBriefingRoutes } from "./routes/briefing.js";
+import { buildChatRoutes } from "./routes/chat.js";
+import { buildEncumbrancesRoutes } from "./routes/encumbrances.js";
 import { buildFindingsRoutes } from "./routes/findings.js";
 import { buildHydrologyRoutes } from "./routes/hydrology.js";
 import { buildSiteContextRoutes } from "./routes/site-context.js";
+import { buildTopographyRoutes } from "./routes/topography.js";
+import { validateEnvelopeMiddleware } from "./middleware/validateEnvelope.js";
 
 export interface ServerOptions {
   config: EngineApiConfig;
@@ -58,16 +62,23 @@ export function buildApp(options: ServerOptions): Hono {
       service: "engine-api",
       adapters: true,
       engineCore: true,
+      envelope: true,
       startedAt: config.startedAt,
     }),
   );
 
   app.get("/ready", (c) => c.json({ status: "ready", engineCore: true }));
 
-  app.route("/v1/site-context", buildSiteContextRoutes());
-  app.route("/v1/briefing", buildBriefingRoutes());
-  app.route("/v1/findings", buildFindingsRoutes());
-  app.route("/v1/hydrology", buildHydrologyRoutes());
+  const v1 = new Hono();
+  v1.use("*", validateEnvelopeMiddleware);
+  v1.route("/site-context", buildSiteContextRoutes());
+  v1.route("/briefing", buildBriefingRoutes());
+  v1.route("/findings", buildFindingsRoutes());
+  v1.route("/hydrology", buildHydrologyRoutes());
+  v1.route("/topography", buildTopographyRoutes());
+  v1.route("/encumbrances", buildEncumbrancesRoutes());
+  v1.route("/chat", buildChatRoutes());
+  app.route("/v1", v1);
 
   app.all("/v1/*", (c) =>
     c.json(
@@ -92,6 +103,7 @@ export function startServer(app: Hono, port: number): void {
       event: "server.started",
       port,
       engineCore: true,
+      envelope: true,
       ts: new Date().toISOString(),
     }),
   );
