@@ -40,6 +40,7 @@ import {
   type CitationResolvers,
 } from "./citationAdapter";
 import { generateMockFindings } from "./mockGenerator";
+import { runFindingsPrecedencePass } from "./precedence/findingsPass.js";
 import {
   FINDING_MIN_TEXT_LENGTH,
   type EngineFinding,
@@ -190,6 +191,7 @@ function finalizeDrafts(
     discardedFindings,
     generatedAt,
     producer,
+    precedence: null,
   };
 }
 
@@ -254,5 +256,16 @@ export async function generateFindings(
     }));
   }
 
-  return finalizeDrafts(drafts, input, resolvers, generatedAt, mode, ulid);
+  return attachPrecedence(
+    finalizeDrafts(drafts, input, resolvers, generatedAt, mode, ulid),
+    input,
+  );
+}
+
+function attachPrecedence(
+  result: GenerateFindingsResult,
+  input: GenerateFindingsInput,
+): GenerateFindingsResult {
+  const precedence = runFindingsPrecedencePass(input);
+  return { ...result, precedence };
 }

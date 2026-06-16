@@ -58,6 +58,20 @@ export {
 export { computeAttributionCoverage } from "./calibration/attribution.js";
 
 export * as siteTopography from "./site-topography/index.js";
+export * as envelope from "./envelope/index.js";
+export {
+  sealEnvelope,
+  degradedCoverage,
+  okCoverage,
+  resolveReadPathConfidence,
+  engineEnvelopeSchema,
+  type EngineEnvelope,
+  type SealEnvelopeMeta,
+  type EnvelopeConfidence,
+  type EnvelopeCoverage,
+  type EnvelopeSource,
+  type ConfidenceKind,
+} from "./envelope/index.js";
 
 export {
   createGrokClient,

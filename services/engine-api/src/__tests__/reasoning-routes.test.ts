@@ -54,11 +54,17 @@ describe("engine-api reasoning routes", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      mode: string;
-      result: { findings: Array<{ atomId?: string; citations?: unknown[] }> };
+      payload: {
+        mode: string;
+        result: { findings: Array<{ atomId?: string; citations?: unknown[] }> };
+      };
+      confidence: { value: number; kind: string };
+      coverage: { degraded: boolean };
     };
-    expect(body.mode).toBe("mock");
-    expect(body.result.findings.length).toBeGreaterThan(0);
-    expect(body.result.findings[0]?.atomId).toMatch(/^finding:sub-1:/);
+    expect(body.payload.mode).toBe("mock");
+    expect(body.payload.result.findings.length).toBeGreaterThan(0);
+    expect(body.payload.result.findings[0]?.atomId).toMatch(/^finding:sub-1:/);
+    expect(body.confidence.kind).toBeTruthy();
+    expect(typeof body.coverage.degraded).toBe("boolean");
   });
 });

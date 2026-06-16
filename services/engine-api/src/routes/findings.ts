@@ -8,10 +8,16 @@ import {
   type GenerateOrchestratedFindingsInput,
 } from "@hauska-engine/engine-core/finding";
 import {
+  degradedCoverage,
+  okCoverage,
+  resolveReadPathConfidence,
+} from "@hauska-engine/engine-core/envelope";
+import {
   getAnthropicClient,
   getGrokClient,
   resolveFindingMode,
 } from "../lib/llmClients.js";
+import { envelopeJson } from "../lib/envelopeResponse.js";
 
 const generateBodySchema = z.object({
   input: z.record(z.unknown()),
@@ -33,6 +39,52 @@ function engineOptions(mode: "mock" | "grok" | "anthropic") {
   };
 }
 
+function findingsEnvelopeMeta(
+  input: GenerateFindingsInput,
+  mode: string,
+  result: {
+    invalidCitations: readonly string[];
+    discardedFindings: readonly unknown[];
+    precedence: unknown;
+  },
+) {
+  const dataVintage =
+    input.sources
+      .map((s) => s.snapshotDate)
+      .filter(Boolean)
+      .sort()
+      .at(-1) ?? null;
+  const reasons: string[] = [];
+  if (result.invalidCitations.length > 0) {
+    reasons.push(`${result.invalidCitations.length} invalid citation(s)`);
+  }
+  if (result.discardedFindings.length > 0) {
+    reasons.push(`${result.discardedFindings.length} finding(s) discarded`);
+  }
+  if (result.precedence == null && input.codeSections.length >= 2) {
+    reasons.push("precedence not reconciled (no multi-standard topic overlap)");
+  }
+  const coverage =
+    reasons.length > 0
+      ? degradedCoverage(reasons.join("; "), true)
+      : okCoverage();
+  return {
+    confidence: resolveReadPathConfidence({
+      codeSections: input.codeSections,
+      assertedBaseline: mode === "mock" ? 0.68 : undefined,
+    }),
+    dataVintage,
+    coverage,
+    source: {
+      adapter: `finding-engine:${mode}`,
+      citationIds: [
+        ...input.sources.map((s) => s.id),
+        ...input.codeSections.map((s) => s.atomId),
+      ],
+    },
+  };
+}
+
 export function buildFindingsRoutes(): Hono {
   const app = new Hono();
 
@@ -50,7 +102,11 @@ export function buildFindingsRoutes(): Hono {
 
     try {
       const result = await generateFindings(input, engineOptions(mode));
-      return c.json({ result, mode });
+      return envelopeJson(
+        c,
+        { result, mode },
+        findingsEnvelopeMeta(input, mode, result),
+      );
     } catch (err) {
       return c.json(
         {
@@ -79,7 +135,11 @@ export function buildFindingsRoutes(): Hono {
         input,
         engineOptions(mode),
       );
-      return c.json({ result, mode });
+      return envelopeJson(
+        c,
+        { result, mode },
+        findingsEnvelopeMeta(input.baseInput, mode, result),
+      );
     } catch (err) {
       return c.json(
         {

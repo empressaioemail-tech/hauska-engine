@@ -30,16 +30,18 @@ describe("engine-api site-context adapters", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      adapterCount: number;
-      adapters: Array<{ adapterKey: string }>;
+      payload: {
+        adapterCount: number;
+        adapters: Array<{ adapterKey: string }>;
+      };
     };
-    expect(body.adapterCount).toBeGreaterThan(0);
+    expect(body.payload.adapterCount).toBeGreaterThan(0);
     expect(
-      body.adapters.some((a) => a.adapterKey === "fema:nfhl-flood-zone"),
+      body.payload.adapters.some((a) => a.adapterKey === "fema:nfhl-flood-zone"),
     ).toBe(true);
   });
 
-  it("returns 422 when no adapters apply", async () => {
+  it("returns honest empty state when no adapters apply", async () => {
     const app = buildApp({ config });
     const res = await app.request("/v1/site-context/run-adapters", {
       method: "POST",
@@ -49,8 +51,12 @@ describe("engine-api site-context adapters", () => {
         jurisdiction: { stateKey: null, localKey: null },
       }),
     });
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("no_applicable_adapters");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      payload: { status: string };
+      coverage: { degraded: boolean };
+    };
+    expect(body.payload.status).toBe("empty");
+    expect(body.coverage.degraded).toBe(true);
   });
 });

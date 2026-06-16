@@ -12,6 +12,7 @@ import type {
   GenerateFindingsInput,
   GenerateFindingsResult,
 } from "../types";
+import { runFindingsPrecedencePass } from "../precedence/findingsPass.js";
 import {
   enrichPiecesWithVisionObservations,
   runDisciplineVisionRead,
@@ -125,6 +126,7 @@ export async function generateOrchestratedFindings(
     discardedFindings,
     generatedAt,
     producer,
+    precedence: runFindingsPrecedencePass(input.baseInput),
     orchestration: {
       orchestrated: true,
       disciplinesRun,

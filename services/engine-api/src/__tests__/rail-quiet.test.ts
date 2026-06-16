@@ -23,7 +23,7 @@ describe("rail-quiet (I7)", () => {
     startedAt: "2026-06-10T00:00:00.000Z",
   };
 
-  it("buyer-facing engine-api responses omit calibration grade", async () => {
+  it("buyer-facing engine-api responses omit calibration grade in payload", async () => {
     const app = buildApp({ config });
     const res = await app.request("/v1/findings/generate", {
       method: "POST",
@@ -47,6 +47,7 @@ describe("rail-quiet (I7)", () => {
     const bodyText = await res.text();
     expect(bodyText).not.toMatch(/calibrationGrade/i);
     expect(bodyText).not.toMatch(/calibration_grade/i);
-    expect(bodyText).not.toMatch(/effectiveConfidence/i);
+    expect(bodyText).toMatch(/"confidence":\s*\{/);
+    expect(bodyText).toMatch(/"kind":\s*"(asserted|calibrated|deterministic)"/);
   });
 });
