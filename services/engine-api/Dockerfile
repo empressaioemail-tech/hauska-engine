@@ -16,10 +16,9 @@ COPY services/engine-api ./services/engine-api
 COPY artifacts/hydrology-worker ./artifacts/hydrology-worker
 
 RUN corepack enable && corepack prepare pnpm@10.27.0 --activate \
-  && pnpm install --frozen-lockfile=false \
-  && pnpm --filter @hauska-engine/engine-api build
+  && pnpm install --frozen-lockfile=false
 
 ENV PORT=8080
 ENV HYDROLOGY_PYTHON=python3
-WORKDIR /app/services/engine-api
-CMD ["node", "dist/index.js"]
+WORKDIR /app
+CMD ["pnpm", "--filter", "@hauska-engine/engine-api", "exec", "tsx", "src/index.ts"]

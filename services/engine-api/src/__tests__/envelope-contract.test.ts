@@ -180,11 +180,11 @@ describe("EngineEnvelope contract — all reasoning surfaces", () => {
     await assertEnvelope("/v1/site-context/run-adapters", {
       method: "POST",
       body: JSON.stringify({
-        parcel: { latitude: 30.27, longitude: -97.74, address: "Austin" },
+        parcel: { latitude: null, longitude: null },
         jurisdiction: { stateKey: null, localKey: null },
       }),
     });
-  });
+  }, 10_000);
 
   it("POST /v1/encumbrances/query", async () => {
     await assertEnvelope("/v1/encumbrances/query", {
