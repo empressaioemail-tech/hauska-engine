@@ -6,6 +6,14 @@ import {
   parseGateFrontHeaders,
   type GateFrontContext,
 } from "./gate-front-context.js";
+import { buildBriefingRoutes } from "./routes/briefing.js";
+import { buildChatRoutes } from "./routes/chat.js";
+import { buildEncumbrancesRoutes } from "./routes/encumbrances.js";
+import { buildFindingsRoutes } from "./routes/findings.js";
+import { buildHydrologyRoutes } from "./routes/hydrology.js";
+import { buildSiteContextRoutes } from "./routes/site-context.js";
+import { buildTopographyRoutes } from "./routes/topography.js";
+import { validateEnvelopeMiddleware } from "./middleware/validateEnvelope.js";
 
 export interface ServerOptions {
   config: EngineApiConfig;
@@ -52,20 +60,31 @@ export function buildApp(options: ServerOptions): Hono {
     c.json({
       status: "ok",
       service: "engine-api",
-      scaffold: true,
+      adapters: true,
+      engineCore: true,
+      envelope: true,
       startedAt: config.startedAt,
     }),
   );
 
-  app.get("/ready", (c) => c.json({ status: "ready", scaffold: true }));
+  app.get("/ready", (c) => c.json({ status: "ready", engineCore: true }));
 
-  // Reasoning routes land in the lift (sprint 56 steps 3–4). The
-  // gate-front middleware above is wired now so the seam is testable.
+  const v1 = new Hono();
+  v1.use("*", validateEnvelopeMiddleware);
+  v1.route("/site-context", buildSiteContextRoutes());
+  v1.route("/briefing", buildBriefingRoutes());
+  v1.route("/findings", buildFindingsRoutes());
+  v1.route("/hydrology", buildHydrologyRoutes());
+  v1.route("/topography", buildTopographyRoutes());
+  v1.route("/encumbrances", buildEncumbrancesRoutes());
+  v1.route("/chat", buildChatRoutes());
+  app.route("/v1", v1);
+
   app.all("/v1/*", (c) =>
     c.json(
       {
         error: "not_implemented",
-        message: "Reasoning endpoints scaffold only; engine lift pending",
+        message: "Unknown engine-api route",
         gateFront: c.get("gateFront"),
       },
       501,
@@ -83,7 +102,8 @@ export function startServer(app: Hono, port: number): void {
       service: "engine-api",
       event: "server.started",
       port,
-      scaffold: true,
+      engineCore: true,
+      envelope: true,
       ts: new Date().toISOString(),
     }),
   );
