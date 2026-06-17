@@ -44,13 +44,19 @@ describe("engine-api map-layers capability", () => {
       headers: gateHeaders(),
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body: unknown = await res.json();
     const parsed = engineEnvelopeSchema.safeParse(body);
     expect(parsed.success).toBe(true);
-    expect(body.payload.packageId).toBe("map-layers");
-    expect(body.payload.gateExposure.owner).toBe("cc-agent-M");
-    expect(body.payload.consumer.owner).toBe("cc-agent-C");
-    expect(body.payload.pendingWave3).toEqual([]);
+    const payload = parsed.data!.payload as {
+      packageId: string;
+      gateExposure: { owner: string };
+      consumer: { owner: string };
+      pendingWave3: string[];
+    };
+    expect(payload.packageId).toBe("map-layers");
+    expect(payload.gateExposure.owner).toBe("cc-agent-M");
+    expect(payload.consumer.owner).toBe("cc-agent-C");
+    expect(payload.pendingWave3).toEqual([]);
   });
 
   it("POST /assemble returns per-layer EngineEnvelopes", async () => {
@@ -60,24 +66,27 @@ describe("engine-api map-layers capability", () => {
       body: JSON.stringify(austinParcel),
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body: unknown = await res.json();
     const parsed = engineEnvelopeSchema.safeParse(body);
     expect(parsed.success, JSON.stringify(body, null, 2)).toBe(true);
-    expect(body.payload.tenantScope).toBe("tenant-map-1");
-    expect(body.payload.parcelKey).toBe("austin-demo-1");
-    expect(body.payload.layers.length).toBe(7);
+    const payload = parsed.data!.payload as {
+      tenantScope: string;
+      parcelKey: string;
+      layers: Array<{ layerKey: string; status: string; envelope: unknown }>;
+    };
+    expect(payload.tenantScope).toBe("tenant-map-1");
+    expect(payload.parcelKey).toBe("austin-demo-1");
+    expect(payload.layers.length).toBe(7);
 
-    for (const slot of body.payload.layers) {
+    for (const slot of payload.layers) {
       expect(slot.envelope).not.toBeNull();
       const layerParsed = engineEnvelopeSchema.safeParse(slot.envelope);
       expect(layerParsed.success, slot.layerKey).toBe(true);
     }
 
-    const pending = body.payload.layers.filter(
-      (l: { status: string }) => l.status === "pending",
-    );
+    const pending = payload.layers.filter((l) => l.status === "pending");
     expect(pending.length).toBeGreaterThan(0);
-    expect(body.coverage.degraded).toBe(true);
+    expect(parsed.data!.coverage.degraded).toBe(true);
   });
 
   it("rejects assemble without gate-front headers", async () => {
