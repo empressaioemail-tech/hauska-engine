@@ -106,6 +106,10 @@
     "./topography": {
       "types": "./src/topography/index.ts",
       "import": "./src/topography/index.ts"
+    },
+    "./arcgis": {
+      "types": "./src/arcgis.ts",
+      "import": "./src/arcgis.ts"
     }
   },
   "scripts": {
