@@ -30,6 +30,10 @@
     "./envelope": {
       "types": "./src/envelope/index.ts",
       "import": "./src/envelope/index.ts"
+    },
+    "./map-layers": {
+      "types": "./src/map-layers/index.ts",
+      "import": "./src/map-layers/index.ts"
     }
   },
   "scripts": {

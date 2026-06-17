@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "version": "oz-1.0",
+    "note": "Minimal fixture for CI — replace via OZ_TRACT_DATA_PATH in prod."
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "geoid10": "48453002400",
+        "round": "oz-1.0",
+        "name": "Sample Austin OZ tract (test fixture)"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-97.78, 30.24],
+            [-97.76, 30.24],
+            [-97.76, 30.26],
+            [-97.78, 30.26],
+            [-97.78, 30.24]
+          ]
+        ]
+      }
+    }
+  ]
+}

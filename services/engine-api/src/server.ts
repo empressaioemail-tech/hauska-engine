@@ -13,6 +13,7 @@ import { buildFindingsRoutes } from "./routes/findings.js";
 import { buildHydrologyRoutes } from "./routes/hydrology.js";
 import { buildSiteContextRoutes } from "./routes/site-context.js";
 import { buildTopographyRoutes } from "./routes/topography.js";
+import { buildMapLayersRoutes } from "./routes/map-layers.js";
 import { validateEnvelopeMiddleware } from "./middleware/validateEnvelope.js";
 
 export interface ServerOptions {
@@ -78,6 +79,7 @@ export function buildApp(options: ServerOptions): Hono {
   v1.route("/topography", buildTopographyRoutes());
   v1.route("/encumbrances", buildEncumbrancesRoutes());
   v1.route("/chat", buildChatRoutes());
+  v1.route("/map-layers", buildMapLayersRoutes());
   app.route("/v1", v1);
 
   app.all("/v1/*", (c) =>
