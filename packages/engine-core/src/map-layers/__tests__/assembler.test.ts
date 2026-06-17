@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AdapterRunOutcome } from "@hauska-engine/adapters";
+import type { MapLayerAdapterOutcome } from "../adapterOutcome.js";
 import { engineEnvelopeSchema } from "../../envelope/index.js";
 import {
   aggregateMapLayersCoverage,
@@ -23,7 +23,7 @@ function okOutcome(
   adapterKey: string,
   layerKind: string,
   payload: Record<string, unknown>,
-): AdapterRunOutcome {
+): MapLayerAdapterOutcome {
   return {
     adapterKey,
     tier: "federal",

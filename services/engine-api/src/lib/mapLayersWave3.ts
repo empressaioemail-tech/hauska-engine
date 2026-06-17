@@ -4,7 +4,7 @@
  * Wired by cc-agent-C per 75i task 11 / map-layers-contract.md.
  */
 
-import type { AdapterRunOutcome } from "@hauska-engine/adapters";
+
 import { arcgisPointQuery } from "@hauska-engine/adapters/arcgis";
 import { fetchUsgs3depDem } from "@hauska-engine/adapters/topography";
 import {
@@ -19,6 +19,7 @@ import {
   type EngineEnvelope,
 } from "@hauska-engine/engine-core/envelope";
 import type {
+  MapLayerAdapterOutcome,
   MapLayerGeometryPayload,
   MapLayerKey,
   MapLayerSlot,
@@ -129,7 +130,7 @@ function isFloodwayFeature(attrs: Record<string, unknown>): boolean {
 
 async function resolveFloodwaySlot(
   request: MapLayersAssembleRequest,
-  outcomesByKey: Map<string, AdapterRunOutcome>,
+  outcomesByKey: Map<string, MapLayerAdapterOutcome>,
 ): Promise<MapLayerSlot> {
   const fema = outcomesByKey.get("fema:nfhl-flood-zone");
   if (fema?.status === "ok" && fema.result) {
@@ -354,7 +355,7 @@ function resolveOzTractSlot(request: MapLayersAssembleRequest): MapLayerSlot {
 export async function resolveWave3MapLayerSlot(
   layerKey: MapLayerKey,
   request: MapLayersAssembleRequest,
-  outcomesByKey: Map<string, AdapterRunOutcome>,
+  outcomesByKey: Map<string, MapLayerAdapterOutcome>,
 ): Promise<MapLayerSlot> {
   switch (layerKey) {
     case "floodway":

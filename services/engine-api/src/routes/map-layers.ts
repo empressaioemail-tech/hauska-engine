@@ -15,16 +15,30 @@ import {
   runAdapters,
   type AdapterContext,
   type AdapterJurisdiction,
+  type AdapterRunOutcome,
 } from "@hauska-engine/adapters";
 import {
   aggregateMapLayersCoverage,
   assembleMapLayers,
   mapLayersAssembleRequestSchema,
   vintageFromMapLayers,
+  type MapLayerAdapterOutcome,
 } from "@hauska-engine/engine-core/map-layers";
 import { resolveReadPathConfidence } from "@hauska-engine/engine-core/envelope";
 import { envelopeJson } from "../lib/envelopeResponse.js";
 import { resolveWave3MapLayerSlot } from "../lib/mapLayersWave3.js";
+
+function toMapLayerAdapterOutcomes(
+  outcomes: AdapterRunOutcome[],
+): MapLayerAdapterOutcome[] {
+  return outcomes.map((o) => ({
+    adapterKey: o.adapterKey,
+    layerKind: o.layerKind,
+    status: o.status,
+    result: o.result,
+    error: o.error,
+  }));
+}
 
 export function buildMapLayersRoutes(): Hono {
   const app = new Hono();
@@ -123,25 +137,29 @@ export function buildMapLayersRoutes(): Hono {
           const applicable = filterApplicableAdapters(runContext, selected);
 
           if (applicable.length === 0) {
-            return selected.map((a) => ({
-              adapterKey: a.adapterKey,
-              tier: a.tier,
-              layerKind: a.layerKind,
-              status: "no-coverage" as const,
-              fromCache: false,
-              cachedAt: null,
-              error: {
-                code: "no-coverage" as const,
-                message: "adapter not applicable for parcel/jurisdiction",
-              },
-            }));
+            return toMapLayerAdapterOutcomes(
+              selected.map((a) => ({
+                adapterKey: a.adapterKey,
+                tier: a.tier,
+                layerKind: a.layerKind,
+                status: "no-coverage" as const,
+                fromCache: false,
+                cachedAt: null,
+                error: {
+                  code: "no-coverage" as const,
+                  message: "adapter not applicable for parcel/jurisdiction",
+                },
+              })),
+            );
           }
 
-          return runAdapters({
-            adapters: applicable,
-            context: runContext,
-            forceRefresh: req.forceRefresh ?? false,
-          });
+          return toMapLayerAdapterOutcomes(
+            await runAdapters({
+              adapters: applicable,
+              context: runContext,
+              forceRefresh: req.forceRefresh ?? false,
+            }),
+          );
         },
         resolveWave3Slot: (layerKey, req, outcomesByKey) =>
           resolveWave3MapLayerSlot(layerKey, req, outcomesByKey),

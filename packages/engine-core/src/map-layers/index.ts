@@ -16,6 +16,11 @@ export {
 } from "./contract.js";
 
 export {
+  type MapLayerAdapterOutcome,
+  type MapLayerAdapterResult,
+} from "./adapterOutcome.js";
+
+export {
   MAP_LAYER_SPECS,
   adapterKeysForMapLayers,
   specForLayer,

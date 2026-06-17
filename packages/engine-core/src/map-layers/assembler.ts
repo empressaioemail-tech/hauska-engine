@@ -1,4 +1,4 @@
-import type { AdapterRunOutcome } from "@hauska-engine/adapters";
+import type { MapLayerAdapterOutcome } from "./adapterOutcome.js";
 
 import {
   degradedCoverage,
@@ -31,9 +31,9 @@ function defaultParcelKey(req: MapLayersAssembleRequest): string {
 }
 
 function outcomeByAdapterKey(
-  outcomes: ReadonlyArray<AdapterRunOutcome>,
-): Map<string, AdapterRunOutcome> {
-  const map = new Map<string, AdapterRunOutcome>();
+  outcomes: ReadonlyArray<MapLayerAdapterOutcome>,
+): Map<string, MapLayerAdapterOutcome> {
+  const map = new Map<string, MapLayerAdapterOutcome>();
   for (const o of outcomes) {
     map.set(o.adapterKey, o);
   }
@@ -41,7 +41,7 @@ function outcomeByAdapterKey(
 }
 
 function payloadFromAdapterOutcome(
-  outcome: AdapterRunOutcome,
+  outcome: MapLayerAdapterOutcome,
 ): MapLayerGeometryPayload | null {
   if (outcome.status !== "ok" || !outcome.result) return null;
   const { payload, provider, snapshotDate } = outcome.result;
@@ -90,7 +90,7 @@ function hasRenderableGeometry(body: MapLayerGeometryPayload): boolean {
 }
 
 function envelopeFromOutcome(
-  outcome: AdapterRunOutcome,
+  outcome: MapLayerAdapterOutcome,
   layerKey: MapLayerKey,
 ): EngineEnvelope<MapLayerGeometryPayload> {
   if (outcome.status === "ok" && outcome.result) {
@@ -148,12 +148,12 @@ function pendingSlot(
 
 function slotFromSpec(
   layerKey: MapLayerKey,
-  outcomesByKey: Map<string, AdapterRunOutcome>,
+  outcomesByKey: Map<string, MapLayerAdapterOutcome>,
 ): MapLayerSlot {
   const spec = specForLayer(layerKey);
 
   const adapterKeys = spec.adapterKeys ?? [];
-  let chosen: AdapterRunOutcome | undefined;
+  let chosen: MapLayerAdapterOutcome | undefined;
   for (const key of adapterKeys) {
     const hit = outcomesByKey.get(key);
     if (hit?.status === "ok") {
@@ -228,12 +228,12 @@ export interface MapLayersAssemblerDeps {
   runAdapterOutcomes: (
     request: MapLayersAssembleRequest,
     adapterKeys: string[],
-  ) => Promise<AdapterRunOutcome[]>;
+  ) => Promise<MapLayerAdapterOutcome[]>;
   /** Wave-3 geometry slots (floodway, dem, topography, OZ tract). */
   resolveWave3Slot?: (
     layerKey: MapLayerKey,
     request: MapLayersAssembleRequest,
-    outcomesByKey: Map<string, AdapterRunOutcome>,
+    outcomesByKey: Map<string, MapLayerAdapterOutcome>,
   ) => Promise<MapLayerSlot>;
 }
 
