@@ -33,6 +33,8 @@ import type {
   JurisdictionCorpusAtomInstance,
 } from "@hauska-engine/atoms";
 
+import { enrichSectionConsequenceInputs } from "../consequence/enrich.js";
+
 import type {
   CodeTreeNode,
   CrossReferenceNode,
@@ -260,7 +262,7 @@ export function atomize(
       );
     sectionIdByLabel.set(section.sectionNumber, sectionId);
     sectionIdByLabel.set(normalizeSectionLabel(section.sectionNumber), sectionId);
-    const inst: CodeSectionAtomInstance = {
+    const inst = enrichSectionConsequenceInputs({
       entityType: "code-section",
       entityId: sectionId,
       jurisdictionTenant,
@@ -280,7 +282,7 @@ export function atomize(
         subsectionPath ?? "",
         section.bodyText,
       ),
-    };
+    });
     sections.push(inst);
     links.push({
       fromEntityType: "code-edition",

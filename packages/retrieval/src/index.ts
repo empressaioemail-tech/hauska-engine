@@ -14,6 +14,7 @@ import type {
   CodeAtomEntityType,
   CodeAtomInstance,
 } from "@hauska-engine/atoms";
+import type { Scope } from "@hauska-engine/atom-contract-pin";
 import type {
   AccessPolicy,
   AtomSearchResult,
@@ -22,8 +23,12 @@ import type {
 } from "@hauska-engine/storage";
 
 import { resolveEffectiveRule, type EffectiveSection } from "./effective-rule.js";
+import { getAtomTrace, type AtomTraceOutput } from "./atom-trace.js";
+import { resolveEditionAtDate, type EditionAtDateResult } from "./edition-at-date.js";
 
 export * from "./effective-rule.js";
+export * from "./atom-trace.js";
+export * from "./edition-at-date.js";
 
 export interface SearchInput {
   q: string;
@@ -137,6 +142,21 @@ export class HybridRetrieval {
     baseSectionId: string;
   }): Promise<EffectiveSection> {
     return resolveEffectiveRule(this.storage, input);
+  }
+
+  async getAtomTrace(input: {
+    atomDid: string;
+    audience?: Scope["audience"];
+  }): Promise<AtomTraceOutput | null> {
+    return getAtomTrace(this.storage, input);
+  }
+
+  /** K2 — edition in effect at a historical date for retrodiction. */
+  async resolveEditionAtDate(args: {
+    jurisdictionTenant: string;
+    asOf: string;
+  }): Promise<EditionAtDateResult> {
+    return resolveEditionAtDate(this.storage, args);
   }
 
   async listJurisdictions(filter?: {

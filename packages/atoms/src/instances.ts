@@ -13,6 +13,43 @@ import type { AccessPolicy } from "@hauska-engine/atom-contract-pin";
 
 export type { AccessPolicy };
 
+/** F2 — parsed classification inputs; severity is derived at read, not stored. */
+export type Asce7RiskCategory = "I" | "II" | "III" | "IV";
+
+export interface ConsequenceSourceSpan {
+  field: "asce7RiskCategories" | "ibcOccupancyGroups" | "ibcImportanceFactors";
+  excerpt: string;
+}
+
+export interface ConsequenceClassificationInputs {
+  asce7RiskCategories?: ReadonlyArray<Asce7RiskCategory>;
+  ibcOccupancyGroups?: ReadonlyArray<string>;
+  ibcImportanceFactors?: ReadonlyArray<string>;
+  sourceSpans?: ReadonlyArray<ConsequenceSourceSpan>;
+  parsedAt?: string;
+}
+
+export const CONSEQUENCE_CLASSIFICATION_INPUTS_SCHEMA = z.object({
+  asce7RiskCategories: z
+    .array(z.enum(["I", "II", "III", "IV"]))
+    .optional(),
+  ibcOccupancyGroups: z.array(z.string().min(1)).optional(),
+  ibcImportanceFactors: z.array(z.string().min(1)).optional(),
+  sourceSpans: z
+    .array(
+      z.object({
+        field: z.enum([
+          "asce7RiskCategories",
+          "ibcOccupancyGroups",
+          "ibcImportanceFactors",
+        ]),
+        excerpt: z.string(),
+      }),
+    )
+    .optional(),
+  parsedAt: z.string().optional(),
+});
+
 export interface BaseAtomInstance {
   entityType: string;
   /** Stable local id within entityType. Combined with entityType into a DID per ADR-011. */
@@ -58,6 +95,11 @@ export interface CodeSectionAtomInstance extends BaseAtomInstance {
    * — ADR-019 decision 6, out of scope for the interim substrate.
    */
   verbatimTextDeepLink?: string;
+  /**
+   * F2 — ASCE 7 / IBC classification inputs parsed from prose.
+   * Consequence stratum is derived at read; no severity scalar stored.
+   */
+  consequenceInputs?: ConsequenceClassificationInputs;
 }
 
 /**
@@ -256,6 +298,7 @@ export const CODE_SECTION_SCHEMA = z.object({
   subsectionPath: z.string().nullable(),
   bodyText: z.string(),
   verbatimTextDeepLink: z.string().url().optional(),
+  consequenceInputs: CONSEQUENCE_CLASSIFICATION_INPUTS_SCHEMA.optional(),
 });
 
 export interface CodeCrossReferenceAtomInstance extends BaseAtomInstance {

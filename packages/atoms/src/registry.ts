@@ -130,6 +130,9 @@ export function bootstrapEngineAtomRegistry(
           sourceAdapter: inst.sourceAdapter,
           sourceUrl: inst.sourceUrl,
           fetchedAt: inst.fetchedAt,
+          ...(inst.consequenceInputs
+            ? { consequenceInputs: inst.consequenceInputs }
+            : {}),
         },
         keyMetrics: [
           { label: "Section", value: inst.sectionNumber },

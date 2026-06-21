@@ -42,6 +42,14 @@
     "./cost-tracking": {
       "types": "./src/cost-tracking/index.ts",
       "import": "./src/cost-tracking/index.ts"
+    },
+    "./consequence": {
+      "types": "./src/consequence/index.ts",
+      "import": "./src/consequence/index.ts"
+    },
+    "./edition-history": {
+      "types": "./src/edition-history/index.ts",
+      "import": "./src/edition-history/index.ts"
     }
   },
   "scripts": {

@@ -119,6 +119,14 @@ export interface StoragePort {
     linkType?: AtomLink["linkType"],
   ): Promise<ReadonlyArray<AtomLink & { toAtom: CodeAtomInstance | null }>>;
 
+  /** Graph traversal: inbound edges pointing at an atom by link type. */
+  traverseInbound(
+    toAtomDid: string,
+    linkType?: AtomLink["linkType"],
+  ): Promise<
+    ReadonlyArray<AtomLink & { fromAtom: CodeAtomInstance | null }>
+  >;
+
   /** Per-jurisdiction status snapshot for the coverage dashboard + MCP list_jurisdictions tool. */
   listJurisdictionStatus(filter?: {
     qualityBarOnly?: boolean;
