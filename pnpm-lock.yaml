@@ -138,6 +138,9 @@ importers:
       '@hauska-engine/atoms':
         specifier: workspace:*
         version: link:../atoms
+      '@hauska-engine/corpus':
+        specifier: workspace:*
+        version: link:../corpus
       '@hauska-engine/storage':
         specifier: workspace:*
         version: link:../storage

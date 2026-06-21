@@ -120,6 +120,25 @@ describe("retrieval-api contract (Sync 3)", () => {
     expect(body.atom.entityType).toBe("code-section");
   });
 
+  it("GET /atoms/:did/trace returns context summary, provenance, citations, and graph edges", async () => {
+    const storage = new InMemoryStorage();
+    const atomized = await seed(storage);
+    const app = buildApp({ storage, apiKey: "" });
+    const section = atomized.sections[0]!;
+    const did = `did:hauska:code-section:${section.entityId}`;
+    const res = await app.request(
+      `/atoms/trace/${encodeURIComponent(did)}?audience=ai`,
+    );
+    const body = (await res.json()) as Record<string, any>;
+    expect(res.status, JSON.stringify(body)).toBe(200);
+    expect(body.atomDid).toBe(did);
+    expect(body.contextSummary?.prose).toBeTruthy();
+    expect(body.provenance?.sourceAdapter).toBeTruthy();
+    expect(Array.isArray(body.citations)).toBe(true);
+    expect(Array.isArray(body.outbound)).toBe(true);
+    expect(Array.isArray(body.inbound)).toBe(true);
+  });
+
   it("GET /jurisdictions returns the seeded list", async () => {
     const storage = new InMemoryStorage();
     await seed(storage);

@@ -166,6 +166,23 @@ export class InMemoryStorage implements StoragePort {
     return out;
   }
 
+  async traverseInbound(
+    toAtomDid: string,
+    linkType?: AtomLink["linkType"],
+  ): Promise<
+    ReadonlyArray<AtomLink & { fromAtom: CodeAtomInstance | null }>
+  > {
+    const out: Array<AtomLink & { fromAtom: CodeAtomInstance | null }> = [];
+    for (const link of this.links) {
+      const linkToDid = buildAtomDid(link.toEntityType, link.toEntityId).raw;
+      if (linkToDid !== toAtomDid) continue;
+      if (linkType && link.linkType !== linkType) continue;
+      const fromDid = buildAtomDid(link.fromEntityType, link.fromEntityId).raw;
+      out.push({ ...link, fromAtom: this.atoms.get(fromDid) ?? null });
+    }
+    return out;
+  }
+
   async getSectionsBySectionNumber(
     jurisdictionTenant: string,
     sectionNumber: string,

@@ -10,4 +10,4 @@ export type CalibrationPartitionKind =
   | "tenant-shared"
   | "public";
 
-export type CalibrationGrain = "atom" | "class";
+export type CalibrationGrain = "atom" | "class" | "section-plus-dependents";

@@ -52,6 +52,18 @@ export {
   invalidateStaleCalibrationForAtom,
 } from "./calibration/overlay.js";
 export {
+  computeSectionDependentsClosure,
+  invalidateStaleCalibrationForSectionChange,
+  type SectionInvalidationResult,
+} from "./calibration/sectionInvalidation.js";
+export {
+  AMENDMENT_HAZARD_COLD_START_PRIOR,
+  computeAmendmentHazardRate,
+  validityDecayFromHazard,
+  type AmendmentHazardRate,
+  type HazardRateSource,
+} from "./calibration/hazard.js";
+export {
   collectCalibrationSignals,
   loadAtomAccessContexts,
 } from "./calibration/signals.js";

@@ -21,6 +21,7 @@
   "dependencies": {
     "@hauska-engine/atom-contract-pin": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",
+    "@hauska-engine/corpus": "workspace:*",
     "@hauska-engine/storage": "workspace:*"
   },
   "devDependencies": {

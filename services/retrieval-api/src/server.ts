@@ -144,6 +144,18 @@ export function buildApp(options: ServerOptions = {}): Hono {
     return c.json(result);
   });
 
+  app.get("/atoms/trace/:did{.+}", async (c) => {
+    const did = c.req.param("did");
+    const audienceRaw = c.req.query("audience");
+    const audience: Scope["audience"] =
+      audienceRaw === "ai" || audienceRaw === "internal" || audienceRaw === "user"
+        ? audienceRaw
+        : "user";
+    const trace = await retrieval.getAtomTrace({ atomDid: did, audience });
+    if (!trace) return c.json({ error: "atom not found", did }, 404);
+    return c.json(trace);
+  });
+
   app.get("/atoms/:did{.+}", async (c) => {
     const did = c.req.param("did");
     const includeComposition = c.req.query("includeComposition") === "true";

@@ -462,6 +462,7 @@ import {
   curatedQueriesForJurisdictionAndBooks,
 } from "./seed-curated-queries.js";
 import { buildCorpusSnapshot } from "./build-corpus-snapshot.js";
+import { runIngestEditionBundle } from "./ingest-edition-bundle.js";
 
 function resolveDatabaseUrl(explicit: string | undefined): string {
   const url = explicit || process.env.LEGACY_DATABASE_URL || process.env.DATABASE_URL;
@@ -4976,6 +4977,22 @@ program
       );
       process.exitCode = 4;
     }
+  });
+
+program
+  .command("ingest-edition-bundle")
+  .description(
+    "Ingest an acquisition-agent edition bundle (historical editions + adoption ordinances) for K2 edition-correct retrodiction.",
+  )
+  .requiredOption("--bundle <path>", "Path to hauska-edition-bundle/1 JSON")
+  .option("--snapshot-in <path>", "Optional existing corpus snapshot to merge into")
+  .option("--snapshot-out <path>", "Optional output snapshot path after ingest")
+  .action(async (opts: { bundle: string; snapshotIn?: string; snapshotOut?: string }) => {
+    await runIngestEditionBundle({
+      bundlePath: opts.bundle,
+      snapshotIn: opts.snapshotIn,
+      snapshotOut: opts.snapshotOut,
+    });
   });
 
 program.parseAsync(process.argv).catch((err) => {

@@ -14,3 +14,5 @@ export * as evalHarness from "./eval/index.js";
 export * as versionTracking from "./version-tracking/index.js";
 export * as curatedQueries from "./curated-queries/index.js";
 export * as costTracking from "./cost-tracking/index.js";
+export * as consequence from "./consequence/index.js";
+export * as editionHistory from "./edition-history/index.js";
