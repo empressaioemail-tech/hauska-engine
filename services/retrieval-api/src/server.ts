@@ -3,6 +3,7 @@ import { Hono, type Context, type Next } from "hono";
 import { z } from "zod";
 
 import { HybridRetrieval } from "@hauska-engine/retrieval";
+import type { Scope } from "@hauska-engine/atom-contract-pin";
 import {
   InMemoryStorage,
   type AccessPolicy,
