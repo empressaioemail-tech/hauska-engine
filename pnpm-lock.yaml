@@ -101,6 +101,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.78.0
         version: 0.78.0(zod@3.25.76)
+      '@hauska-engine/atoms':
+        specifier: workspace:*
+        version: link:../atoms
       d3-contour:
         specifier: ^4.0.2
         version: 4.0.2
