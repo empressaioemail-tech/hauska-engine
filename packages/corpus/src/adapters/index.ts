@@ -33,6 +33,8 @@ export {
   codeConnectCredentialsFromEnv,
   DEFAULT_CODE_CONNECT_TOKEN_URL,
   DEFAULT_CODE_CONNECT_BASE_URL,
+  ICC_CODE_CONNECT_FIXTURES,
+  IRC_2021_TITLE_ID,
 } from "./icc-code-connect/index.js";
 export type {
   IccCodeConnectAdapterOptions,
