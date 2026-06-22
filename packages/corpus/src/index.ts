@@ -16,3 +16,4 @@ export * as curatedQueries from "./curated-queries/index.js";
 export * as costTracking from "./cost-tracking/index.js";
 export * as consequence from "./consequence/index.js";
 export * as editionHistory from "./edition-history/index.js";
+export * as conformance from "./conformance/index.js";

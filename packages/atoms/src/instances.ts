@@ -10,6 +10,9 @@
 import { z } from "zod";
 
 import type { AccessPolicy } from "@hauska-engine/atom-contract-pin";
+import type { AtomEvent } from "@hauska/atom-contract";
+import type { ReadContract } from "@hauska/atom-contract/read-contract";
+import type { VerifyChainResult } from "@hauska/atom-contract/conformance";
 
 export type { AccessPolicy };
 
@@ -50,7 +53,20 @@ export const CONSEQUENCE_CLASSIFICATION_INPUTS_SCHEMA = z.object({
   parsedAt: z.string().optional(),
 });
 
-export interface BaseAtomInstance {
+/** Architecture-homes conformance fields stamped at corpus atomization. */
+export interface CorpusConformanceFields {
+  /** Three-axis read-contract with asserted source-quality baseline. */
+  readContract?: ReadContract;
+  /** ADR-017 five-value access tier. */
+  accessPolicy?: AccessPolicy;
+  /** Genesis signed event chain for data-level corpus atoms. */
+  signedHistory?: {
+    events: ReadonlyArray<AtomEvent>;
+    verifyChain: VerifyChainResult;
+  };
+}
+
+export interface BaseAtomInstance extends CorpusConformanceFields {
   entityType: string;
   /** Stable local id within entityType. Combined with entityType into a DID per ADR-011. */
   entityId: string;

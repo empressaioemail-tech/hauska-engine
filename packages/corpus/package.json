@@ -50,15 +50,22 @@
     "./edition-history": {
       "types": "./src/edition-history/index.ts",
       "import": "./src/edition-history/index.ts"
+    },
+    "./conformance": {
+      "types": "./src/conformance/index.ts",
+      "import": "./src/conformance/index.ts"
     }
   },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "audit:snapshot": "node scripts/audit-snapshot-conformance.mjs",
+    "remint:snapshot": "tsx scripts/remint-snapshot-conformance.ts",
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
+    "@hauska/atom-contract": "^1.5.0",
     "@hauska-engine/atom-contract-pin": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",
     "@hauska-engine/storage": "workspace:*",
@@ -68,6 +75,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "tsx": "^4.19.2",
     "typescript": "~5.7.2",
     "vitest": "^2.1.8"
   }

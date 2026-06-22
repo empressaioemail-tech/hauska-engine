@@ -36,8 +36,8 @@ importers:
   packages/atom-contract-pin:
     dependencies:
       '@hauska/atom-contract':
-        specifier: ^1.3.0
-        version: 1.3.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.5.0
+        version: 1.5.0(@types/pg@8.20.0)(postgres@3.4.9)
     devDependencies:
       typescript:
         specifier: ~5.7.2
@@ -52,8 +52,8 @@ importers:
         specifier: workspace:*
         version: link:../atom-contract-pin
       '@hauska/atom-contract':
-        specifier: ^1.3.0
-        version: 1.3.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.5.0
+        version: 1.5.0(@types/pg@8.20.0)(postgres@3.4.9)
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -76,6 +76,9 @@ importers:
       '@hauska-engine/storage':
         specifier: workspace:*
         version: link:../storage
+      '@hauska/atom-contract':
+        specifier: ^1.5.0
+        version: 1.5.0(@types/pg@8.20.0)(postgres@3.4.9)
       cheerio:
         specifier: ^1.0.0
         version: 1.2.0
@@ -89,6 +92,9 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.2
       typescript:
         specifier: ~5.7.2
         version: 5.7.3
@@ -662,6 +668,10 @@ packages:
 
   '@hauska/atom-contract@1.3.0':
     resolution: {integrity: sha512-J3Aa98q2YrC9NAb2c6b2/f2UZe53gLOaS6IeAy0fSnFRLrcamZlSpsRcp8mqOrDmDDeb8/oPh6f5QmbAkt+/Sg==}
+    engines: {node: '>=18.18.0'}
+
+  '@hauska/atom-contract@1.5.0':
+    resolution: {integrity: sha512-nW9QYAnjxrihmjU4iTEoDdFr6hEI0tnB2yD8KkzcIHDi6sUJVZukxSDXe1dctbAhYaq4eRFY4oFvRyDy9/Irew==}
     engines: {node: '>=18.18.0'}
 
   '@hono/node-server@1.19.14':
@@ -1534,6 +1544,41 @@ snapshots:
     optional: true
 
   '@hauska/atom-contract@1.3.0(@types/pg@8.20.0)(postgres@3.4.9)':
+    dependencies:
+      drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - '@aws-sdk/client-rds-data'
+      - '@cloudflare/workers-types'
+      - '@electric-sql/pglite'
+      - '@libsql/client'
+      - '@libsql/client-wasm'
+      - '@neondatabase/serverless'
+      - '@op-engineering/op-sqlite'
+      - '@opentelemetry/api'
+      - '@planetscale/database'
+      - '@prisma/client'
+      - '@tidbcloud/serverless'
+      - '@types/better-sqlite3'
+      - '@types/pg'
+      - '@types/react'
+      - '@types/sql.js'
+      - '@vercel/postgres'
+      - '@xata.io/client'
+      - better-sqlite3
+      - bun-types
+      - expo-sqlite
+      - knex
+      - kysely
+      - mysql2
+      - pg
+      - postgres
+      - prisma
+      - react
+      - sql.js
+      - sqlite3
+
+  '@hauska/atom-contract@1.5.0(@types/pg@8.20.0)(postgres@3.4.9)':
     dependencies:
       drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
       zod: 3.25.76

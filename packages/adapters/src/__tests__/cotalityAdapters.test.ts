@@ -9,7 +9,6 @@ import {
   __resetCotalityDedupForTests,
   __resetCotalityTokenCacheForTests,
   __resetCotalityClipDedupForTests,
-  cotalityTokenUrl,
   cotalityPropertyBaseUrl,
   cotalitySpatialTileBaseUrl,
 } from "../national/cotality";
@@ -38,9 +37,20 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function tokenForBody(body: string): string {
-  if (body.includes("prop-key")) return "property-token";
-  if (body.includes("tile-key")) return "tile-token";
+function decodeBasicAuth(
+  headers: Record<string, string> | undefined,
+): { clientId: string; clientSecret: string } | null {
+  const auth = headers?.Authorization;
+  if (!auth?.startsWith("Basic ")) return null;
+  const decoded = Buffer.from(auth.slice(6), "base64").toString("utf8");
+  const idx = decoded.indexOf(":");
+  if (idx < 0) return null;
+  return { clientId: decoded.slice(0, idx), clientSecret: decoded.slice(idx + 1) };
+}
+
+function tokenForClientId(clientId: string): string {
+  if (clientId === "prop-key") return "property-token";
+  if (clientId === "tile-key") return "tile-token";
   return "unknown-token";
 }
 
@@ -63,15 +73,17 @@ function cotalityFetchRouter(opts: {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
 
-    if (url.includes("/oauth/token") || url === cotalityTokenUrl()) {
-      const body = init?.body?.toString() ?? "";
-      if (body.includes("prop-key")) propertyTokenPosts += 1;
-      if (body.includes("tile-key")) tileTokenPosts += 1;
-      expect(body).toContain("scope=openid");
-      const token = body.includes("tile-key")
-        ? "tile-token"
-        : "property-token";
-      return jsonResponse({ ...cotalityOAuthTokenResponse, access_token: token });
+    if (url.includes("/oauth/token")) {
+      const creds = decodeBasicAuth(
+        init?.headers as Record<string, string> | undefined,
+      );
+      expect(creds).not.toBeNull();
+      if (creds?.clientId === "prop-key") propertyTokenPosts += 1;
+      if (creds?.clientId === "tile-key") tileTokenPosts += 1;
+      return jsonResponse({
+        ...cotalityOAuthTokenResponse,
+        access_token: tokenForClientId(creds!.clientId),
+      });
     }
 
     const auth = (init?.headers as Record<string, string> | undefined)

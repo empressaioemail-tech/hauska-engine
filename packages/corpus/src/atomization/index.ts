@@ -33,6 +33,7 @@ import type {
   JurisdictionCorpusAtomInstance,
 } from "@hauska-engine/atoms";
 
+import { stampAtomizationResult } from "../conformance/mint.js";
 import { enrichSectionConsequenceInputs } from "../consequence/enrich.js";
 
 import type {
@@ -542,15 +543,19 @@ export function atomize(
     linkType: "contains",
   });
 
-  return {
-    jurisdictionCorpus: jurisdictionCorpusInstance,
-    edition: editionInstance,
-    sections,
-    definitions,
-    amendments,
-    crossReferences,
-    links,
-  };
+  const accessPolicy = options.accessPolicy ?? "public-free";
+  return stampAtomizationResult(
+    {
+      jurisdictionCorpus: jurisdictionCorpusInstance,
+      edition: editionInstance,
+      sections,
+      definitions,
+      amendments,
+      crossReferences,
+      links,
+    },
+    accessPolicy,
+  );
 }
 
 function mapReferenceTypeToLinkType(

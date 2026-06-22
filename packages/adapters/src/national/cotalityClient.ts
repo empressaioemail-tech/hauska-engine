@@ -2,8 +2,9 @@
  * Cotality (CoreLogic Developer Platform) — shared OAuth client, CLIP
  * resolution, and JSON fetch helpers for all national Cotality adapters.
  *
- * Auth: OAuth2 client_credentials at `https://api.cotality.com/oauth/token`
- * with creds in form body + `scope=openid` (Incapsula WAF requires non-empty body).
+ * Auth: OAuth2 client_credentials — Property tokens mint at api1.cotality.com;
+ * Spatial Tile + RiskMeter at api.cotality.com. HTTP Basic auth with
+ * grant_type in query and empty body (vendor-confirmed 2026-06-15).
  *
  * Demo apps (env vars):
  *   COTALITY_PROPERTY_*     → Property API v2 (`property_auth`)
@@ -13,7 +14,6 @@
  * See `_research/2026-06-06_cotality_api_surface_catalog.md`.
  */
 
-import { CACHE_COORDINATE_PRECISION } from "../cache";
 import { AdapterRunError } from "../types";
 
 export const COTALITY_PROVIDER_LABEL = "Cotality";
@@ -30,17 +30,41 @@ export const COTALITY_USER_AGENT =
 // ---------------------------------------------------------------------------
 
 export const COTALITY_TOKEN_URL_DEFAULT =
-  "https://api.cotality.com/oauth/token";
+  "https://api.cotality.com/oauth/token?grant_type=client_credentials";
+export const COTALITY_PROPERTY_TOKEN_URL_DEFAULT =
+  "https://api1.cotality.com/oauth/token?grant_type=client_credentials";
 export const COTALITY_API_BASE_DEFAULT = "https://api.cotality.com";
 export const COTALITY_PROPERTY_BASE_URL_DEFAULT =
-  "https://api.cotality.com/v2/properties";
+  "https://api1.cotality.com/v2/properties";
 export const COTALITY_SPATIALTILE_BASE_URL_DEFAULT =
   "https://api.cotality.com/spatial-tile";
 export const COTALITY_RISKMETER_BASE_URL_DEFAULT =
   "https://api.cotality.com/riskmeter-api";
 
-export function cotalityTokenUrl(): string {
-  return process.env.COTALITY_TOKEN_URL ?? COTALITY_TOKEN_URL_DEFAULT;
+export type CotalityOAuthApp = "property" | "spatialtile" | "riskmeter";
+
+export function cotalityTokenUrl(app: CotalityOAuthApp = "property"): string {
+  const legacyOverride = process.env.COTALITY_TOKEN_URL;
+  switch (app) {
+    case "property":
+      return (
+        process.env.COTALITY_PROPERTY_TOKEN_URL ??
+        legacyOverride ??
+        COTALITY_PROPERTY_TOKEN_URL_DEFAULT
+      );
+    case "spatialtile":
+      return (
+        process.env.COTALITY_SPATIALTILE_TOKEN_URL ??
+        legacyOverride ??
+        COTALITY_TOKEN_URL_DEFAULT
+      );
+    case "riskmeter":
+      return (
+        process.env.COTALITY_RISKMETER_TOKEN_URL ??
+        legacyOverride ??
+        COTALITY_TOKEN_URL_DEFAULT
+      );
+  }
 }
 
 export function cotalityPropertyBaseUrl(): string {
@@ -67,8 +91,6 @@ export function cotalityRiskMeterBaseUrl(): string {
 // ---------------------------------------------------------------------------
 // OAuth
 // ---------------------------------------------------------------------------
-
-export type CotalityOAuthApp = "property" | "spatialtile" | "riskmeter";
 
 interface CotalityAppCredentials {
   clientId: string;
@@ -199,7 +221,7 @@ export async function getCotalityAccessToken(
 
   const creds = readCotalityAppCredentials(app)!;
   const fetcher: typeof fetch = fetchImpl ?? fetch;
-  const tokenUrl = cotalityTokenUrl();
+  const tokenUrl = cotalityTokenUrl(app);
 
   const promise = (async (): Promise<string> => {
     cotalityLogEvent("info", "cotality oauth token start", adapterKeyForLog, {
@@ -209,12 +231,9 @@ export async function getCotalityAccessToken(
     });
     const startedAtMs = Date.now();
 
-    const body = new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: creds.clientId,
-      client_secret: creds.clientSecret,
-      scope: "openid",
-    });
+    const basicAuth = Buffer.from(
+      `${creds.clientId}:${creds.clientSecret}`,
+    ).toString("base64");
 
     let res: Response;
     try {
@@ -224,9 +243,8 @@ export async function getCotalityAccessToken(
         headers: {
           "User-Agent": COTALITY_USER_AGENT,
           Accept: "application/json",
-          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${basicAuth}`,
         },
-        body: body.toString(),
       });
     } catch (err) {
       const throwExcerpt =
@@ -286,10 +304,9 @@ export async function getCotalityAccessToken(
       );
     }
 
+    const expiresInRaw = Number(tokenObj.expires_in);
     const expiresInSec =
-      typeof tokenObj.expires_in === "number" && tokenObj.expires_in > 0
-        ? tokenObj.expires_in
-        : 3600;
+      Number.isFinite(expiresInRaw) && expiresInRaw > 0 ? expiresInRaw : 3600;
     const expiresAt =
       Date.now() + expiresInSec * 1000 - COTALITY_TOKEN_EXPIRY_BUFFER_MS;
 
@@ -476,15 +493,53 @@ interface ClipDedupEntry {
 const clipDedup = new Map<string, ClipDedupEntry>();
 
 function clipDedupKey(
-  latitude: number,
-  longitude: number,
-  address?: string | null,
+  streetAddress: string,
+  city: string,
+  state: string,
 ): string {
-  const factor = 10 ** CACHE_COORDINATE_PRECISION;
-  const lat = Math.round(latitude * factor) / factor;
-  const lng = Math.round(longitude * factor) / factor;
-  const addr = address?.trim().toLowerCase() ?? "";
-  return `${lat},${lng}:${addr}`;
+  return `${streetAddress.trim().toLowerCase()}|${city.trim().toLowerCase()}|${state.trim().toLowerCase()}`;
+}
+
+function normalizeStateCode(raw: string | null | undefined): string | null {
+  if (!raw?.trim()) return null;
+  const t = raw.trim();
+  if (/^[A-Za-z]{2}$/.test(t)) return t.toUpperCase();
+  const fromZip = t.match(/\b([A-Za-z]{2})\b(?:\s+\d{5})?/)?.[1];
+  return fromZip ? fromZip.toUpperCase() : null;
+}
+
+function parseCotalityCatalogAddress(args: {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  streetAddress?: string | null;
+}): { streetAddress: string; city: string; state: string } | null {
+  const explicitCity = args.city?.trim() ?? "";
+  const explicitState = normalizeStateCode(args.state);
+  const explicitStreet = args.streetAddress?.trim() ?? "";
+
+  if (explicitStreet && explicitCity && explicitState) {
+    return {
+      streetAddress: explicitStreet,
+      city: explicitCity,
+      state: explicitState,
+    };
+  }
+
+  const addr = args.address?.trim() ?? "";
+  if (!addr) return null;
+
+  const parts = addr.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const streetAddress = explicitStreet || parts[0];
+  const cityPart = explicitCity || parts[parts.length - 2] || parts[1];
+  const stateZipPart = parts[parts.length - 1] ?? "";
+  const stateFromZip = stateZipPart.match(/\b([A-Za-z]{2})\b(?:\s+\d{5})?/)?.[1];
+  const state = explicitState ?? normalizeStateCode(stateFromZip ?? stateZipPart);
+
+  if (!streetAddress || !cityPart || !state) return null;
+  return { streetAddress, city: cityPart, state };
 }
 
 export function __resetCotalityClipDedupForTests(): void {
@@ -555,14 +610,43 @@ export async function resolveCotalityClip(args: {
   latitude: number;
   longitude: number;
   address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  streetAddress?: string | null;
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
   adapterKeyForLog: string;
 }): Promise<CotalityClipContext> {
-  const { latitude, longitude, address, fetchImpl, signal, adapterKeyForLog } =
-    args;
+  const {
+    latitude,
+    longitude,
+    address,
+    city,
+    state,
+    streetAddress,
+    fetchImpl,
+    signal,
+    adapterKeyForLog,
+  } = args;
 
-  const key = clipDedupKey(latitude, longitude, address);
+  const catalog = parseCotalityCatalogAddress({
+    address,
+    city,
+    state,
+    streetAddress,
+  });
+  if (!catalog) {
+    throw new AdapterRunError(
+      "no-coverage",
+      "Cannot resolve Cotality CLIP: engagement address must include street, city, and state for catalog geocode.",
+    );
+  }
+
+  const key = clipDedupKey(
+    catalog.streetAddress,
+    catalog.city,
+    catalog.state,
+  );
   const now = Date.now();
   const existing = clipDedup.get(key);
   if (existing && existing.expiresAt > now) return existing.promise;
@@ -575,21 +659,15 @@ export async function resolveCotalityClip(args: {
       );
     }
 
-    const query: Record<string, string | number | undefined | null> = {
-      lat: latitude,
-      lon: longitude,
-      latitude,
-      longitude,
-    };
-    if (address) {
-      query.address = address;
-      query.fullAddress = address;
-    }
-
     const json = await cotalityGetWithApp({
       app: "property",
       path: "/search/geocode",
-      query,
+      query: {
+        streetAddress: catalog.streetAddress,
+        city: catalog.city,
+        state: catalog.state,
+        bestMatch: "true",
+      },
       fetchImpl,
       signal,
       adapterKeyForLog,
@@ -600,7 +678,7 @@ export async function resolveCotalityClip(args: {
     if (!parsed) {
       throw new AdapterRunError(
         "no-coverage",
-        "Cotality geocode search returned no CLIP at this lat/lng/address.",
+        "Cotality geocode search returned no CLIP for this address.",
       );
     }
 
@@ -625,6 +703,75 @@ export async function resolveCotalityClip(args: {
 // ---------------------------------------------------------------------------
 // Geometry + feature helpers
 // ---------------------------------------------------------------------------
+
+function parseWktCoordinatePairs(content: string): number[][] {
+  const pairs: number[][] = [];
+  const re =
+    /(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    pairs.push([Number(match[1]), Number(match[2])]);
+  }
+  return pairs;
+}
+
+function extractWktParenGroups(body: string): string[] {
+  const groups: string[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === "(") {
+      if (depth === 0) start = i + 1;
+      depth++;
+    } else if (c === ")") {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        groups.push(body.slice(start, i));
+        start = -1;
+      }
+    }
+  }
+  return groups;
+}
+
+function parseWktCoordinates(wkt: string): unknown | null {
+  const raw = wkt.trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+
+  if (upper.startsWith("MULTIPOLYGON")) {
+    const body = raw.replace(/^MULTIPOLYGON\s*/i, "").trim();
+    const polys = extractWktParenGroups(body);
+    if (polys.length === 0) return null;
+    const result: number[][][][] = [];
+    for (const poly of polys) {
+      const rings = extractWktParenGroups(poly);
+      const parsedRings = (rings.length > 0 ? rings : [poly]).map(
+        parseWktCoordinatePairs,
+      );
+      const firstRing = parsedRings[0];
+      if (parsedRings.length > 0 && firstRing && firstRing.length > 0) {
+        result.push(parsedRings);
+      }
+    }
+    return result.length > 0 ? result : null;
+  }
+
+  if (upper.startsWith("POLYGON")) {
+    const body = raw.replace(/^POLYGON\s*/i, "").trim();
+    const rings = extractWktParenGroups(body);
+    const parsedRings = (rings.length > 0 ? rings : [body]).map(
+      parseWktCoordinatePairs,
+    );
+    const firstRing = parsedRings[0];
+    return parsedRings.length > 0 && firstRing && firstRing.length > 0
+      ? parsedRings
+      : null;
+  }
+
+  return null;
+}
 
 export interface NormalizedFeature {
   type: "Feature";
@@ -652,8 +799,8 @@ export function normalizeGeometryToCoordinates(geom: unknown): unknown | null {
     }
   }
   if (typeof geom === "string") {
-    const s = geom.trim().toUpperCase();
-    if (s.startsWith("POLYGON") || s.startsWith("MULTIPOLYGON")) return null;
+    const parsed = parseWktCoordinates(geom);
+    if (parsed) return parsed;
   }
   return null;
 }

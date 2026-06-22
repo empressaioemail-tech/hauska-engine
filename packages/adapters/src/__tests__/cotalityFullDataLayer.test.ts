@@ -54,10 +54,21 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function bearerForBody(body: string): string {
-  if (body.includes("prop-key")) return "property-token";
-  if (body.includes("tile-key")) return "tile-token";
-  if (body.includes("risk-key")) return "risk-token";
+function decodeBasicAuth(
+  headers: Record<string, string> | undefined,
+): { clientId: string; clientSecret: string } | null {
+  const auth = headers?.Authorization;
+  if (!auth?.startsWith("Basic ")) return null;
+  const decoded = Buffer.from(auth.slice(6), "base64").toString("utf8");
+  const idx = decoded.indexOf(":");
+  if (idx < 0) return null;
+  return { clientId: decoded.slice(0, idx), clientSecret: decoded.slice(idx + 1) };
+}
+
+function tokenForClientId(clientId: string): string {
+  if (clientId === "prop-key") return "property-token";
+  if (clientId === "tile-key") return "tile-token";
+  if (clientId === "risk-key") return "risk-token";
   return "token";
 }
 
@@ -67,11 +78,13 @@ function fullPackFetchRouter() {
     const method = (init?.method ?? "GET").toUpperCase();
 
     if (url.includes("/oauth/token")) {
-      const body = init?.body?.toString() ?? "";
-      expect(body).toContain("scope=openid");
+      const creds = decodeBasicAuth(
+        init?.headers as Record<string, string> | undefined,
+      );
+      expect(creds).not.toBeNull();
       return jsonResponse({
         ...cotalityOAuthTokenResponse,
-        access_token: bearerForBody(body),
+        access_token: tokenForClientId(creds!.clientId),
       });
     }
 

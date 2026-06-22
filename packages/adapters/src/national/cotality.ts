@@ -95,7 +95,7 @@ async function fetchSpatialParcelPolygon(args: {
       lon: args.longitude,
       latitude: args.latitude,
       longitude: args.longitude,
-      pageNumber: 0,
+      pageNumber: 1,
       pageSize: 1,
       address: args.address ?? undefined,
     },
