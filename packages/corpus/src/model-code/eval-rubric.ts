@@ -24,6 +24,10 @@
 
 import { buildAtomDid } from "@hauska-engine/atoms";
 
+import {
+  IBC_2018_EDITION_LABEL,
+  IPMC_2018_EDITION_LABEL,
+} from "../adapters/icc-code-connect/__fixtures__/irc-2021.js";
 import { ICC_MODEL_CODE_TENANT } from "../adapters/icc-code-connect/index.js";
 import type { CuratedQuery, QualityBarThresholds } from "../eval/index.js";
 import { modelCodeSectionEntityId } from "./extractor.js";
@@ -97,6 +101,8 @@ export const IRC_2021_EDITION_LABEL = "2021 International Residential Code";
 export const A117_2021_EDITION_LABEL =
   "2021 Accessible and Usable Buildings and Facilities";
 
+export { IBC_2018_EDITION_LABEL, IPMC_2018_EDITION_LABEL };
+
 /**
  * Layer 1 editions staged on ICC Code Connect but not yet ingested from
  * the live API. Populate `ICC_CODE_CONNECT_CLIENT_ID` /
@@ -119,6 +125,18 @@ export const ICC_CREDENTIAL_PENDING_EDITIONS: ReadonlyArray<{
     editionLabel: A117_2021_EDITION_LABEL,
     codeAbbrev: "A117.1",
     year: 2021,
+  },
+  {
+    titleId: "IBC2018",
+    editionLabel: IBC_2018_EDITION_LABEL,
+    codeAbbrev: "IBC",
+    year: 2018,
+  },
+  {
+    titleId: "IPMC2018",
+    editionLabel: IPMC_2018_EDITION_LABEL,
+    codeAbbrev: "IPMC",
+    year: 2018,
   },
 ];
 
@@ -180,6 +198,49 @@ export const IRC_2021_CURATED_QUERIES: ReadonlyArray<CuratedQuery> =
     },
   ]);
 
+export const IBC_2018_CURATED_QUERIES: ReadonlyArray<CuratedQuery> =
+  buildSeedQueries(IBC_2018_EDITION_LABEL, "ibc-2018", [
+    {
+      sectionNumber: "1604",
+      queryText:
+        "IBC 1604 general design requirements for structural loads on buildings",
+    },
+    {
+      sectionNumber: "304",
+      queryText: "IBC Section 304 business group B occupancy classification",
+    },
+    {
+      sectionNumber: "202",
+      queryText: "IBC 202 definitions of building code terms",
+    },
+    {
+      sectionNumber: "201",
+      queryText: "IBC 201 general provisions for the definitions chapter",
+    },
+  ]);
+
+export const IPMC_2018_CURATED_QUERIES: ReadonlyArray<CuratedQuery> =
+  buildSeedQueries(IPMC_2018_EDITION_LABEL, "ipmc-2018", [
+    {
+      sectionNumber: "501",
+      queryText:
+        "IPMC 501 required plumbing fixtures in dwelling units",
+    },
+    {
+      sectionNumber: "301",
+      queryText:
+        "IPMC Section 301 general property maintenance requirements",
+    },
+    {
+      sectionNumber: "202",
+      queryText: "IPMC 202 definitions of property maintenance code terms",
+    },
+    {
+      sectionNumber: "201",
+      queryText: "IPMC 201 general provisions for the definitions chapter",
+    },
+  ]);
+
 /**
  * The Layer 1 curated query sets, keyed by edition label. Seeded with
  * the 2021 IRC; the 2021 IBC and IECC sets (corpus-edition plan wave 1)
@@ -192,4 +253,6 @@ export const LAYER_1_CURATED_QUERIES: Record<
 > = {
   [IRC_2021_EDITION_LABEL]: IRC_2021_CURATED_QUERIES,
   [A117_2021_EDITION_LABEL]: A117_2021_CURATED_QUERIES,
+  [IBC_2018_EDITION_LABEL]: IBC_2018_CURATED_QUERIES,
+  [IPMC_2018_EDITION_LABEL]: IPMC_2018_CURATED_QUERIES,
 };

@@ -43,6 +43,10 @@ import type {
 } from "../types.js";
 
 export * from "./code-connect-client.js";
+export {
+  ICC_CODE_CONNECT_FIXTURES,
+  IRC_2021_TITLE_ID,
+} from "./__fixtures__/irc-2021.js";
 
 /**
  * The synthetic tenant the shared Layer 1 model-code base ingests

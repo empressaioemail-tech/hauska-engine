@@ -1278,12 +1278,15 @@ program
 program
   .command("icc-model-code-credential-pending")
   .description(
-    "Report ICC Code Connect editions wired but awaiting OAuth credentials (IRC 2021 + A117.1 2021).",
+    "Report ICC Code Connect editions wired but awaiting OAuth credentials (PoC demo: 2018 IBC + 2018 IPMC).",
   )
   .action(async () => {
-    const { ICC_CREDENTIAL_PENDING_EDITIONS } = await import(
-      "@hauska-engine/corpus/model-code"
-    );
+    const {
+      ICC_CREDENTIAL_PENDING_EDITIONS,
+      ICC_CODE_CONNECT_DEMO_EDITIONS,
+      ICC_MODEL_CODE_ACCESS_POLICY,
+      ICC_MODEL_CODE_TENANT,
+    } = await import("@hauska-engine/corpus/model-code");
     const { IccCodeConnectAdapter } = await import(
       "@hauska-engine/corpus/adapters"
     );
@@ -1292,6 +1295,12 @@ program
       JSON.stringify(
         {
           adapterMode: adapter.mode,
+          demoInstance: {
+            jurisdictionTenant: ICC_MODEL_CODE_TENANT,
+            accessPolicy: ICC_MODEL_CODE_ACCESS_POLICY,
+            sourceAdapter: "icc-code-connect",
+          },
+          demoEditions: ICC_CODE_CONNECT_DEMO_EDITIONS,
           credentialPendingEditions: ICC_CREDENTIAL_PENDING_EDITIONS,
           envVarsRequired: [
             "ICC_CODE_CONNECT_CLIENT_ID",
@@ -1302,6 +1311,142 @@ program
         2,
       ),
     );
+  });
+
+program
+  .command("icc-model-code-ingest-fixtures")
+  .description(
+    "PoC dry-run: ingest 2018 IBC + 2018 IPMC from hand-built Code Connect fixtures (mock mode, no credentials).",
+  )
+  .action(async () => {
+    const { ICC_CODE_CONNECT_FIXTURES } = await import(
+      "@hauska-engine/corpus/adapters"
+    );
+    const { runModelCodeIngest } = await import(
+      "@hauska-engine/corpus/model-code"
+    );
+    const { InMemoryStorage } = await import("@hauska-engine/storage");
+    const storage = new InMemoryStorage();
+    const result = await runModelCodeIngest({
+      storage,
+      fixtures: ICC_CODE_CONNECT_FIXTURES,
+    });
+    console.log(JSON.stringify({ modelCodeIngest: result.report }, null, 2));
+  });
+
+program
+  .command("icc-model-code-eval-fixtures")
+  .description(
+    "PoC dry-run: ingest fixture editions then run the Layer 1 curated-query eval.",
+  )
+  .action(async () => {
+    const { ICC_CODE_CONNECT_FIXTURES } = await import(
+      "@hauska-engine/corpus/adapters"
+    );
+    const {
+      IBC_2018_CURATED_QUERIES,
+      IPMC_2018_CURATED_QUERIES,
+      LAYER_1_QUALITY_BAR,
+      runModelCodeIngest,
+    } = await import("@hauska-engine/corpus/model-code");
+    const { evaluate } = await import("@hauska-engine/corpus/eval");
+    const { InMemoryStorage } = await import("@hauska-engine/storage");
+    const storage = new InMemoryStorage();
+    const ingest = await runModelCodeIngest({
+      storage,
+      fixtures: ICC_CODE_CONNECT_FIXTURES,
+    });
+    const queries = [...IBC_2018_CURATED_QUERIES, ...IPMC_2018_CURATED_QUERIES];
+    const report = await evaluate({
+      storage,
+      jurisdictionTenant: ingest.report.jurisdictionTenant,
+      queries,
+      thresholds: LAYER_1_QUALITY_BAR,
+    });
+    console.log(
+      JSON.stringify(
+        {
+          modelCodeIngest: ingest.report,
+          eval: report,
+          // Fixture slices cite sections outside the slice; cross-ref
+          // resolution is expected to score below 1.0 until live ingest.
+          pocDemoRetrievalReady:
+            report.scores.top3Score === 1 &&
+            report.scores.sectionNumScore === 1,
+          pocDemoFullyReady: report.passed,
+        },
+        null,
+        2,
+      ),
+    );
+    if (report.scores.top3Score < 1 || report.scores.sectionNumScore < 1) {
+      process.exitCode = 4;
+    }
+  });
+
+program
+  .command("icc-model-code-ingest-live")
+  .description(
+    "Live ingest: 2018 IBC + 2018 IPMC via ICC Code Connect OAuth2 (requires ICC_CODE_CONNECT_CLIENT_ID + ICC_CODE_CONNECT_CLIENT_SECRET).",
+  )
+  .action(async () => {
+    const { runModelCodeIngest } = await import(
+      "@hauska-engine/corpus/model-code"
+    );
+    const { InMemoryStorage } = await import("@hauska-engine/storage");
+    const storage = new InMemoryStorage();
+    const result = await runModelCodeIngest({ storage });
+    console.log(JSON.stringify({ modelCodeIngest: result.report }, null, 2));
+    if (result.report.adapterMode !== "live") {
+      console.error(
+        "icc-model-code-ingest-live: adapter is not in live mode — set ICC_CODE_CONNECT_CLIENT_ID and ICC_CODE_CONNECT_CLIENT_SECRET",
+      );
+      process.exitCode = 2;
+    }
+  });
+
+program
+  .command("icc-model-code-eval-live")
+  .description(
+    "Live ingest + Layer 1 eval for the PoC demo editions (requires Code Connect credentials).",
+  )
+  .action(async () => {
+    const {
+      IBC_2018_CURATED_QUERIES,
+      IPMC_2018_CURATED_QUERIES,
+      LAYER_1_QUALITY_BAR,
+      runModelCodeIngest,
+    } = await import("@hauska-engine/corpus/model-code");
+    const { evaluate } = await import("@hauska-engine/corpus/eval");
+    const { InMemoryStorage } = await import("@hauska-engine/storage");
+    const storage = new InMemoryStorage();
+    const ingest = await runModelCodeIngest({ storage });
+    if (ingest.report.adapterMode !== "live") {
+      console.error(
+        "icc-model-code-eval-live: adapter is not in live mode — set ICC_CODE_CONNECT_CLIENT_ID and ICC_CODE_CONNECT_CLIENT_SECRET",
+      );
+      process.exitCode = 2;
+      return;
+    }
+    const queries = [...IBC_2018_CURATED_QUERIES, ...IPMC_2018_CURATED_QUERIES];
+    const report = await evaluate({
+      storage,
+      jurisdictionTenant: ingest.report.jurisdictionTenant,
+      queries,
+      thresholds: LAYER_1_QUALITY_BAR,
+    });
+    console.log(
+      JSON.stringify(
+        {
+          modelCodeIngest: ingest.report,
+          eval: report,
+          pocDemoReady: report.passed,
+        },
+        null,
+        2,
+      ),
+    );
+    if (!report.passed) process.exitCode = 4;
   });
 
 program

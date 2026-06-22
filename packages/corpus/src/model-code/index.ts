@@ -8,3 +8,5 @@
 
 export * from "./extractor.js";
 export * from "./eval-rubric.js";
+export * from "./demo-instance.js";
+export * from "./ingest.js";

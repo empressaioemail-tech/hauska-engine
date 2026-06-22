@@ -21,8 +21,30 @@ import {
   A117_2021_TITLE,
   A117_2021_TITLE_ID,
 } from "./a117-2021.js";
+import {
+  IBC_2018_DOCUMENT,
+  IBC_2018_TITLE,
+  IBC_2018_TITLE_ID,
+} from "./ibc-2018.js";
+import {
+  IPMC_2018_DOCUMENT,
+  IPMC_2018_TITLE,
+  IPMC_2018_TITLE_ID,
+} from "./ipmc-2018.js";
 
 export { A117_2021_DOCUMENT, A117_2021_TITLE, A117_2021_TITLE_ID } from "./a117-2021.js";
+export {
+  IBC_2018_DOCUMENT,
+  IBC_2018_EDITION_LABEL,
+  IBC_2018_TITLE,
+  IBC_2018_TITLE_ID,
+} from "./ibc-2018.js";
+export {
+  IPMC_2018_DOCUMENT,
+  IPMC_2018_EDITION_LABEL,
+  IPMC_2018_TITLE,
+  IPMC_2018_TITLE_ID,
+} from "./ipmc-2018.js";
 
 export const IRC_2021_TITLE_ID = "IRC2021";
 
@@ -49,6 +71,8 @@ export const ICC_CODE_CONNECT_FIXTURES: CodeConnectFixtures = {
       year: 2021,
       versionStatus: "current",
     },
+    IBC_2018_TITLE,
+    IPMC_2018_TITLE,
     {
       titleId: "IECC2021",
       codeAbbrev: "IECC",
@@ -202,9 +226,31 @@ export const ICC_CODE_CONNECT_FIXTURES: CodeConnectFixtures = {
       ],
     },
     [A117_2021_TITLE_ID]: A117_2021_DOCUMENT,
+    [IBC_2018_TITLE_ID]: IBC_2018_DOCUMENT,
+    [IPMC_2018_TITLE_ID]: IPMC_2018_DOCUMENT,
   },
 
   search: {
+    "business group b occupancy": [
+      {
+        sectionId: "IBC2018-304",
+        titleId: "IBC2018",
+        sectionNumber: "304",
+        heading: "Business Group B",
+        snippet:
+          "Business Group B occupancy includes office, professional or service-type transactions...",
+      },
+    ],
+    "dwelling unit plumbing fixtures": [
+      {
+        sectionId: "IPMC2018-501",
+        titleId: "IPMC2018",
+        sectionNumber: "501",
+        heading: "Required Facilities",
+        snippet:
+          "Every dwelling unit shall contain its own bathtub or shower, lavatory, water closet...",
+      },
+    ],
     "townhouse fire separation": [
       {
         sectionId: "IRC2021-R302",
@@ -218,6 +264,28 @@ export const ICC_CODE_CONNECT_FIXTURES: CodeConnectFixtures = {
   },
 
   versions: {
+    IBC: [
+      {
+        titleId: "IBC2021",
+        codeAbbrev: "IBC",
+        year: 2021,
+        versionStatus: "current",
+      },
+      {
+        titleId: "IBC2018",
+        codeAbbrev: "IBC",
+        year: 2018,
+        versionStatus: "historical",
+      },
+    ],
+    IPMC: [
+      {
+        titleId: "IPMC2018",
+        codeAbbrev: "IPMC",
+        year: 2018,
+        versionStatus: "historical",
+      },
+    ],
     IRC: [
       {
         titleId: "IRC2021",

@@ -43,6 +43,8 @@ describe("IccCodeConnectAdapter — content (IRC 2021 fixture)", () => {
       "IRC2021",
       "IRC2018",
       "IBC2021",
+      "IBC2018",
+      "IPMC2018",
       "IECC2021",
       "A11712021",
     ]);

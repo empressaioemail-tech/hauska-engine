@@ -75,10 +75,12 @@ describe("IRC 2021 curated query set", () => {
 });
 
 describe("ICC credential-pending editions", () => {
-  it("lists IRC 2021 and A117.1 2021 as wired but not live-ingested", () => {
+  it("lists staged editions including the PoC demo scope (2018 IBC + IPMC)", () => {
     expect(ICC_CREDENTIAL_PENDING_EDITIONS.map((e) => e.titleId)).toEqual([
       "IRC2021",
       "A11712021",
+      "IBC2018",
+      "IPMC2018",
     ]);
   });
 });
