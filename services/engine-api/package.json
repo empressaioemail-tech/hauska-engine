@@ -17,6 +17,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@hauska-engine/adapters": "workspace:*",
+    "@hauska-engine/atoms": "workspace:*",
+    "@hauska-engine/document-ingest": "workspace:*",
     "@hauska-engine/engine-core": "workspace:*",
     "@hono/node-server": "^1.13.7",
     "hono": "^4.6.14",

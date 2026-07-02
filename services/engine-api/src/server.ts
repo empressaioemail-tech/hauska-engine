@@ -8,6 +8,7 @@ import {
 } from "./gate-front-context.js";
 import { buildBriefingRoutes } from "./routes/briefing.js";
 import { buildChatRoutes } from "./routes/chat.js";
+import { buildDocumentIngestRoutes } from "./routes/document-ingest.js";
 import { buildEncumbrancesRoutes } from "./routes/encumbrances.js";
 import { buildFindingsRoutes } from "./routes/findings.js";
 import { buildHydrologyRoutes } from "./routes/hydrology.js";
@@ -64,6 +65,7 @@ export function buildApp(options: ServerOptions): Hono {
       adapters: true,
       engineCore: true,
       envelope: true,
+      documentIngest: true,
       startedAt: config.startedAt,
     }),
   );
@@ -80,6 +82,7 @@ export function buildApp(options: ServerOptions): Hono {
   v1.route("/encumbrances", buildEncumbrancesRoutes());
   v1.route("/chat", buildChatRoutes());
   v1.route("/map-layers", buildMapLayersRoutes());
+  v1.route("/document-ingest", buildDocumentIngestRoutes());
   app.route("/v1", v1);
 
   app.all("/v1/*", (c) =>
