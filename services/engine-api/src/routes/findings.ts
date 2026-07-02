@@ -12,11 +12,7 @@ import {
   okCoverage,
   resolveReadPathConfidence,
 } from "@hauska-engine/engine-core/envelope";
-import {
-  getAnthropicClient,
-  getGrokClient,
-  resolveFindingMode,
-} from "../lib/llmClients.js";
+import { resolveFindingMode, resolveLlmForMode } from "../lib/llmClients.js";
 import { envelopeJson } from "../lib/envelopeResponse.js";
 
 const generateBodySchema = z.object({
@@ -29,13 +25,24 @@ const orchestratedBodySchema = z.object({
   mode: z.enum(["mock", "grok", "anthropic"]).optional(),
 });
 
-function engineOptions(mode: "mock" | "grok" | "anthropic") {
+/**
+ * Resolve engine LLM options for a requested mode without throwing on a
+ * missing key. Mirrors the briefing route: a missing ANTHROPIC_API_KEY
+ * degrades to Grok, then to the deterministic mock path, rather than
+ * 500ing (commitment #1). Returns the effective mode + a degraded flag.
+ */
+function engineOptions(requested: "mock" | "grok" | "anthropic") {
+  const llm = resolveLlmForMode(requested);
   return {
-    mode,
-    grokClient: mode === "grok" ? getGrokClient() : undefined,
-    anthropicClient: mode === "anthropic" ? getAnthropicClient() : undefined,
-    visionAnthropicClient:
-      mode === "anthropic" ? getAnthropicClient() : undefined,
+    options: {
+      mode: llm.mode,
+      grokClient: llm.grokClient,
+      anthropicClient: llm.anthropicClient,
+      visionAnthropicClient: llm.anthropicClient,
+    },
+    mode: llm.mode,
+    degraded: llm.degraded,
+    degradationReason: llm.degradationReason,
   };
 }
 
@@ -47,14 +54,22 @@ function findingsEnvelopeMeta(
     discardedFindings: readonly unknown[];
     precedence: unknown;
   },
+  llmDegradationReason?: string,
 ) {
+  // snapshotDate may be any JSON value on an unshaped bundle; the
+  // envelope schema requires a string-or-null dataVintage. Keep only
+  // non-empty strings so a garbage vintage cannot fail envelope
+  // validation (which would 500 after a successful generation).
   const dataVintage =
     input.sources
-      .map((s) => s.snapshotDate)
-      .filter(Boolean)
+      .map((s) => (s as { snapshotDate?: unknown }).snapshotDate)
+      .filter((d): d is string => typeof d === "string" && d.length > 0)
       .sort()
       .at(-1) ?? null;
   const reasons: string[] = [];
+  if (llmDegradationReason) {
+    reasons.push(llmDegradationReason);
+  }
   if (result.invalidCitations.length > 0) {
     reasons.push(`${result.invalidCitations.length} invalid citation(s)`);
   }
@@ -85,6 +100,42 @@ function findingsEnvelopeMeta(
   };
 }
 
+/** Keep only non-null objects that carry a usable string on `key`. */
+function objectsWithStringKey(
+  value: unknown,
+  key: string,
+): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is Record<string, unknown> =>
+      item !== null &&
+      typeof item === "object" &&
+      typeof (item as Record<string, unknown>)[key] === "string" &&
+      ((item as Record<string, unknown>)[key] as string).length > 0,
+  );
+}
+
+/**
+ * Normalize an unshaped findings input record. The body schema accepts
+ * `input` as `z.record`, so array items can be null / non-objects /
+ * missing their id field. The engine and the envelope both dereference
+ * item fields (input.sources.map(s => s.id), s.snapshotDate, s.atomId)
+ * unconditionally, so an item-level garbage bundle 500s. Filter to
+ * well-shaped items (dropping the rest) so a malformed bundle degrades
+ * to a real (possibly thinner) result instead of a 500 (commitment #1).
+ * Filtering, not coercing: a source with no id / a code section with no
+ * atomId cannot be cited, so it is dropped rather than fabricated.
+ */
+function normalizeFindingsInput(raw: unknown): GenerateFindingsInput {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  return {
+    ...r,
+    sources: objectsWithStringKey(r.sources, "id"),
+    codeSections: objectsWithStringKey(r.codeSections, "atomId"),
+    bimElements: objectsWithStringKey(r.bimElements, "ref"),
+  } as unknown as GenerateFindingsInput;
+}
+
 export function buildFindingsRoutes(): Hono {
   const app = new Hono();
 
@@ -97,17 +148,41 @@ export function buildFindingsRoutes(): Hono {
       );
     }
 
-    const mode = parsed.data.mode ?? resolveFindingMode();
-    const input = parsed.data.input as unknown as GenerateFindingsInput;
+    const requestedMode = parsed.data.mode ?? resolveFindingMode();
+    const input = normalizeFindingsInput(parsed.data.input);
+    const llm = engineOptions(requestedMode);
+    const mode = llm.mode;
 
     try {
-      const result = await generateFindings(input, engineOptions(mode));
+      const result = await generateFindings(input, llm.options);
       return envelopeJson(
         c,
-        { result, mode },
-        findingsEnvelopeMeta(input, mode, result),
+        { result, mode, requestedMode, degraded: llm.degraded },
+        findingsEnvelopeMeta(input, mode, result, llm.degradationReason),
       );
     } catch (err) {
+      // Last-resort guard: a live-LLM call (or its parse path) can still
+      // throw. Retry deterministically in mock mode so the findings tile
+      // always gets a real result with an honest degraded flag rather
+      // than a 500 (commitment #1).
+      if (mode !== "mock") {
+        try {
+          const fallback = await generateFindings(input, { mode: "mock" });
+          const meta = findingsEnvelopeMeta(
+            input,
+            "mock",
+            fallback,
+            `${mode} generation failed (${err instanceof Error ? err.message : String(err)}); returned deterministic mock findings`,
+          );
+          return envelopeJson(
+            c,
+            { result: fallback, mode: "mock", requestedMode, degraded: true },
+            meta,
+          );
+        } catch {
+          // fall through to 500 only if even mock fails
+        }
+      }
       return c.json(
         {
           error: "finding_generation_failed",
@@ -127,20 +202,48 @@ export function buildFindingsRoutes(): Hono {
       );
     }
 
-    const mode = parsed.data.mode ?? resolveFindingMode();
-    const input = parsed.data.input as unknown as GenerateOrchestratedFindingsInput;
+    const requestedMode = parsed.data.mode ?? resolveFindingMode();
+    const rawOrch = (parsed.data.input ?? {}) as Record<string, unknown>;
+    const baseInput = normalizeFindingsInput(rawOrch.baseInput);
+    const input = {
+      ...rawOrch,
+      baseInput,
+      pieceCandidates: objectsWithStringKey(rawOrch.pieceCandidates, "pieceId"),
+    } as unknown as GenerateOrchestratedFindingsInput;
+    const llm = engineOptions(requestedMode);
+    const mode = llm.mode;
 
     try {
       const result = await generateOrchestratedFindings(
         input,
-        engineOptions(mode),
+        llm.options,
       );
       return envelopeJson(
         c,
-        { result, mode },
-        findingsEnvelopeMeta(input.baseInput, mode, result),
+        { result, mode, requestedMode, degraded: llm.degraded },
+        findingsEnvelopeMeta(baseInput, mode, result, llm.degradationReason),
       );
     } catch (err) {
+      if (mode !== "mock") {
+        try {
+          const fallback = await generateOrchestratedFindings(input, {
+            mode: "mock",
+          });
+          const meta = findingsEnvelopeMeta(
+            baseInput,
+            "mock",
+            fallback,
+            `${mode} orchestrated generation failed (${err instanceof Error ? err.message : String(err)}); returned deterministic mock findings`,
+          );
+          return envelopeJson(
+            c,
+            { result: fallback, mode: "mock", requestedMode, degraded: true },
+            meta,
+          );
+        } catch {
+          // fall through to 500 only if even mock fails
+        }
+      }
       return c.json(
         {
           error: "orchestrated_finding_generation_failed",

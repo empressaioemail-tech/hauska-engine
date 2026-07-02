@@ -35,7 +35,10 @@ export const SECTIONS_WITH_NO_CITATIONS = ["a", "g"] as const;
 export function categorizeLayerKind(
   layerKind: string,
 ): SourceCitingSection | "general" {
-  const lk = layerKind.toLowerCase();
+  // Defensive: a source on an unshaped input bundle may carry a missing
+  // or non-string layerKind. An unknown slug already falls through to
+  // "general", so a missing one maps there too rather than throwing.
+  const lk = typeof layerKind === "string" ? layerKind.toLowerCase() : "";
   // B — threshold environmental hazards.
   if (
     lk.includes("flood") ||
@@ -129,8 +132,8 @@ export function groupSourcesBySection(
  * inline-reference renderer has something readable to surface.
  */
 export function citationLabel(source: BriefingSourceInput): string {
-  if (source.provider && source.provider.trim().length > 0) {
+  if (typeof source.provider === "string" && source.provider.trim().length > 0) {
     return source.provider.trim();
   }
-  return source.layerKind;
+  return typeof source.layerKind === "string" ? source.layerKind : "";
 }

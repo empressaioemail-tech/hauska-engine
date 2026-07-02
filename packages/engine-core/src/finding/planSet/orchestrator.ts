@@ -70,8 +70,22 @@ export async function generateOrchestratedFindings(
   input: GenerateOrchestratedFindingsInput,
   options: GenerateFindingsOptions = {},
 ): Promise<GenerateOrchestratedFindingsResult> {
-  const classifications = classifyPlanSetPieces(input.pieceCandidates);
-  const pieces = toPlanSetPieceInputs(input.pieceCandidates, classifications);
+  // Defensive: pieceCandidates arrives from an unshaped route bundle and
+  // may hold non-object / null-fielded items that the classifier and the
+  // specialist-input builder deref. Keep only objects carrying a usable
+  // string pieceId so a garbage candidate degrades (is dropped) rather
+  // than 500ing the orchestrated findings pass (commitment #1).
+  const safeCandidates = Array.isArray(input.pieceCandidates)
+    ? input.pieceCandidates.filter(
+        (p): p is (typeof input.pieceCandidates)[number] =>
+          p !== null &&
+          typeof p === "object" &&
+          typeof (p as { pieceId?: unknown }).pieceId === "string" &&
+          ((p as { pieceId: string }).pieceId as string).length > 0,
+      )
+    : [];
+  const classifications = classifyPlanSetPieces(safeCandidates);
+  const pieces = toPlanSetPieceInputs(safeCandidates, classifications);
   const byDiscipline = groupPiecesByDiscipline(pieces);
   const disciplinesRun = [...byDiscipline.keys()];
 

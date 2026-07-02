@@ -44,13 +44,22 @@ function joinClaims(claims: string[], gapNote: string): string {
 export function generateMockBriefing(
   input: GenerateBriefingInput,
 ): BriefingSections {
-  const buckets = groupSourcesBySection(input.sources);
-  const codeSections = input.codeSections ?? [];
+  // The route schema accepts `input` as an unshaped record, and the
+  // mock generator is the guaranteed-safe fallback landing spot for the
+  // no-500 degradation ladder. Normalize defensively so a minimal or
+  // malformed input bundle still yields a structurally-complete brief
+  // rather than throwing (commitment #1).
+  const sources = Array.isArray(input.sources) ? input.sources : [];
+  const buckets = groupSourcesBySection(sources);
+  const codeSections = Array.isArray(input.codeSections)
+    ? input.codeSections
+    : [];
+  const engagementId = input.engagementId ?? "(unspecified engagement)";
 
   // Section A — executive summary, no citations.
-  const sourceCount = input.sources.length;
+  const sourceCount = sources.length;
   const a =
-    `Engagement ${input.engagementId} has ${sourceCount} briefing source` +
+    `Engagement ${engagementId} has ${sourceCount} briefing source` +
     `${sourceCount === 1 ? "" : "s"} attached. ` +
     `This mock-mode summary stands in for the Claude-authored A–G narrative — ` +
     `the structure (executive summary, threshold issues, regulatory gates, ` +

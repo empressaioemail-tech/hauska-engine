@@ -93,7 +93,12 @@ async function querySdaSoils(
     query: buildSdaSoilQuery(longitude, latitude),
     format: "JSON+COLUMNNAME",
   });
-  const { response: res, attempts } = await fetchWithRetry(
+  const {
+    response: res,
+    attempts,
+    throwExcerpt,
+    bodyExcerpt,
+  } = await fetchWithRetry(
     USDA_SSURGO_SDA_ENDPOINT,
     {
       method: "POST",
@@ -108,12 +113,32 @@ async function querySdaSoils(
       fetchImpl: ctx.fetchImpl,
       signal: ctx.signal,
       upstreamLabel: "USDA Soil Data Access",
+      // USDA's SDA host (sdmdataaccess.sc.egov.usda.gov) intermittently
+      // resets the TLS connection (ECONNRESET) under load. fetchWithRetry
+      // already retries transient resets with backoff; opting into
+      // captureThrowsAsResult means a *final-attempt* reset comes back as
+      // a 599 synthetic response carrying a `throwExcerpt` (e.g.
+      // "ECONNRESET read sdmdataaccess.sc.egov.usda.gov") instead of an
+      // unhandled network throw. The caller composes an honest degraded
+      // message from it rather than surfacing a raw reset.
+      captureThrowsAsResult: true,
     },
   );
   if (!res.ok) {
+    // A synthetic 599 (throwExcerpt populated) is a network/TLS failure
+    // — ECONNRESET / TLS reject / DNS. Surface it as a network-error so
+    // the runner renders an honest degraded pill that names the failure
+    // mode, and the adapter's run() can still return the gSSURGO map
+    // unit alone as a partial result.
+    if (res.status === 599 || throwExcerpt) {
+      throw new AdapterRunError(
+        "network-error",
+        `USDA Soil Data Access unreachable after ${attempts} attempt${attempts === 1 ? "" : "s"}${throwExcerpt ? ` (${throwExcerpt})` : ""}. The USDA SDA endpoint intermittently resets TLS connections; use Force refresh to retry.`,
+      );
+    }
     throw new AdapterRunError(
       "upstream-error",
-      `USDA Soil Data Access responded with HTTP ${res.status} after ${attempts} attempt${attempts === 1 ? "" : "s"}. Use Force refresh to retry.`,
+      `USDA Soil Data Access responded with HTTP ${res.status} after ${attempts} attempt${attempts === 1 ? "" : "s"}${bodyExcerpt ? `: ${bodyExcerpt}` : ""}. Use Force refresh to retry.`,
     );
   }
   let json: unknown;
@@ -167,7 +192,12 @@ export const usdaSsurgoSoilsAdapter: Adapter = {
   },
   async run(ctx: AdapterContext): Promise<AdapterResult> {
     const { latitude, longitude } = ctx.parcel;
-    const [mapUnit, sdaRow] = await Promise.all([
+    // allSettled, not all: the two upstream calls hit different USDA
+    // hosts with different reliability. The SDA tabular host resets TLS
+    // connections intermittently; when it fails but the gSSURGO map-unit
+    // polygon succeeds, we still return an HONEST partial result (the map
+    // unit alone is useful) rather than discarding both and throwing.
+    const [mapUnitSettled, sdaSettled] = await Promise.allSettled([
       arcgisPointQuery({
         serviceUrl: USDA_SSURGO_MAPUNIT_LAYER,
         latitude,
@@ -181,7 +211,40 @@ export const usdaSsurgoSoilsAdapter: Adapter = {
       querySdaSoils(ctx, longitude, latitude),
     ]);
 
-    const feature = mapUnit.features[0];
+    const mapUnit =
+      mapUnitSettled.status === "fulfilled" ? mapUnitSettled.value : null;
+    const sdaRow =
+      sdaSettled.status === "fulfilled" ? sdaSettled.value : null;
+
+    // If BOTH upstream calls failed, propagate the more informative
+    // error (network/TLS over a bare arcgis failure) so the runner
+    // renders an honest failed pill — never an unhandled reset.
+    if (!mapUnit && sdaSettled.status === "rejected") {
+      const sdaErr = sdaSettled.reason;
+      const mapErr =
+        mapUnitSettled.status === "rejected"
+          ? mapUnitSettled.reason
+          : undefined;
+      const chosen =
+        sdaErr instanceof AdapterRunError ? sdaErr : (mapErr ?? sdaErr);
+      if (chosen instanceof AdapterRunError) throw chosen;
+      throw new AdapterRunError(
+        "network-error",
+        `USDA SSURGO lookup failed: ${chosen instanceof Error ? chosen.message : String(chosen)}. Use Force refresh to retry.`,
+      );
+    }
+
+    // Map-unit call failed but SDA succeeded (or vice versa) — continue
+    // with whatever we have; degradedReason is stamped below.
+    const sdaDegraded = sdaSettled.status === "rejected";
+    const sdaDegradedReason =
+      sdaSettled.status === "rejected"
+        ? sdaSettled.reason instanceof Error
+          ? sdaSettled.reason.message
+          : String(sdaSettled.reason)
+        : null;
+
+    const feature = mapUnit?.features[0];
     const attrs = feature?.attributes ?? {};
     const mukey =
       pickString(attrs.MUKEY) ??
@@ -196,11 +259,32 @@ export const usdaSsurgoSoilsAdapter: Adapter = {
       pickString(sdaRow?.muname) ??
       pickString(sdaRow?.MUNAME);
 
-    if (!feature && !sdaRow) {
+    // Only a genuine empty result from BOTH upstreams (both ran, both
+    // returned nothing) is "no coverage". If the map-unit call was
+    // rejected (network/TLS) we already handled the both-failed case
+    // above; reaching here with no feature means the SDA call carried
+    // the payload, so a null feature is a partial, not no-coverage.
+    const mapUnitRan = mapUnitSettled.status === "fulfilled";
+    if (mapUnitRan && !feature && !sdaRow) {
       throw new AdapterRunError(
         "no-coverage",
         "No SSURGO soil map unit is mapped at this location.",
       );
+    }
+
+    const partialReasons: string[] = [];
+    if (sdaDegraded && sdaDegradedReason) {
+      partialReasons.push(
+        `Soil Data Access tabular attributes unavailable (${sdaDegradedReason})`,
+      );
+    }
+    if (!mapUnitRan) {
+      const reason =
+        mapUnitSettled.status === "rejected" &&
+        mapUnitSettled.reason instanceof Error
+          ? mapUnitSettled.reason.message
+          : "gSSURGO map-unit lookup failed";
+      partialReasons.push(`gSSURGO map-unit polygon unavailable (${reason})`);
     }
 
     return {
@@ -212,6 +296,8 @@ export const usdaSsurgoSoilsAdapter: Adapter = {
       snapshotDate: nowIso(),
       payload: {
         kind: "ssurgo-soils",
+        degraded: partialReasons.length > 0,
+        degradationReasons: partialReasons,
         mukey,
         musym,
         muname,
