@@ -25,6 +25,9 @@ export {
   storageRelationForExtraction,
   type StorageRelation,
   type StorageRelationDecisionInput,
+  type AccessPolicy,
+  type DocumentDerivedAtomInstance,
+  type DocumentDerivedAtomEntityType,
   isDocumentDerivedEntityType,
   DOCUMENT_DERIVED_ATOM_ENTITY_TYPES,
 } from "@hauska-engine/atoms";

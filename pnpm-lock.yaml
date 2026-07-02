@@ -232,6 +232,12 @@ importers:
       '@hauska-engine/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
+      '@hauska-engine/atoms':
+        specifier: workspace:*
+        version: link:../../packages/atoms
+      '@hauska-engine/document-ingest':
+        specifier: workspace:*
+        version: link:../../packages/document-ingest
       '@hauska-engine/engine-core':
         specifier: workspace:*
         version: link:../../packages/engine-core
