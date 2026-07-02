@@ -1,0 +1,28 @@
+{
+  "name": "@hauska-engine/document-ingest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Unstructured-to-atom document ingestion: pin a real-world document as a content-addressed blob, extract provenanced point-to atoms. Foundation for datarooms + the data marketplace.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@hauska-engine/atoms": "workspace:*",
+    "@hauska-engine/storage": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
