@@ -42,7 +42,21 @@ export function buildBriefingRoutes(): Hono {
     }
 
     const requestedMode = parsed.data.mode ?? resolveBriefingMode();
-    const input = parsed.data.input as unknown as GenerateBriefingInput;
+    // The body schema accepts `input` as an unshaped record. Normalize the
+    // array fields the engine dereferences unconditionally (for EVERY
+    // mode, not just mock: engine.ts builds resolver sets from
+    // input.sources / input.codeSections) so a minimal or malformed
+    // bundle degrades to a real brief instead of throwing a 500
+    // (commitment #1). Field-level shape beyond "is an array" is left to
+    // the engine, which tolerates empty arrays.
+    const rawInput = (parsed.data.input ?? {}) as Record<string, unknown>;
+    const input = {
+      ...rawInput,
+      sources: Array.isArray(rawInput.sources) ? rawInput.sources : [],
+      codeSections: Array.isArray(rawInput.codeSections)
+        ? rawInput.codeSections
+        : [],
+    } as unknown as GenerateBriefingInput;
 
     // Resolve a runnable LLM without throwing on a missing key. A brief
     // must always return a real (or honestly-degraded) result, never a

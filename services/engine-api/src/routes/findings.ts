@@ -96,6 +96,24 @@ function findingsEnvelopeMeta(
   };
 }
 
+/**
+ * Normalize an unshaped findings input record. The body schema accepts
+ * `input` as `z.record`, and the engine dereferences input.sources /
+ * input.codeSections / input.bimElements unconditionally (for every
+ * mode). Guarantee those are arrays so a minimal or malformed bundle
+ * degrades to a real (possibly empty) result instead of a 500
+ * (commitment #1).
+ */
+function normalizeFindingsInput(raw: unknown): GenerateFindingsInput {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  return {
+    ...r,
+    sources: Array.isArray(r.sources) ? r.sources : [],
+    codeSections: Array.isArray(r.codeSections) ? r.codeSections : [],
+    bimElements: Array.isArray(r.bimElements) ? r.bimElements : [],
+  } as unknown as GenerateFindingsInput;
+}
+
 export function buildFindingsRoutes(): Hono {
   const app = new Hono();
 
@@ -109,7 +127,7 @@ export function buildFindingsRoutes(): Hono {
     }
 
     const requestedMode = parsed.data.mode ?? resolveFindingMode();
-    const input = parsed.data.input as unknown as GenerateFindingsInput;
+    const input = normalizeFindingsInput(parsed.data.input);
     const llm = engineOptions(requestedMode);
     const mode = llm.mode;
 
@@ -121,6 +139,28 @@ export function buildFindingsRoutes(): Hono {
         findingsEnvelopeMeta(input, mode, result, llm.degradationReason),
       );
     } catch (err) {
+      // Last-resort guard: a live-LLM call (or its parse path) can still
+      // throw. Retry deterministically in mock mode so the findings tile
+      // always gets a real result with an honest degraded flag rather
+      // than a 500 (commitment #1).
+      if (mode !== "mock") {
+        try {
+          const fallback = await generateFindings(input, { mode: "mock" });
+          const meta = findingsEnvelopeMeta(
+            input,
+            "mock",
+            fallback,
+            `${mode} generation failed (${err instanceof Error ? err.message : String(err)}); returned deterministic mock findings`,
+          );
+          return envelopeJson(
+            c,
+            { result: fallback, mode: "mock", requestedMode, degraded: true },
+            meta,
+          );
+        } catch {
+          // fall through to 500 only if even mock fails
+        }
+      }
       return c.json(
         {
           error: "finding_generation_failed",
@@ -141,7 +181,15 @@ export function buildFindingsRoutes(): Hono {
     }
 
     const requestedMode = parsed.data.mode ?? resolveFindingMode();
-    const input = parsed.data.input as unknown as GenerateOrchestratedFindingsInput;
+    const rawOrch = (parsed.data.input ?? {}) as Record<string, unknown>;
+    const baseInput = normalizeFindingsInput(rawOrch.baseInput);
+    const input = {
+      ...rawOrch,
+      baseInput,
+      pieceCandidates: Array.isArray(rawOrch.pieceCandidates)
+        ? rawOrch.pieceCandidates
+        : [],
+    } as unknown as GenerateOrchestratedFindingsInput;
     const llm = engineOptions(requestedMode);
     const mode = llm.mode;
 
@@ -153,9 +201,29 @@ export function buildFindingsRoutes(): Hono {
       return envelopeJson(
         c,
         { result, mode, requestedMode, degraded: llm.degraded },
-        findingsEnvelopeMeta(input.baseInput, mode, result, llm.degradationReason),
+        findingsEnvelopeMeta(baseInput, mode, result, llm.degradationReason),
       );
     } catch (err) {
+      if (mode !== "mock") {
+        try {
+          const fallback = await generateOrchestratedFindings(input, {
+            mode: "mock",
+          });
+          const meta = findingsEnvelopeMeta(
+            baseInput,
+            "mock",
+            fallback,
+            `${mode} orchestrated generation failed (${err instanceof Error ? err.message : String(err)}); returned deterministic mock findings`,
+          );
+          return envelopeJson(
+            c,
+            { result: fallback, mode: "mock", requestedMode, degraded: true },
+            meta,
+          );
+        } catch {
+          // fall through to 500 only if even mock fails
+        }
+      }
       return c.json(
         {
           error: "orchestrated_finding_generation_failed",

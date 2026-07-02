@@ -101,6 +101,31 @@ describe("Property Brief graceful degradation (Fix 1 — no 500 on missing key)"
     expect(body.payload.result?.sections?.a).toBeTruthy();
   });
 
+  it("does NOT 500 on a minimal/malformed input bundle (no sources array)", async () => {
+    // Adversarial case: the body schema accepts input as an unshaped
+    // record, so a caller can omit `sources`. The mock generator and the
+    // engine both dereferenced it unconditionally, 500ing. Must degrade.
+    const res = await app.request("/v1/briefing/generate", {
+      method: "POST",
+      headers: gateHeaders(),
+      body: JSON.stringify({ mode: "anthropic", input: { generatedBy: "t" } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      payload: { result?: { sections?: { a?: string } } };
+    };
+    expect(body.payload.result?.sections?.a).toBeTruthy();
+  });
+
+  it("does NOT 500 on an empty input object", async () => {
+    const res = await app.request("/v1/briefing/generate", {
+      method: "POST",
+      headers: gateHeaders(),
+      body: JSON.stringify({ mode: "grok", input: {} }),
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("falls back to Grok when XAI_API_KEY is present but ANTHROPIC_API_KEY is not", async () => {
     process.env.XAI_API_KEY = "xai-test-key";
     // We can't reach the real Grok API in a hermetic test; the value we

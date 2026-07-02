@@ -70,9 +70,23 @@ export function generateMockFindings(
   const aiGeneratedAt = now();
   const findings: EngineFinding[] = [];
 
-  const firstCode = input.codeSections[0];
-  const firstSource = input.sources[0];
-  const firstElement = input.bimElements[0];
+  // Defensive normalization — the mock generator is the guaranteed-safe
+  // fallback landing spot for the route's no-500 degradation ladder, and
+  // the route schema accepts an unshaped input record. A minimal or
+  // malformed bundle must still produce a (possibly empty) findings list
+  // rather than throwing (commitment #1).
+  const codeSections = Array.isArray(input.codeSections)
+    ? input.codeSections
+    : [];
+  const sources = Array.isArray(input.sources) ? input.sources : [];
+  const bimElements = Array.isArray(input.bimElements)
+    ? input.bimElements
+    : [];
+  const submissionId = input.submission?.id ?? "unknown-submission";
+
+  const firstCode = codeSections[0];
+  const firstSource = sources[0];
+  const firstElement = bimElements[0];
 
   // 1. Blocker — needs a code-section + a briefing-source. Anchored
   // on a BIM element when one is provided.
@@ -87,8 +101,8 @@ export function generateMockFindings(
       } satisfies FindingSourceCitation,
     ];
     findings.push({
-      atomId: makeAtomId(input.submission.id),
-      submissionId: input.submission.id,
+      atomId: makeAtomId(submissionId),
+      submissionId: submissionId,
       severity: "blocker",
       category: "setback",
       text:
@@ -107,10 +121,10 @@ export function generateMockFindings(
   // 2. Concern — needs a code-section. Anchored on the second BIM
   // element when one exists, else the first, else null.
   if (firstCode) {
-    const elementRef = input.bimElements[1]?.ref ?? firstElement?.ref ?? null;
+    const elementRef = bimElements[1]?.ref ?? firstElement?.ref ?? null;
     findings.push({
-      atomId: makeAtomId(input.submission.id),
-      submissionId: input.submission.id,
+      atomId: makeAtomId(submissionId),
+      submissionId: submissionId,
       severity: "concern",
       category: "egress",
       text:
@@ -126,8 +140,8 @@ export function generateMockFindings(
   }
 
   // 3. Advisory — needs either a code-section OR a briefing-source.
-  const advisoryCode = input.codeSections[1] ?? firstCode;
-  const advisorySource = input.sources[1] ?? firstSource;
+  const advisoryCode = codeSections[1] ?? firstCode;
+  const advisorySource = sources[1] ?? firstSource;
   if (advisoryCode || advisorySource) {
     const citations: FindingCitation[] = [];
     const fragments: string[] = [];
@@ -145,8 +159,8 @@ export function generateMockFindings(
       fragments.push(citeCode(advisoryCode.atomId));
     }
     findings.push({
-      atomId: makeAtomId(input.submission.id),
-      submissionId: input.submission.id,
+      atomId: makeAtomId(submissionId),
+      submissionId: submissionId,
       severity: "advisory",
       category: "other",
       text:
