@@ -23,8 +23,8 @@ import { z } from "zod";
 
 import {
   DocumentIngestService,
-  InMemoryDocumentIngestStore,
   defaultDocumentAdapters,
+  resolveDocumentIngestStore,
   type DocumentIngestStore,
   type AccessPolicy,
 } from "@hauska-engine/document-ingest";
@@ -126,7 +126,11 @@ export function buildDocumentIngestRoutes(
   options: DocumentIngestRouteOptions = {},
 ): Hono {
   const app = new Hono();
-  const store = options.store ?? new InMemoryDocumentIngestStore();
+  // Injected store (tests) wins; otherwise pick durable-vs-in-memory from
+  // the environment. resolveDocumentIngestStore returns the honest fallback:
+  // durable when a Postgres URL + blob bucket are configured, else in-memory.
+  const store =
+    options.store ?? resolveDocumentIngestStore(process.env).store;
   const service = new DocumentIngestService({
     store,
     adapters: defaultDocumentAdapters(),

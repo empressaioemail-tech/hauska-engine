@@ -42,3 +42,7 @@ ingest-cli-state.json
 
 # Local recon scratch (downloaded source artifacts + probe scripts)
 .tmp-recon/
+
+# Local secret scratch (never commit connection strings)
+.dburl.tmp
+*.dburl.tmp
