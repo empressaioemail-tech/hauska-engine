@@ -132,8 +132,8 @@ export function groupSourcesBySection(
  * inline-reference renderer has something readable to surface.
  */
 export function citationLabel(source: BriefingSourceInput): string {
-  if (source.provider && source.provider.trim().length > 0) {
+  if (typeof source.provider === "string" && source.provider.trim().length > 0) {
     return source.provider.trim();
   }
-  return source.layerKind;
+  return typeof source.layerKind === "string" ? source.layerKind : "";
 }

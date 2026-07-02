@@ -48,8 +48,10 @@ function citeSource(id: string, label: string): string {
 }
 
 function sourceLabel(s: { provider: string | null; layerKind: string }): string {
-  if (s.provider && s.provider.trim().length > 0) return s.provider.trim();
-  return s.layerKind;
+  if (typeof s.provider === "string" && s.provider.trim().length > 0) {
+    return s.provider.trim();
+  }
+  return typeof s.layerKind === "string" ? s.layerKind : "";
 }
 
 /**

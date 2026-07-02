@@ -147,6 +147,37 @@ describe("Findings graceful degradation (Fix 1 — no 500)", () => {
     expect(res.status).toBe(200);
   });
 
+  it("does NOT 500 on orchestrated pieceCandidates with object-valued fields (round-3 break)", async () => {
+    const res = await app.request("/v1/findings/generate-orchestrated", {
+      method: "POST",
+      headers: gateHeaders(),
+      body: JSON.stringify({
+        mode: "anthropic",
+        input: {
+          baseInput: wellFormedInput,
+          pieceCandidates: [{ pieceId: "p1", label: {}, data: [null] }],
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("does NOT 500 when a source provider/layerKind is an object (round-3 break)", async () => {
+    const res = await app.request("/v1/findings/generate", {
+      method: "POST",
+      headers: gateHeaders(),
+      body: JSON.stringify({
+        mode: "anthropic",
+        input: {
+          submission: { id: "s2" },
+          sources: [{ id: "src-x", provider: {}, layerKind: {} }],
+          codeSections: [{ atomId: "a1", label: 5 }],
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("does NOT 500 on the orchestrated route with no key and minimal input", async () => {
     const res = await app.request("/v1/findings/generate-orchestrated", {
       method: "POST",
