@@ -9,6 +9,7 @@ import {
 import { buildBriefingRoutes } from "./routes/briefing.js";
 import { buildChatRoutes } from "./routes/chat.js";
 import { buildDocumentIngestRoutes } from "./routes/document-ingest.js";
+import { documentIngestStoreKind } from "@hauska-engine/document-ingest";
 import { buildEncumbrancesRoutes } from "./routes/encumbrances.js";
 import { buildFindingsRoutes } from "./routes/findings.js";
 import { buildHydrologyRoutes } from "./routes/hydrology.js";
@@ -66,6 +67,7 @@ export function buildApp(options: ServerOptions): Hono {
       engineCore: true,
       envelope: true,
       documentIngest: true,
+      documentIngestStore: documentIngestStoreKind(process.env),
       startedAt: config.startedAt,
     }),
   );

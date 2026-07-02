@@ -35,6 +35,10 @@ export {
 export * from "./types.js";
 export * from "./port.js";
 export * from "./in-memory-storage.js";
+export * from "./pg-atom-store.js";
+export * from "./pg-blob-index.js";
+export * from "./gcs-blob-store.js";
+export * from "./durable-store.js";
 export * from "./confidence.js";
 export * from "./classify.js";
 export * from "./mint.js";
