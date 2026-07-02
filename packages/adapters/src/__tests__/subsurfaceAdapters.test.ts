@@ -128,6 +128,66 @@ describe("USDA SSURGO soils adapter", () => {
     expect(outcomes[0].error?.code).toBe("no-coverage");
   });
 
+  it("returns a degraded partial (ok, not failed) when SDA resets TLS but gSSURGO succeeds", async () => {
+    // The USDA SDA host intermittently drops the TLS connection. Simulate
+    // a persistent ECONNRESET on every SDA attempt while the gSSURGO
+    // map-unit polygon succeeds. The adapter must return the map unit as
+    // an HONEST partial (status ok, payload.degraded=true) rather than
+    // discarding both results or surfacing a raw reset.
+    const econnreset = () => {
+      const err = new TypeError("fetch failed");
+      (err as { cause?: unknown }).cause = {
+        code: "ECONNRESET",
+        syscall: "read",
+        host: "sdmdataaccess.sc.egov.usda.gov",
+      };
+      return Promise.reject(err);
+    };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("gssurgo") && url.includes("/query")) {
+        return jsonResponse(ssurgoMapUnitFeature);
+      }
+      if (url.includes("sdmdataaccess.sc.egov.usda.gov")) {
+        return econnreset();
+      }
+      return jsonResponse({}, 404);
+    });
+    const outcomes = await runAdapters({
+      adapters: [usdaSsurgoSoilsAdapter],
+      context: { ...bastrop, fetchImpl },
+    });
+    expect(outcomes[0].status).toBe("ok");
+    const payload = outcomes[0].result?.payload as {
+      musym: string | null;
+      degraded: boolean;
+      degradationReasons: string[];
+    };
+    expect(payload.musym).toBe("Pf");
+    expect(payload.degraded).toBe(true);
+    expect(payload.degradationReasons.join(" ")).toMatch(/ECONNRESET/);
+  });
+
+  it("fails honestly (network-error naming the reset) when both USDA hosts reset", async () => {
+    const econnreset = () => {
+      const err = new TypeError("fetch failed");
+      (err as { cause?: unknown }).cause = {
+        code: "ECONNRESET",
+        syscall: "read",
+        host: "sdmdataaccess.sc.egov.usda.gov",
+      };
+      return Promise.reject(err);
+    };
+    const fetchImpl = vi.fn(async () => econnreset());
+    const outcomes = await runAdapters({
+      adapters: [usdaSsurgoSoilsAdapter],
+      context: { ...bastrop, fetchImpl },
+    });
+    expect(outcomes[0].status).toBe("failed");
+    // Never an unhandled reset: the message names the failure mode.
+    expect(outcomes[0].error?.message).toMatch(/USDA/i);
+  });
+
   it("skips off-US parcels via appliesTo (neutral no-coverage pill)", async () => {
     const fetchImpl = vi.fn();
     const outcomes = await runAdapters({

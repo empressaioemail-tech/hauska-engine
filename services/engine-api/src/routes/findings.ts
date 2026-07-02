@@ -12,11 +12,7 @@ import {
   okCoverage,
   resolveReadPathConfidence,
 } from "@hauska-engine/engine-core/envelope";
-import {
-  getAnthropicClient,
-  getGrokClient,
-  resolveFindingMode,
-} from "../lib/llmClients.js";
+import { resolveFindingMode, resolveLlmForMode } from "../lib/llmClients.js";
 import { envelopeJson } from "../lib/envelopeResponse.js";
 
 const generateBodySchema = z.object({
@@ -29,13 +25,24 @@ const orchestratedBodySchema = z.object({
   mode: z.enum(["mock", "grok", "anthropic"]).optional(),
 });
 
-function engineOptions(mode: "mock" | "grok" | "anthropic") {
+/**
+ * Resolve engine LLM options for a requested mode without throwing on a
+ * missing key. Mirrors the briefing route: a missing ANTHROPIC_API_KEY
+ * degrades to Grok, then to the deterministic mock path, rather than
+ * 500ing (commitment #1). Returns the effective mode + a degraded flag.
+ */
+function engineOptions(requested: "mock" | "grok" | "anthropic") {
+  const llm = resolveLlmForMode(requested);
   return {
-    mode,
-    grokClient: mode === "grok" ? getGrokClient() : undefined,
-    anthropicClient: mode === "anthropic" ? getAnthropicClient() : undefined,
-    visionAnthropicClient:
-      mode === "anthropic" ? getAnthropicClient() : undefined,
+    options: {
+      mode: llm.mode,
+      grokClient: llm.grokClient,
+      anthropicClient: llm.anthropicClient,
+      visionAnthropicClient: llm.anthropicClient,
+    },
+    mode: llm.mode,
+    degraded: llm.degraded,
+    degradationReason: llm.degradationReason,
   };
 }
 
@@ -47,6 +54,7 @@ function findingsEnvelopeMeta(
     discardedFindings: readonly unknown[];
     precedence: unknown;
   },
+  llmDegradationReason?: string,
 ) {
   const dataVintage =
     input.sources
@@ -55,6 +63,9 @@ function findingsEnvelopeMeta(
       .sort()
       .at(-1) ?? null;
   const reasons: string[] = [];
+  if (llmDegradationReason) {
+    reasons.push(llmDegradationReason);
+  }
   if (result.invalidCitations.length > 0) {
     reasons.push(`${result.invalidCitations.length} invalid citation(s)`);
   }
@@ -97,15 +108,17 @@ export function buildFindingsRoutes(): Hono {
       );
     }
 
-    const mode = parsed.data.mode ?? resolveFindingMode();
+    const requestedMode = parsed.data.mode ?? resolveFindingMode();
     const input = parsed.data.input as unknown as GenerateFindingsInput;
+    const llm = engineOptions(requestedMode);
+    const mode = llm.mode;
 
     try {
-      const result = await generateFindings(input, engineOptions(mode));
+      const result = await generateFindings(input, llm.options);
       return envelopeJson(
         c,
-        { result, mode },
-        findingsEnvelopeMeta(input, mode, result),
+        { result, mode, requestedMode, degraded: llm.degraded },
+        findingsEnvelopeMeta(input, mode, result, llm.degradationReason),
       );
     } catch (err) {
       return c.json(
@@ -127,18 +140,20 @@ export function buildFindingsRoutes(): Hono {
       );
     }
 
-    const mode = parsed.data.mode ?? resolveFindingMode();
+    const requestedMode = parsed.data.mode ?? resolveFindingMode();
     const input = parsed.data.input as unknown as GenerateOrchestratedFindingsInput;
+    const llm = engineOptions(requestedMode);
+    const mode = llm.mode;
 
     try {
       const result = await generateOrchestratedFindings(
         input,
-        engineOptions(mode),
+        llm.options,
       );
       return envelopeJson(
         c,
-        { result, mode },
-        findingsEnvelopeMeta(input.baseInput, mode, result),
+        { result, mode, requestedMode, degraded: llm.degraded },
+        findingsEnvelopeMeta(input.baseInput, mode, result, llm.degradationReason),
       );
     } catch (err) {
       return c.json(
