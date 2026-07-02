@@ -86,9 +86,35 @@ export function mintDocumentDerivedFields(
     DocumentDerivedFields;
 }
 
-/** Deterministic canonical JSON for content hashing (stable key order). */
-export function canonicalize(obj: Record<string, unknown>): string {
-  return JSON.stringify(obj, Object.keys(obj).sort());
+/**
+ * Deterministic canonical JSON for content hashing: recursively sorts
+ * object keys at every depth so two structurally-equal bodies hash
+ * identically regardless of key insertion order.
+ *
+ * NOTE: the array form of `JSON.stringify`'s replacer is a property
+ * ALLOWLIST, not a deep sorter — it silently drops nested-object keys. So
+ * we sort explicitly here. This matters because a `canonicalBody` may hold
+ * nested objects (`contextRefs`, a bounding box, structured sub-records);
+ * a naive `JSON.stringify(obj, keys.sort())` would collapse them to `{}`
+ * and false-dedup distinct atoms into one contentHash / DID.
+ */
+export function canonicalize(value: unknown): string {
+  return JSON.stringify(sortDeep(value));
+}
+
+function sortDeep(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortDeep);
+  }
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(obj).sort()) {
+      out[key] = sortDeep(obj[key]);
+    }
+    return out;
+  }
+  return value;
 }
 
 /**

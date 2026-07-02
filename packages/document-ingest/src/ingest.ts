@@ -212,21 +212,39 @@ export class DocumentIngestService {
       };
     }
 
-    // 4 + 5. Persist minted atoms idempotently.
+    // 4 + 5. Persist minted atoms idempotently. Guarded so a store fault
+    //        (e.g. a real Postgres write throwing) degrades honestly and
+    //        the orchestrator honors its own never-throws contract rather
+    //        than propagating out — the blob is already pinned.
     const summaries: MintedAtomSummary[] = [];
-    for (const atom of extraction.atoms) {
-      const write = await this.store.writeDocumentAtom(atom);
-      summaries.push({
-        atomDid: write.atomDid,
-        entityType: atom.entityType,
-        entityId: atom.entityId,
-        accessPolicy: atom.accessPolicy,
-        storageRelation: atom.storageRelation,
-        confidence: atom.confidence,
-        verificationStatus: atom.verificationStatus,
-        sourceDocumentCid: atom.sourceDocumentCid,
-        created: write.created,
-      });
+    try {
+      for (const atom of extraction.atoms) {
+        const write = await this.store.writeDocumentAtom(atom);
+        summaries.push({
+          atomDid: write.atomDid,
+          entityType: atom.entityType,
+          entityId: atom.entityId,
+          accessPolicy: atom.accessPolicy,
+          storageRelation: atom.storageRelation,
+          confidence: atom.confidence,
+          verificationStatus: atom.verificationStatus,
+          sourceDocumentCid: atom.sourceDocumentCid,
+          created: write.created,
+        });
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return {
+        status: "degraded",
+        sourceDocument: this.sourceSummary(pinned),
+        classification: {
+          documentType: extraction.documentType,
+          adapter: classification.adapter.name,
+          score: classification.score,
+        },
+        atoms: summaries,
+        reason: `atom persistence degraded after ${summaries.length} of ${extraction.atoms.length}: ${reason}`,
+      };
     }
 
     const result: IngestResult = {

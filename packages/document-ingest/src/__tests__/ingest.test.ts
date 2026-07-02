@@ -9,6 +9,7 @@ import {
   defaultDocumentAdapters,
   storageRelationForExtraction,
 } from "../index.js";
+import { canonicalize } from "../mint.js";
 import type { DocumentAdapter } from "../types.js";
 
 function service(adapters?: ReadonlyArray<DocumentAdapter>) {
@@ -211,6 +212,22 @@ describe("embed-with vs point-to decision rule", () => {
     expect(
       storageRelationForExtraction({ isUnitOfMeaning: false }),
     ).toBe("point-to");
+  });
+});
+
+describe("canonicalize (deep stable hash input)", () => {
+  it("is key-order independent at every depth", () => {
+    expect(canonicalize({ a: 1, b: { x: 1, y: 2 } })).toBe(
+      canonicalize({ b: { y: 2, x: 1 }, a: 1 }),
+    );
+  });
+  it("does NOT collapse nested objects to {} (the JSON.stringify allowlist trap)", () => {
+    // Distinct nested content must produce distinct canonical strings.
+    const a = canonicalize({ region: { page: 1, locator: "p1" } });
+    const b = canonicalize({ region: { page: 2, locator: "p2" } });
+    expect(a).not.toBe(b);
+    expect(a).toContain("page");
+    expect(a).toContain("locator");
   });
 });
 
