@@ -35,7 +35,10 @@ export const SECTIONS_WITH_NO_CITATIONS = ["a", "g"] as const;
 export function categorizeLayerKind(
   layerKind: string,
 ): SourceCitingSection | "general" {
-  const lk = layerKind.toLowerCase();
+  // Defensive: a source on an unshaped input bundle may carry a missing
+  // or non-string layerKind. An unknown slug already falls through to
+  // "general", so a missing one maps there too rather than throwing.
+  const lk = typeof layerKind === "string" ? layerKind.toLowerCase() : "";
   // B — threshold environmental hazards.
   if (
     lk.includes("flood") ||

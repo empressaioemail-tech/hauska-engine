@@ -126,6 +126,22 @@ describe("Property Brief graceful degradation (Fix 1 — no 500 on missing key)"
     expect(res.status).toBe(200);
   });
 
+  it("does NOT 500 on array-item garbage (nulls, non-objects, non-string vintage)", async () => {
+    const attacks = [
+      { sources: [null, 42, "x"], codeSections: [null] },
+      { sources: [{ id: "s1", snapshotDate: 5 }], codeSections: [{}] },
+      { sources: [{}], codeSections: [{ label: "no atomId" }] },
+    ];
+    for (const bad of attacks) {
+      const res = await app.request("/v1/briefing/generate", {
+        method: "POST",
+        headers: gateHeaders(),
+        body: JSON.stringify({ mode: "anthropic", input: bad }),
+      });
+      expect(res.status, JSON.stringify(bad)).toBe(200);
+    }
+  });
+
   it("falls back to Grok when XAI_API_KEY is present but ANTHROPIC_API_KEY is not", async () => {
     process.env.XAI_API_KEY = "xai-test-key";
     // We can't reach the real Grok API in a hermetic test; the value we

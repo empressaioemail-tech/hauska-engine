@@ -20,13 +20,28 @@ const generateBodySchema = z.object({
 });
 
 function dataVintageFromSources(
-  sources: ReadonlyArray<{ snapshotDate?: string | null }>,
+  sources: ReadonlyArray<{ snapshotDate?: unknown }>,
 ): string | null {
   const dates = sources
     .map((s) => s.snapshotDate)
     .filter((d): d is string => typeof d === "string" && d.length > 0);
   if (dates.length === 0) return null;
   return dates.sort().at(-1) ?? null;
+}
+
+/** Keep only non-null objects that carry a usable string on `key`. */
+function objectsWithStringKey(
+  value: unknown,
+  key: string,
+): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is Record<string, unknown> =>
+      item !== null &&
+      typeof item === "object" &&
+      typeof (item as Record<string, unknown>)[key] === "string" &&
+      ((item as Record<string, unknown>)[key] as string).length > 0,
+  );
 }
 
 export function buildBriefingRoutes(): Hono {
@@ -52,10 +67,13 @@ export function buildBriefingRoutes(): Hono {
     const rawInput = (parsed.data.input ?? {}) as Record<string, unknown>;
     const input = {
       ...rawInput,
-      sources: Array.isArray(rawInput.sources) ? rawInput.sources : [],
-      codeSections: Array.isArray(rawInput.codeSections)
-        ? rawInput.codeSections
-        : [],
+      // Filter to well-shaped items: sources need a string id (the engine
+      // builds a resolver set from source ids and the mock generator
+      // cites them), code sections need a string atomId. Dropping
+      // malformed items keeps a garbage bundle from 500ing while never
+      // fabricating a citable id (commitment #1).
+      sources: objectsWithStringKey(rawInput.sources, "id"),
+      codeSections: objectsWithStringKey(rawInput.codeSections, "atomId"),
     } as unknown as GenerateBriefingInput;
 
     // Resolve a runnable LLM without throwing on a missing key. A brief

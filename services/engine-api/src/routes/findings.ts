@@ -56,10 +56,14 @@ function findingsEnvelopeMeta(
   },
   llmDegradationReason?: string,
 ) {
+  // snapshotDate may be any JSON value on an unshaped bundle; the
+  // envelope schema requires a string-or-null dataVintage. Keep only
+  // non-empty strings so a garbage vintage cannot fail envelope
+  // validation (which would 500 after a successful generation).
   const dataVintage =
     input.sources
-      .map((s) => s.snapshotDate)
-      .filter(Boolean)
+      .map((s) => (s as { snapshotDate?: unknown }).snapshotDate)
+      .filter((d): d is string => typeof d === "string" && d.length > 0)
       .sort()
       .at(-1) ?? null;
   const reasons: string[] = [];
@@ -96,21 +100,39 @@ function findingsEnvelopeMeta(
   };
 }
 
+/** Keep only non-null objects that carry a usable string on `key`. */
+function objectsWithStringKey(
+  value: unknown,
+  key: string,
+): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is Record<string, unknown> =>
+      item !== null &&
+      typeof item === "object" &&
+      typeof (item as Record<string, unknown>)[key] === "string" &&
+      ((item as Record<string, unknown>)[key] as string).length > 0,
+  );
+}
+
 /**
  * Normalize an unshaped findings input record. The body schema accepts
- * `input` as `z.record`, and the engine dereferences input.sources /
- * input.codeSections / input.bimElements unconditionally (for every
- * mode). Guarantee those are arrays so a minimal or malformed bundle
- * degrades to a real (possibly empty) result instead of a 500
- * (commitment #1).
+ * `input` as `z.record`, so array items can be null / non-objects /
+ * missing their id field. The engine and the envelope both dereference
+ * item fields (input.sources.map(s => s.id), s.snapshotDate, s.atomId)
+ * unconditionally, so an item-level garbage bundle 500s. Filter to
+ * well-shaped items (dropping the rest) so a malformed bundle degrades
+ * to a real (possibly thinner) result instead of a 500 (commitment #1).
+ * Filtering, not coercing: a source with no id / a code section with no
+ * atomId cannot be cited, so it is dropped rather than fabricated.
  */
 function normalizeFindingsInput(raw: unknown): GenerateFindingsInput {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     ...r,
-    sources: Array.isArray(r.sources) ? r.sources : [],
-    codeSections: Array.isArray(r.codeSections) ? r.codeSections : [],
-    bimElements: Array.isArray(r.bimElements) ? r.bimElements : [],
+    sources: objectsWithStringKey(r.sources, "id"),
+    codeSections: objectsWithStringKey(r.codeSections, "atomId"),
+    bimElements: objectsWithStringKey(r.bimElements, "ref"),
   } as unknown as GenerateFindingsInput;
 }
 
@@ -186,9 +208,7 @@ export function buildFindingsRoutes(): Hono {
     const input = {
       ...rawOrch,
       baseInput,
-      pieceCandidates: Array.isArray(rawOrch.pieceCandidates)
-        ? rawOrch.pieceCandidates
-        : [],
+      pieceCandidates: objectsWithStringKey(rawOrch.pieceCandidates, "pieceId"),
     } as unknown as GenerateOrchestratedFindingsInput;
     const llm = engineOptions(requestedMode);
     const mode = llm.mode;

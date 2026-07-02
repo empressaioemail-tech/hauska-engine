@@ -113,6 +113,40 @@ describe("Findings graceful degradation (Fix 1 — no 500)", () => {
     expect(body.payload.mode).toBe("mock");
   });
 
+  it("does NOT 500 on array-item garbage (nulls, non-objects, missing ids)", async () => {
+    // Adversarial: schema-valid body (input is a record) but the arrays
+    // hold null / malformed items. Must filter and degrade, not 500.
+    const attacks = [
+      { sources: [null], codeSections: [null], bimElements: [null] },
+      { sources: [{}], codeSections: [{}], submission: {} },
+      { submission: { foo: 1 }, sources: [{ id: "x", snapshotDate: 5 }] },
+      { sources: ["notanobject", 42], codeSections: [{ label: "no atomId" }] },
+    ];
+    for (const bad of attacks) {
+      const res = await app.request("/v1/findings/generate", {
+        method: "POST",
+        headers: gateHeaders(),
+        body: JSON.stringify({ mode: "anthropic", input: bad }),
+      });
+      expect(res.status, JSON.stringify(bad)).toBe(200);
+    }
+  });
+
+  it("does NOT 500 on orchestrated pieceCandidates garbage", async () => {
+    const res = await app.request("/v1/findings/generate-orchestrated", {
+      method: "POST",
+      headers: gateHeaders(),
+      body: JSON.stringify({
+        mode: "anthropic",
+        input: {
+          baseInput: { sources: [null], codeSections: [{}] },
+          pieceCandidates: [null, {}, "garbage"],
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("does NOT 500 on the orchestrated route with no key and minimal input", async () => {
     const res = await app.request("/v1/findings/generate-orchestrated", {
       method: "POST",
