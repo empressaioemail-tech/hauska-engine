@@ -25,35 +25,77 @@ function isPublicHealthPath(path: string): boolean {
   );
 }
 
-const ACCESS_POLICY_VALUES: ReadonlyArray<AccessPolicy> = [
+/**
+ * The full `AccessPolicy` union from `@hauska/atom-contract` (via the
+ * storage re-export). The contract exports the union as a *type only*
+ * (no runtime value list), so a runtime array is unavoidable here; the
+ * `satisfies` clause rejects typos and the exhaustiveness assertion
+ * below fails compilation if the contract ever adds a value this list
+ * does not carry. That is the guard against the original landmine: a
+ * hand-rolled four-value copy of the union silently missing
+ * `tenant-shared` (added in contract 1.2.0).
+ */
+const ACCESS_POLICY_VALUES = [
   "public-free",
   "public-paid",
   "platform-internal",
   "tenant-private",
-];
+  "tenant-shared",
+] as const satisfies ReadonlyArray<AccessPolicy>;
+
+// Compile-time exhaustiveness check: if @hauska/atom-contract adds a
+// new AccessPolicy value, this assignment stops compiling until
+// ACCESS_POLICY_VALUES above picks it up.
+type ListedAccessPolicy = (typeof ACCESS_POLICY_VALUES)[number];
+type AssertAccessPolicyListExhaustive = [
+  Exclude<AccessPolicy, ListedAccessPolicy>,
+] extends [never]
+  ? true
+  : "ACCESS_POLICY_VALUES is missing values from the AccessPolicy contract union";
+const _accessPolicyListExhaustive: AssertAccessPolicyListExhaustive = true;
+void _accessPolicyListExhaustive;
 
 function isAccessPolicy(value: string): value is AccessPolicy {
   return (ACCESS_POLICY_VALUES as ReadonlyArray<string>).includes(value);
 }
 
+type ParseAccessPoliciesResult =
+  | { ok: true; policies: ReadonlyArray<AccessPolicy> | undefined }
+  | { ok: false; invalidValues: ReadonlyArray<string> };
+
 /**
  * Parse a comma-separated `accessPolicies` query parameter into a typed
- * array. Returns `undefined` when the param is absent, and an empty
- * array when the param is present-but-empty. Note: the storage layer
- * gates its filter on `accessPolicies.length > 0`, so an empty array is
- * treated as "no access-policy filter" (returns all), same as omitting
- * the param. Unknown access-policy values are dropped; a tracked
- * decision in preference to throwing 400, so additive future policies
- * do not break older callers.
+ * array. Returns `{ ok: true, policies: undefined }` when the param is
+ * absent (no filter — unchanged default behavior).
+ *
+ * Fails CLOSED on anything else that is not a clean list of known
+ * policy values:
+ *
+ * - Any unrecognized value → `{ ok: false }` (caller returns 400).
+ *   Values must never be silently dropped: the storage layer treats an
+ *   empty filter array as "no filter", so dropping the only requested
+ *   value would return the ENTIRE corpus to a caller who asked for a
+ *   restricted slice (fail-open on an access-policy filter).
+ * - Param present but empty (e.g. `?accessPolicies=`) → `{ ok: false }`
+ *   for the same reason: it would reach storage as an empty array and
+ *   be interpreted as "no filter".
  */
 function parseAccessPolicies(
   raw: string | undefined,
-): ReadonlyArray<AccessPolicy> | undefined {
-  if (raw === undefined) return undefined;
-  return raw
+): ParseAccessPoliciesResult {
+  if (raw === undefined) return { ok: true, policies: undefined };
+  const tokens = raw
     .split(",")
     .map((s) => s.trim())
-    .filter((s): s is AccessPolicy => s.length > 0 && isAccessPolicy(s));
+    .filter((s) => s.length > 0);
+  const invalidValues = tokens.filter((t) => !isAccessPolicy(t));
+  if (invalidValues.length > 0) return { ok: false, invalidValues };
+  if (tokens.length === 0) {
+    // Present-but-empty param: never forward an empty array (storage
+    // reads that as "no filter").
+    return { ok: false, invalidValues: [raw] };
+  }
+  return { ok: true, policies: tokens as ReadonlyArray<AccessPolicy> };
 }
 
 export interface ServerOptions {
@@ -167,10 +209,21 @@ export function buildApp(options: ServerOptions = {}): Hono {
 
   app.get("/jurisdictions", async (c) => {
     const qualityBarOnly = c.req.query("qualityBarOnly") === "true";
-    const accessPolicies = parseAccessPolicies(c.req.query("accessPolicies"));
+    const parsedPolicies = parseAccessPolicies(c.req.query("accessPolicies"));
+    if (!parsedPolicies.ok) {
+      return c.json(
+        {
+          error: "invalid accessPolicies value(s)",
+          invalidValues: parsedPolicies.invalidValues,
+          allowedValues: ACCESS_POLICY_VALUES,
+        },
+        400,
+      );
+    }
+    const { policies } = parsedPolicies;
     const statuses = await retrieval.listJurisdictions({
       qualityBarOnly,
-      ...(accessPolicies !== undefined ? { accessPolicies } : {}),
+      ...(policies !== undefined ? { accessPolicies: policies } : {}),
     });
     return c.json({ jurisdictions: statuses });
   });
