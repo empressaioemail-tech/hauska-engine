@@ -95,6 +95,46 @@ describe("retrieval-api contract (Sync 3)", () => {
     expect(auth.status).toBe(200);
   });
 
+  // Regression: the accessPolicies filter must fail CLOSED. A request that
+  // names only unrecognized policies previously parsed to an empty array,
+  // which the storage layer treats as "no filter" -> the whole corpus was
+  // returned. That is a fail-open on an access-control filter.
+  it("GET /jurisdictions?accessPolicies=<unknown-only> returns 400, not the full corpus", async () => {
+    const storage = new InMemoryStorage();
+    await seed(storage);
+    const app = buildApp({ storage, apiKey: "" });
+    const res = await app.request("/jurisdictions?accessPolicies=not-a-policy");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, any>;
+    expect(String(body.error)).toContain("no recognized accessPolicies");
+  });
+
+  it("GET /jurisdictions accepts the five-value union incl. tenant-shared", async () => {
+    const storage = new InMemoryStorage();
+    await seed(storage);
+    const app = buildApp({ storage, apiKey: "" });
+    for (const p of [
+      "public-free",
+      "public-paid",
+      "platform-internal",
+      "tenant-private",
+      "tenant-shared",
+    ]) {
+      const res = await app.request(`/jurisdictions?accessPolicies=${p}`);
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it("GET /jurisdictions keeps recognized policies when mixed with unknown", async () => {
+    const storage = new InMemoryStorage();
+    await seed(storage);
+    const app = buildApp({ storage, apiKey: "" });
+    const res = await app.request(
+      "/jurisdictions?accessPolicies=public-free,bogus",
+    );
+    expect(res.status).toBe(200);
+  });
+
   it("GET /search returns results", async () => {
     const storage = new InMemoryStorage();
     await seed(storage);
