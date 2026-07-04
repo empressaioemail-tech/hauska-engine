@@ -6,8 +6,10 @@ import { HybridRetrieval } from "@hauska-engine/retrieval";
 import type { Scope } from "@hauska-engine/atom-contract-pin";
 import {
   InMemoryStorage,
+  InMemoryTceStore,
   type AccessPolicy,
   type StoragePort,
+  type StructuralGraphStore,
 } from "@hauska-engine/storage";
 
 import {
@@ -58,6 +60,7 @@ function parseAccessPolicies(
 
 export interface ServerOptions {
   storage?: StoragePort;
+  structuralGraph?: StructuralGraphStore;
   /** Required `Authorization: Bearer` value. Empty disables the check (dev). */
   apiKey?: string;
   /** Substrate Neon URL for `/healthz` db liveness; falls back to env. */
@@ -66,7 +69,8 @@ export interface ServerOptions {
 
 export function buildApp(options: ServerOptions = {}): Hono {
   const storage = options.storage ?? new InMemoryStorage();
-  const retrieval = new HybridRetrieval(storage);
+  const structuralGraph = options.structuralGraph ?? new InMemoryTceStore();
+  const retrieval = new HybridRetrieval(storage, structuralGraph);
   const apiKey = options.apiKey ?? process.env.RETRIEVAL_API_KEY ?? "";
   const substrateDatabaseUrl = options.substrateDatabaseUrl;
   const startedAt = new Date().toISOString();
@@ -198,6 +202,12 @@ export function buildApp(options: ServerOptions = {}): Hono {
       projectType,
     });
     return c.json(result);
+  });
+
+  app.get("/subjects/:subjectId/events", async (c) => {
+    const subjectId = c.req.param("subjectId");
+    const events = await retrieval.eventsAffectingSubject(subjectId);
+    return c.json({ subjectId, events });
   });
 
   return app;

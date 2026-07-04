@@ -1,11 +1,9 @@
 {
-  "name": "@hauska-engine/retrieval",
+  "name": "@hauska-engine/capture",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Hybrid retrieval query layer combining structural graph traversal (ADR-010) with vector similarity. Consumed by services/retrieval-api.",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "description": "TCE step 1 — flip live-fetched anticipatory feeds to also persist event-family atoms.",
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -15,15 +13,14 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
     "@hauska-engine/atom-contract-pin": "workspace:*",
-    "@hauska-engine/atoms": "workspace:*",
-    "@hauska-engine/corpus": "workspace:*",
     "@hauska-engine/identity": "workspace:*",
-    "@hauska-engine/storage": "workspace:*"
+    "@hauska-engine/storage": "workspace:*",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "typescript": "~5.7.2",

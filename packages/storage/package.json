@@ -22,6 +22,7 @@
     "@hauska-engine/atom-contract-pin": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",
     "@hauska-engine/identity": "workspace:*",
+    "@hauska-engine/identity": "workspace:*",
     "drizzle-orm": "^0.36.4",
     "postgres": "^3.4.5"
   },

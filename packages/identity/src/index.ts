@@ -50,3 +50,16 @@ export class InMemoryIdentityResolver implements IdentityResolver {
 export interface KeyCustody {
   signMappingUpdate(atomDid: string, newCid: string): Promise<string>;
 }
+
+export {
+  resolveEvtId,
+  isValidEvtId,
+  assertValidEvtId,
+  rejectHandConstructedEvtId,
+} from "./evt-resolver.js";
+export {
+  registerNodeTypePrefix,
+  isKnownNodeTypePrefix,
+  assertKnownNodePrefix,
+  listNodeTypePrefixes,
+} from "./node-registry.js";

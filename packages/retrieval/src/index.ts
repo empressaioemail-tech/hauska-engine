@@ -20,15 +20,21 @@ import type {
   AtomSearchResult,
   JurisdictionStatusSnapshot,
   StoragePort,
+  StructuralGraphStore,
 } from "@hauska-engine/storage";
 
 import { resolveEffectiveRule, type EffectiveSection } from "./effective-rule.js";
 import { getAtomTrace, type AtomTraceOutput } from "./atom-trace.js";
 import { resolveEditionAtDate, type EditionAtDateResult } from "./edition-at-date.js";
+import {
+  queryEventsAffectingSubject,
+  writeWouldAffectEdge,
+} from "./events-affecting-subject.js";
 
 export * from "./effective-rule.js";
 export * from "./atom-trace.js";
 export * from "./edition-at-date.js";
+export * from "./events-affecting-subject.js";
 
 export interface SearchInput {
   q: string;
@@ -71,7 +77,10 @@ export interface QueryJurisdictionOutput {
 }
 
 export class HybridRetrieval {
-  constructor(private readonly storage: StoragePort) {}
+  constructor(
+    private readonly storage: StoragePort,
+    private readonly structuralGraph?: StructuralGraphStore,
+  ) {}
 
   async search(input: SearchInput): Promise<SearchOutput> {
     const baseQuery: import("@hauska-engine/storage").AtomQuery = {
@@ -171,5 +180,23 @@ export class HybridRetrieval {
     accessPolicies?: ReadonlyArray<AccessPolicy>;
   }): Promise<ReadonlyArray<JurisdictionStatusSnapshot>> {
     return this.storage.listJurisdictionStatus(filter);
+  }
+
+  /** TCE — what events would affect a subject (walk would_affect edges). */
+  async eventsAffectingSubject(targetSubjectId: string) {
+    if (!this.structuralGraph) {
+      throw new Error("StructuralGraphStore not configured on HybridRetrieval");
+    }
+    return queryEventsAffectingSubject(this.structuralGraph, targetSubjectId);
+  }
+
+  /** TCE — write an immutable would_affect edge (evt_ source required). */
+  async writeWouldAffect(
+    edge: import("@hauska-engine/atom-contract-pin/tce").WouldAffectEdge,
+  ) {
+    if (!this.structuralGraph) {
+      throw new Error("StructuralGraphStore not configured on HybridRetrieval");
+    }
+    return writeWouldAffectEdge(this.structuralGraph, edge);
   }
 }

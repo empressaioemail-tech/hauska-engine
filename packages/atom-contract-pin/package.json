@@ -14,7 +14,11 @@
     "./conformance": "@hauska/atom-contract/conformance",
     "./read-contract": "@hauska/atom-contract/read-contract",
     "./testing": "@hauska/atom-contract/testing",
-    "./export": "@hauska/atom-contract/export"
+    "./export": "@hauska/atom-contract/export",
+    "./tce": {
+      "types": "./src/tce.ts",
+      "import": "./src/tce.ts"
+    }
   },
   "scripts": {
     "build": "tsc -b",
@@ -23,7 +27,7 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "@hauska/atom-contract": "^1.5.0"
+    "@hauska/atom-contract": "^1.6.0"
   },
   "devDependencies": {
     "typescript": "~5.7.2",

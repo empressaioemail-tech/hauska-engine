@@ -65,7 +65,7 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "@hauska/atom-contract": "^1.5.0",
+    "@hauska/atom-contract": "^1.6.0",
     "@hauska-engine/atom-contract-pin": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",
     "@hauska-engine/storage": "workspace:*",

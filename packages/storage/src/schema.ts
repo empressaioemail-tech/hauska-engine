@@ -96,6 +96,31 @@ export const atomLinks = pgTable(
 );
 
 /**
+ * Structural graph edges (TCE / atom-contract@1.6.0).
+ * `would_affect` rows are immutable — updates rejected at DB layer.
+ */
+export const structuralEdges = pgTable(
+  "structural_edges",
+  {
+    sourceNodeId: text("source_node_id").notNull(),
+    targetSubjectId: text("target_subject_id").notNull(),
+    edgeType: text("edge_type").notNull(),
+    effectiveDate: text("effective_date").notNull(),
+    immutable: boolean("immutable").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({
+      columns: [t.sourceNodeId, t.targetSubjectId, t.edgeType, t.effectiveDate],
+    }),
+    targetIdx: index("structural_edges_target_idx").on(t.targetSubjectId),
+    sourceIdx: index("structural_edges_source_idx").on(t.sourceNodeId),
+  }),
+);
+
+/**
  * Vector embeddings — one row per atom. `embedding` is `vector(1024)`
  * when pgvector is enabled; drizzle-orm-pgvector landing point. Stored
  * as `real[]` until pgvector migration lands.
