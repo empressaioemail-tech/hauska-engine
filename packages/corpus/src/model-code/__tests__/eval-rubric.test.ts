@@ -15,9 +15,9 @@ import { buildAtomDid, parseAtomDid } from "@hauska-engine/atoms";
 import { InMemoryStorage } from "@hauska-engine/storage";
 
 import {
-  A117_2021_TITLE_ID,
+  A117_2021_BOOK_ID,
   ICC_CODE_CONNECT_FIXTURES,
-  IRC_2021_TITLE_ID,
+  IRC_2021_BOOK_ID,
 } from "../../adapters/icc-code-connect/__fixtures__/irc-2021.js";
 import { evaluate } from "../../eval/index.js";
 import { extractModelCodeAtoms } from "../extractor.js";
@@ -29,8 +29,8 @@ import {
   LAYER_1_QUALITY_BAR,
 } from "../eval-rubric.js";
 
-const IRC_2021 = ICC_CODE_CONNECT_FIXTURES.documents[IRC_2021_TITLE_ID]!;
-const A117_2021 = ICC_CODE_CONNECT_FIXTURES.documents[A117_2021_TITLE_ID]!;
+const IRC_2021 = ICC_CODE_CONNECT_FIXTURES.documents[IRC_2021_BOOK_ID]!;
+const A117_2021 = ICC_CODE_CONNECT_FIXTURES.documents[A117_2021_BOOK_ID]!;
 
 describe("LAYER_1_QUALITY_BAR", () => {
   it("is the strict 1.0/1.0/1.0 bar of the Sync 4/4.5/5 ingests", () => {

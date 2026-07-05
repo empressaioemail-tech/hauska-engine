@@ -28,7 +28,7 @@ import {
   CodeConnectClient,
   codeConnectCredentialsFromEnv,
   type CodeConnectFixtures,
-  type CodeConnectSection,
+  type CodeConnectContentNode,
   type IccCodeDocument,
 } from "./code-connect-client.js";
 import { RespectfulFetch } from "../http.js";
@@ -145,12 +145,12 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
   }
 
   async discover(): Promise<ReadonlyArray<CodeReference>> {
-    const titles = await this.client.listTitles();
-    return titles.map((title) => ({
-      sourceId: title.titleId,
+    const books = await this.client.listBooks();
+    return books.map((book) => ({
+      sourceId: book.shortCode,
       jurisdictionTenant: this.modelCodeTenant,
-      editionLabel: `${title.year} ${title.name}`,
-      sourceUrl: this.viewerUrlForTitle(title.codeAbbrev, title.year),
+      editionLabel: book.title,
+      sourceUrl: this.viewerUrlForBook(book.uri.titleCode, book.uri.year),
     }));
   }
 
@@ -203,46 +203,55 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
     const document = JSON.parse(raw.body) as IccCodeDocument;
     const blocks: NormalizedBlock[] = [];
 
-    for (const { chapter, sections } of document.chapters) {
-      blocks.push({
-        kind: "heading",
-        depth: 1,
-        text: `Chapter ${chapter.chapterNumber} ${chapter.heading}`.trim(),
-        label: chapter.chapterNumber,
-        sourceAnchor: `#${chapter.chapterId}`,
-      });
-      for (const section of sections) {
-        this.emitSectionBlocks(blocks, section);
+    for (const chapterGroup of document.chapters) {
+      for (const chapter of chapterGroup.chapters) {
+        blocks.push({
+          kind: "heading",
+          depth: 1,
+          text: `Chapter ${chapter.ordinal} ${chapter.title}`.trim(),
+          label: chapter.ordinal,
+          sourceAnchor: `#${chapter.id}`,
+        });
+      }
+      // Emit sections from the content nodes
+      for (const contentNode of Object.values(chapterGroup.sections)) {
+        this.emitContentNodeBlocks(blocks, contentNode);
       }
     }
 
     return { metadata: raw.metadata, blocks };
   }
 
-  /** Walk one section's content into the block stream. */
-  private emitSectionBlocks(
+  /**
+   * Walk one content node (and its children recursively) into the block stream.
+   * Content nodes have inline HTML content and recursive children.
+   */
+  private emitContentNodeBlocks(
     blocks: NormalizedBlock[],
-    section: CodeConnectSection,
+    node: CodeConnectContentNode,
+    depth: number = 2,
   ): void {
+    // Emit heading for this node. ordinal/title may be absent on live
+    // nodes (same optionality as content/children, verified 2026-07-05).
     blocks.push({
       kind: "heading",
-      depth: 2,
-      text: `${section.sectionNumber} ${section.heading}`.trim(),
-      label: section.sectionNumber,
-      sourceAnchor: `#${section.sectionId}`,
+      depth,
+      text: `${node.ordinal ?? ""} ${node.title ?? ""}`.trim(),
+      label: node.ordinal ?? "",
+      sourceAnchor: `#${node.xmlId}`,
     });
 
-    for (const node of section.content) {
-      if (node.kind === "prose") {
-        const text = node.text.trim();
-        if (text.length === 0) continue;
-        blocks.push({ kind: "paragraph", text });
-        // Model-code prose cites sister sections inline; lift them into
-        // typed cross-reference blocks, exactly as the Municode adapter
-        // does for `§`-glyph references. The label char class admits
-        // `.` (section numbers are dotted), so a citation ending a
-        // sentence captures a trailing period — strip it, mirroring the
-        // atomizer's `sniffAffectedSectionLabels` trim.
+    // Emit content as paragraph if non-empty. Live content nodes may omit
+    // the field entirely (verified against the full IBC2018P6 corpus
+    // 2026-07-05); fixtures always set it, so guard here.
+    const content = (node.content ?? "").trim();
+    if (content.length > 0) {
+      // Strip HTML tags for plain text content
+      const text = content.replace(/<[^>]+>/g, "");
+      if (text.trim().length > 0) {
+        blocks.push({ kind: "paragraph", text: text.trim() });
+        
+        // Extract model-code cross-references from the text
         for (const match of text.matchAll(MODEL_CODE_REFERENCE_RE)) {
           const label = (match[1] ?? "").replace(/[.,;:]+$/, "");
           if (!label) continue;
@@ -254,45 +263,21 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
             referenceContext: text,
           });
         }
-      } else if (node.kind === "table") {
-        blocks.push({
-          kind: "table",
-          ...(node.caption ? { caption: node.caption } : {}),
-          headers: node.headers,
-          rows: node.rows,
-        });
-      } else {
-        blocks.push({
-          kind: "figure",
-          ...(node.caption ? { caption: node.caption } : {}),
-          ...(node.imageUrl ? { imageUrl: node.imageUrl } : {}),
-        });
       }
     }
 
-    // Definitions chapters (IRC/IBC Chapter 2) carry defined terms.
-    for (const def of section.definedTerms ?? []) {
-      blocks.push({
-        kind: "definition",
-        term: def.term,
-        definitionText: def.definition,
-        definedInSectionLabel: section.sectionNumber,
-      });
+    // Recursively emit children (subsections); absent on live leaf nodes.
+    for (const child of node.children ?? []) {
+      this.emitContentNodeBlocks(blocks, child, depth + 1);
     }
   }
 
   /**
    * The ICC free Digital Codes viewer URL for an I-Code edition. The
    * deep-link footing target per ADR-019.
-   *
-   * @assumption The free viewer lives at
-   * `https://codes.iccsafe.org/content/{CODE}{YEAR}` (e.g.
-   * `IRC2021`). The viewer is a SPA; whether it exposes per-section
-   * anchors is an ADR-019 open decision ("deep-link target
-   * granularity"). The model-code extractor refines section-level
-   * deep-links once the anchor scheme is confirmed.
+   * Verified live 2026-07-05.
    */
-  private viewerUrlForTitle(codeAbbrev: string, year: number): string {
-    return `https://codes.iccsafe.org/content/${codeAbbrev}${year}`;
+  private viewerUrlForBook(titleCode: string, year: string): string {
+    return `https://codes.iccsafe.org/content/${titleCode}${year}`;
   }
 }

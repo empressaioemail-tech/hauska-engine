@@ -44,7 +44,7 @@ import type {
 
 import {
   ICC_MODEL_CODE_TENANT,
-  type CodeConnectSection,
+  type CodeConnectContentNode,
   type IccCodeDocument,
 } from "../adapters/icc-code-connect/index.js";
 
@@ -264,59 +264,41 @@ function mapReferenceTypeToLinkType(referenceType: CodeReferenceType): LinkType 
 }
 
 /** The ICC free Digital Codes viewer URL for an edition. */
-function editionViewerUrl(codeAbbrev: string, year: number): string {
+function editionViewerUrl(codeAbbrev: string, year: string): string {
   return `https://codes.iccsafe.org/content/${codeAbbrev}${year}`;
 }
 
 /**
- * The deep-link a section's verbatim text lives at. Prefers the
- * Code Connect-supplied `viewerUrl`; otherwise synthesizes an
- * edition-level URL with a section anchor.
- *
- * @assumption The section-anchor synthesis (`#<sectionNumber>`) is a
- * placeholder until the ICC viewer's anchor scheme is confirmed
- * (ADR-019 "deep-link target granularity" open decision).
+ * The deep-link a section's verbatim text lives at. Synthesizes from
+ * the xmlId.
+ * Verified live 2026-07-05.
  */
-function sectionDeepLink(
-  section: CodeConnectSection,
+function sectionDeepLinkFromNode(
+  node: CodeConnectContentNode,
   editionUrl: string,
 ): string {
-  if (section.viewerUrl && section.viewerUrl.length > 0) {
-    return section.viewerUrl;
-  }
-  return `${editionUrl}#${encodeURIComponent(section.sectionNumber)}`;
-}
-
-/** Join a section's prose content into the verbatim-text input. */
-function verbatimTextOf(section: CodeConnectSection): string {
-  return section.content
-    .filter((n): n is { kind: "prose"; text: string } => n.kind === "prose")
-    .map((n) => n.text)
-    .join("\n\n");
+  return `${editionUrl}#${encodeURIComponent(node.xmlId)}`;
 }
 
 interface ParsedReference {
   referenceText: string;
   targetLabel: string;
-  referenceType: CodeReferenceType;
-  referenceContext: string;
+  kind: CodeReferenceType;
+  context: string;
 }
 
-/** Parse model-code cross-references out of one section's prose nodes. */
-function parseReferences(section: CodeConnectSection): ParsedReference[] {
+/** Parse model-code cross-references out of text content. */
+function parseReferencesFromText(text: string): ParsedReference[] {
   const refs: ParsedReference[] = [];
-  for (const node of section.content) {
-    if (node.kind !== "prose") continue;
-    for (const match of node.text.matchAll(MODEL_CODE_REFERENCE_RE)) {
-      const targetLabel = (match[1] ?? "").replace(/[.,;:]+$/, "");
-      if (!targetLabel) continue;
-      refs.push({
-        referenceText: match[0].replace(/[.,;:]+$/, ""),
-        targetLabel,
-        referenceType: inferReferenceType(node.text),
-        referenceContext: node.text,
-      });
-    }
+  for (const match of text.matchAll(MODEL_CODE_REFERENCE_RE)) {
+    const targetLabel = (match[1] ?? "").replace(/[.,;:]+$/, "");
+    if (!targetLabel) continue;
+    refs.push({
+      referenceText: match[0].replace(/[.,;:]+$/, ""),
+      targetLabel,
+      kind: inferReferenceType(text),
+      context: text,
+    });
   }
   return refs;
 }
@@ -340,25 +322,39 @@ export async function extractModelCodeAtoms(
   const reasoningLayer = options.reasoningLayer ?? deterministicReasoningLayer;
   const fetchedAt = options.fetchedAt ?? new Date().toISOString();
 
-  const { title } = document;
-  const editionLabel = `${title.year} ${title.name}`;
+  const { book } = document;
+  // Extract year from title or uri.year (uri.year is a string)
+  const yearMatch = book.title.match(/\b(20\d{2}|19\d{2})\b/) || [null, book.uri.year];
+  const year = yearMatch[1] || book.uri.year;
+  // Extract code name from title (e.g. "2021 International Residential Code" -> "International Residential Code")
+  const codeName = book.title.replace(/^\d{4}\s*/, '').trim();
+  const editionLabel = book.title;
   const editionId = modelCodeEditionEntityId(tenant, editionLabel);
-  const editionUrl = editionViewerUrl(title.codeAbbrev, title.year);
-  const effectiveFrom = options.effectiveFrom ?? `${title.year}-01-01`;
+  const editionUrl = editionViewerUrl(book.uri.titleCode, year);
+  const effectiveFrom = options.effectiveFrom ?? `${year}-01-01`;
 
   // Pass 1 — section-number → entityId, for xref resolution.
   const sectionIdByNumber = new Map<string, string>();
-  for (const { sections } of document.chapters) {
-    for (const section of sections) {
+  for (const chapterGroup of document.chapters) {
+    for (const contentNode of Object.values(chapterGroup.sections)) {
+      collectSectionIds(contentNode);
+    }
+  }
+  
+  function collectSectionIds(node: CodeConnectContentNode): void {
+    if (node.ordinal) {
       const id = modelCodeSectionEntityId(
         tenant,
         editionLabel,
-        section.sectionNumber,
+        node.ordinal,
       );
       sectionIdByNumber.set(
-        normalizeSectionLabel(section.sectionNumber),
+        normalizeSectionLabel(node.ordinal),
         id,
       );
+    }
+    for (const child of node.children ?? []) {
+      collectSectionIds(child);
     }
   }
 
@@ -369,38 +365,46 @@ export async function extractModelCodeAtoms(
   let xrefSerial = 0;
 
   // Pass 2 — build atoms.
-  for (const { chapter, sections: chapterSections } of document.chapters) {
-    const isDefinitionsChapter = /^definitions$/i.test(chapter.heading.trim());
+  for (const chapterGroup of document.chapters) {
+    for (const chapter of chapterGroup.chapters) {
+      const isDefinitionsChapter = /^definitions$/i.test(chapter.title.trim());
 
-    for (const section of chapterSections) {
+      for (const contentNode of Object.values(chapterGroup.sections)) {
+        await processSectionNode(contentNode, chapter, isDefinitionsChapter);
+      }
+    }
+  }
+  
+  async function processSectionNode(
+    node: CodeConnectContentNode,
+    chapter: any,
+    isDefinitionsChapter: boolean,
+  ): Promise<void> {
+    if (node.ordinal) {
       const sectionId = modelCodeSectionEntityId(
         tenant,
         editionLabel,
-        section.sectionNumber,
+        node.ordinal,
       );
-      const deepLink = sectionDeepLink(section, editionUrl);
-      const verbatimText = verbatimTextOf(section);
-      const refs = parseReferences(section);
-      const definedTerms = section.definedTerms ?? [];
-      const tableCount = section.content.filter(
-        (n) => n.kind === "table",
-      ).length;
-      const figureCount = section.content.filter(
-        (n) => n.kind === "figure",
-      ).length;
+      const deepLink = sectionDeepLinkFromNode(node, editionUrl);
+      const verbatimText = (node.content ?? '').replace(/<[^>]+>/g, '').trim();
+      const refs = parseReferencesFromText(verbatimText);
+      const definedTerms: string[] = [];
+      const tableCount = 0;
+      const figureCount = 0;
 
       const bodyText = await reasoningLayer({
-        codeName: title.name,
+        codeName,
         editionLabel,
-        chapterNumber: chapter.chapterNumber,
-        chapterHeading: chapter.heading,
-        sectionNumber: section.sectionNumber,
-        sectionHeading: section.heading,
+        chapterNumber: chapter.ordinal,
+        chapterHeading: chapter.title,
+        sectionNumber: node.ordinal,
+        sectionHeading: node.title ?? "",
         verbatimText,
         tableCount,
         figureCount,
         crossReferenceLabels: refs.map((r) => r.targetLabel),
-        definedTerms: definedTerms.map((d) => d.term),
+        definedTerms,
         verbatimTextDeepLink: deepLink,
       });
 
@@ -409,8 +413,8 @@ export async function extractModelCodeAtoms(
         entityId: sectionId,
         jurisdictionTenant: tenant,
         codeEditionId: editionId,
-        sectionNumber: section.sectionNumber,
-        title: section.heading,
+        sectionNumber: node.ordinal,
+        title: node.title ?? "",
         subsectionPath: null,
         bodyText,
         verbatimTextDeepLink: deepLink,
@@ -420,8 +424,8 @@ export async function extractModelCodeAtoms(
         contentHash: hashContent(
           "code-section",
           sectionId,
-          section.sectionNumber,
-          section.heading,
+          node.ordinal,
+          node.title ?? "",
           bodyText,
           deepLink,
         ),
@@ -440,18 +444,16 @@ export async function extractModelCodeAtoms(
         const defId = modelCodeDefinitionEntityId(
           tenant,
           editionLabel,
-          term.term,
+          term,
         );
         definitions.push({
           entityType: "code-definition",
           entityId: defId,
           jurisdictionTenant: tenant,
+          term,
           codeEditionId: editionId,
-          term: term.term,
-          definitionText: term.definition,
           definingSectionId: sectionId,
-          // A term in the I-Code Definitions chapter is code-wide;
-          // an inline definition elsewhere is section-scoped.
+          definitionText: "",
           scope: isDefinitionsChapter ? "code" : "section",
           fetchedAt,
           sourceAdapter: "icc-code-connect",
@@ -459,8 +461,8 @@ export async function extractModelCodeAtoms(
           contentHash: hashContent(
             "code-definition",
             defId,
-            term.term,
-            term.definition,
+            term,
+            "",
           ),
         });
         links.push({
@@ -470,25 +472,32 @@ export async function extractModelCodeAtoms(
           toEntityId: defId,
           linkType: "defines",
         });
+        if (isDefinitionsChapter) {
+          links.push({
+            fromEntityType: "code-edition",
+            fromEntityId: editionId,
+            toEntityType: "code-definition",
+            toEntityId: defId,
+            linkType: "contains",
+          });
+        }
       }
 
       // Cross-references.
       for (const ref of refs) {
-        xrefSerial += 1;
-        const xrefId = `${tenant}/${editionSlug(editionLabel)}/${slugify(
-          section.sectionNumber,
-        )}/xref-${xrefSerial}`;
-        const toSectionId =
-          sectionIdByNumber.get(normalizeSectionLabel(ref.targetLabel)) ?? "";
+        const targetId = sectionIdByNumber.get(
+          normalizeSectionLabel(ref.targetLabel),
+        ) || "";
+        const xrefId = `${sectionId}#xref-${++xrefSerial}`;
         crossReferences.push({
           entityType: "code-cross-reference",
           entityId: xrefId,
           jurisdictionTenant: tenant,
           fromSectionId: sectionId,
-          toSectionId,
+          toSectionId: targetId,
           referenceText: ref.referenceText,
-          referenceContext: ref.referenceContext,
-          referenceType: ref.referenceType,
+          referenceContext: ref.context,
+          referenceType: ref.kind,
           fetchedAt,
           sourceAdapter: "icc-code-connect",
           sourceUrl: deepLink,
@@ -496,21 +505,26 @@ export async function extractModelCodeAtoms(
             "code-cross-reference",
             xrefId,
             sectionId,
-            toSectionId,
-            ref.referenceText,
+            targetId,
+            ref.kind,
           ),
         });
-        if (toSectionId) {
+        if (targetId) {
           links.push({
             fromEntityType: "code-section",
             fromEntityId: sectionId,
             toEntityType: "code-section",
-            toEntityId: toSectionId,
-            linkType: mapReferenceTypeToLinkType(ref.referenceType),
-            context: ref.referenceContext,
+            toEntityId: targetId,
+            linkType: mapReferenceTypeToLinkType(ref.kind),
+            context: ref.context,
           });
         }
       }
+    }
+    
+    // Recursively process children (even if this node has no ordinal)
+    for (const child of node.children ?? []) {
+      await processSectionNode(child, chapter, isDefinitionsChapter);
     }
   }
 
