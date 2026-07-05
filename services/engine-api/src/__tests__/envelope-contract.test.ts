@@ -21,6 +21,8 @@ const config: EngineApiConfig = {
   port: 8080,
   gateServiceToken: "test-gate-token",
   startedAt: "2026-06-16T00:00:00.000Z",
+  gateContextSigningKey: "",
+  gateContextMode: "off",
 };
 
 const findingsInput = {

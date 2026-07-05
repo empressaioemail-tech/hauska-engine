@@ -9,6 +9,8 @@ describe("engine-api scaffold", () => {
     port: 8080,
     gateServiceToken: "",
     startedAt: "2026-06-07T00:00:00.000Z",
+    gateContextSigningKey: "",
+    gateContextMode: "off",
   };
 
   it("serves /health without gate context", async () => {

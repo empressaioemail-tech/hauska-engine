@@ -6,6 +6,11 @@ import {
   parseGateFrontHeaders,
   type GateFrontContext,
 } from "./gate-front-context.js";
+import {
+  verifyGateContext,
+  GATE_CONTEXT_HEADERS,
+  type GateContextPayload,
+} from "./gate-context-verify.js";
 import { buildBriefingRoutes } from "./routes/briefing.js";
 import { buildChatRoutes } from "./routes/chat.js";
 import { buildDocumentIngestRoutes } from "./routes/document-ingest.js";
@@ -25,6 +30,7 @@ export interface ServerOptions {
 declare module "hono" {
   interface ContextVariableMap {
     gateFront: GateFrontContext;
+    gateContextVerified?: GateContextPayload;
   }
 }
 
@@ -75,6 +81,93 @@ export function buildApp(options: ServerOptions): Hono {
   app.get("/ready", (c) => c.json({ status: "ready", engineCore: true }));
 
   const v1 = new Hono();
+
+  v1.use("*", async (c: Context, next: Next) => {
+    if (config.gateContextMode === "off") {
+      return next();
+    }
+
+    const encodedContext = c.req.header(GATE_CONTEXT_HEADERS.context);
+    const signature = c.req.header(GATE_CONTEXT_HEADERS.signature);
+
+    if (!encodedContext || !signature) {
+      if (config.gateContextMode === "enforce") {
+        console.log(
+          JSON.stringify({
+            level: "warn",
+            event: "gate_context_invalid",
+            reason: "missing_headers",
+            path: c.req.path,
+          }),
+        );
+        return c.json(
+          {
+            error: "gate_context_required",
+            message: "Signed gate context required in enforce mode",
+          },
+          401,
+        );
+      }
+      return next();
+    }
+
+    const result = await verifyGateContext(
+      encodedContext,
+      signature,
+      config.gateContextSigningKey,
+    );
+
+    if (!result.ok) {
+      console.log(
+        JSON.stringify({
+          level: "warn",
+          event: "gate_context_invalid",
+          reason: result.error,
+          path: c.req.path,
+        }),
+      );
+
+      if (config.gateContextMode === "enforce") {
+        return c.json(
+          {
+            error: "gate_context_invalid",
+            message: `Signed gate context verification failed: ${result.error}`,
+          },
+          401,
+        );
+      }
+      return next();
+    }
+
+    console.log(
+      JSON.stringify({
+        level: "info",
+        event: "gate_context_verified",
+        tenant: result.payload.tenant,
+        product: result.payload.product,
+        tier: result.payload.tier,
+        path: c.req.path,
+      }),
+    );
+
+    c.set("gateContextVerified", result.payload);
+
+    const gateFront = c.get("gateFront");
+    if (gateFront && result.payload.tenant !== gateFront.tenantId) {
+      console.log(
+        JSON.stringify({
+          level: "warn",
+          event: "gate_context_mismatch",
+          signedTenant: result.payload.tenant,
+          plainTenant: gateFront.tenantId,
+          path: c.req.path,
+        }),
+      );
+    }
+
+    return next();
+  });
+
   v1.use("*", validateEnvelopeMiddleware);
   v1.route("/site-context", buildSiteContextRoutes());
   v1.route("/briefing", buildBriefingRoutes());
