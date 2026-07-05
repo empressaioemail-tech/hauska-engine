@@ -7,18 +7,9 @@
  * moment access lands the ingest is "populate the secret, run it."
  *
  * ── CONTRACT STATUS ──────────────────────────────────────────────────
- * The ICC Code Connect dev portal (`api.iccsafe.org`) is a credentialed
- * SPA; the public Code Connect product pages document only that it is
- * an OAuth 2.0 JSON API returning sections / tables / figures / whole
- * chapters, with search across titles and current + historical
- * versions. Everything below the OAuth-2.0-JSON-API line is therefore
- * an ASSUMED contract, built so that adapting to the real OpenAPI spec
- * is a localized edit. Every assumption is tagged `@assumption` and is
- * collected in the CDX/ICC `_inbox` report's "needs confirmation" list.
- *
- * The operator is bringing the OpenAPI/Swagger spec, example payloads,
- * and the OAuth2 token-endpoint details back from the ICC meeting.
- * Reconcile this file against them when they land.
+ * Contract verified live 2026-07-05 against production with demo credentials.
+ * All types and endpoints below reflect the real wire contract (see
+ * CURSOR_TASK.md for sample payloads).
  *
  * ── MODES ────────────────────────────────────────────────────────────
  *   - "live"          — credentials supplied; OAuth2 + HTTP against the
@@ -34,15 +25,12 @@
 import { RespectfulFetch } from "../http.js";
 
 /* ──────────────────────────────────────────────────────────────────────
- *  Assumed wire contract
+ *  Real wire contract (verified live 2026-07-05)
  * ──────────────────────────────────────────────────────────────────── */
 
 /**
- * OAuth2 client-credentials token response.
- *
- * @assumption The token endpoint returns the RFC 6749 §5.1 standard
- * shape `{ access_token, token_type, expires_in }`. `expires_in` is
- * seconds. Confirm against the real token-endpoint response.
+ * OAuth2 client-credentials token response (RFC 6749 §5.1).
+ * Verified live 2026-07-05.
  */
 export interface OAuthTokenResponse {
   access_token: string;
@@ -51,156 +39,118 @@ export interface OAuthTokenResponse {
 }
 
 /**
- * One published I-Code edition (e.g. the 2021 IRC). Code Connect's unit
- * of "title".
- *
- * @assumption Field names `titleId` / `codeAbbrev` / `name` / `year` /
- * `versionStatus`. The real API may name the edition key differently
- * (e.g. `id`, `documentId`); `titleId` is what every other call keys
- * on, so this is the highest-value field to confirm first.
+ * One published I-Code edition from GET /v1/books.
+ * Verified live 2026-07-05.
  */
-export interface CodeConnectTitle {
-  /** Stable id Code Connect uses to address this edition. */
-  titleId: string;
-  /** I-Code family abbreviation: `IRC`, `IBC`, `IECC`, ... */
-  codeAbbrev: string;
-  /** Human name, e.g. "International Residential Code". */
-  name: string;
-  /** Edition year, e.g. 2021. */
-  year: number;
-  /** Whether this edition is the current one or a historical edition. */
-  versionStatus: "current" | "historical";
+export interface CodeConnectBook {
+  /** The shortCode is the bookId used everywhere (e.g. IBC2018P6). */
+  shortCode: string;
+  /** URI components */
+  uri: {
+    category: string;
+    /** Year as a STRING, not a number */
+    year: string;
+    titleCode: string;
+    printing: string;
+  };
+  /** Printing label (e.g. "Sixth Printing: November 2021") */
+  printing: string;
+  /** Full title (e.g. "2018 International Building Code 6th printing") */
+  title: string;
+  /** Access window */
+  accessStartDate: string;
+  accessEndDate: string;
 }
 
 /**
- * A chapter of an I-Code edition. Carries an ordered list of section
- * references; section bodies are fetched separately.
- *
- * @assumption A chapter response carries lightweight section references
- * (`sectionId` + `sectionNumber` + `heading`) rather than full section
- * bodies, and the bodies are fetched per-section. If Code Connect
- * returns whole chapters with inlined section bodies, `getChapter` can
- * return them directly and `fetchCodeDocument` skips the per-section
- * fan-out.
+ * A chapter from GET /v1/book/{bookId}/chapters.
+ * Verified live 2026-07-05.
  */
 export interface CodeConnectChapter {
-  chapterId: string;
-  titleId: string;
-  /** Chapter number as published, e.g. "3" or "R3". */
-  chapterNumber: string;
-  heading: string;
-  /** Ordered section references within this chapter. */
-  sections: ReadonlyArray<CodeConnectSectionRef>;
+  /** Chapter ordinal (e.g. "3") */
+  ordinal: string;
+  /** Cleaned ordinal (same as ordinal in practice) */
+  ordinalClean: string;
+  /** Chapter title */
+  title: string;
+  /** Chapter ID (e.g. "IBC2018P6_Ch03") */
+  id: string;
+  /** Discriminator type */
+  dtype: string;
 }
 
-/** A lightweight pointer to a section, as carried in a chapter response. */
+/**
+ * A section from GET /v1/book/{bookId}/chapter/{chapterId}/sections.
+ * Verified live 2026-07-05.
+ */
 export interface CodeConnectSectionRef {
-  sectionId: string;
-  /** Section number as published, e.g. "R301.2" or "1604.3". */
-  sectionNumber: string;
-  heading: string;
+  /** Section ordinal (e.g. "301") */
+  ordinal: string;
+  /** Cleaned ordinal */
+  ordinalClean: string;
+  /** Section title */
+  title: string;
+  /** Section ID (e.g. "IBC2018P6_Ch03_Sec301") - used to fetch content */
+  id: string;
+  /** Discriminator type */
+  dtype: string;
 }
 
 /**
- * One unit of section content. Code Connect returns content as prose,
- * tables, and figures.
- *
- * @assumption Content is an ordered array of discriminated nodes keyed
- * on `kind`. The real API may deliver section content as a single HTML
- * blob instead; if so, `normalize()` switches to an HTML walk and this
- * union collapses to a single `prose`-with-html node.
+ * Recursive content node from GET /v1/content/{xmlId}.
+ * Verified live 2026-07-05. Sections have inline subsections as children,
+ * each with their own HTML content.
  */
-export type CodeConnectContentNode =
-  | { kind: "prose"; text: string }
-  | {
-      kind: "table";
-      caption?: string;
-      headers: ReadonlyArray<string>;
-      rows: ReadonlyArray<ReadonlyArray<string>>;
-    }
-  | { kind: "figure"; caption?: string; imageUrl?: string };
-
-/**
- * A defined term, as Code Connect surfaces it for the Definitions
- * chapters (Chapter 2 of the IRC/IBC).
- *
- * @assumption Code Connect structurally tags defined terms. If it does
- * not, `definedTerms` is simply absent and the model-code extractor
- * (Lane E deliverable 2) parses definitions out of prose instead.
- */
-export interface CodeConnectDefinedTerm {
-  term: string;
-  definition: string;
+export interface CodeConnectContentNode {
+  /** Node type (e.g. "codeSection") */
+  type: string;
+  /** Label (e.g. "SECTION") */
+  label: string;
+  /** Title text */
+  title: string;
+  /** XML ID */
+  xmlId: string;
+  /** HTML content for this node */
+  content: string;
+  /** Section ordinal (e.g. "301" or "301.1") */
+  ordinal: string;
+  /** Cleaned ordinal */
+  ordinalClean: string;
+  /** Child subsections (recursive, same shape) */
+  children: ReadonlyArray<CodeConnectContentNode>;
 }
 
 /**
- * A section of an I-Code edition with its content.
- *
- * @assumption Section carries `sectionNumber` / `heading` / `content` /
- * optional `definedTerms`. Cross-references are NOT assumed to be
- * structurally tagged — model-code prose cites sister sections inline
- * ("see Section R301.2", "Table R301.2(1)"), and the adapter parses
- * them out of prose, exactly as the Municode adapter does. If Code
- * Connect does tag cross-references, add a `crossReferences` field and
- * prefer it over the prose parse.
- */
-export interface CodeConnectSection {
-  sectionId: string;
-  titleId: string;
-  chapterId: string;
-  sectionNumber: string;
-  heading: string;
-  content: ReadonlyArray<CodeConnectContentNode>;
-  definedTerms?: ReadonlyArray<CodeConnectDefinedTerm>;
-  /**
-   * The publisher's free Digital Codes viewer URL for this section, if
-   * Code Connect returns it. The ADR-019 Layer 1 deep-link footing
-   * needs a per-section deep-link; when Code Connect does not return
-   * one the model-code extractor synthesizes it from `sectionNumber`.
-   *
-   * @assumption Optional; presence unknown until the spec lands.
-   */
-  viewerUrl?: string;
-}
-
-/**
- * One search hit. Code Connect "supports search across titles".
- *
- * @assumption Search returns section-level hits with a snippet. Result
- * field names and whether search is title-scoped or global are
- * unconfirmed.
+ * Search result from GET /v2/search?bookId={bookId}&search={q}.
+ * Verified live 2026-07-05. Optional for this task.
  */
 export interface CodeConnectSearchResult {
-  sectionId: string;
-  titleId: string;
-  sectionNumber: string;
-  heading: string;
-  snippet: string;
+  xmlId: string;
+  ordinal: string;
+  title: string;
+  content: string;
+  type: string;
+  label: string;
+  figure: string;
+  /** Search highlights embedded in content/title */
+  highlighted?: {
+    contentTitle?: string[];
+    content?: string[];
+  };
 }
 
 /**
- * One edition in a code family's version history.
- *
- * @assumption `getVersions` is keyed by the family abbreviation
- * (`IRC`) and returns every edition Code Connect carries.
- */
-export interface CodeConnectVersion {
-  titleId: string;
-  codeAbbrev: string;
-  year: number;
-  versionStatus: "current" | "historical";
-}
-
-/**
- * A whole I-Code edition assembled from a title + its chapters + every
- * section body. This is what the adapter's `fetch()` serializes into
- * the `RawCode` body so `normalize()` is a pure JSON walk.
+ * A whole I-Code edition assembled from a book + chapters + sections.
+ * This is what the adapter's `fetch()` serializes into the `RawCode`
+ * body so `normalize()` is a pure JSON walk.
  */
 export interface IccCodeDocument {
-  title: CodeConnectTitle;
+  book: CodeConnectBook;
   chapters: ReadonlyArray<{
-    chapter: CodeConnectChapter;
-    sections: ReadonlyArray<CodeConnectSection>;
+    bookId: string;
+    chapters: ReadonlyArray<CodeConnectChapter>;
+    /** Map of section ID to content tree */
+    sections: Record<string, CodeConnectContentNode>;
   }>;
 }
 
@@ -209,20 +159,17 @@ export interface IccCodeDocument {
  * ──────────────────────────────────────────────────────────────────── */
 
 /**
- * @assumption Token endpoint. The Code Connect product page says
- * OAuth 2.0; the exact path is unconfirmed. `oauth2/token` is the
- * common convention. Override via `tokenUrl` / `ICC_CODE_CONNECT_TOKEN_URL`.
+ * Token endpoint. Verified live 2026-07-05.
+ * Override via `tokenUrl` / `ICC_CODE_CONNECT_TOKEN_URL`.
  */
 export const DEFAULT_CODE_CONNECT_TOKEN_URL =
-  "https://api.iccsafe.org/oauth2/token";
+  "https://api.iccsafe.org/auth/token";
 
 /**
- * @assumption API base. A `/v1`-style version segment is the common
- * convention; unconfirmed. Override via `baseUrl` /
- * `ICC_CODE_CONNECT_BASE_URL`.
+ * API base. Verified live 2026-07-05.
+ * Override via `baseUrl` / `ICC_CODE_CONNECT_BASE_URL`.
  */
-export const DEFAULT_CODE_CONNECT_BASE_URL =
-  "https://api.iccsafe.org/codeconnect/v1";
+export const DEFAULT_CODE_CONNECT_BASE_URL = "https://api.iccsafe.org";
 
 /** Refresh the token this many ms before its stated expiry. */
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
@@ -242,23 +189,24 @@ export class CodeConnectError extends Error {
 export type CodeConnectMode = "live" | "mock" | "unconfigured";
 
 /**
- * Fixture set for mock mode. Built by hand from the assumed response
- * models and checked into `__fixtures__/`. The conformance suite and
- * unit tests run entirely against these — no network, no OAuth.
+ * Fixture set for mock mode. Built by hand from the real response
+ * models (verified live 2026-07-05) and checked into `__fixtures__/`.
+ * The conformance suite and unit tests run entirely against these —
+ * no network, no OAuth.
+ * IMPORTANT: Fixture content must be synthetic placeholder text, NEVER
+ * real ICC code text (licensing/derivative boundary).
  */
 export interface CodeConnectFixtures {
-  titles: ReadonlyArray<CodeConnectTitle>;
-  /** Assembled documents keyed by `titleId`. */
+  books: ReadonlyArray<CodeConnectBook>;
+  /** Assembled documents keyed by `bookId` (shortCode). */
   documents: Record<string, IccCodeDocument>;
   /** Search results keyed by lower-cased query string. */
   search?: Record<string, ReadonlyArray<CodeConnectSearchResult>>;
-  /** Version lists keyed by `codeAbbrev`. */
-  versions?: Record<string, ReadonlyArray<CodeConnectVersion>>;
 }
 
 export interface CodeConnectClientOptions {
   /** OAuth2 client-credentials. Omit (or leave env empty) for mock mode. */
-  credentials?: { clientId: string; clientSecret: string };
+  credentials?: { clientId: string; clientSecret: string; tokenUrl?: string; baseUrl?: string };
   /** Fixture set — supplying this selects mock mode. */
   fixtures?: CodeConnectFixtures;
   /** OAuth2 token endpoint. Defaults to {@link DEFAULT_CODE_CONNECT_TOKEN_URL}. */
@@ -270,17 +218,19 @@ export interface CodeConnectClientOptions {
 }
 
 /**
- * Resolve Code Connect credentials from the environment. Returns
- * `undefined` when either secret is empty — the pre-credential state —
- * so the adapter stays in mock / unconfigured mode.
+ * Resolve Code Connect credentials and URLs from the environment.
+ * Returns `undefined` when either secret is empty — the pre-credential
+ * state — so the adapter stays in mock / unconfigured mode.
  */
 export function codeConnectCredentialsFromEnv(
   env: Record<string, string | undefined> = process.env,
-): { clientId: string; clientSecret: string } | undefined {
+): { clientId: string; clientSecret: string; tokenUrl?: string; baseUrl?: string } | undefined {
   const clientId = env.ICC_CODE_CONNECT_CLIENT_ID?.trim();
   const clientSecret = env.ICC_CODE_CONNECT_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) return undefined;
-  return { clientId, clientSecret };
+  const tokenUrl = env.ICC_CODE_CONNECT_TOKEN_URL?.trim();
+  const baseUrl = env.ICC_CODE_CONNECT_BASE_URL?.trim();
+  return { clientId, clientSecret, tokenUrl, baseUrl };
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -309,13 +259,19 @@ export class CodeConnectClient {
   private cachedToken: CachedToken | null = null;
 
   constructor(opts: CodeConnectClientOptions = {}) {
-    this.credentials = opts.credentials;
+    this.credentials = opts.credentials
+      ? { clientId: opts.credentials.clientId, clientSecret: opts.credentials.clientSecret }
+      : undefined;
     this.fixtures = opts.fixtures;
-    this.tokenUrl = opts.tokenUrl ?? DEFAULT_CODE_CONNECT_TOKEN_URL;
-    this.baseUrl = (opts.baseUrl ?? DEFAULT_CODE_CONNECT_BASE_URL).replace(
-      /\/$/,
-      "",
-    );
+    this.tokenUrl =
+      opts.tokenUrl ??
+      opts.credentials?.tokenUrl ??
+      DEFAULT_CODE_CONNECT_TOKEN_URL;
+    this.baseUrl = (
+      opts.baseUrl ??
+      opts.credentials?.baseUrl ??
+      DEFAULT_CODE_CONNECT_BASE_URL
+    ).replace(/\/$/, "");
     this.http =
       opts.http ??
       new RespectfulFetch({
@@ -338,11 +294,8 @@ export class CodeConnectClient {
    * grant when the cache is empty or within the refresh buffer of
    * expiry. Only used in live mode.
    *
-   * @assumption client-credentials grant, credentials in a
-   * `application/x-www-form-urlencoded` body alongside
-   * `grant_type=client_credentials`. The RFC 6749 alternative is HTTP
-   * Basic auth for the client id/secret — switch the `body` / `headers`
-   * here if the spec says Basic.
+   * Verified live 2026-07-05: credentials in form body (not Basic auth),
+   * with grant_type=client_credentials and scope=content-read.
    */
   async getAccessToken(): Promise<string> {
     if (this.mode !== "live" || !this.credentials) {
@@ -359,6 +312,7 @@ export class CodeConnectClient {
       grant_type: "client_credentials",
       client_id: this.credentials.clientId,
       client_secret: this.credentials.clientSecret,
+      scope: "content-read",
     });
     const res = await this.http.fetch(this.tokenUrl, {
       method: "POST",
@@ -430,139 +384,138 @@ export class CodeConnectClient {
 
   /**
    * List every I-Code edition Code Connect carries.
-   *
-   * @assumption `GET /titles`.
+   * GET /v1/books → { collections: [...] }
+   * Verified live 2026-07-05.
    */
-  async listTitles(): Promise<ReadonlyArray<CodeConnectTitle>> {
+  async listBooks(): Promise<ReadonlyArray<CodeConnectBook>> {
     if (this.mode === "unconfigured") return [];
-    if (this.mode === "mock") return this.fixtures!.titles;
-    return await this.getJson<CodeConnectTitle[]>("/titles");
+    if (this.mode === "mock") return this.fixtures!.books;
+    const response = await this.getJson<{ collections: CodeConnectBook[] }>(
+      "/v1/books",
+    );
+    return response.collections;
   }
 
   /**
    * List the chapters of one edition.
-   *
-   * @assumption `GET /titles/{titleId}/chapters`.
+   * GET /v1/book/{bookId}/chapters → { bookId, chapters: [...] }
+   * Verified live 2026-07-05.
    */
   async getChapters(
-    titleId: string,
-  ): Promise<ReadonlyArray<CodeConnectChapter>> {
+    bookId: string,
+  ): Promise<{ bookId: string; chapters: ReadonlyArray<CodeConnectChapter> }> {
+    if (this.mode === "unconfigured") return { bookId, chapters: [] };
+    if (this.mode === "mock") {
+      const doc = this.fixtures!.documents[bookId];
+      if (!doc || doc.chapters.length === 0) return { bookId, chapters: [] };
+      return { bookId, chapters: doc.chapters[0]!.chapters };
+    }
+    return await this.getJson<{ bookId: string; chapters: CodeConnectChapter[] }>(
+      `/v1/book/${encodeURIComponent(bookId)}/chapters`,
+    );
+  }
+
+  /**
+   * List the sections of one chapter.
+   * GET /v1/book/{bookId}/chapter/{chapterId}/sections → { bookId, chapterId, sections: [...] }
+   * Verified live 2026-07-05.
+   */
+  async getSections(
+    bookId: string,
+    chapterId: string,
+  ): Promise<ReadonlyArray<CodeConnectSectionRef>> {
     if (this.mode === "unconfigured") return [];
     if (this.mode === "mock") {
-      const doc = this.fixtures!.documents[titleId];
-      return doc ? doc.chapters.map((c) => c.chapter) : [];
+      const doc = this.fixtures!.documents[bookId];
+      if (!doc) return [];
+      // Mock fixture returns sections from the document structure
+      // For simplicity in tests, we return empty here and rely on getContent
+      return [];
     }
-    return await this.getJson<CodeConnectChapter[]>(
-      `/titles/${encodeURIComponent(titleId)}/chapters`,
+    const response = await this.getJson<{ bookId: string; chapterId: string; sections: CodeConnectSectionRef[] }>(
+      `/v1/book/${encodeURIComponent(bookId)}/chapter/${encodeURIComponent(chapterId)}/sections`,
     );
+    return response.sections;
   }
 
   /**
-   * Fetch one chapter.
-   *
-   * @assumption `GET /titles/{titleId}/chapters/{chapterId}`.
+   * Fetch recursive content tree for a section.
+   * GET /v1/content/{xmlId} → { type, label, title, xmlId, content, ordinal, ordinalClean, children }
+   * Verified live 2026-07-05. A section's subsections are inline children with their own html content.
    */
-  async getChapter(
-    titleId: string,
-    chapterId: string,
-  ): Promise<CodeConnectChapter | null> {
+  async getContent(xmlId: string): Promise<CodeConnectContentNode | null> {
     if (this.mode === "unconfigured") return null;
     if (this.mode === "mock") {
-      const doc = this.fixtures!.documents[titleId];
-      return (
-        doc?.chapters.find((c) => c.chapter.chapterId === chapterId)?.chapter ??
-        null
-      );
-    }
-    return await this.getJson<CodeConnectChapter>(
-      `/titles/${encodeURIComponent(titleId)}/chapters/${encodeURIComponent(chapterId)}`,
-    );
-  }
-
-  /**
-   * Fetch one section with its content.
-   *
-   * @assumption `GET /titles/{titleId}/sections/{sectionId}`.
-   */
-  async getSection(
-    titleId: string,
-    sectionId: string,
-  ): Promise<CodeConnectSection | null> {
-    if (this.mode === "unconfigured") return null;
-    if (this.mode === "mock") {
-      const doc = this.fixtures!.documents[titleId];
-      for (const c of doc?.chapters ?? []) {
-        const hit = c.sections.find((s) => s.sectionId === sectionId);
-        if (hit) return hit;
+      // Mock mode: extract from fixtures documents
+      for (const doc of Object.values(this.fixtures!.documents)) {
+        for (const chapter of doc.chapters) {
+          const content = chapter.sections[xmlId];
+          if (content) return content;
+        }
       }
       return null;
     }
-    return await this.getJson<CodeConnectSection>(
-      `/titles/${encodeURIComponent(titleId)}/sections/${encodeURIComponent(sectionId)}`,
+    return await this.getJson<CodeConnectContentNode>(
+      `/v1/content/${encodeURIComponent(xmlId)}`,
     );
   }
 
   /**
    * Search across titles.
-   *
-   * @assumption `GET /search?q=...`. The real API may scope by title or
-   * paginate; reconcile when the spec lands.
+   * GET /v2/search?bookId={bookId}&search={q}
+   * Verified live 2026-07-05. Optional for this task.
    */
   async search(
     query: string,
+    bookId?: string,
   ): Promise<ReadonlyArray<CodeConnectSearchResult>> {
     if (this.mode === "unconfigured") return [];
     if (this.mode === "mock") {
       return this.fixtures!.search?.[query.toLowerCase()] ?? [];
     }
-    return await this.getJson<CodeConnectSearchResult[]>("/search", {
-      q: query,
-    });
-  }
-
-  /**
-   * List the editions Code Connect carries for one I-Code family.
-   *
-   * @assumption `GET /codes/{codeAbbrev}/versions`.
-   */
-  async getVersions(
-    codeAbbrev: string,
-  ): Promise<ReadonlyArray<CodeConnectVersion>> {
-    if (this.mode === "unconfigured") return [];
-    if (this.mode === "mock") {
-      return this.fixtures!.versions?.[codeAbbrev] ?? [];
-    }
-    return await this.getJson<CodeConnectVersion[]>(
-      `/codes/${encodeURIComponent(codeAbbrev)}/versions`,
+    const params: Record<string, string> = { search: query };
+    if (bookId) params.bookId = bookId;
+    const response = await this.getJson<{ success: boolean; data: CodeConnectSearchResult[] }>(
+      "/v2/search",
+      params,
     );
+    return response.data;
   }
 
   /**
-   * Assemble a whole edition: title + chapters + every section body.
+   * Assemble a whole edition: book + chapters + section content trees.
    * Mock mode returns the fixture document directly; live mode walks
-   * chapters and fans out one `getSection` per section reference.
+   * chapters and fetches top-level sections via /v1/content/{xmlId}.
    */
-  async fetchCodeDocument(titleId: string): Promise<IccCodeDocument | null> {
+  async fetchCodeDocument(bookId: string): Promise<IccCodeDocument | null> {
     if (this.mode === "unconfigured") return null;
     if (this.mode === "mock") {
-      return this.fixtures!.documents[titleId] ?? null;
+      return this.fixtures!.documents[bookId] ?? null;
     }
-    const titles = await this.listTitles();
-    const title = titles.find((t) => t.titleId === titleId);
-    if (!title) return null;
-    const chapters = await this.getChapters(titleId);
-    const assembled: Array<{
-      chapter: CodeConnectChapter;
-      sections: CodeConnectSection[];
+    const books = await this.listBooks();
+    const book = books.find((b) => b.shortCode === bookId);
+    if (!book) return null;
+    const chaptersResponse = await this.getChapters(bookId);
+    const chapters: Array<{
+      bookId: string;
+      chapters: CodeConnectChapter[];
+      sections: Record<string, CodeConnectContentNode>;
     }> = [];
-    for (const chapter of chapters) {
-      const sections: CodeConnectSection[] = [];
-      for (const ref of chapter.sections) {
-        const section = await this.getSection(titleId, ref.sectionId);
-        if (section) sections.push(section);
+    
+    // Fetch top-level sections for each chapter
+    for (const chapter of chaptersResponse.chapters) {
+      const sectionsResponse = await this.getSections(bookId, chapter.id);
+      const sections: Record<string, CodeConnectContentNode> = {};
+      for (const sectionRef of sectionsResponse) {
+        const content = await this.getContent(sectionRef.id);
+        if (content) sections[sectionRef.id] = content;
       }
-      assembled.push({ chapter, sections });
+      chapters.push({
+        bookId: chaptersResponse.bookId,
+        chapters: [chapter],
+        sections,
+      });
     }
-    return { title, chapters: assembled };
+    return { book, chapters };
   }
 }
