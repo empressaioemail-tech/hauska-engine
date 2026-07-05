@@ -1,0 +1,19 @@
+{
+  "jurisdictionTenant": "leander_tx",
+  "evaluatedAt": "2026-07-05T15:32:57.192Z",
+  "passed": true,
+  "scores": {
+    "top3Score": 1,
+    "sectionNumScore": 1,
+    "crossRefScore": 1
+  },
+  "thresholds": {
+    "top3RetrievalMin": 0.9,
+    "sectionNumRetrievabilityMin": 1,
+    "crossRefResolutionMin": 0.95
+  },
+  "failures": [],
+  "queriesEvaluated": 0,
+  "sectionsSampled": 100,
+  "crossRefsSampled": 3
+}

@@ -1,0 +1,97 @@
+{
+  "jurisdictionTenant": "bastrop_tx",
+  "evaluatedAt": "2026-07-05T15:32:56.504Z",
+  "passed": false,
+  "scores": {
+    "top3Score": 0,
+    "sectionNumScore": 1,
+    "crossRefScore": 1
+  },
+  "thresholds": {
+    "top3RetrievalMin": 0.9,
+    "sectionNumRetrievabilityMin": 1,
+    "crossRefResolutionMin": 0.95
+  },
+  "failures": [
+    {
+      "queryId": "seed-bastrop_tx-MUNI_CODE-1",
+      "queryText": "general provisions Bastrop",
+      "expectedAtomDid": "did:hauska:code-section:bastrop_tx/muni-code-code-of-ordinances-current-supplement/chapter-1",
+      "actualTopResults": [
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/2-4-001",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/2-4-003",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/10-1-002"
+      ],
+      "reason": "expected atom not in top-3"
+    },
+    {
+      "queryId": "seed-bastrop_tx-MUNI_CODE-2",
+      "queryText": "administration officers Bastrop",
+      "expectedAtomDid": "did:hauska:code-section:bastrop_tx/muni-code-code-of-ordinances-current-supplement/chapter-2",
+      "actualTopResults": [
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/1-3-002",
+        "did:hauska:jurisdiction-corpus:bastrop_tx",
+        "did:hauska:code-edition:bastrop_tx/bastrop-b3-code-april-2025"
+      ],
+      "reason": "expected atom not in top-3"
+    },
+    {
+      "queryId": "seed-bastrop_tx-MUNI_CODE-3",
+      "queryText": "zoning Bastrop unified development",
+      "expectedAtomDid": "did:hauska:code-section:bastrop_tx/muni-code-code-of-ordinances-current-supplement/chapter-14",
+      "actualTopResults": [
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/p19-section-6-3-006/6-3-006",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/1-1-002",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/1-3-002"
+      ],
+      "reason": "expected atom not in top-3"
+    },
+    {
+      "queryId": "seed-bastrop_tx-MUNI_CODE-4",
+      "queryText": "subdivision regulations Bastrop",
+      "expectedAtomDid": "did:hauska:code-section:bastrop_tx/muni-code-code-of-ordinances-current-supplement/chapter-10",
+      "actualTopResults": [
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/p8-section-9-3-001/9-3-001",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/1-3-001",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/7-1-002"
+      ],
+      "reason": "expected atom not in top-3"
+    },
+    {
+      "queryId": "seed-bastrop_tx-MUNI_CODE-5",
+      "queryText": "building permit requirements Bastrop",
+      "expectedAtomDid": "did:hauska:code-section:bastrop_tx/muni-code-code-of-ordinances-current-supplement/chapter-6",
+      "actualTopResults": [
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/1-3-002",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/2-4-003",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/7-1-002"
+      ],
+      "reason": "expected atom not in top-3"
+    },
+    {
+      "queryId": "seed-bastrop_tx-MUNI_CODE-6",
+      "queryText": "fire prevention code Bastrop",
+      "expectedAtomDid": "did:hauska:code-section:bastrop_tx/muni-code-code-of-ordinances-current-supplement/chapter-8",
+      "actualTopResults": [
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/2-4-001",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/2-4-003",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/8-1-005"
+      ],
+      "reason": "expected atom not in top-3"
+    },
+    {
+      "queryId": "seed-bastrop_tx-MUNI_CODE-7",
+      "queryText": "signs sign regulations Bastrop",
+      "expectedAtomDid": "did:hauska:code-section:bastrop_tx/muni-code-code-of-ordinances-current-supplement/chapter-12",
+      "actualTopResults": [
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/7-1-002",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/p8-section-9-3-001/9-3-001",
+        "did:hauska:code-section:bastrop_tx/bastrop-b3-code-april-2025/p19-section-6-3-006/6-3-006"
+      ],
+      "reason": "expected atom not in top-3"
+    }
+  ],
+  "queriesEvaluated": 7,
+  "sectionsSampled": 100,
+  "crossRefsSampled": 19
+}

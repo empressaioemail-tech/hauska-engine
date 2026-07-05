@@ -1,0 +1,42 @@
+{
+  "jurisdictionTenant": "grand_county_ut",
+  "evaluatedAt": "2026-07-05T15:32:56.982Z",
+  "passed": true,
+  "scores": {
+    "top3Score": 0.9,
+    "sectionNumScore": 1,
+    "crossRefScore": 1
+  },
+  "thresholds": {
+    "top3RetrievalMin": 0.9,
+    "sectionNumRetrievabilityMin": 1,
+    "crossRefResolutionMin": 0.95
+  },
+  "failures": [
+    {
+      "queryId": "seed-grand_county_ut-IWUIC-3",
+      "queryText": "Section 104 duties powers code official",
+      "expectedAtomDid": "did:hauska:code-section:grand_county_ut/iwuic-iwuic-2006/section-104",
+      "actualTopResults": [
+        "did:hauska:code-section:grand_county_ut/iwuic-iwuic-2006/section-102",
+        "did:hauska:code-section:grand_county_ut/iwuic-iwuic-2006/section-607-part9",
+        "did:hauska:code-section:grand_county_ut/land-use-land-use-code-rev-3-21/8-2"
+      ],
+      "reason": "expected atom not in top-3"
+    },
+    {
+      "queryId": "seed-grand_county_ut-IWUIC-10",
+      "queryText": "fuel modification distance defensible space wildland",
+      "expectedAtomDid": "did:hauska:code-section:grand_county_ut/iwuic-iwuic-2006/section-607-part7",
+      "actualTopResults": [
+        "did:hauska:code-section:grand_county_ut/iwuic-iwuic-2006/section-603",
+        "did:hauska:code-section:grand_county_ut/iwuic-iwuic-2006/section-202-part1",
+        "did:hauska:code-section:grand_county_ut/iwuic-iwuic-2006/section-607-part1"
+      ],
+      "reason": "expected atom not in top-3"
+    }
+  ],
+  "queriesEvaluated": 20,
+  "sectionsSampled": 100,
+  "crossRefsSampled": 69
+}
