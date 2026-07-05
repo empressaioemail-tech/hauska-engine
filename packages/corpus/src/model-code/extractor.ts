@@ -342,16 +342,18 @@ export async function extractModelCodeAtoms(
   }
   
   function collectSectionIds(node: CodeConnectContentNode): void {
-    const id = modelCodeSectionEntityId(
-      tenant,
-      editionLabel,
-      node.ordinal,
-    );
-    sectionIdByNumber.set(
-      normalizeSectionLabel(node.ordinal),
-      id,
-    );
-    for (const child of node.children) {
+    if (node.ordinal) {
+      const id = modelCodeSectionEntityId(
+        tenant,
+        editionLabel,
+        node.ordinal,
+      );
+      sectionIdByNumber.set(
+        normalizeSectionLabel(node.ordinal),
+        id,
+      );
+    }
+    for (const child of node.children ?? []) {
       collectSectionIds(child);
     }
   }
@@ -378,148 +380,150 @@ export async function extractModelCodeAtoms(
     chapter: any,
     isDefinitionsChapter: boolean,
   ): Promise<void> {
-    const sectionId = modelCodeSectionEntityId(
-      tenant,
-      editionLabel,
-      node.ordinal,
-    );
-    const deepLink = sectionDeepLinkFromNode(node, editionUrl);
-    const verbatimText = node.content.replace(/<[^>]+>/g, '').trim();
-    const refs = parseReferencesFromText(verbatimText);
-    const definedTerms: string[] = []; // TODO: extract from content if needed
-    const tableCount = 0; // TODO: parse HTML content for tables
-    const figureCount = 0; // TODO: parse HTML content for figures
-
-    const bodyText = await reasoningLayer({
-      codeName,
-      editionLabel,
-      chapterNumber: chapter.ordinal,
-      chapterHeading: chapter.title,
-      sectionNumber: node.ordinal,
-      sectionHeading: node.title,
-      verbatimText,
-      tableCount,
-      figureCount,
-      crossReferenceLabels: refs.map((r) => r.targetLabel),
-      definedTerms,
-      verbatimTextDeepLink: deepLink,
-    });
-
-    const sectionAtom: CodeSectionAtomInstance = {
-      entityType: "code-section",
-      entityId: sectionId,
-      jurisdictionTenant: tenant,
-      codeEditionId: editionId,
-      sectionNumber: node.ordinal,
-      title: node.title,
-      subsectionPath: null,
-      bodyText,
-      verbatimTextDeepLink: deepLink,
-      fetchedAt,
-      sourceAdapter: "icc-code-connect",
-      sourceUrl: deepLink,
-      contentHash: hashContent(
-        "code-section",
-        sectionId,
-        node.ordinal,
-        node.title,
-        bodyText,
-        deepLink,
-      ),
-    };
-    sections.push(sectionAtom);
-    links.push({
-      fromEntityType: "code-edition",
-      fromEntityId: editionId,
-      toEntityType: "code-section",
-      toEntityId: sectionId,
-      linkType: "contains",
-    });
-
-    // Definitions.
-    for (const term of definedTerms) {
-      const defId = modelCodeDefinitionEntityId(
+    if (node.ordinal) {
+      const sectionId = modelCodeSectionEntityId(
         tenant,
         editionLabel,
-        term,
+        node.ordinal,
       );
-      definitions.push({
-        entityType: "code-definition",
-        entityId: defId,
-        jurisdictionTenant: tenant,
-        term,
-        codeEditionId: editionId,
-        definingSectionId: sectionId,
-        definitionText: "", // TODO: extract from content
-        scope: isDefinitionsChapter ? "code" : "section",
-        fetchedAt,
-        sourceAdapter: "icc-code-connect",
-        sourceUrl: deepLink,
-        contentHash: hashContent(
-          "code-definition",
-          defId,
-          term,
-          "",
-        ),
-      });
-      links.push({
-        fromEntityType: "code-section",
-        fromEntityId: sectionId,
-        toEntityType: "code-definition",
-        toEntityId: defId,
-        linkType: "defines",
-      });
-      if (isDefinitionsChapter) {
-        links.push({
-          fromEntityType: "code-edition",
-          fromEntityId: editionId,
-          toEntityType: "code-definition",
-          toEntityId: defId,
-          linkType: "contains",
-        });
-      }
-    }
+      const deepLink = sectionDeepLinkFromNode(node, editionUrl);
+      const verbatimText = (node.content ?? '').replace(/<[^>]+>/g, '').trim();
+      const refs = parseReferencesFromText(verbatimText);
+      const definedTerms: string[] = [];
+      const tableCount = 0;
+      const figureCount = 0;
 
-    // Cross-references.
-    for (const ref of refs) {
-      const targetId = sectionIdByNumber.get(
-        normalizeSectionLabel(ref.targetLabel),
-      ) || "";
-      const xrefId = `${sectionId}#xref-${++xrefSerial}`;
-      crossReferences.push({
-        entityType: "code-cross-reference",
-        entityId: xrefId,
+      const bodyText = await reasoningLayer({
+        codeName,
+        editionLabel,
+        chapterNumber: chapter.ordinal,
+        chapterHeading: chapter.title,
+        sectionNumber: node.ordinal,
+        sectionHeading: node.title ?? "",
+        verbatimText,
+        tableCount,
+        figureCount,
+        crossReferenceLabels: refs.map((r) => r.targetLabel),
+        definedTerms,
+        verbatimTextDeepLink: deepLink,
+      });
+
+      const sectionAtom: CodeSectionAtomInstance = {
+        entityType: "code-section",
+        entityId: sectionId,
         jurisdictionTenant: tenant,
-        fromSectionId: sectionId,
-        toSectionId: targetId,
-        referenceText: ref.referenceText,
-        referenceContext: ref.context,
-        referenceType: ref.kind,
+        codeEditionId: editionId,
+        sectionNumber: node.ordinal,
+        title: node.title ?? "",
+        subsectionPath: null,
+        bodyText,
+        verbatimTextDeepLink: deepLink,
         fetchedAt,
         sourceAdapter: "icc-code-connect",
         sourceUrl: deepLink,
         contentHash: hashContent(
-          "code-cross-reference",
-          xrefId,
+          "code-section",
           sectionId,
-          targetId,
-          ref.kind,
+          node.ordinal,
+          node.title ?? "",
+          bodyText,
+          deepLink,
         ),
+      };
+      sections.push(sectionAtom);
+      links.push({
+        fromEntityType: "code-edition",
+        fromEntityId: editionId,
+        toEntityType: "code-section",
+        toEntityId: sectionId,
+        linkType: "contains",
       });
-      if (targetId) {
+
+      // Definitions.
+      for (const term of definedTerms) {
+        const defId = modelCodeDefinitionEntityId(
+          tenant,
+          editionLabel,
+          term,
+        );
+        definitions.push({
+          entityType: "code-definition",
+          entityId: defId,
+          jurisdictionTenant: tenant,
+          term,
+          codeEditionId: editionId,
+          definingSectionId: sectionId,
+          definitionText: "",
+          scope: isDefinitionsChapter ? "code" : "section",
+          fetchedAt,
+          sourceAdapter: "icc-code-connect",
+          sourceUrl: deepLink,
+          contentHash: hashContent(
+            "code-definition",
+            defId,
+            term,
+            "",
+          ),
+        });
         links.push({
           fromEntityType: "code-section",
           fromEntityId: sectionId,
-          toEntityType: "code-section",
-          toEntityId: targetId,
-          linkType: mapReferenceTypeToLinkType(ref.kind),
-          context: ref.context,
+          toEntityType: "code-definition",
+          toEntityId: defId,
+          linkType: "defines",
         });
+        if (isDefinitionsChapter) {
+          links.push({
+            fromEntityType: "code-edition",
+            fromEntityId: editionId,
+            toEntityType: "code-definition",
+            toEntityId: defId,
+            linkType: "contains",
+          });
+        }
+      }
+
+      // Cross-references.
+      for (const ref of refs) {
+        const targetId = sectionIdByNumber.get(
+          normalizeSectionLabel(ref.targetLabel),
+        ) || "";
+        const xrefId = `${sectionId}#xref-${++xrefSerial}`;
+        crossReferences.push({
+          entityType: "code-cross-reference",
+          entityId: xrefId,
+          jurisdictionTenant: tenant,
+          fromSectionId: sectionId,
+          toSectionId: targetId,
+          referenceText: ref.referenceText,
+          referenceContext: ref.context,
+          referenceType: ref.kind,
+          fetchedAt,
+          sourceAdapter: "icc-code-connect",
+          sourceUrl: deepLink,
+          contentHash: hashContent(
+            "code-cross-reference",
+            xrefId,
+            sectionId,
+            targetId,
+            ref.kind,
+          ),
+        });
+        if (targetId) {
+          links.push({
+            fromEntityType: "code-section",
+            fromEntityId: sectionId,
+            toEntityType: "code-section",
+            toEntityId: targetId,
+            linkType: mapReferenceTypeToLinkType(ref.kind),
+            context: ref.context,
+          });
+        }
       }
     }
     
-    // Recursively process children
-    for (const child of node.children) {
+    // Recursively process children (even if this node has no ordinal)
+    for (const child of node.children ?? []) {
       await processSectionNode(child, chapter, isDefinitionsChapter);
     }
   }

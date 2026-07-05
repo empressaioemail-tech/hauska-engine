@@ -104,20 +104,23 @@ export interface CodeConnectSectionRef {
 export interface CodeConnectContentNode {
   /** Node type (e.g. "codeSection") */
   type: string;
-  /** Label (e.g. "SECTION") */
-  label: string;
-  /** Title text */
-  title: string;
+  /** Label (e.g. "SECTION"); may be absent on live nodes */
+  label?: string;
+  /** Title text; may be absent on live nodes */
+  title?: string;
   /** XML ID */
   xmlId: string;
-  /** HTML content for this node */
-  content: string;
-  /** Section ordinal (e.g. "301" or "301.1") */
-  ordinal: string;
-  /** Cleaned ordinal */
-  ordinalClean: string;
-  /** Child subsections (recursive, same shape) */
-  children: ReadonlyArray<CodeConnectContentNode>;
+  /**
+   * HTML content for this node. Optional: live corpus nodes (verified
+   * against the full IBC2018P6 pull 2026-07-05) may omit the field.
+   */
+  content?: string;
+  /** Section ordinal (e.g. "301" or "301.1"); may be absent on live nodes */
+  ordinal?: string;
+  /** Cleaned ordinal; may be absent on live nodes */
+  ordinalClean?: string;
+  /** Child subsections (recursive, same shape); absent on live leaf nodes */
+  children?: ReadonlyArray<CodeConnectContentNode>;
 }
 
 /**

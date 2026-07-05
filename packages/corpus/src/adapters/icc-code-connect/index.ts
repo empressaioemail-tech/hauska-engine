@@ -231,17 +231,20 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
     node: CodeConnectContentNode,
     depth: number = 2,
   ): void {
-    // Emit heading for this node
+    // Emit heading for this node. ordinal/title may be absent on live
+    // nodes (same optionality as content/children, verified 2026-07-05).
     blocks.push({
       kind: "heading",
       depth,
-      text: `${node.ordinal} ${node.title}`.trim(),
-      label: node.ordinal,
+      text: `${node.ordinal ?? ""} ${node.title ?? ""}`.trim(),
+      label: node.ordinal ?? "",
       sourceAnchor: `#${node.xmlId}`,
     });
 
-    // Emit content as paragraph if non-empty
-    const content = node.content.trim();
+    // Emit content as paragraph if non-empty. Live content nodes may omit
+    // the field entirely (verified against the full IBC2018P6 corpus
+    // 2026-07-05); fixtures always set it, so guard here.
+    const content = (node.content ?? "").trim();
     if (content.length > 0) {
       // Strip HTML tags for plain text content
       const text = content.replace(/<[^>]+>/g, "");
@@ -263,8 +266,8 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
       }
     }
 
-    // Recursively emit children (subsections)
-    for (const child of node.children) {
+    // Recursively emit children (subsections); absent on live leaf nodes.
+    for (const child of node.children ?? []) {
       this.emitContentNodeBlocks(blocks, child, depth + 1);
     }
   }

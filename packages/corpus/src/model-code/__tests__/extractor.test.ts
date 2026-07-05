@@ -80,7 +80,7 @@ describe("extractModelCodeAtoms — sections (ADR-019 deep-link footing)", () =>
     // General invariant: no section's verbatim prose leaks into bodyText.
     for (const chapterGroup of IRC_2021.chapters) {
       for (const src of Object.values(chapterGroup.sections)) {
-        const verbatim = src.content.replace(/<[^>]+>/g, '').trim();
+        const verbatim = (src.content ?? '').replace(/<[^>]+>/g, '').trim();
         if (verbatim.length === 0) continue;
         const atom = result.sections.find(
           (s) => s.sectionNumber === src.ordinal,
@@ -150,5 +150,96 @@ describe("extractModelCodeAtoms — cross-references", () => {
     expect(linkTypes.filter((t) => t === "defines")).toHaveLength(0);
     // At least 4 contains links + cross-reference links
     expect(result.links.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("extractModelCodeAtoms — live corpus optionality (regression)", () => {
+  it("handles nodes with missing content, children, title, and skips ordinal-less nodes", async () => {
+    const sparseDoc = {
+      book: IRC_2021.book,
+      chapters: [
+        {
+          bookId: IRC_2021_BOOK_ID,
+          chapters: [
+            {
+              ordinal: "4",
+              ordinalClean: "4",
+              title: "Test Chapter",
+              id: "IRC2021_Ch04",
+              dtype: "chapter",
+            },
+          ],
+          sections: {
+            "IRC2021_Ch04_SecR401": {
+              type: "codeSection",
+              xmlId: "IRC2021_Ch04_SecR401",
+              ordinal: "R401",
+            },
+            "IRC2021_Ch04_SecR402": {
+              type: "codeSection",
+              xmlId: "IRC2021_Ch04_SecR402",
+            },
+          },
+        },
+      ],
+    };
+
+    const result = await extractModelCodeAtoms(sparseDoc);
+
+    expect(result.sections).toHaveLength(1);
+    const r401 = result.sections.find((s) => s.sectionNumber === "R401");
+    expect(r401).toBeDefined();
+    expect(r401?.title).toBe("");
+    
+    const r402 = result.sections.find((s) => s.sectionNumber === "R402");
+    expect(r402).toBeUndefined();
+  });
+
+  it("processes children of ordinal-less nodes even when parent is skipped", async () => {
+    const nestedDoc = {
+      book: IRC_2021.book,
+      chapters: [
+        {
+          bookId: IRC_2021_BOOK_ID,
+          chapters: [
+            {
+              ordinal: "5",
+              ordinalClean: "5",
+              title: "Test Chapter",
+              id: "IRC2021_Ch05",
+              dtype: "chapter",
+            },
+          ],
+          sections: {
+            "IRC2021_Ch05_Container": {
+              type: "container",
+              xmlId: "IRC2021_Ch05_Container",
+              children: [
+                {
+                  type: "codeSection",
+                  xmlId: "IRC2021_Ch05_SecR501",
+                  ordinal: "R501",
+                  title: "Child Section",
+                },
+                {
+                  type: "codeSection",
+                  xmlId: "IRC2021_Ch05_SecR502",
+                  ordinal: "R502",
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const result = await extractModelCodeAtoms(nestedDoc);
+
+    expect(result.sections).toHaveLength(2);
+    expect(result.sections.map((s) => s.sectionNumber)).toEqual(["R501", "R502"]);
+    const r501 = result.sections.find((s) => s.sectionNumber === "R501");
+    expect(r501?.title).toBe("Child Section");
+    const r502 = result.sections.find((s) => s.sectionNumber === "R502");
+    expect(r502?.title).toBe("");
   });
 });
