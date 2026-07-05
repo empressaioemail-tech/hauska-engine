@@ -918,8 +918,8 @@ export function bootstrapEngineAtomRegistry(
       }
       const { prose, scopeFiltered } = audienceLensesProse(
         scope,
-        `Brief run for ${inst.workspaceDid} — confidence ${inst.confidence}, ${inst.citationRefs.length} citation(s), generated ${inst.generatedAt}.`,
-        `Brief (${Math.round(inst.confidence * 100)}% confidence)`,
+        `Brief run for ${inst.workspaceDid} — confidence ${Math.round(inst.confidence.estimate * 100)}% (${inst.confidence.provenance}), ${inst.citationRefs.length} citation(s), generated ${inst.generatedAt}.`,
+        `Brief (${Math.round(inst.confidence.estimate * 100)}% confidence)`,
       );
       return {
         prose,
@@ -931,7 +931,7 @@ export function bootstrapEngineAtomRegistry(
           generatedAt: inst.generatedAt,
         },
         keyMetrics: [
-          { label: "Confidence", value: inst.confidence },
+          { label: "Confidence", value: `${Math.round(inst.confidence.estimate * 100)}%` },
           { label: "Citations", value: inst.citationRefs.length },
         ],
         relatedAtoms: inst.citationRefs.map((ref) => ({
