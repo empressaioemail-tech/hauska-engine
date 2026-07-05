@@ -206,15 +206,132 @@ describe("retrieval-api contract (Sync 3)", () => {
       ["internal-tx", "public-tx"],
     );
 
-    // Unknown values are dropped silently (additive-future safety).
-    const droppedUnknown = (await (
-      await app.request(
-        "/jurisdictions?accessPolicies=public-free,future-policy-tier",
-      )
-    ).json()) as { jurisdictions: Array<{ jurisdictionTenant: string }> };
-    expect(
-      droppedUnknown.jurisdictions.map((j) => j.jurisdictionTenant),
-    ).toEqual(["public-tx"]);
+  });
+
+  it("GET /jurisdictions?accessPolicies=tenant-shared filters to tenant-shared only (regression: fail-open landmine)", async () => {
+    // Regression for the fail-open bug: the server used to hand-roll a
+    // four-value AccessPolicy list missing `tenant-shared` (contract
+    // 1.2.0), silently drop the unknown value, and forward an empty
+    // filter — which storage reads as "no filter" — returning the
+    // ENTIRE corpus to a caller who asked for the tenant-shared slice.
+    const storage = new InMemoryStorage();
+    storage.upsertJurisdictionStatus({
+      jurisdictionTenant: "shared-tx",
+      jurisdictionName: "Shared TX",
+      currentEditionDid: null,
+      qualityBar: "passing",
+      top3Score: 1.0,
+      sectionNumScore: 1.0,
+      crossRefScore: 1.0,
+      atomCount: 3,
+      lastRefreshedAt: null,
+      driftStatus: "clean",
+      accessPolicy: "tenant-shared",
+    });
+    storage.upsertJurisdictionStatus({
+      jurisdictionTenant: "internal-tx",
+      jurisdictionName: "Internal TX",
+      currentEditionDid: null,
+      qualityBar: "passing",
+      top3Score: 1.0,
+      sectionNumScore: 1.0,
+      crossRefScore: 1.0,
+      atomCount: 5,
+      lastRefreshedAt: null,
+      driftStatus: "clean",
+      accessPolicy: "platform-internal",
+    });
+    const app = buildApp({ storage, apiKey: "" });
+
+    const res = await app.request("/jurisdictions?accessPolicies=tenant-shared");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      jurisdictions: Array<{ jurisdictionTenant: string }>;
+    };
+    // Must be ONLY the tenant-shared jurisdiction, never the whole corpus.
+    expect(body.jurisdictions.map((j) => j.jurisdictionTenant)).toEqual([
+      "shared-tx",
+    ]);
+  });
+
+  it("GET /jurisdictions rejects unknown accessPolicies values with 400 (fail closed)", async () => {
+    const storage = new InMemoryStorage();
+    storage.upsertJurisdictionStatus({
+      jurisdictionTenant: "public-tx",
+      jurisdictionName: "Public TX",
+      currentEditionDid: null,
+      qualityBar: "passing",
+      top3Score: 1.0,
+      sectionNumScore: 1.0,
+      crossRefScore: 1.0,
+      atomCount: 10,
+      lastRefreshedAt: null,
+      driftStatus: "clean",
+      accessPolicy: "public-free",
+    });
+    const app = buildApp({ storage, apiKey: "" });
+
+    // A fully unknown value → 400, never silently dropped.
+    const unknown = await app.request(
+      "/jurisdictions?accessPolicies=future-policy-tier",
+    );
+    expect(unknown.status).toBe(400);
+    const unknownBody = (await unknown.json()) as Record<string, any>;
+    expect(unknownBody.invalidValues).toEqual(["future-policy-tier"]);
+    expect(unknownBody.allowedValues).toContain("tenant-shared");
+
+    // A mix of known + unknown is also rejected outright.
+    const mixed = await app.request(
+      "/jurisdictions?accessPolicies=public-free,future-policy-tier",
+    );
+    expect(mixed.status).toBe(400);
+
+    // Present-but-empty param → 400 (an empty filter array would reach
+    // storage as "no filter" and fail open).
+    const empty = await app.request("/jurisdictions?accessPolicies=");
+    expect(empty.status).toBe(400);
+    const commasOnly = await app.request("/jurisdictions?accessPolicies=,,");
+    expect(commasOnly.status).toBe(400);
+  });
+
+  it("GET /jurisdictions without accessPolicies param keeps unfiltered default behavior", async () => {
+    const storage = new InMemoryStorage();
+    storage.upsertJurisdictionStatus({
+      jurisdictionTenant: "shared-tx",
+      jurisdictionName: "Shared TX",
+      currentEditionDid: null,
+      qualityBar: "passing",
+      top3Score: 1.0,
+      sectionNumScore: 1.0,
+      crossRefScore: 1.0,
+      atomCount: 3,
+      lastRefreshedAt: null,
+      driftStatus: "clean",
+      accessPolicy: "tenant-shared",
+    });
+    storage.upsertJurisdictionStatus({
+      jurisdictionTenant: "public-tx",
+      jurisdictionName: "Public TX",
+      currentEditionDid: null,
+      qualityBar: "passing",
+      top3Score: 1.0,
+      sectionNumScore: 1.0,
+      crossRefScore: 1.0,
+      atomCount: 10,
+      lastRefreshedAt: null,
+      driftStatus: "clean",
+      accessPolicy: "public-free",
+    });
+    const app = buildApp({ storage, apiKey: "" });
+    const res = await app.request("/jurisdictions");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      jurisdictions: Array<{ jurisdictionTenant: string }>;
+    };
+    expect(body.jurisdictions.map((j) => j.jurisdictionTenant).sort()).toEqual([
+      "public-tx",
+      "shared-tx",
+    ]);
   });
 
   it("GET /jurisdictions: accessPolicy field surfaces on the wire", async () => {
