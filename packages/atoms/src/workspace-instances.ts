@@ -17,6 +17,7 @@ import type {
   WorkspaceAttachmentKind,
   WorkspaceShareConsentFlags,
 } from "@hauska/atom-contract/workspace";
+import type { WidthedConfidence } from "@hauska/atom-contract/read-contract";
 
 import type { BaseAtomInstance } from "./instances.js";
 
@@ -34,6 +35,7 @@ export type {
   UserRef,
   WorkspaceAttachmentKind,
   WorkspaceShareConsentFlags,
+  WidthedConfidence,
 };
 
 /** Brokerage workspace atoms use a synthetic jurisdiction tenant for indexing. */
@@ -62,7 +64,7 @@ export interface BriefRunAtomInstance extends WorkspaceAtomInstanceBase {
   workspaceDid: string;
   runInputs: Record<string, unknown>;
   citationRefs: ReadonlyArray<BriefRunCitationRef>;
-  confidence: number;
+  confidence: WidthedConfidence;
   generatedAt: string;
 }
 
@@ -141,13 +143,20 @@ export const BRIEF_RUN_CITATION_REF_SCHEMA = z.object({
   sourceType: z.enum(["attachment", "atom", "external-link"]),
 });
 
+const WIDTHED_CONFIDENCE_SCHEMA = z.object({
+  estimate: z.number().min(0).max(1),
+  n: z.number().int().min(0),
+  intervalWidth: z.number().min(0).max(1),
+  provenance: z.enum(["asserted", "backtest", "seed", "live"]),
+});
+
 export const BRIEF_RUN_INSTANCE_SCHEMA = z.object({
   ...WORKSPACE_BASE_SHAPE,
   entityType: z.literal("brief-run"),
   workspaceDid: z.string().min(1),
   runInputs: z.record(z.string(), z.unknown()),
   citationRefs: z.array(BRIEF_RUN_CITATION_REF_SCHEMA),
-  confidence: z.number().min(0).max(1),
+  confidence: WIDTHED_CONFIDENCE_SCHEMA,
   generatedAt: z.string().min(1),
 });
 
