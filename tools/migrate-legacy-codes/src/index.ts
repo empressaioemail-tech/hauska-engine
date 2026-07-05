@@ -1305,6 +1305,43 @@ program
   });
 
 program
+  .command("ingest-icc-model-code")
+  .description(
+    "Run ICC model-code ingest against a fresh InMemoryStorage (test/debug the ICC unit in isolation).",
+  )
+  .action(async () => {
+    const { InMemoryStorage } = await import("@hauska-engine/storage");
+    const { runIccModelCodeIngest } = await import(
+      "./icc-model-code-ingest.js"
+    );
+    
+    const storage = new InMemoryStorage();
+    console.log("Running ICC model-code ingest...");
+    
+    const result = await runIccModelCodeIngest(storage);
+    
+    console.log(
+      JSON.stringify(
+        {
+          editions: result.editions,
+          sections: result.sections,
+          crossReferences: result.crossReferences,
+          links: result.links,
+        },
+        null,
+        2,
+      ),
+    );
+    
+    if (result.editions === 0) {
+      console.warn(
+        "No editions ingested — adapter may be unconfigured or all fetches failed",
+      );
+      process.exitCode = 1;
+    }
+  });
+
+program
   .command("export-b3-queries")
   .description("Print the Bastrop B3 Code curated-query JSON to stdout.")
   .action(() => {
