@@ -1389,6 +1389,18 @@ const UNITS: ReadonlyArray<IngestUnit> = [
       return curatedQueriesForJurisdiction("grand_county_ut");
     },
   },
+
+  {
+    tenant: "icc-model-code",
+    label: "ICC model codes (Layer 1)",
+    async run(storage) {
+      const { runIccModelCodeIngest } = await import(
+        "./icc-model-code-ingest.js"
+      );
+      await runIccModelCodeIngest(storage);
+      return [];
+    },
+  },
 ];
 
 async function runUnit(unit: IngestUnit): Promise<{
