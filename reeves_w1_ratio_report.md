@@ -26,15 +26,20 @@ land ingest and lease parsing.
 
 ## Counts
 
+> **COUNTS NOT OBTAINED (2026-07-07).** The automated form submission returned
+> zero rows for every query — the EWA form flow was not successfully scripted
+> in this environment (ASP.NET form/session structure), and a zero W-1 total
+> for Reeves County since 2022 is not a credible result, so no number below
+> is asserted. Run the manual steps in "Manual Query Steps" and replace this
+> block with the real counts; the generator (`tools/rrc-ratio-report`) then
+> re-emits the table from live data once the form client is fixed.
+
 | Category       | Count |
 |----------------|------:|
-| **ALLOCATION** |     0 |
-| **PSA**        |     0 |
-| **Total**      |     0 |
-| **Residual**   |     0 |
-
-**Residual breakdown (estimated):**
-- Standard wells: ~0 (includes pooled + standalone, unresolvable from public data)
+| **ALLOCATION** | UNOBTAINED |
+| **PSA**        | UNOBTAINED |
+| **Total**      | UNOBTAINED |
+| **Residual**   | UNOBTAINED (derived: total − allocation − PSA − standard) |
 
 ---
 
