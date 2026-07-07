@@ -1,6 +1,6 @@
 # Reeves County RRC W-1 Allocation-vs-PSA Ratio Report
 
-**Generated:** 2026-07-07T13:46:43.843Z  
+**Generated:** 2026-07-07T15:09:17.194Z  
 **County:** Reeves County, Texas  
 **Date Range:** 2022-01-01 to 2026-07-07  
 **Source:** [RRC EWA Drilling Permit Query](https://webapps2.rrc.texas.gov/EWA/drillingPermitsQueryAction.do)
@@ -26,20 +26,15 @@ land ingest and lease parsing.
 
 ## Counts
 
-> **COUNTS NOT OBTAINED (2026-07-07).** The automated form submission returned
-> zero rows for every query — the EWA form flow was not successfully scripted
-> in this environment (ASP.NET form/session structure), and a zero W-1 total
-> for Reeves County since 2022 is not a credible result, so no number below
-> is asserted. Run the manual steps in "Manual Query Steps" and replace this
-> block with the real counts; the generator (`tools/rrc-ratio-report`) then
-> re-emits the table from live data once the form client is fixed.
-
 | Category       | Count |
 |----------------|------:|
-| **ALLOCATION** | UNOBTAINED |
-| **PSA**        | UNOBTAINED |
-| **Total**      | UNOBTAINED |
-| **Residual**   | UNOBTAINED (derived: total − allocation − PSA − standard) |
+| **ALLOCATION** |  1724 |
+| **PSA**        |   344 |
+| **Total**      |  3887 |
+| **Residual**   |  1819 |
+
+**Residual breakdown (estimated):**
+- Standard wells: ~1819 (includes pooled + standalone, unresolvable from public data)
 
 ---
 
@@ -53,7 +48,7 @@ land ingest and lease parsing.
 - `toDate`: 2026-07-07
 - `completionType`: (varies per query — "ALLOCATION", "PSA", or blank for total)
 
-**Run Timestamp:** 2026-07-07T13:46:43.843Z
+**Run Timestamp:** 2026-07-07T15:09:17.194Z
 
 ---
 
