@@ -7,7 +7,7 @@
  * exercised without `api.iccsafe.org`.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { runAdapterConformance } from "../../__fixtures__/conformance.js";
 import { RespectfulFetch } from "../../http.js";
@@ -102,6 +102,103 @@ describe("IccCodeConnectAdapter — content (IRC 2021 fixture)", () => {
     expect(unknown.body).toBe("");
     const normalized = await mockAdapter.normalize(unknown);
     expect(normalized.blocks).toEqual([]);
+  });
+
+  it("skips empty-body sections with structured warning (IPMC2018P2 class)", async () => {
+    // Create a fixture with an empty-body section
+    const emptyBodyFixture: CodeReference = {
+      sourceId: "IPMC2018P2",
+      jurisdictionTenant: "icc-model-code",
+      editionLabel: "2018 International Property Maintenance Code",
+      sourceUrl: "https://codes.iccsafe.org/content/IPMC2018P2",
+    };
+
+    const emptyBodyAdapter = new IccCodeConnectAdapter({
+      fixtures: {
+        books: [
+          {
+            shortCode: "IPMC2018P2",
+            uri: { category: "I", year: "2018", titleCode: "IPMC", printing: "P2" },
+            printing: "Second Printing: May 2018",
+            title: "2018 International Property Maintenance Code",
+            accessStartDate: "2017-01-01",
+            accessEndDate: "2027-12-31",
+          },
+        ],
+        documents: {
+          IPMC2018P2: {
+            book: {
+              shortCode: "IPMC2018P2",
+              uri: { category: "I", year: "2018", titleCode: "IPMC", printing: "P2" },
+              printing: "Second Printing: May 2018",
+              title: "2018 International Property Maintenance Code",
+              accessStartDate: "2017-01-01",
+              accessEndDate: "2027-12-31",
+            },
+            chapters: [
+              {
+                bookId: "IPMC2018P2",
+                chapters: [
+                  {
+                    ordinal: "1",
+                    ordinalClean: "1",
+                    title: "Scope and Administration",
+                    id: "IPMC2018_Ch01",
+                    dtype: "chapter",
+                  },
+                ],
+                sections: {
+                  "IPMC2018_Ch01_Sec101": {
+                    type: "codeSection",
+                    label: "SECTION",
+                    title: "General",
+                    xmlId: "IPMC2018_Ch01_Sec101",
+                    content: "",
+                    ordinal: "101",
+                    ordinalClean: "101",
+                    children: [],
+                  },
+                  "IPMC2018_Ch01_Sec102": {
+                    type: "codeSection",
+                    label: "SECTION",
+                    title: "Valid Section",
+                    xmlId: "IPMC2018_Ch01_Sec102",
+                    content: "<p>This section has content.</p>",
+                    ordinal: "102",
+                    ordinalClean: "102",
+                    children: [],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    // Spy on console.warn to verify the warning is logged
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const raw = await emptyBodyAdapter.fetch(emptyBodyFixture);
+    const normalized = await emptyBodyAdapter.normalize(raw);
+
+    // The empty-body section should be skipped
+    const headings = normalized.blocks.filter((b) => b.kind === "heading");
+    const sectionHeadings = headings.filter((h) => h.kind === "heading" && h.depth === 2);
+    
+    // Should only have the valid section (102), not the empty one (101)
+    expect(sectionHeadings.length).toBe(1);
+    expect(sectionHeadings[0]?.kind === "heading" && sectionHeadings[0].label).toBe("102");
+
+    // Verify the warning was logged with the skipped xmlId
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Skipped 1 section(s) with empty content bodies"),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("IPMC2018_Ch01_Sec101"),
+    );
+
+    warnSpy.mockRestore();
   });
 });
 

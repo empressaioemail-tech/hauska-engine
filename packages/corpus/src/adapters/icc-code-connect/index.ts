@@ -202,6 +202,7 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
     }
     const document = JSON.parse(raw.body) as IccCodeDocument;
     const blocks: NormalizedBlock[] = [];
+    const skippedSections: string[] = [];
 
     for (const chapterGroup of document.chapters) {
       for (const chapter of chapterGroup.chapters) {
@@ -215,8 +216,14 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
       }
       // Emit sections from the content nodes
       for (const contentNode of Object.values(chapterGroup.sections)) {
-        this.emitContentNodeBlocks(blocks, contentNode);
+        this.emitContentNodeBlocks(blocks, contentNode, 2, skippedSections);
       }
+    }
+
+    if (skippedSections.length > 0) {
+      console.warn(
+        `[IccCodeConnectAdapter] Skipped ${skippedSections.length} section(s) with empty content bodies: ${skippedSections.join(", ")}`,
+      );
     }
 
     return { metadata: raw.metadata, blocks };
@@ -225,12 +232,27 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
   /**
    * Walk one content node (and its children recursively) into the block stream.
    * Content nodes have inline HTML content and recursive children.
+   * 
+   * Empty-body sections (IPMC2018P2 class: content field is absent, empty, or 
+   * whitespace-only AND no children) are skipped entirely with a structured warning.
    */
   private emitContentNodeBlocks(
     blocks: NormalizedBlock[],
     node: CodeConnectContentNode,
     depth: number = 2,
+    skippedSections: string[] = [],
   ): void {
+    // Check if this is an empty-body section: no content AND no children
+    const content = (node.content ?? "").trim();
+    const hasChildren = (node.children ?? []).length > 0;
+    const hasContent = content.length > 0;
+
+    if (!hasContent && !hasChildren) {
+      // Empty-body section: skip entirely and log
+      skippedSections.push(node.xmlId);
+      return;
+    }
+
     // Emit heading for this node. ordinal/title may be absent on live
     // nodes (same optionality as content/children, verified 2026-07-05).
     blocks.push({
@@ -244,8 +266,7 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
     // Emit content as paragraph if non-empty. Live content nodes may omit
     // the field entirely (verified against the full IBC2018P6 corpus
     // 2026-07-05); fixtures always set it, so guard here.
-    const content = (node.content ?? "").trim();
-    if (content.length > 0) {
+    if (hasContent) {
       // Strip HTML tags for plain text content
       const text = content.replace(/<[^>]+>/g, "");
       if (text.trim().length > 0) {
@@ -268,7 +289,7 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
 
     // Recursively emit children (subsections); absent on live leaf nodes.
     for (const child of node.children ?? []) {
-      this.emitContentNodeBlocks(blocks, child, depth + 1);
+      this.emitContentNodeBlocks(blocks, child, depth + 1, skippedSections);
     }
   }
 
