@@ -158,6 +158,28 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.19)
 
+  packages/og-sources:
+    dependencies:
+      '@empressaio/atom-contract':
+        specifier: 1.7.0
+        version: 1.7.0(@types/pg@8.20.0)(postgres@3.4.9)
+      cheerio:
+        specifier: ^1.0.0
+        version: 1.2.0
+      undici:
+        specifier: ^7.2.0
+        version: 7.25.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      typescript:
+        specifier: ~5.7.2
+        version: 5.7.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)
+
   packages/retrieval:
     dependencies:
       '@hauska-engine/atom-contract-pin':
@@ -382,6 +404,22 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.19)
 
+  tools/rrc-ratio-report:
+    dependencies:
+      '@hauska-engine/og-sources':
+        specifier: workspace:*
+        version: link:../../packages/og-sources
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.2
+      typescript:
+        specifier: ~5.7.2
+        version: 5.7.3
+
 packages:
 
   '@anthropic-ai/sdk@0.78.0':
@@ -396,6 +434,10 @@ packages:
   '@babel/runtime@7.29.7':
     resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
+
+  '@empressaio/atom-contract@1.7.0':
+    resolution: {integrity: sha512-KAU9m38OvcX+/nxz4vC3SYuHiaIyIXL0jzw+/7QSWTbyGg1Hd2R1A6F4qkmgmmZRrJkd/mhN1x2AvB2EiGhEkA==}
+    engines: {node: '>=18.18.0'}
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -1721,6 +1763,41 @@ snapshots:
       zod: 3.25.76
 
   '@babel/runtime@7.29.7': {}
+
+  '@empressaio/atom-contract@1.7.0(@types/pg@8.20.0)(postgres@3.4.9)':
+    dependencies:
+      drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - '@aws-sdk/client-rds-data'
+      - '@cloudflare/workers-types'
+      - '@electric-sql/pglite'
+      - '@libsql/client'
+      - '@libsql/client-wasm'
+      - '@neondatabase/serverless'
+      - '@op-engineering/op-sqlite'
+      - '@opentelemetry/api'
+      - '@planetscale/database'
+      - '@prisma/client'
+      - '@tidbcloud/serverless'
+      - '@types/better-sqlite3'
+      - '@types/pg'
+      - '@types/react'
+      - '@types/sql.js'
+      - '@vercel/postgres'
+      - '@xata.io/client'
+      - better-sqlite3
+      - bun-types
+      - expo-sqlite
+      - knex
+      - kysely
+      - mysql2
+      - pg
+      - postgres
+      - prisma
+      - react
+      - sql.js
+      - sqlite3
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true

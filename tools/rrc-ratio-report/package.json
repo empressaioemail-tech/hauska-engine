@@ -1,0 +1,23 @@
+{
+  "name": "@hauska-tools/rrc-ratio-report",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "RRC W-1 allocation-vs-PSA ratio report generator for Reeves County.",
+  "bin": {
+    "rrc-ratio-report": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node --loader tsx ./src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hauska-engine/og-sources": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2"
+  }
+}
