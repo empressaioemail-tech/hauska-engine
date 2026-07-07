@@ -22,10 +22,26 @@ const datetimeOrDateOnlySchema = () =>
     const datetimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
     
     if (dateOnlyRegex.test(val)) {
+      const parsed = new Date(val + "T00:00:00Z");
+      if (Number.isNaN(parsed.getTime())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Invalid date string",
+        });
+        return z.NEVER;
+      }
       return `${val}T00:00:00Z`;
     }
     
     if (datetimeRegex.test(val)) {
+      const parsed = new Date(val);
+      if (Number.isNaN(parsed.getTime())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Invalid datetime string",
+        });
+        return z.NEVER;
+      }
       return val;
     }
     

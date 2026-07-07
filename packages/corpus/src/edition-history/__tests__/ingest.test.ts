@@ -89,7 +89,10 @@ describe("ingestEditionBundle", () => {
     await ingestEditionBundle(storage, currentBundle);
     
     const corpusBeforeHistorical = await storage.getAtom("jurisdiction-corpus", "test_city");
-    expect(corpusBeforeHistorical?.currentEditionId).toBe("test_city/current-supplement-2026");
+    expect(corpusBeforeHistorical?.entityType).toBe("jurisdiction-corpus");
+    if (corpusBeforeHistorical?.entityType === "jurisdiction-corpus") {
+      expect(corpusBeforeHistorical.currentEditionId).toBe("test_city/current-supplement-2026");
+    }
 
     const historicalBundle = parseEditionBundle({
       format: "hauska-edition-bundle/1",
@@ -123,8 +126,11 @@ describe("ingestEditionBundle", () => {
     await ingestEditionBundle(storage, historicalBundle);
     
     const corpusAfterHistorical = await storage.getAtom("jurisdiction-corpus", "test_city");
-    expect(corpusAfterHistorical?.currentEditionId).toBe("test_city/current-supplement-2026");
-    expect(corpusAfterHistorical?.adoptedEditionIds).toContain("test_city/ibc-2021");
-    expect(corpusAfterHistorical?.adoptedEditionIds).toContain("test_city/current-supplement-2026");
+    expect(corpusAfterHistorical?.entityType).toBe("jurisdiction-corpus");
+    if (corpusAfterHistorical?.entityType === "jurisdiction-corpus") {
+      expect(corpusAfterHistorical.currentEditionId).toBe("test_city/current-supplement-2026");
+      expect(corpusAfterHistorical.adoptedEditionIds).toContain("test_city/ibc-2021");
+      expect(corpusAfterHistorical.adoptedEditionIds).toContain("test_city/current-supplement-2026");
+    }
   });
 });
