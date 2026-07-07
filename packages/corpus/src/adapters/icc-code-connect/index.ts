@@ -193,6 +193,12 @@ export class IccCodeConnectAdapter implements CodeSourceAdapter {
 
   async normalize(raw: RawCode): Promise<NormalizedCode> {
     if (raw.body.length === 0) {
+      // IPMC2018P2 class: the content fetch itself returned an empty body.
+      // Zero blocks is honest output, but never silent — an empty document
+      // at this level usually means an entitlement or upstream issue.
+      console.warn(
+        `[IccCodeConnectAdapter] Empty document body for "${raw.metadata.sourceUrl ?? "unknown source"}" — emitting zero blocks. If other books fetch fine, check the book's entitlement/content availability upstream.`,
+      );
       return { metadata: raw.metadata, blocks: [] };
     }
     if (!raw.contentType.startsWith(ICC_CONTENT_TYPE)) {
