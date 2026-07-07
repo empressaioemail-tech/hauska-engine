@@ -157,7 +157,7 @@ export async function ingestEditionBundle(
   );
 
   const adoptedEditionIds = editionEntityIds;
-  const currentEditionId =
+  const lastIngestedEditionId =
     sortedEntries[sortedEntries.length - 1]?.edition.entityId ?? null;
 
   const corpusInst: JurisdictionCorpusAtomInstance = existingCorpus
@@ -170,7 +170,7 @@ export async function ingestEditionBundle(
           ]),
         ],
         currentEditionId:
-          currentEditionId ?? existingCorpus.currentEditionId,
+          existingCorpus.currentEditionId ?? lastIngestedEditionId,
         lastRefreshedAt: bundle.generatedAt,
         fetchedAt: bundle.generatedAt,
       }
@@ -180,7 +180,7 @@ export async function ingestEditionBundle(
         jurisdictionTenant: bundle.jurisdictionTenant,
         jurisdictionName: bundle.jurisdictionName,
         adoptedEditionIds,
-        currentEditionId,
+        currentEditionId: lastIngestedEditionId,
         coverageQualityBar: existingStatus?.qualityBar ?? "not-evaluated",
         lastRefreshedAt: bundle.generatedAt,
         fetchedAt: bundle.generatedAt,

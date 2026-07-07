@@ -10,6 +10,32 @@ import { z } from "zod";
 
 export const EDITION_BUNDLE_FORMAT = "hauska-edition-bundle/1" as const;
 
+/**
+ * Accepts ISO 8601 datetime with offset OR date-only string.
+ * Date-only strings (YYYY-MM-DD) are normalized to UTC midnight (T00:00:00Z).
+ * This is a mechanical normalization of the legal effective DATE, not an
+ * invented timestamp — state law specifies effective dates, not times.
+ */
+const datetimeOrDateOnlySchema = () =>
+  z.string().transform((val, ctx) => {
+    const dateOnlyRegex = /^\d{4}-\d{2}-\d{2}$/;
+    const datetimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
+    
+    if (dateOnlyRegex.test(val)) {
+      return `${val}T00:00:00Z`;
+    }
+    
+    if (datetimeRegex.test(val)) {
+      return val;
+    }
+    
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Must be ISO 8601 datetime with offset or date-only (YYYY-MM-DD)",
+    });
+    return z.NEVER;
+  });
+
 export const MODEL_CODE_BASE_SCHEMA = z.enum([
   "IRC",
   "IBC",
@@ -25,7 +51,7 @@ export const MODEL_CODE_BASE_SCHEMA = z.enum([
 
 export const ADOPTION_ORDINANCE_SCHEMA = z.object({
   ordinanceId: z.string().min(1),
-  effectiveDate: z.string().datetime({ offset: true }),
+  effectiveDate: datetimeOrDateOnlySchema(),
   authority: z.string().min(1),
   title: z.string().min(1),
   sourceUrl: z.string().url(),
@@ -41,8 +67,8 @@ export const EDITION_BUNDLE_ENTRY_SCHEMA = z.object({
   edition: z.object({
     entityId: z.string().min(1),
     editionLabel: z.string().min(1),
-    effectiveFrom: z.string().datetime({ offset: true }),
-    effectiveTo: z.string().datetime({ offset: true }).nullable(),
+    effectiveFrom: datetimeOrDateOnlySchema(),
+    effectiveTo: datetimeOrDateOnlySchema().nullable(),
     sourceAdapter: z.string().min(1),
     sourceUrl: z.string().url(),
     modelCodeBase: MODEL_CODE_BASE_SCHEMA.optional(),

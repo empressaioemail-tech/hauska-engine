@@ -113,22 +113,60 @@ function extractHiddenFormFields(html: string): Record<string, string> {
 }
 
 /**
+ * Map county name to RRC county code.
+ */
+const COUNTY_CODE_MAP: Record<string, string> = {
+  REEVES: "389",
+  ANDERSON: "001",
+  ANDREWS: "003",
+};
+
+/**
+ * Convert ISO date (YYYY-MM-DD) to RRC format (MM/DD/YYYY).
+ */
+function formatDateForRrc(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-");
+  return `${month}/${day}/${year}`;
+}
+
+/**
  * Build the POST parameter map for the RRC EWA query. Combines hidden form
  * fields with user-supplied query parameters.
+ *
+ * The RRC form uses specific field names:
+ * - searchArgs.countyCodeHndlr.selectedCodes (county code, e.g., "389" for Reeves)
+ * - searchArgs.submittedDtFromHndlr.inputValue (from date in MM/DD/YYYY format)
+ * - searchArgs.submittedDtToHndlr.inputValue (to date in MM/DD/YYYY format)
+ * - searchArgs.psaFlagHndlr.inputValue ("Y" for PSA wells)
+ * - searchArgs.allocationFlagHndlr.inputValue ("Y" for allocation wells)
  */
 function buildPostParams(
   params: W1QueryParams,
   hiddenFields: Record<string, string>,
 ): Record<string, string> {
-  // RRC form field names (as of 2026-07; subject to change)
-  return {
+  const countyName = params.county.toUpperCase();
+  const countyCode = COUNTY_CODE_MAP[countyName];
+  
+  if (!countyCode) {
+    throw new Error(
+      `Unknown county: ${countyName}. Add county code to COUNTY_CODE_MAP.`,
+    );
+  }
+
+  const postParams: Record<string, string> = {
     ...hiddenFields,
-    county: params.county.toUpperCase(),
-    fromDate: params.fromDate,
-    toDate: params.toDate,
-    completionType: params.completionType ?? "",
-    maxResults: String(params.maxResults ?? 1000),
+    "searchArgs.countyCodeHndlr.selectedCodes": countyCode,
+    "searchArgs.submittedDtFromHndlr.inputValue": formatDateForRrc(params.fromDate),
+    "searchArgs.submittedDtToHndlr.inputValue": formatDateForRrc(params.toDate),
   };
+
+  if (params.completionType === "PSA") {
+    postParams["searchArgs.psaFlagHndlr.inputValue"] = "Y";
+  } else if (params.completionType === "ALLOCATION") {
+    postParams["searchArgs.allocationFlagHndlr.inputValue"] = "Y";
+  }
+
+  return postParams;
 }
 
 /**
@@ -147,28 +185,70 @@ function parseW1PermitsFromHtml(
   const $ = cheerio.load(html);
   const permits: RawW1Permit[] = [];
 
-  // The RRC results table has a class "searchResults" (or similar). We look
-  // for the table and parse its rows. If the structure changes, this will
-  // surface as an empty result.
-  const rows = $("table.searchResults tbody tr, table.results tbody tr");
+  // The RRC results table has class="DataGrid". Look for rows after the header.
+  const table = $("table.DataGrid");
+  
+  if (table.length === 0) {
+    console.warn("RRC W-1: No results table (DataGrid) found in response HTML.");
+    return [];
+  }
+
+  // Find all data rows (skip the header row with <th> elements)
+  const rows = table.find("tr").filter((_i, row) => {
+    return $(row).find("td").length > 0 && $(row).find("th").length === 0;
+  });
 
   if (rows.length === 0) {
-    // No results or table not found. Return empty array.
-    console.warn("RRC W-1: No results table found in response HTML.");
+    console.warn("RRC W-1: No data rows found in results table.");
     return [];
   }
 
   rows.each((_i, row) => {
     const cells = $(row).find("td");
-    if (cells.length < 10) {
-      // Row does not have enough columns; skip it
+    
+    // Extract API number from the nested table/link structure
+    const apiLink = $(cells[0]).find("a[href*='leaseDetailAction']");
+    const apiNumber = apiLink.text().trim();
+    
+    if (!apiNumber) {
+      // Skip rows without API number
       return;
     }
 
-    const permit = parsePermitRow(cells.toArray().map((c) => $(c).text().trim()));
-    if (permit) {
-      permits.push(permit);
-    }
+    // Extract other fields from remaining cells
+    const district = $(cells[1]).text().trim();
+    const leaseCell = $(cells[2]);
+    const leaseName = leaseCell.find("a").text().trim() || leaseCell.text().trim();
+    const wellNumber = $(cells[3]).text().trim();
+    const operatorText = $(cells[4]).text().trim();
+    const county = $(cells[5]).text().trim();
+    
+    // Parse dates from cell 6 (may contain "Submitted: MM/DD/YYYY Approved: MM/DD/YYYY")
+    const datesText = $(cells[6]).text().trim();
+    const submittedMatch = datesText.match(/Submitted:\s*(\d{2}\/\d{2}\/\d{4})/);
+    const approvedMatch = datesText.match(/Approved:\s*(\d{2}\/\d{2}\/\d{4})/);
+    
+    const permit: RawW1Permit = {
+      permitNumber: "", // Not directly visible in table; would need detail page
+      apiNumber,
+      wellName: "", // Not in table
+      operatorName: operatorText.replace(/\(\d+\)/, "").trim(),
+      operatorNumber: operatorText.match(/\((\d+)\)/)?.[1],
+      leaseName: leaseName.replace(/\(\d+\)/, "").trim(),
+      fieldName: undefined,
+      county,
+      district,
+      wellType: "", // Not in summary table
+      completionType: undefined,
+      dateSubmitted: submittedMatch ? submittedMatch[1] : undefined,
+      dateApproved: approvedMatch ? approvedMatch[1] : undefined,
+      surfaceLatitude: undefined,
+      surfaceLongitude: undefined,
+      datum: undefined,
+      proposedDepth: cells[11] ? parseInt($(cells[11]).text().trim(), 10) : undefined,
+    };
+
+    permits.push(permit);
 
     // Cap at maxResults
     if (permits.length >= maxResults) {
@@ -179,77 +259,6 @@ function parseW1PermitsFromHtml(
   return permits;
 }
 
-/**
- * Parse a single permit row. The RRC table columns are (approximately):
- * 0: Permit Number
- * 1: API Number
- * 2: Well Name
- * 3: Operator Name
- * 4: Operator Number
- * 5: Lease Name
- * 6: Field Name
- * 7: County
- * 8: District
- * 9: Well Type
- * 10: Completion Type
- * 11: Date Submitted
- * 12: Date Approved
- * 13: Surface Latitude
- * 14: Surface Longitude
- * 15: Datum
- * 16: Proposed Depth
- *
- * (The actual column order may vary; this is a best-effort parse. The
- * conformance test against real fixtures will validate correctness.)
- */
-function parsePermitRow(cells: string[]): RawW1Permit | null {
-  if (cells.length < 10) {
-    return null;
-  }
-
-  const permitNumber = cells[0] ?? "";
-  const apiNumber = cells[1] ?? "";
-  const wellName = cells[2] ?? "";
-  const operatorName = cells[3] ?? "";
-  const operatorNumber = cells[4] || undefined;
-  const leaseName = cells[5] ?? "";
-  const fieldName = cells[6] || undefined;
-  const county = cells[7] ?? "";
-  const district = cells[8] ?? "";
-  const wellType = cells[9] ?? "";
-  const completionType = cells[10] || undefined;
-  const dateSubmitted = cells[11] || undefined;
-  const dateApproved = cells[12] || undefined;
-  const surfaceLatitude = cells[13] ? parseFloat(cells[13]) : undefined;
-  const surfaceLongitude = cells[14] ? parseFloat(cells[14]) : undefined;
-  const datum = cells[15] || undefined;
-  const proposedDepth = cells[16] ? parseInt(cells[16], 10) : undefined;
-
-  // Basic validation: permit number and API number must be present
-  if (!permitNumber || !apiNumber) {
-    return null;
-  }
-
-  return {
-    permitNumber,
-    apiNumber,
-    wellName,
-    operatorName,
-    operatorNumber,
-    leaseName,
-    fieldName,
-    county,
-    district,
-    wellType,
-    completionType,
-    dateSubmitted,
-    dateApproved,
-    surfaceLatitude,
-    surfaceLongitude,
-    datum,
-    proposedDepth,
-  };
-}
 
 /**
  * Fetch W-1 permit count only (does not parse full records). Useful for the
@@ -310,8 +319,7 @@ export async function fetchW1PermitCount(
 
 /**
  * Extract the total count from the RRC EWA results page. The page typically
- * shows "Showing 1-50 of 237 results" or similar. We parse this text to get
- * the total.
+ * shows "1 - 10 of 89 results" or similar in the pager banner.
  *
  * If the text is not found or cannot be parsed, returns the row count as a
  * fallback.
@@ -319,14 +327,16 @@ export async function fetchW1PermitCount(
 function extractPermitCount(html: string): number {
   const $ = cheerio.load(html);
 
-  // Look for a div or span with class "resultCount" or similar
-  const countText = $(".resultCount, .totalResults").text();
-  const match = countText.match(/of\s+(\d+)/i);
+  // Look for the pager banner text (e.g., "1 - 10 of 89 results")
+  const pagerText = $(".PagerBanner, td.PagerBanner").text();
+  const match = pagerText.match(/(\d+)\s+results?\s*$/i) || pagerText.match(/of\s+(\d+)/i);
   if (match && match[1]) {
     return parseInt(match[1], 10);
   }
 
-  // Fallback: count table rows
-  const rows = $("table.searchResults tbody tr, table.results tbody tr");
+  // Fallback: count data rows in DataGrid table
+  const rows = $("table.DataGrid tr").filter((_i, row) => {
+    return $(row).find("td").length > 0 && $(row).find("th").length === 0;
+  });
   return rows.length;
 }
