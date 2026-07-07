@@ -32,7 +32,7 @@ RUN pip3 install --break-system-packages -r /tmp/hydrology-requirements.txt
 # back to native-D8 on every request. The native-D8 path remains the
 # runtime fallback for per-request worker faults; this only guarantees
 # the image itself has a loadable pysheds.
-RUN python3 -c "import numpy, rasterio; from pysheds.grid import Grid; print('hydrology deps OK:', numpy.__version__, rasterio.__version__)"
+RUN python3 -c "import numpy, scipy, rasterio; from pysheds.grid import Grid; print('hydrology deps OK:', numpy.__version__, scipy.__version__, rasterio.__version__)"
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
