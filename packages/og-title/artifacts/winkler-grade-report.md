@@ -1,6 +1,6 @@
 # Winkler County Title Method Baseline - Grade Report
 
-**Generated:** 2026-07-08T04:38:34.374Z
+**Generated:** 2026-07-08T04:56:11.346Z
 
 **Target Tract:** S/2 SW/4 Section 25, Block B-5, PSL Survey, Winkler County, TX
 
@@ -11,12 +11,12 @@
 This report grades the title-method baseline (method v0) against a certified Working Interest Ownership Report for S/2 SW/4 Section 25, Block B-5, Winkler County.
 
 **Parse Performance:**
-- Parsed 563 of 3396 instrument rows (16.6%)
-- 2833 rows unparsed
+- Parsed 643 of 646 instrument rows (99.5%)
+- 3 rows unparsed
 
 **Chain Assembly:**
-- 0 instruments scoped to target tract
-- 1 gaps/ambiguities identified
+- 476 instruments scoped to target tract
+- 3 gaps/ambiguities identified
 - 1 working interest owners computed
 
 **Grade:**
@@ -30,31 +30,36 @@ This report grades the title-method baseline (method v0) against a certified Wor
 
 ## Runsheet Parse Statistics
 
-- **Total Rows:** 3396
-- **Successfully Parsed:** 563
-- **Unparsed:** 2833
-- **Parse Rate:** 16.58%
+- **Total Rows:** 646
+- **Successfully Parsed:** 643
+- **Unparsed:** 3
+- **Parse Rate:** 99.54%
 
 ### Sample Unparsed Rows (first 5)
 
-- **Line 21:** Failed to parse instrument row
-  `DEED, ASSUMPTION PARTITION, ETC. 1/362`
-- **Line 27:** Failed to parse instrument row
-  `04/05/190904/13/1909 CRAWFORD A T SEC: 17, 24--25  BLK: B5  PUBLIC SCHOOL LANDS  [ALL ;]   ALL COWDE...`
-- **Line 33:** Failed to parse instrument row
-  `06/16/190906/25/1909 CRAWFORD A T SEC: 17, 24--25  BLK: B5  PUBLIC SCHOOL LANDS  [ALL ;]   ALL AMERI...`
-- **Line 38:** Failed to parse instrument row
-  `07/17/190908/12/1909 CRAWFORD A T SEC: 17, 24--25  BLK: B5  PUBLIC SCHOOL LANDS  [ALL ;]   ALL STATE...`
-- **Line 46:** Failed to parse instrument row
-  `03/08/192304/02/1923 YEISER ELAINE H SEC: 17, 24--25  BLK: B5  PUBLIC SCHOOL LANDS  [ALL ;]   ALL AS...`
+- **Line 15003:** Failed to parse multi-line record
+  `PARTIAL RELEASE OF LIEN VARIOUS COUNTIES`
+- **Line 15046:** Failed to parse multi-line record
+  `RELEASE OF LIEN 3 DIFFERENT AMOUNT VARIOUS COUNTIES`
+- **Line 19249:** Failed to parse multi-line record
+  `ASSIGNMENT & CONVEYANCE REF B77438, B77445, B79163`
 
 ## Chain Assembly Statistics
 
-- **Total Scoped Instruments:** 0
+- **Total Scoped Instruments:** 476
 - **Instrument Type Distribution:**
+  - assignment: 267
+  - deed: 82
+  - mineral-deed: 47
+  - release: 42
+  - other: 23
+  - probate: 9
+  - royalty-deed: 6
 
-- **Identified Gaps:** 1
+- **Identified Gaps:** 3
   - No patent found - chain to sovereignty incomplete
+  - 8 instruments with uncertain tract intersection
+  - Large time gap (14 years) between 1909-04-05 and 1923-03-08
 
 - **Computed Working Interest Owners:** 1
 
@@ -137,6 +142,6 @@ Method v0 is intentionally simplified to establish a graded baseline. Known limi
 
 6. **Depth handling:** The certified report shows depth-severanced ownership. Method v0 does not parse depth intervals from instruments.
 
-7. **Identified gaps:** The method explicitly flagged 1 gaps in the chain (see Chain Assembly Statistics above). These represent known incompleteness.
+7. **Identified gaps:** The method explicitly flagged 3 gaps in the chain (see Chain Assembly Statistics above). These represent known incompleteness.
 
 These limitations are expected and documented. Future method revisions will address them incrementally, with each change measured against this baseline.

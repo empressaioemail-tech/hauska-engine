@@ -27,7 +27,7 @@ const WI_REPORT_PDF = resolve(
   '2015-10-24_working_interest_report_winkler_s2sw4_sec25_blkB5.pdf'
 );
 
-const OUTPUT_REPORT = resolve(process.cwd(), 'winkler-grade-report.md');
+const OUTPUT_REPORT = resolve(process.cwd(), 'artifacts/winkler-grade-report.md');
 
 async function main() {
   console.log('=== Winkler County Title Method Baseline ===\n');

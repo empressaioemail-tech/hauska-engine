@@ -25,63 +25,86 @@ export async function parseRunsheetPdf(pdfBuffer: Buffer): Promise<RunsheetParse
 
 /**
  * Parse extracted text from runsheet PDF
+ * 
+ * Multi-line record structure:
+ * - Line 1: INSTRUMENT TYPE
+ * - Line 2: BOOK/PAGE (e.g. "1/362" or "R011/319")
+ * - Line 3: INST DATE + FILED DATE (may be concatenated)
+ * - Line 4+: GRANTOR, LEGAL (wraps), GRANTEE interleaved
  */
 export function parseRunsheetText(text: string): RunsheetParseResult {
   const lines = text.split('\n');
   const parsed: InstrumentRecord[] = [];
   const unparsed: UnparsedRow[] = [];
 
-  let currentRow: string[] = [];
-  let lineNumber = 0;
+  let i = 0;
+  let recordStartLine = 0;
 
-  for (const line of lines) {
-    lineNumber++;
-    const trimmed = line.trim();
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    i++;
 
-    if (trimmed === '') {
+    if (line === '' || isHeaderRow(line)) {
       continue;
     }
 
-    // Skip header rows (heuristic: contains column names)
-    if (isHeaderRow(trimmed)) {
+    // Check if this line starts a new record (instrument type vocabulary)
+    const instrumentType = matchInstrumentType(line);
+    if (!instrumentType) {
       continue;
     }
 
-    // Check if this looks like a new instrument row or continuation
-    if (looksLikeNewRow(trimmed)) {
-      // Process accumulated row if any
-      if (currentRow.length > 0) {
-        const rowText = currentRow.join(' ');
-        const record = parseInstrumentRow(rowText, lineNumber);
-        if (record) {
-          parsed.push(record);
-        } else {
-          unparsed.push({
-            rawText: rowText,
-            reason: 'Failed to parse instrument row',
-            lineNumber,
-          });
-        }
+    // Found potential instrument type, accumulate lines for this record
+    recordStartLine = i;
+    const recordLines: string[] = [line];
+
+    // Check if this might be a single-line format (has dates or book/page on same line)
+    const hasDateOnSameLine = /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(line);
+    const hasBookPageOnSameLine = /\d+\s+\d+/.test(line);
+    
+    if (hasDateOnSameLine || hasBookPageOnSameLine) {
+      // Single-line format - parse immediately
+      const record = parseSingleLineRecord(line, recordStartLine);
+      if (record) {
+        parsed.push(record);
+      } else {
+        unparsed.push({
+          rawText: line,
+          reason: 'Failed to parse single-line record',
+          lineNumber: recordStartLine,
+        });
       }
-      // Start new row
-      currentRow = [trimmed];
-    } else {
-      // Continuation of previous row
-      currentRow.push(trimmed);
+      continue;
     }
-  }
 
-  // Process final accumulated row
-  if (currentRow.length > 0) {
-    const rowText = currentRow.join(' ');
-    const record = parseInstrumentRow(rowText, lineNumber);
+    // Multi-line format - collect lines until we hit the next instrument type or end
+    while (i < lines.length) {
+      const nextLine = lines[i].trim();
+      if (nextLine === '') {
+        i++;
+        continue;
+      }
+      if (isHeaderRow(nextLine)) {
+        i++;
+        continue;
+      }
+      // Check if this starts a new record
+      if (matchInstrumentType(nextLine)) {
+        break;
+      }
+      recordLines.push(nextLine);
+      i++;
+    }
+
+    // Now parse the accumulated record lines
+    const record = parseMultiLineRecord(recordLines, recordStartLine);
     if (record) {
       parsed.push(record);
     } else {
       unparsed.push({
-        rawText: rowText,
-        reason: 'Failed to parse instrument row',
-        lineNumber,
+        rawText: recordLines.join('\n'),
+        reason: 'Failed to parse multi-line record',
+        lineNumber: recordStartLine,
       });
     }
   }
@@ -116,56 +139,75 @@ function isHeaderRow(line: string): boolean {
 }
 
 /**
- * Check if line looks like start of new instrument row
- * Heuristic: starts with a known instrument type or date pattern
+ * Instrument type vocabulary observed in Winkler County index
  */
-function looksLikeNewRow(line: string): boolean {
-  const instrumentTypePattern = /^(PATENT|DEED|D\/T|MINERAL\s+DEED|ROYALTY\s+DEED|OG\s+LEASE|O&G\s+LEASE|ASSIGNMENT|RELEASE|PROBATE|UNIT|POOLING)/i;
-  const datePattern = /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/;
+const INSTRUMENT_TYPES = [
+  'PATENT',
+  'DEED',
+  'WARRANTY DEED',
+  'QUIT CLAIM DEED',
+  'SPECIAL WARRANTY DEED',
+  'DEED, ASSUMPTION PARTITION, ETC.',
+  'D/T',
+  'DEED OF TRUST',
+  'MINERAL DEED',
+  'ROYALTY DEED',
+  'OG LEASE',
+  'OIL & GAS LEASE',
+  'O&G LEASE',
+  'OIL AND GAS LEASE',
+  'ASSIGNMENT',
+  'ASSIGNMENT OF OIL & GAS LEASE',
+  'RELEASE',
+  'PARTIAL RELEASE',
+  'PROBATE',
+  'AFFIDAVIT',
+  'CERTIFICATE',
+  'UNIT',
+  'UNIT DESIGNATION',
+  'POOLING',
+  'DECLARATION',
+  'RATIFICATION',
+];
 
-  return instrumentTypePattern.test(line) || datePattern.test(line);
+/**
+ * Check if line matches an instrument type from vocabulary
+ * Returns the matched type or null
+ */
+function matchInstrumentType(line: string): string | null {
+  const normalized = line.trim().toUpperCase();
+  
+  for (const type of INSTRUMENT_TYPES) {
+    if (normalized === type || normalized.startsWith(type + ' ')) {
+      return type;
+    }
+  }
+  
+  return null;
 }
 
 /**
- * Parse a single instrument row into structured record
- * 
- * Expected format (with variations):
- * INSTRUMENT_TYPE BOOK PAGE INST# INST_DATE CONSIDERATION GRANTOR GRANTEE LEGAL FILED_DATE RELATED
+ * Parse a single-line instrument record (fallback format)
  */
-function parseInstrumentRow(rowText: string, lineNumber: number): InstrumentRecord | null {
+function parseSingleLineRecord(line: string, startLine: number): InstrumentRecord | null {
   try {
-    // This is a simplified parser - real implementation would need more sophisticated parsing
-    // based on the actual column layout observed in the PDF
-
     const record: InstrumentRecord = {
       instrumentType: '',
       grantors: [],
       grantees: [],
       legal: { sections: [], block: undefined, subdivisions: [] },
-      rawText: rowText,
+      rawText: line,
     };
 
-    // Extract instrument type (first token typically)
-    const instrumentTypeMatch = rowText.match(/^([A-Z&\s\/]+?)(?:\s+\d+|\s+[A-Z])/);
-    if (instrumentTypeMatch) {
-      record.instrumentType = instrumentTypeMatch[1].trim();
+    // Extract instrument type
+    const instrumentType = matchInstrumentType(line);
+    if (!instrumentType) {
+      return null;
     }
-
-    // Extract book/page references
-    const bookPageMatch = rowText.match(/(?:BOOK|BK|VOL)\s*(\d+)\s*(?:PAGE|PG|P)\s*(\d+)/i);
-    if (bookPageMatch && bookPageMatch[1] && bookPageMatch[2]) {
-      record.book = bookPageMatch[1];
-      record.page = bookPageMatch[2];
-    }
-
-    // Extract instrument number
-    const instNumMatch = rowText.match(/(?:INST|DOC|#)\s*[#:]?\s*(\d+[-\d]*)/i);
-    if (instNumMatch && instNumMatch[1]) {
-      record.instrumentNumber = instNumMatch[1];
-    }
+    record.instrumentType = instrumentType;
 
     // Extract dates
-    const dates = extractDates(rowText);
+    const dates = extractDates(line);
     if (dates.length >= 1) {
       record.instrumentDate = dates[0];
     }
@@ -174,17 +216,156 @@ function parseInstrumentRow(rowText: string, lineNumber: number): InstrumentReco
     }
 
     // Extract legal description
-    record.legal = extractLegalDescription(rowText);
+    record.legal = extractLegalDescription(line);
 
-    // Extract grantors/grantees (this is complex, simplified here)
-    const names = extractNames(rowText);
+    // Extract names (simplified for single-line)
+    const names = extractNames(line);
     if (names.length >= 2) {
       record.grantors = [names[0]];
       record.grantees = [names[1]];
+    } else if (names.length === 1) {
+      record.grantors = [names[0]];
     }
 
-    // Must have at least instrument type and some identifiable content
-    if (!record.instrumentType || record.instrumentType.length < 2) {
+    return record;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Parse a multi-line instrument record
+ * 
+ * Expected structure:
+ * Line 0: INSTRUMENT TYPE
+ * Line 1: BOOK/PAGE (e.g., "1/362", "R011/319")
+ * Line 2: Dates (INST DATE + FILED DATE, often concatenated)
+ * Line 3+: GRANTOR, LEGAL, GRANTEE interleaved and wrapped
+ */
+function parseMultiLineRecord(lines: string[], startLine: number): InstrumentRecord | null {
+  if (lines.length < 2) {
+    return null;
+  }
+
+  try {
+    const record: InstrumentRecord = {
+      instrumentType: '',
+      grantors: [],
+      grantees: [],
+      legal: { sections: [], block: undefined, subdivisions: [] },
+      rawText: lines.join('\n'),
+    };
+
+    let lineIdx = 0;
+
+    // Line 0: Instrument type (may have consideration on same line)
+    const instrumentType = matchInstrumentType(lines[lineIdx]);
+    if (!instrumentType) {
+      return null;
+    }
+    record.instrumentType = instrumentType;
+
+    // Extract consideration if present
+    const considerationMatch = lines[lineIdx].match(/\$[\d,]+(\.\d+)?/);
+    if (considerationMatch) {
+      record.consideration = considerationMatch[0];
+    }
+
+    lineIdx++;
+    if (lineIdx >= lines.length) {
+      return null;
+    }
+
+    // Check if next line is a book type (TRANSFER, LRI, etc.)
+    const bookTypePatterns = ['TRANSFER', 'LRI', 'RECORDING', 'FILM', 'FILE'];
+    if (bookTypePatterns.some(pattern => lines[lineIdx].trim().toUpperCase() === pattern)) {
+      record.bookType = lines[lineIdx].trim();
+      lineIdx++;
+      if (lineIdx >= lines.length) {
+        return null;
+      }
+    }
+
+    // Next line should be book/page pattern like "1/362" or "R011/319"
+    const bookPageMatch = lines[lineIdx].match(/^([A-Z]?\d+)\/(\d+)/);
+    if (bookPageMatch) {
+      const bookRef = bookPageMatch[1];
+      record.page = bookPageMatch[2];
+      // Extract book number (strip letter prefix if present)
+      const bookNum = bookRef.match(/\d+/);
+      if (bookNum) {
+        record.book = bookNum[0];
+      }
+      // Check for book type prefix (e.g., "R" in "R011")
+      const bookTypePrefix = bookRef.match(/^([A-Z])/);
+      if (bookTypePrefix && !record.bookType) {
+        record.bookType = bookTypePrefix[1];
+      }
+      lineIdx++;
+    } else {
+      // No book/page found - this might be a malformed record
+      // Try to extract what we can from remaining lines
+      const remainingText = lines.slice(lineIdx).join(' ');
+      record.legal = extractLegalDescription(remainingText);
+      const names = extractNames(remainingText);
+      if (names.length > 0) {
+        record.grantors = [names[0]];
+        if (names.length > 1) {
+          record.grantees = [names[1]];
+        }
+      }
+      // Return the record even without book/page
+      return record;
+    }
+
+    if (lineIdx >= lines.length) {
+      return record; // Minimal record with just type and book/page
+    }
+
+    // Check if next line is instrument/doc number (starts with B or just numbers)
+    if (lines[lineIdx].match(/^[B]?\d+$/)) {
+      record.instrumentNumber = lines[lineIdx].trim();
+      lineIdx++;
+    }
+
+    if (lineIdx >= lines.length) {
+      return record;
+    }
+
+    // Next line(s): Dates (may be on one or two lines)
+    const dates = extractDates(lines[lineIdx]);
+    if (dates.length >= 1) {
+      record.instrumentDate = dates[0];
+    }
+    if (dates.length >= 2) {
+      record.filedDate = dates[1];
+    } else if (dates.length === 1 && lineIdx + 1 < lines.length) {
+      // Check next line for second date
+      const moreDates = extractDates(lines[lineIdx + 1]);
+      if (moreDates.length > 0) {
+        record.filedDate = moreDates[0];
+        lineIdx++;
+      }
+    }
+    lineIdx++;
+
+    if (lineIdx >= lines.length) {
+      return record;
+    }
+
+    // Remaining lines: GRANTOR, LEGAL, GRANTEE interleaved and wrapped
+    const remainingText = lines.slice(lineIdx).join(' ');
+
+    // Extract legal description (look for SEC: ... BLK: ... pattern)
+    record.legal = extractLegalDescription(remainingText);
+
+    // Extract names around the legal description
+    const names = extractNamesFromRecord(lines.slice(lineIdx), record.legal);
+    record.grantors = names.grantors;
+    record.grantees = names.grantees;
+
+    // Must have at least instrument type to be valid
+    if (!record.instrumentType) {
       return null;
     }
 
@@ -192,6 +373,57 @@ function parseInstrumentRow(rowText: string, lineNumber: number): InstrumentReco
   } catch (error) {
     return null;
   }
+}
+
+/**
+ * Extract grantor and grantee names from record lines
+ * Strategy: Names appear before and after the LEGAL section marker
+ */
+function extractNamesFromRecord(
+  lines: string[],
+  legal: LegalDescription
+): { grantors: string[]; grantees: string[] } {
+  const fullText = lines.join(' ');
+  const grantors: string[] = [];
+  const grantees: string[] = [];
+
+  // Find where the legal description starts (SEC: or SECTION)
+  const legalStartMatch = fullText.match(/\b(SEC:|SECTION|S:)\s*\d/i);
+  
+  if (legalStartMatch && legalStartMatch.index !== undefined) {
+    // Text before legal = grantor area
+    const beforeLegal = fullText.substring(0, legalStartMatch.index).trim();
+    // Text after legal end (look for bracket pattern end)
+    const legalEndMatch = fullText.match(/\[[^\]]*\]|PUBLIC\s+SCHOOL\s+LANDS/i);
+    let afterLegal = '';
+    if (legalEndMatch && legalEndMatch.index !== undefined) {
+      const endPos = legalEndMatch.index + legalEndMatch[0].length;
+      afterLegal = fullText.substring(endPos).trim();
+    }
+
+    // Extract names from before legal (grantors)
+    const grantorNames = extractNames(beforeLegal);
+    if (grantorNames.length > 0) {
+      grantors.push(...grantorNames.slice(0, 3)); // Take up to 3 names
+    }
+
+    // Extract names from after legal (grantees)
+    const granteeNames = extractNames(afterLegal);
+    if (granteeNames.length > 0) {
+      grantees.push(...granteeNames.slice(0, 3)); // Take up to 3 names
+    }
+  } else {
+    // No legal found, try to extract any names
+    const allNames = extractNames(fullText);
+    if (allNames.length >= 2) {
+      grantors.push(allNames[0]);
+      grantees.push(allNames[1]);
+    } else if (allNames.length === 1) {
+      grantors.push(allNames[0]);
+    }
+  }
+
+  return { grantors, grantees };
 }
 
 /**
@@ -227,6 +459,7 @@ function extractDates(text: string): Date[] {
 
 /**
  * Extract legal description components
+ * Handles section ranges like "SEC: 17, 24--25" or "SEC: 3, 5--7, 15--16, 24--25, 38"
  */
 function extractLegalDescription(text: string): LegalDescription {
   const legal: LegalDescription = {
@@ -235,50 +468,133 @@ function extractLegalDescription(text: string): LegalDescription {
     subdivisions: [],
   };
 
-  // Extract section numbers
-  const sectionMatch = text.match(/(?:SECTION|SEC|S)\s*(\d+)/gi);
-  if (sectionMatch) {
-    for (const match of sectionMatch) {
-      const num = match.match(/\d+/);
-      if (num && num[0]) {
-        legal.sections.push(num[0]);
+  // Extract section numbers with range support
+  // Pattern: SEC: 17, 24--25, 38 or SECTION 17 or SEC 25
+  const sectionMatch = text.match(/(?:SECTION|SEC|S):\s*([\d\s,\-]+?)(?=\s+BLK|BLOCK|$)/i);
+  if (sectionMatch && sectionMatch[1]) {
+    const sectionText = sectionMatch[1];
+    // Parse ranges and individual sections
+    const parts = sectionText.split(',').map(p => p.trim());
+    for (const part of parts) {
+      if (part.includes('--') || part.includes('-')) {
+        // Range like "24--25" or "5-7"
+        const rangeMatch = part.match(/(\d+)\s*-+\s*(\d+)/);
+        if (rangeMatch) {
+          const start = parseInt(rangeMatch[1], 10);
+          const end = parseInt(rangeMatch[2], 10);
+          for (let sec = start; sec <= end; sec++) {
+            legal.sections.push(sec.toString());
+          }
+        }
+      } else {
+        // Individual section
+        const num = part.match(/\d+/);
+        if (num && num[0]) {
+          legal.sections.push(num[0]);
+        }
+      }
+    }
+  } else {
+    // Fallback: try simple section pattern without colon
+    const simpleSectionMatch = text.match(/(?:SECTION|SEC|S)\s+(\d+)/gi);
+    if (simpleSectionMatch) {
+      for (const match of simpleSectionMatch) {
+        const num = match.match(/\d+/);
+        if (num && num[0]) {
+          if (!legal.sections.includes(num[0])) {
+            legal.sections.push(num[0]);
+          }
+        }
       }
     }
   }
 
-  // Extract block (handle patterns like "BLK B-5", "BLOCK B5", "B-5")
-  const blockMatch = text.match(/(?:BLOCK|BLK)\s+([A-Z0-9\-]+)/i);
-  if (blockMatch && blockMatch[1]) {
-    legal.block = blockMatch[1];
-  } else {
-    // Try standalone block pattern in context of section
-    const standaloneBlockMatch = text.match(/\b(B-?\d+)\b/i);
-    if (standaloneBlockMatch && standaloneBlockMatch[1]) {
-      legal.block = standaloneBlockMatch[1];
+  // Extract block (handle patterns like "BLK: B5", "BLOCK B-5", "BLK B5")
+  const blockMatch = text.match(/(?:BLOCK|BLK):\s*([A-Z]?\d+)|(?:BLOCK|BLK)\s+([A-Z]?-?\d+)/i);
+  if (blockMatch) {
+    const blockValue = blockMatch[1] || blockMatch[2];
+    if (blockValue) {
+      // Normalize: "B5" -> "B-5", but keep "B-5" as is
+      let normalized = blockValue.toUpperCase();
+      if (/^[A-Z]\d+$/.test(normalized)) {
+        // Insert hyphen: B5 -> B-5
+        normalized = normalized[0] + '-' + normalized.substring(1);
+      }
+      legal.block = normalized;
     }
   }
 
-  // Extract subdivisions (SE, W2, S2SW4, ALL, etc.)
+  // Extract subdivisions from bracket notation: [ALL;], [SE;], [S2SW4;], etc.
+  const bracketSubdivs = text.match(/\[([^\]]+)\]/g);
+  if (bracketSubdivs) {
+    for (const bracket of bracketSubdivs) {
+      // Remove brackets and semicolons, split by space/comma
+      const content = bracket.replace(/[\[\];]/g, '').trim();
+      const parts = content.split(/[\s,]+/).filter(p => p.length > 0);
+      for (const part of parts) {
+        const normalized = part.toUpperCase();
+        // Filter out non-subdivision terms
+        if (normalized !== 'ALL' && !isSubdivisionToken(normalized)) {
+          continue;
+        }
+        if (!legal.subdivisions.includes(normalized)) {
+          legal.subdivisions.push(normalized);
+        }
+      }
+    }
+  }
+
+  // Also extract unbracke ted subdivisions (less common but possible)
   const subdivisionPatterns = [
     /\b(ALL|ENTIRE)\b/gi,
-    /\b([NESW])\/?\s*([1-4])\b/gi,  // N/2, S2, etc.
-    /\b([NESW]{2,4})\b/gi,           // SE, NW, S2SW4, etc.
+    /\b([NESW])\/?\s*([2-4])\b/gi,  // N/2, S2, etc.
+    /\b([NESW]{2}[2-4]?)\b/gi,       // SE, NW, S2SW4, etc.
   ];
 
   for (const pattern of subdivisionPatterns) {
     const matches = text.match(pattern);
     if (matches) {
-      legal.subdivisions.push(...matches.map((m) => m.trim().toUpperCase()));
+      for (const m of matches) {
+        const normalized = m.trim().toUpperCase().replace(/\s/g, '').replace(/\//g, '');
+        if (isSubdivisionToken(normalized) && !legal.subdivisions.includes(normalized)) {
+          legal.subdivisions.push(normalized);
+        }
+      }
     }
   }
 
   // Extract survey reference
-  const surveyMatch = text.match(/(?:PSL|PUBLIC\s+SCHOOL\s+LAND|SURVEY)/i);
+  const surveyMatch = text.match(/(?:PSL|PUBLIC\s+SCHOOL\s+LAND)/i);
   if (surveyMatch) {
     legal.survey = surveyMatch[0];
   }
 
   return legal;
+}
+
+/**
+ * Check if token is a valid subdivision (not a common word)
+ */
+function isSubdivisionToken(token: string): boolean {
+  const valid = [
+    'ALL', 'ENTIRE',
+    'N', 'S', 'E', 'W',
+    'NE', 'NW', 'SE', 'SW',
+    'N2', 'S2', 'E2', 'W2',
+    'N4', 'S4', 'E4', 'W4',
+  ];
+  
+  // Check exact match
+  if (valid.includes(token)) {
+    return true;
+  }
+  
+  // Check compound patterns like S2SW4, N2NE4, etc.
+  if (/^[NESW][2-4][NESW]{2}[2-4]?$/.test(token)) {
+    return true;
+  }
+  
+  return false;
 }
 
 /**
