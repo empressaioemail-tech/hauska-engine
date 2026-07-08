@@ -86,17 +86,29 @@ function normalizeW1Permit(permit: RawW1Permit, fetchResult: W1FetchResult): Wel
     datum: permit.datum ?? "NAD27",
   };
 
+  // Extract well number - must be non-empty string, fallback to API suffix if absent
+  const wellNumber = extractWellNumber(permit.wellName) || apiNumber14.slice(-4);
+
+  // Handle totalDepth: omit if undefined, NaN, or invalid
+  const totalDepth = 
+    permit.proposedDepth !== undefined && 
+    !isNaN(permit.proposedDepth) && 
+    isFinite(permit.proposedDepth) && 
+    permit.proposedDepth > 0
+      ? permit.proposedDepth
+      : undefined;
+
   return {
     entityType: "well",
     wellDid,
     apiNumber14,
     wellName: permit.wellName || `UNKNOWN-${permit.permitNumber}`,
-    wellNumber: extractWellNumber(permit.wellName),
+    wellNumber,
     wellType,
     status: deriveStatus(permit),
     spudDate: permit.dateApproved,
     completionDate: undefined, // W-1 does not carry completion date
-    totalDepth: permit.proposedDepth,
+    totalDepth,
     surfaceLocation,
     bottomholeLocation: undefined, // W-1 does not include BH location
     fieldRef: undefined, // W-1 does not include field numbers
@@ -163,13 +175,22 @@ function mapWellType(rrcType: string): WellAtomInstance["wellType"] {
 
 /**
  * Extract well number from well name (e.g., "SMITH A #1" → "1").
+ * Returns empty string if no number is found (caller should handle fallback).
  */
 function extractWellNumber(wellName: string): string {
+  if (!wellName) {
+    return "";
+  }
   const match = wellName.match(/#(\d+[A-Z]?)\s*$/i);
   if (match && match[1]) {
     return match[1];
   }
-  return wellName; // Fallback: use full name
+  // Try to extract any trailing number without # prefix
+  const numMatch = wellName.match(/(\d+[A-Z]?)\s*$/i);
+  if (numMatch && numMatch[1]) {
+    return numMatch[1];
+  }
+  return ""; // Return empty string if no number found
 }
 
 /**

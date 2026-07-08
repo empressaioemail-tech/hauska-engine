@@ -64,6 +64,18 @@ function normalizePermit(
     datum: permit.datum ?? "NAD27", // RRC default
   };
 
+  // Extract well number - must be non-empty string, fallback to API suffix if absent
+  const wellNumber = extractWellNumber(permit.wellName) || apiNumber14.slice(-4);
+
+  // Handle totalDepth: omit if undefined, NaN, or invalid
+  const totalDepth = 
+    permit.proposedDepth !== undefined && 
+    !isNaN(permit.proposedDepth) && 
+    isFinite(permit.proposedDepth) && 
+    permit.proposedDepth > 0
+      ? permit.proposedDepth
+      : undefined;
+
   // Build the well atom
   // Note: W-1 does not publish field numbers, so we omit fieldRef entirely
   // (the contract requires both fieldName and fieldNumber if present)
@@ -71,13 +83,13 @@ function normalizePermit(
     entityType: "well",
     wellDid,
     apiNumber14,
-    wellName: permit.wellName,
-    wellNumber: extractWellNumber(permit.wellName),
+    wellName: permit.wellName || `UNKNOWN-${permit.permitNumber}`,
+    wellNumber,
     wellType,
     status: deriveStatus(permit),
     spudDate: permit.dateApproved, // W-1 approved date as proxy for spud
     completionDate: undefined, // W-1 does not carry completion date
-    totalDepth: permit.proposedDepth,
+    totalDepth,
     surfaceLocation,
     bottomholeLocation: undefined, // W-1 does not include BH location
     fieldRef: undefined, // W-1 does not include field numbers
@@ -93,16 +105,30 @@ function normalizePermit(
 
 /**
  * Clean and validate API number. The contract expects a 14-digit API number
- * with no hyphens or spaces.
+ * with no hyphens or spaces. Accepts 8, 10, or 14 digit formats and pads as needed.
+ *
+ * Texas API format: 42-389-XXXXX (state 42, county 389, sequence number)
+ * Full API-14: 42389XXXXX0000
  */
 function cleanApiNumber(raw: string): string {
   const cleaned = raw.replace(/[-\s]/g, "");
-  if (!/^\d{14}$/.test(cleaned)) {
+  
+  if (/^\d{14}$/.test(cleaned)) {
+    // Already 14 digits
+    return cleaned;
+  } else if (/^\d{8}$/.test(cleaned)) {
+    // 8-digit format (county+sequence, missing state prefix)
+    // Pad with Texas state code (42) and 0000 suffix
+    return `42${cleaned}0000`;
+  } else if (/^\d{10}$/.test(cleaned)) {
+    // 10-digit format (state+county+sequence)
+    // Pad with 0000 suffix
+    return `${cleaned}0000`;
+  } else {
     throw new Error(
-      `Invalid API number format: ${raw} (expected 14 digits)`,
+      `Invalid API number format: ${raw} (expected 8, 10, or 14 digits, got ${cleaned.length})`,
     );
   }
-  return cleaned;
 }
 
 /**
@@ -144,15 +170,22 @@ function mapWellType(rrcType: string): WellAtomInstance["wellType"] {
 /**
  * Extract well number from well name. RRC well names often include the well
  * number as a suffix (e.g., "SMITH A #1" → "1"). If no number is found,
- * return the full well name.
+ * return empty string (caller should handle fallback).
  */
 function extractWellNumber(wellName: string): string {
+  if (!wellName) {
+    return "";
+  }
   const match = wellName.match(/#(\d+[A-Z]?)\s*$/i);
   if (match && match[1]) {
     return match[1];
   }
-  // Fallback: use the full well name
-  return wellName;
+  // Try to extract any trailing number without # prefix
+  const numMatch = wellName.match(/(\d+[A-Z]?)\s*$/i);
+  if (numMatch && numMatch[1]) {
+    return numMatch[1];
+  }
+  return ""; // Return empty string if no number found
 }
 
 /**

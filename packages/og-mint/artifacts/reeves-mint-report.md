@@ -1,8 +1,8 @@
 # Reeves County O&G Mint Report
 
-**Generated:** 2026-07-08T03:53:59.322Z  
-**Mint Duration:** 0.63s  
-**Data Acquired:** 2026-07-08T03:53:58.687Z
+**Generated:** 2026-07-08T04:37:30.661Z  
+**Mint Duration:** 67.64s  
+**Data Acquired:** 2026-07-08T04:36:22.965Z
 
 ---
 
@@ -16,7 +16,7 @@ Mint the Reeves County corpus (wells, production streams, injection streams) thr
 
 ### W1: ✓ OBTAINED
 
-- **Records:** 20
+- **Records:** 5000
 - **Status:** obtained
 - **Note:** Live fetch from RRC EWA (2022-01-01 to 2026-07-08)
 
@@ -43,368 +43,17 @@ Mint the Reeves County corpus (wells, production streams, injection streams) thr
 
 
 
-**Total Records Acquired:** 47
+**Total Records Acquired:** 5027
 
 ---
 
 ## Normalization & Validation
 
 ### Well Atoms (from W-1)
-- **Attempted:** 20
-- **Validated:** 0
-- **Dropped:** 20
+- **Attempted:** 5000
+- **Validated:** 5000
+- **Dropped:** 0
 
-**Drop Reasons:**
-- API 38939742: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38939742: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
-- API 38936035: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38936035: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
-- API 38936034: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38936034: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
-- API 38932686: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38932686: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
-- API 38939765: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38939765: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
-- API 38939761: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38939761: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
-- API 38939793: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38939793: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
-- API 38939794: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38939794: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
-- API 38939766: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38939766: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
-- API 38939762: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  },
-  {
-    "code": "invalid_type",
-    "expected": "number",
-    "received": "nan",
-    "path": [
-      "totalDepth"
-    ],
-    "message": "Expected number, received nan"
-  }
-]
-- API 38939762: [
-  {
-    "code": "too_small",
-    "minimum": 1,
-    "type": "string",
-    "inclusive": true,
-    "exact": false,
-    "message": "String must contain at least 1 character(s)",
-    "path": [
-      "wellNumber"
-    ]
-  }
-]
 
 ### Production Timeseries Atoms (from PDQ Oil)
 - **Attempted:** 9
@@ -430,17 +79,17 @@ Mint the Reeves County corpus (wells, production streams, injection streams) thr
 
 | Atom Type | Count |
 |-----------|------:|
-| **well** | 0 |
+| **well** | 5000 |
 | **production-timeseries (oil)** | 9 |
 | **production-timeseries (gas)** | 9 |
 | **production-timeseries (injection)** | 9 |
-| **TOTAL** | **27** |
+| **TOTAL** | **5027** |
 
 ---
 
 ## Cost Capture
 
-- **Wall-Clock Time:** 0.63s
+- **Wall-Clock Time:** 67.64s
 - **Bytes Fetched:** (not tracked for fixture-based sources)
 - **Retry Counts:** 0 (no retries required)
 

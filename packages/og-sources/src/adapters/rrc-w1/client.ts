@@ -24,6 +24,7 @@ const EWA_BASE_URL =
  * 1. GETs the form page to capture hidden fields (viewstate, eventvalidation, etc.)
  * 2. POSTs the query with the user's parameters
  * 3. Parses the response HTML table into structured records
+ * 4. Follows pagination to fetch all pages of results
  *
  * @param params - Query parameters (county, date range, completion type).
  * @returns Fetch result with raw permits and metadata.
@@ -32,7 +33,7 @@ export async function fetchW1Permits(
   params: W1QueryParams,
 ): Promise<W1FetchResult> {
   const fetchedAt = new Date().toISOString();
-  const maxResults = params.maxResults ?? 1000;
+  const maxResults = params.maxResults ?? 10000;
 
   try {
     // Step 1: GET the form page to extract hidden fields
@@ -54,34 +55,68 @@ export async function fetchW1Permits(
     // Step 2: Build POST params (merge hidden fields + user query)
     const postParams = buildPostParams(params, hiddenFields);
 
-    // Step 3: POST the query
+    // Step 3: POST the query and fetch all pages
     const queryUrl = `${EWA_BASE_URL}?method=doSearch`;
-    const queryResponse = await request(queryUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Referer: EWA_BASE_URL,
-      },
-      body: new URLSearchParams(postParams).toString(),
-      headersTimeout: 30_000,
-      bodyTimeout: 60_000,
-    });
+    const allPermits: RawW1Permit[] = [];
+    let currentPage = 1;
+    let hasMorePages = true;
+    
+    console.log(`Fetching W-1 permits (page-by-page)...`);
+    
+    while (hasMorePages && allPermits.length < maxResults) {
+      // Set pagination parameter for current page
+      const pageParams = {
+        ...postParams,
+        "searchArgs.pageNumber": String(currentPage),
+      };
+      
+      const queryResponse = await request(queryUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Referer: EWA_BASE_URL,
+        },
+        body: new URLSearchParams(pageParams).toString(),
+        headersTimeout: 30_000,
+        bodyTimeout: 60_000,
+      });
 
-    if (queryResponse.statusCode !== 200) {
-      throw new Error(
-        `RRC EWA query failed: HTTP ${queryResponse.statusCode}`,
-      );
+      if (queryResponse.statusCode !== 200) {
+        throw new Error(
+          `RRC EWA query failed: HTTP ${queryResponse.statusCode}`,
+        );
+      }
+
+      const responseHtml = await queryResponse.body.text();
+      const pagePermits = parseW1PermitsFromHtml(responseHtml, maxResults - allPermits.length);
+      
+      if (pagePermits.length === 0) {
+        // No more records on this page
+        hasMorePages = false;
+      } else {
+        allPermits.push(...pagePermits);
+        console.log(`  Page ${currentPage}: fetched ${pagePermits.length} permits (total: ${allPermits.length})`);
+        
+        // Check if there's a "next page" link or if we've hit the last page
+        hasMorePages = hasNextPage(responseHtml) && allPermits.length < maxResults;
+        currentPage++;
+        
+        // Safety: prevent infinite loops (RRC typically has <200 pages for large queries)
+        if (currentPage > 250) {
+          console.warn(`Reached page limit (250) - stopping pagination`);
+          hasMorePages = false;
+        }
+      }
     }
-
-    const responseHtml = await queryResponse.body.text();
-    const permits = parseW1PermitsFromHtml(responseHtml, maxResults);
+    
+    console.log(`Fetched ${allPermits.length} total permits across ${currentPage} pages`);
 
     return {
-      permits,
+      permits: allPermits,
       queryParams: params,
       sourceUrl: queryUrl,
       fetchedAt,
-      totalCount: permits.length,
+      totalCount: allPermits.length,
     };
   } catch (error: unknown) {
     const message =
@@ -339,4 +374,34 @@ function extractPermitCount(html: string): number {
     return $(row).find("td").length > 0 && $(row).find("th").length === 0;
   });
   return rows.length;
+}
+
+/**
+ * Check if there's a "next page" link in the RRC EWA results page.
+ * The pagination controls typically include links like "Next" or numeric page links.
+ */
+function hasNextPage(html: string): boolean {
+  const $ = cheerio.load(html);
+  
+  // Look for "Next" link (not disabled)
+  const nextLink = $('a:contains("Next")').filter((_i, el) => {
+    const href = $(el).attr('href');
+    // Check it's not a disabled/grayed out link
+    const hasValidHref = href !== undefined && href.length > 0;
+    const isNotDisabled = !$(el).hasClass('disabled');
+    return hasValidHref && isNotDisabled;
+  });
+  
+  if (nextLink.length > 0) {
+    return true;
+  }
+  
+  // Alternative: check if there are page number links beyond the current page
+  // Look for numeric pagination links
+  const pageLinks = $('a[href*="pageNumber"]');
+  if (pageLinks.length > 1) {
+    return true; // If there are multiple page links, assume more pages exist
+  }
+  
+  return false;
 }
