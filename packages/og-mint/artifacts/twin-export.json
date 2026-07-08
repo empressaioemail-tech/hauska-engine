@@ -1,0 +1,17 @@
+{
+  "wells": [],
+  "clusters": [],
+  "timelineEvents": [],
+  "causeBreakdown": [],
+  "regionLabel": "Reeves County · Permian Basin",
+  "overlayPanels": [],
+  "provenance": {
+    "source": "RRC public record (W-1, PDQ, H-10)",
+    "mintedAt": "2026-07-08T03:53:58.687Z",
+    "atomCounts": {
+      "wells": 0,
+      "productionTimeseries": 27
+    },
+    "note": "Real RRC data. Operational telemetry fields (equipment health, sensor reliability, pressure anomalies) are unavailable from RRC public sources and are set to zero."
+  }
+}

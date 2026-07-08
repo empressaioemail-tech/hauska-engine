@@ -1,0 +1,26 @@
+{
+  "name": "@hauska-engine/og-mint",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Oil & Gas data minting pipeline. Acquires live RRC data (W-1, PDQ, H-10) and mints validated Reeves County atoms per @empressaio/atom-contract@1.7.0.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "mint": "tsx src/index.ts",
+    "eval": "vitest run eval/reeves-eval.test.ts"
+  },
+  "dependencies": {
+    "@empressaio/atom-contract": "1.7.0",
+    "@hauska-engine/og-sources": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

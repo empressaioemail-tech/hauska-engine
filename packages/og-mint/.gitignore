@@ -1,0 +1,11 @@
+dist/
+*.tsbuildinfo
+node_modules/
+
+# Gitignore large minted datasets
+artifacts/reeves-atoms.ndjson
+
+# Keep these small artifacts committed:
+# artifacts/reeves-mint-report.md
+# artifacts/reeves-atom-sample.ndjson
+# artifacts/twin-export.json
