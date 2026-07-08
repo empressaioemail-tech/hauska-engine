@@ -37,11 +37,14 @@ export interface W1QueryParams {
  * site).
  */
 export interface RawW1Permit {
-  /** RRC-assigned permit number (unique identifier). */
+  /** RRC-assigned status/permit number (unique identifier at the results grain). */
   permitNumber: string;
-  /** API number (14-digit well identifier). */
-  apiNumber: string;
-  /** Well name. */
+  /**
+   * API number (14-digit well identifier). NOT present on the EWA results
+   * grain (detail pages only) — undefined unless enriched from a detail fetch.
+   */
+  apiNumber?: string;
+  /** Well name (RRC results grain: lease name + well number). */
   wellName: string;
   /** Operator name. */
   operatorName: string;
@@ -71,6 +74,18 @@ export interface RawW1Permit {
   datum?: string;
   /** Total proposed depth (feet). */
   proposedDepth?: number;
+  /** RRC lease number (from the lease-name cell, when present). */
+  leaseNumber?: string;
+  /** Wellbore profile (Vertical/Horizontal/Directional/...). */
+  wellboreProfile?: string;
+  /** Filing purpose (New Drill/Field Transfer/Recompletion/...). */
+  filingPurpose?: string;
+  /** Amend flag (Y/N). */
+  amendFlag?: string;
+  /** Permit tracking number (distinct from the status number). */
+  permitTrackingNumber?: string;
+  /** Current permit status (APPROVED/...). */
+  currentStatus?: string;
 }
 
 /**

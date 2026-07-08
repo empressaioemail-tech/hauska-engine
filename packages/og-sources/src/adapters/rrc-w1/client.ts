@@ -36,7 +36,7 @@ export async function fetchW1Permits(
   const maxResults = params.maxResults ?? 10000;
 
   try {
-    // Step 1: GET the form page to extract hidden fields
+    // Step 1: GET the form page — session cookie + Struts hidden fields.
     const formResponse = await request(EWA_BASE_URL, {
       method: "GET",
       headersTimeout: 30_000,
@@ -49,25 +49,31 @@ export async function fetchW1Permits(
       );
     }
 
+    const rawSetCookie = formResponse.headers["set-cookie"];
+    const cookieHeader = (Array.isArray(rawSetCookie) ? rawSetCookie : [rawSetCookie])
+      .filter((c): c is string => typeof c === "string" && c.length > 0)
+      .map((c) => c.split(";")[0])
+      .join("; ");
+
     const formHtml = await formResponse.body.text();
     const hiddenFields = extractHiddenFormFields(formHtml);
 
     // Step 2: Build POST params (merge hidden fields + user query)
     const postParams = buildPostParams(params, hiddenFields);
 
-    // Step 3: POST the query (single page with max size)
-    // Note: Pagination via searchArgs.pageNumber does not work with RRC EWA form.
-    // The form's ASP.NET postback model requires complex viewstate handling that
-    // is not reliable across page transitions. For now, fetch first page only.
+    // Step 3: POST the query — first results page. The EWA app is Struts
+    // (.do), and its pager is plain GET links carrying pager.pageSize /
+    // pager.offset / searchArgs.paramValue, so full pagination is a loop of
+    // GETs on the same session (live-verified 2026-07-08: "1 - 100 of 3887"
+    // with pager.pageSize=100).
     const queryUrl = `${EWA_BASE_URL}?method=doSearch`;
-    
-    console.log(`Fetching W-1 permits (single page)...`);
-    
+
     const queryResponse = await request(queryUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Referer: EWA_BASE_URL,
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       },
       body: new URLSearchParams(postParams).toString(),
       headersTimeout: 30_000,
@@ -81,17 +87,59 @@ export async function fetchW1Permits(
     }
 
     const responseHtml = await queryResponse.body.text();
-    const permits = parseW1PermitsFromHtml(responseHtml, maxResults);
-    
-    console.log(`Fetched ${permits.length} permits from single page`);
-    console.log(`Note: RRC reports total available permits in page header, but pagination not implemented due to ASP.NET form complexity`);
+    const totalCount = extractBannerTotal(responseHtml) ?? extractPermitCount(responseHtml);
+    const byPermitNumber = new Map<string, RawW1Permit>();
+    for (const p of parseW1PermitsFromHtml(responseHtml, maxResults)) {
+      byPermitNumber.set(p.permitNumber, p);
+    }
+
+    // Step 4: page through the rest via the pager GET template.
+    const pagerTemplate = extractPagerTemplate(responseHtml);
+    if (totalCount > byPermitNumber.size && pagerTemplate && cookieHeader) {
+      const pageSize = 100;
+      const target = Math.min(totalCount, maxResults);
+      for (let offset = 0; offset < target; offset += pageSize) {
+        const pageUrl = new URL(pagerTemplate, "https://webapps2.rrc.texas.gov");
+        pageUrl.searchParams.set("pager.pageSize", String(pageSize));
+        pageUrl.searchParams.set("pager.offset", String(offset));
+        const pageRes = await request(pageUrl.toString(), {
+          method: "GET",
+          headers: { Referer: EWA_BASE_URL, Cookie: cookieHeader },
+          headersTimeout: 30_000,
+          bodyTimeout: 60_000,
+        });
+        if (pageRes.statusCode !== 200) {
+          throw new Error(
+            `RRC EWA pager GET failed at offset=${offset}: HTTP ${pageRes.statusCode}`,
+          );
+        }
+        const pageHtml = await pageRes.body.text();
+        const before = byPermitNumber.size;
+        for (const p of parseW1PermitsFromHtml(pageHtml, pageSize)) {
+          byPermitNumber.set(p.permitNumber, p);
+        }
+        console.log(
+          `W-1 pager: offset=${offset} +${byPermitNumber.size - before} (total ${byPermitNumber.size}/${totalCount})`,
+        );
+        if (byPermitNumber.size >= target) break;
+        // polite pacing against the public site
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    } else if (totalCount > byPermitNumber.size) {
+      console.warn(
+        `W-1: totalCount=${totalCount} exceeds fetched=${byPermitNumber.size} but no pager template/session — returning partial set`,
+      );
+    }
+
+    const permits = Array.from(byPermitNumber.values());
+    console.log(`W-1 fetch complete: ${permits.length} distinct permits (banner total ${totalCount})`);
 
     return {
       permits,
       queryParams: params,
       sourceUrl: queryUrl,
       fetchedAt,
-      totalCount: permits.length,
+      totalCount,
     };
   } catch (error: unknown) {
     const message =
@@ -100,6 +148,30 @@ export async function fetchW1Permits(
       `RRC W-1 fetch failed for county=${params.county}: ${message}`,
     );
   }
+}
+
+/**
+ * Parse the pager banner total from the results page ("1 - 100 of 3887").
+ * Returns null if the banner is not present (e.g., zero-result pages).
+ */
+function extractBannerTotal(html: string): number | null {
+  const m = html.match(/[\d,]+\s*-\s*[\d,]+\s+of\s+([\d,]+)/i);
+  if (!m || !m[1]) return null;
+  const n = parseInt(m[1].replace(/,/g, ""), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Extract the pager GET link template from the results page: the "next page"
+ * href carries methodToCall=search plus the full searchArgs.paramValue
+ * encoding of the active query, so re-GETting it with a different
+ * pager.offset / pager.pageSize walks the result set on the same session.
+ */
+function extractPagerTemplate(html: string): string | null {
+  const m = html.match(/href="([^"]*pager\.offset=\d+[^"]*searchArgs\.paramValue=[^"]*)"/i)
+    || html.match(/href="([^"]*searchArgs\.paramValue=[^"]*pager\.offset=\d+[^"]*)"/i);
+  if (!m || !m[1]) return null;
+  return m[1].replace(/&amp;/g, "&");
 }
 
 /**
@@ -196,127 +268,72 @@ function parseW1PermitsFromHtml(
   const $ = cheerio.load(html);
   const permits: RawW1Permit[] = [];
 
-  // The RRC results table has class="DataGrid". Look for rows after the header.
+  // Canonical layout (live-verified 2026-07-08 on the pager GET pages):
+  // table.DataGrid data rows have EXACTLY 14 <td> cells:
+  //  0: status/permit number + "Links Images GIS View" UI text
+  //  1: RRC district        2: lease name "(lease number)"
+  //  3: well number         4: operator name "(operator number)"
+  //  5: county              6: "Submitted: MM/DD/YYYY Approved: MM/DD/YYYY"
+  //  7: permit tracking no  8: wellbore profile (Vertical/Horizontal/...)
+  //  9: filing purpose     10: amend flag (Y/N)
+  // 11: total depth        12: stacked-lateral parent (usually empty)
+  // 13: current status (APPROVED/...)
   const table = $("table.DataGrid");
-  
   if (table.length === 0) {
     console.warn("RRC W-1: No results table (DataGrid) found in response HTML.");
     return [];
   }
 
-  // Find all data rows (skip header rows, pagination rows, and other UI elements)
-  const rows = table.find("tr").filter((_i, row) => {
-    const $row = $(row);
-    const tds = $row.find("td");
-    const ths = $row.find("th");
-    
-    // Skip rows without td cells or with th cells (headers)
-    if (tds.length === 0 || ths.length > 0) {
-      return false;
-    }
-    
-    // Skip pagination/control rows (they have text like "results", "Page Size", etc.)
-    const firstCellText = $row.text().toLowerCase();
-    if (firstCellText.includes("results") || 
-        firstCellText.includes("page size") ||
-        firstCellText.includes("first") && firstCellText.includes("previous")) {
-      return false;
-    }
-    
-    // Data rows should have more than 10 cells (based on table structure)
-    if (tds.length < 10) {
-      return false;
-    }
-    
-    return true;
-  });
+  table.find("tr").each((_i, row) => {
+    if (permits.length >= maxResults) return;
+    const cells = $(row).children("td");
+    if (cells.length !== 14) return;
 
-  if (rows.length === 0) {
-    console.warn("RRC W-1: No data rows found in results table.");
-    return [];
-  }
+    const cell = (idx: number) =>
+      $(cells[idx]).text().trim().replace(/\s+/g, " ");
 
-  // Debug: log table structure for first page
-  if (permits.length === 0) {
-    console.log(`DEBUG: Found ${rows.length} potential data rows in DataGrid table`);
-    const firstRow = rows.first();
-    const firstCells = firstRow.find("td");
-    console.log(`DEBUG: First row has ${firstCells.length} td cells`);
-    firstCells.each((idx, cell) => {
-      const $cell = $(cell);
-      const text = $cell.text().trim().substring(0, 50); // First 50 chars
-      const hasLink = $cell.find("a").length > 0;
-      console.log(`  Cell ${idx}: text="${text}" hasLink=${hasLink}`);
-    });
-  }
+    const statusNoMatch = cell(0).match(/^(\d{5,})/);
+    if (!statusNoMatch || !statusNoMatch[1]) return; // pager/UI rows
 
-  rows.each((_i, row) => {
-    const cells = $(row).find("td");
-    
-    // Extract API number from cell 1 (cell 0 has extra UI text)
-    const apiNumber = $(cells[1]).text().trim();
-    
-    if (!apiNumber) {
-      // Skip rows without API number
-      return;
-    }
+    const leaseCell = cell(2);
+    const leaseMatch = leaseCell.match(/^(.*?)\s*\((\d+)\)\s*$/);
+    const operatorCell = cell(4);
+    const operatorMatch = operatorCell.match(/^(.*?)\s*\((\d+)\)\s*$/);
+    const dates = cell(6);
+    const submittedMatch = dates.match(/Submitted:\s*(\d{2}\/\d{2}\/\d{4})/);
+    const approvedMatch = dates.match(/Approved:\s*(\d{2}\/\d{2}\/\d{4})/);
+    const depthText = cell(11);
+    const depth = /^\d+$/.test(depthText) ? parseInt(depthText, 10) : undefined;
+    const leaseName = ((leaseMatch && leaseMatch[1]) || leaseCell).trim();
+    const wellNumber = cell(3);
 
-    // Extract other fields based on actual cell structure
-    // Cell structure: [0]=API+UI, [1]=API, [2]=UI, [3]=District, [4]=Operator, 
-    // [5]=?, [6]=?, [7]=County, [8]=Dates, [9]=Lease#, [10]=Profile, [11]=Type, 
-    // [12]=Flag, [13]=Depth, [14]=?, [15]=Status
-    const district = $(cells[3]).text().trim();
-    const operatorText = $(cells[4]).text().trim();
-    const county = $(cells[7]).text().trim();
-    const leaseNumber = $(cells[9]).text().trim();
-    
-    // Parse dates from cell 8 (may contain "Submitted: MM/DD/YYYY Approved: ...")
-    const datesText = $(cells[8]).text().trim();
-    const submittedMatch = datesText.match(/Submitted:\s*(\d{2}\/\d{2}\/\d{4})/);
-    const approvedMatch = datesText.match(/Approved:\s*(\d{2}\/\d{2}\/\d{4})/);
-    
-    // The W-1 summary table does not include well numbers or detailed lease names.
-    // We use the lease number as the identifier. The API number will uniquely
-    // identify each permit, and we extract the well number from the API itself.
-    // API format is typically: state-county-sequence, and the sequence often
-    // corresponds to well numbers.
-    const leaseName = leaseNumber ? `Lease ${leaseNumber}` : "";
-    
-    // Extract well number from API sequence (last 5 digits before sidetrack suffix)
-    // API: 42-389-XXXXX where XXXXX is the sequence/well identifier
-    const apiSequence = apiNumber.slice(-5); // Last 5 digits of 8-digit API
-    const wellName = leaseName 
-      ? `${leaseName} #${apiSequence}`
-      : `Well #${apiSequence}`;
-    
-    const proposedDepth = cells[13] ? parseInt($(cells[13]).text().trim(), 10) : undefined;
-    
-    const permit: RawW1Permit = {
-      permitNumber: "", // Not directly visible in table; would need detail page
-      apiNumber,
-      wellName,
-      operatorName: operatorText.replace(/\(\d+\)/, "").trim(),
-      operatorNumber: operatorText.match(/\((\d+)\)/)?.[1],
+    permits.push({
+      permitNumber: statusNoMatch[1],
+      // The results grain carries NO 14-digit API number (detail pages only).
+      apiNumber: undefined,
+      // RRC identifies the well as lease name + well number at this grain.
+      wellName: wellNumber ? `${leaseName} ${wellNumber}` : leaseName,
+      operatorName: ((operatorMatch && operatorMatch[1]) || operatorCell).trim(),
+      operatorNumber: operatorMatch ? operatorMatch[2] : undefined,
       leaseName,
+      leaseNumber: leaseMatch ? leaseMatch[2] : undefined,
       fieldName: undefined,
-      county,
-      district,
-      wellType: "", // Not in summary table
+      county: cell(5),
+      district: cell(1),
+      wellType: "",
       completionType: undefined,
       dateSubmitted: submittedMatch ? submittedMatch[1] : undefined,
       dateApproved: approvedMatch ? approvedMatch[1] : undefined,
       surfaceLatitude: undefined,
       surfaceLongitude: undefined,
       datum: undefined,
-      proposedDepth,
-    };
-
-    permits.push(permit);
-
-    // Cap at maxResults
-    if (permits.length >= maxResults) {
-      return false; // break out of .each()
-    }
+      proposedDepth: depth,
+      wellboreProfile: cell(8) || undefined,
+      filingPurpose: cell(9) || undefined,
+      amendFlag: cell(10) || undefined,
+      permitTrackingNumber: cell(7) || undefined,
+      currentStatus: cell(13) || undefined,
+    });
   });
 
   return permits;

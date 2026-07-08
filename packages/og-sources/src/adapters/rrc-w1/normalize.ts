@@ -48,9 +48,16 @@ function normalizePermit(
   permit: RawW1Permit,
   fetchResult: W1FetchResult,
 ): WellAtomInstance {
-  // Derive well DID from API number. The contract specifies well_<api14>
-  // format. We clean the API number (remove hyphens/spaces) and validate
-  // it is 14 digits.
+  // HONESTY GATE: the EWA results grain carries no 14-digit API number, and
+  // the contract WELL_SCHEMA requires identifiers/surfaceLocation this grain
+  // cannot supply. Records without a real API number must be skipped (or the
+  // caller should keep them as permit-grain records) — never fabricated.
+  if (!permit.apiNumber) {
+    throw new Error(
+      `W-1 permit ${permit.permitNumber} has no API number at the results grain; ` +
+        `well-atom normalization requires a detail-page enrichment (contract-fit gap, ADR-025 follow-up)`,
+    );
+  }
   const apiNumber14 = cleanApiNumber(permit.apiNumber);
   const wellDid = deriveWellDid(apiNumber14);
 
