@@ -1,0 +1,44 @@
+{
+  "name": "@hauska-engine/og-title",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Oil & Gas title-method baseline — runsheet parser, chain assembly, working interest computation, graded against certified reports",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./parser": {
+      "types": "./src/parser/index.ts",
+      "import": "./src/parser/index.ts"
+    },
+    "./chain": {
+      "types": "./src/chain/index.ts",
+      "import": "./src/chain/index.ts"
+    },
+    "./grading": {
+      "types": "./src/grading/index.ts",
+      "import": "./src/grading/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@empressaio/atom-contract": "1.7.0",
+    "pdf-parse": "^1.1.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/pdf-parse": "^1.1.4",
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
