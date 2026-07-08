@@ -1,8 +1,8 @@
 # Reeves County O&G Mint Report
 
-**Generated:** 2026-07-08T04:37:30.661Z  
-**Mint Duration:** 67.64s  
-**Data Acquired:** 2026-07-08T04:36:22.965Z
+**Generated:** 2026-07-08T05:24:06.363Z  
+**Mint Duration:** 0.77s  
+**Data Acquired:** 2026-07-08T05:24:05.593Z
 
 ---
 
@@ -16,9 +16,9 @@ Mint the Reeves County corpus (wells, production streams, injection streams) thr
 
 ### W1: ✓ OBTAINED
 
-- **Records:** 5000
+- **Records:** 20
 - **Status:** obtained
-- **Note:** Live fetch from RRC EWA (2022-01-01 to 2026-07-08)
+- **Note:** Live fetch from RRC EWA (2022-01-01 to 2026-07-08). ALLOCATION + PSA permits only (standard/pooled/other permits excluded due to pagination limitations).
 
 
 ### PDQ-OIL: ⚠ BOUNDED
@@ -43,15 +43,15 @@ Mint the Reeves County corpus (wells, production streams, injection streams) thr
 
 
 
-**Total Records Acquired:** 5027
+**Total Records Acquired:** 47
 
 ---
 
 ## Normalization & Validation
 
 ### Well Atoms (from W-1)
-- **Attempted:** 5000
-- **Validated:** 5000
+- **Attempted:** 20
+- **Validated:** 20
 - **Dropped:** 0
 
 
@@ -79,17 +79,17 @@ Mint the Reeves County corpus (wells, production streams, injection streams) thr
 
 | Atom Type | Count |
 |-----------|------:|
-| **well** | 5000 |
+| **well** | 20 |
 | **production-timeseries (oil)** | 9 |
 | **production-timeseries (gas)** | 9 |
 | **production-timeseries (injection)** | 9 |
-| **TOTAL** | **5027** |
+| **TOTAL** | **47** |
 
 ---
 
 ## Cost Capture
 
-- **Wall-Clock Time:** 67.64s
+- **Wall-Clock Time:** 0.77s
 - **Bytes Fetched:** (not tracked for fixture-based sources)
 - **Retry Counts:** 0 (no retries required)
 

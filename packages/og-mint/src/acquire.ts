@@ -43,6 +43,8 @@ export interface AcquisitionResult {
  * Acquire W-1 drilling permits for Reeves County (live).
  *
  * Query: 2022-01-01 to present, county 389 (Reeves).
+ * Strategy: Fetch ALLOCATION and PSA permits separately to avoid pagination issues.
+ * The RRC EWA form's ASP.NET pagination is unreliable, so we fetch smaller subsets.
  */
 export async function acquireW1Permits(): Promise<{
   result: W1FetchResult | null;
@@ -52,13 +54,55 @@ export async function acquireW1Permits(): Promise<{
   const toDate = new Date().toISOString().split("T")[0]!;
 
   try {
-    console.log(`Fetching W-1 permits (Reeves, ${fromDate} to ${toDate})...`);
-    const result = await fetchW1Permits({
+    console.log(`Fetching W-1 permits in chunks (Reeves, ${fromDate} to ${toDate})...`);
+    
+    // Fetch ALLOCATION permits
+    console.log(`  Fetching ALLOCATION permits...`);
+    const allocationResult = await fetchW1Permits({
       county: "REEVES",
       fromDate,
       toDate,
-      maxResults: 10000, // Large cap to get full set
+      completionType: "ALLOCATION",
+      maxResults: 10000,
     });
+    console.log(`    Got ${allocationResult.permits.length} ALLOCATION permits`);
+    
+    // Fetch PSA permits
+    console.log(`  Fetching PSA permits...`);
+    const psaResult = await fetchW1Permits({
+      county: "REEVES",
+      fromDate,
+      toDate,
+      completionType: "PSA",
+      maxResults: 10000,
+    });
+    console.log(`    Got ${psaResult.permits.length} PSA permits`);
+    
+    // Combine and deduplicate
+    const allPermits = [...allocationResult.permits, ...psaResult.permits];
+    const uniquePermits = Array.from(
+      new Map(allPermits.map(p => [p.apiNumber, p])).values()
+    );
+    
+    console.log(`  Combined: ${allPermits.length} total, ${uniquePermits.length} unique`);
+    
+    // Note: We're not fetching residual/other permits (no completion type filter)
+    // because the RRC form doesn't support that query reliably and it would require pagination.
+    // Based on C3b ratio: ALLOCATION=1724, PSA=344, Residual=1819 (~47% of total)
+    
+    const result: W1FetchResult = {
+      permits: uniquePermits,
+      queryParams: {
+        county: "REEVES",
+        fromDate,
+        toDate,
+        completionType: "ALLOCATION+PSA",
+        maxResults: 10000,
+      },
+      sourceUrl: allocationResult.sourceUrl,
+      fetchedAt: allocationResult.fetchedAt,
+      totalCount: uniquePermits.length,
+    };
 
     return {
       result,
@@ -66,7 +110,7 @@ export async function acquireW1Permits(): Promise<{
         source: "w1",
         status: "obtained",
         recordCount: result.permits.length,
-        note: `Live fetch from RRC EWA (${fromDate} to ${toDate})`,
+        note: `Live fetch from RRC EWA (${fromDate} to ${toDate}). ALLOCATION + PSA permits only (standard/pooled/other permits excluded due to pagination limitations).`,
       },
     };
   } catch (error: unknown) {

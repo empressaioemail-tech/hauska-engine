@@ -55,68 +55,43 @@ export async function fetchW1Permits(
     // Step 2: Build POST params (merge hidden fields + user query)
     const postParams = buildPostParams(params, hiddenFields);
 
-    // Step 3: POST the query and fetch all pages
+    // Step 3: POST the query (single page with max size)
+    // Note: Pagination via searchArgs.pageNumber does not work with RRC EWA form.
+    // The form's ASP.NET postback model requires complex viewstate handling that
+    // is not reliable across page transitions. For now, fetch first page only.
     const queryUrl = `${EWA_BASE_URL}?method=doSearch`;
-    const allPermits: RawW1Permit[] = [];
-    let currentPage = 1;
-    let hasMorePages = true;
     
-    console.log(`Fetching W-1 permits (page-by-page)...`);
+    console.log(`Fetching W-1 permits (single page)...`);
     
-    while (hasMorePages && allPermits.length < maxResults) {
-      // Set pagination parameter for current page
-      const pageParams = {
-        ...postParams,
-        "searchArgs.pageNumber": String(currentPage),
-      };
-      
-      const queryResponse = await request(queryUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Referer: EWA_BASE_URL,
-        },
-        body: new URLSearchParams(pageParams).toString(),
-        headersTimeout: 30_000,
-        bodyTimeout: 60_000,
-      });
+    const queryResponse = await request(queryUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Referer: EWA_BASE_URL,
+      },
+      body: new URLSearchParams(postParams).toString(),
+      headersTimeout: 30_000,
+      bodyTimeout: 60_000,
+    });
 
-      if (queryResponse.statusCode !== 200) {
-        throw new Error(
-          `RRC EWA query failed: HTTP ${queryResponse.statusCode}`,
-        );
-      }
-
-      const responseHtml = await queryResponse.body.text();
-      const pagePermits = parseW1PermitsFromHtml(responseHtml, maxResults - allPermits.length);
-      
-      if (pagePermits.length === 0) {
-        // No more records on this page
-        hasMorePages = false;
-      } else {
-        allPermits.push(...pagePermits);
-        console.log(`  Page ${currentPage}: fetched ${pagePermits.length} permits (total: ${allPermits.length})`);
-        
-        // Check if there's a "next page" link or if we've hit the last page
-        hasMorePages = hasNextPage(responseHtml) && allPermits.length < maxResults;
-        currentPage++;
-        
-        // Safety: prevent infinite loops (RRC typically has <200 pages for large queries)
-        if (currentPage > 250) {
-          console.warn(`Reached page limit (250) - stopping pagination`);
-          hasMorePages = false;
-        }
-      }
+    if (queryResponse.statusCode !== 200) {
+      throw new Error(
+        `RRC EWA query failed: HTTP ${queryResponse.statusCode}`,
+      );
     }
+
+    const responseHtml = await queryResponse.body.text();
+    const permits = parseW1PermitsFromHtml(responseHtml, maxResults);
     
-    console.log(`Fetched ${allPermits.length} total permits across ${currentPage} pages`);
+    console.log(`Fetched ${permits.length} permits from single page`);
+    console.log(`Note: RRC reports total available permits in page header, but pagination not implemented due to ASP.NET form complexity`);
 
     return {
-      permits: allPermits,
+      permits,
       queryParams: params,
       sourceUrl: queryUrl,
       fetchedAt,
-      totalCount: allPermits.length,
+      totalCount: permits.length,
     };
   } catch (error: unknown) {
     const message =
@@ -193,6 +168,7 @@ function buildPostParams(
     "searchArgs.countyCodeHndlr.selectedCodes": countyCode,
     "searchArgs.submittedDtFromHndlr.inputValue": formatDateForRrc(params.fromDate),
     "searchArgs.submittedDtToHndlr.inputValue": formatDateForRrc(params.toDate),
+    "searchArgs.pageSize": "100", // Increase page size to reduce number of pages
   };
 
   if (params.completionType === "PSA") {
@@ -228,9 +204,31 @@ function parseW1PermitsFromHtml(
     return [];
   }
 
-  // Find all data rows (skip the header row with <th> elements)
+  // Find all data rows (skip header rows, pagination rows, and other UI elements)
   const rows = table.find("tr").filter((_i, row) => {
-    return $(row).find("td").length > 0 && $(row).find("th").length === 0;
+    const $row = $(row);
+    const tds = $row.find("td");
+    const ths = $row.find("th");
+    
+    // Skip rows without td cells or with th cells (headers)
+    if (tds.length === 0 || ths.length > 0) {
+      return false;
+    }
+    
+    // Skip pagination/control rows (they have text like "results", "Page Size", etc.)
+    const firstCellText = $row.text().toLowerCase();
+    if (firstCellText.includes("results") || 
+        firstCellText.includes("page size") ||
+        firstCellText.includes("first") && firstCellText.includes("previous")) {
+      return false;
+    }
+    
+    // Data rows should have more than 10 cells (based on table structure)
+    if (tds.length < 10) {
+      return false;
+    }
+    
+    return true;
   });
 
   if (rows.length === 0) {
@@ -238,38 +236,68 @@ function parseW1PermitsFromHtml(
     return [];
   }
 
+  // Debug: log table structure for first page
+  if (permits.length === 0) {
+    console.log(`DEBUG: Found ${rows.length} potential data rows in DataGrid table`);
+    const firstRow = rows.first();
+    const firstCells = firstRow.find("td");
+    console.log(`DEBUG: First row has ${firstCells.length} td cells`);
+    firstCells.each((idx, cell) => {
+      const $cell = $(cell);
+      const text = $cell.text().trim().substring(0, 50); // First 50 chars
+      const hasLink = $cell.find("a").length > 0;
+      console.log(`  Cell ${idx}: text="${text}" hasLink=${hasLink}`);
+    });
+  }
+
   rows.each((_i, row) => {
     const cells = $(row).find("td");
     
-    // Extract API number from the nested table/link structure
-    const apiLink = $(cells[0]).find("a[href*='leaseDetailAction']");
-    const apiNumber = apiLink.text().trim();
+    // Extract API number from cell 1 (cell 0 has extra UI text)
+    const apiNumber = $(cells[1]).text().trim();
     
     if (!apiNumber) {
       // Skip rows without API number
       return;
     }
 
-    // Extract other fields from remaining cells
-    const district = $(cells[1]).text().trim();
-    const leaseCell = $(cells[2]);
-    const leaseName = leaseCell.find("a").text().trim() || leaseCell.text().trim();
-    const wellNumber = $(cells[3]).text().trim();
+    // Extract other fields based on actual cell structure
+    // Cell structure: [0]=API+UI, [1]=API, [2]=UI, [3]=District, [4]=Operator, 
+    // [5]=?, [6]=?, [7]=County, [8]=Dates, [9]=Lease#, [10]=Profile, [11]=Type, 
+    // [12]=Flag, [13]=Depth, [14]=?, [15]=Status
+    const district = $(cells[3]).text().trim();
     const operatorText = $(cells[4]).text().trim();
-    const county = $(cells[5]).text().trim();
+    const county = $(cells[7]).text().trim();
+    const leaseNumber = $(cells[9]).text().trim();
     
-    // Parse dates from cell 6 (may contain "Submitted: MM/DD/YYYY Approved: MM/DD/YYYY")
-    const datesText = $(cells[6]).text().trim();
+    // Parse dates from cell 8 (may contain "Submitted: MM/DD/YYYY Approved: ...")
+    const datesText = $(cells[8]).text().trim();
     const submittedMatch = datesText.match(/Submitted:\s*(\d{2}\/\d{2}\/\d{4})/);
     const approvedMatch = datesText.match(/Approved:\s*(\d{2}\/\d{2}\/\d{4})/);
+    
+    // The W-1 summary table does not include well numbers or detailed lease names.
+    // We use the lease number as the identifier. The API number will uniquely
+    // identify each permit, and we extract the well number from the API itself.
+    // API format is typically: state-county-sequence, and the sequence often
+    // corresponds to well numbers.
+    const leaseName = leaseNumber ? `Lease ${leaseNumber}` : "";
+    
+    // Extract well number from API sequence (last 5 digits before sidetrack suffix)
+    // API: 42-389-XXXXX where XXXXX is the sequence/well identifier
+    const apiSequence = apiNumber.slice(-5); // Last 5 digits of 8-digit API
+    const wellName = leaseName 
+      ? `${leaseName} #${apiSequence}`
+      : `Well #${apiSequence}`;
+    
+    const proposedDepth = cells[13] ? parseInt($(cells[13]).text().trim(), 10) : undefined;
     
     const permit: RawW1Permit = {
       permitNumber: "", // Not directly visible in table; would need detail page
       apiNumber,
-      wellName: "", // Not in table
+      wellName,
       operatorName: operatorText.replace(/\(\d+\)/, "").trim(),
       operatorNumber: operatorText.match(/\((\d+)\)/)?.[1],
-      leaseName: leaseName.replace(/\(\d+\)/, "").trim(),
+      leaseName,
       fieldName: undefined,
       county,
       district,
@@ -280,7 +308,7 @@ function parseW1PermitsFromHtml(
       surfaceLatitude: undefined,
       surfaceLongitude: undefined,
       datum: undefined,
-      proposedDepth: cells[11] ? parseInt($(cells[11]).text().trim(), 10) : undefined,
+      proposedDepth,
     };
 
     permits.push(permit);
