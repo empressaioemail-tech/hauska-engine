@@ -67,8 +67,11 @@ export const usgsGeologyAdapter: Adapter = {
       serviceUrl: USGS_SGMC_GEOLOGY_LAYER,
       latitude: ctx.parcel.latitude,
       longitude: ctx.parcel.longitude,
-      outFields:
-        "STATE,SGMC_LABEL,UNIT_NAME,MAJOR1,MAJOR2,MINOR1,AGE_MIN,AGE_MAX,ROCKTYPE1,ROCKTYPE2",
+      // outFields must be "*" — the hosted SGMC FeatureServer rejects
+      // requests naming fields that don't exist on the layer (ROCKTYPE1 /
+      // ROCKTYPE2 are not in the layer schema) with HTTP 400 "Cannot
+      // perform query. Invalid query parameters." Live-verified 2026-07-13.
+      outFields: "*",
       returnGeometry: false,
       fetchImpl: ctx.fetchImpl,
       signal: ctx.signal,

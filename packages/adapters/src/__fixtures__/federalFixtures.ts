@@ -164,32 +164,18 @@ export const sgmcGeologyFeature = {
   ],
 };
 
-export const nwisSiteEmpty = {
-  value: {
-    timeSeries: [],
-  },
-};
+export const nwisSiteEmptyRdb = `#
+#
+agency_cd	site_no	station_nm	site_tp_cd	dec_lat_va	dec_long_va
+5s	15s	50s	7s	16s	16s
+`;
 
-export const nwisSiteWithWell = {
-  value: {
-    timeSeries: [
-      {
-        sourceInfo: {
-          siteName: "Bastrop Test Well",
-          siteCode: [
-            { value: "293801097320001", network: "NWIS", agencyCode: "USGS" },
-          ],
-          geoLocation: {
-            geogLocation: {
-              latitude: "30.1105",
-              longitude: "-97.3186",
-            },
-          },
-        },
-      },
-    ],
-  },
-};
+export const nwisSiteWithWellRdb = `#
+#
+agency_cd	site_no	station_nm	site_tp_cd	dec_lat_va	dec_long_va
+5s	15s	50s	7s	16s	16s
+USGS	293801097320001	Bastrop Test Well	GW	30.1105	-97.3186
+`;
 
 export const nwisGwIvReading = {
   value: {
