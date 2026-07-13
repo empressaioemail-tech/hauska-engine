@@ -9,7 +9,6 @@ import {
   arcgisEmpty,
   arcgisFeatureFloodplain,
   arcgisFeatureWithGeometry,
-  arcgisFeatureZoning,
   jsonResponse,
 } from "../__fixtures__/arcgisFixtures";
 import type { AdapterContext } from "../types";
@@ -20,16 +19,13 @@ const ctx: AdapterContext = {
 };
 
 describe("Bastrop County, TX adapters", () => {
-  it("emits parcel + zoning + floodplain rows for an in-floodplain parcel", async () => {
+  it("emits parcel + floodplain rows for an in-floodplain parcel (zoning is no-coverage — no county zoning service)", async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/Cadastral/Parcels/")) {
+      if (url.includes("/Cadastral_BP/Bastrop_County_Parcels/")) {
         return jsonResponse(arcgisFeatureWithGeometry);
       }
-      if (url.includes("/LandUse/Zoning/")) {
-        return jsonResponse(arcgisFeatureZoning);
-      }
-      if (url.includes("/Hazards/Floodplain/")) {
+      if (url.includes("/Emergency_Management/FEMA_Flood_Hazard_Areas/")) {
         return jsonResponse(arcgisFeatureFloodplain);
       }
       throw new Error(`unexpected fetch ${url}`);
@@ -46,7 +42,14 @@ describe("Bastrop County, TX adapters", () => {
 
     const byKey = Object.fromEntries(outcomes.map((o) => [o.adapterKey, o]));
     expect(byKey["bastrop-tx:parcels"].status).toBe("ok");
-    expect(byKey["bastrop-tx:zoning"].status).toBe("ok");
+    // Bastrop County retired its zoning GIS with the
+    // gis.bastropcountytx.gov host; the maps.co.bastrop.tx.us catalog
+    // has no zoning replacement, so the adapter emits a deterministic
+    // no-coverage verdict without any fetch.
+    expect(byKey["bastrop-tx:zoning"].status).toBe("no-coverage");
+    expect(byKey["bastrop-tx:zoning"].error?.message).toMatch(
+      /no longer publishes a zoning GIS service/i,
+    );
     expect(byKey["bastrop-tx:floodplain"].status).toBe("ok");
     expect(
       (byKey["bastrop-tx:floodplain"].result?.payload as { inMappedFloodplain: boolean })

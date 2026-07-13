@@ -31,13 +31,30 @@ import {
   type AdapterResult,
 } from "../types";
 
+/**
+ * Host migration (2026-07-13): the county decommissioned
+ * `gis.bastropcountytx.gov` (DNS ENOTFOUND) and republished its GIS
+ * on `maps.co.bastrop.tx.us`. Replacement services live-verified via
+ * the new server's REST catalog:
+ *
+ *   - parcels    → Cadastral_BP/Bastrop_County_Parcels/FeatureServer/0
+ *                  (BCAD parcels; prop_id, file_as_name, situs_*,
+ *                  land_val/imprv_val/market; native SR 2277)
+ *   - floodplain → Emergency_Management/FEMA_Flood_Hazard_Areas/MapServer/0
+ *                  (FEMA DFIRM-derived flood hazard areas; fld_zone,
+ *                  zone_subty, sfha_tf)
+ *   - zoning     → NO replacement exists on the new host. The old
+ *                  LandUse/Zoning service was retired with the host and
+ *                  the new catalog publishes no county zoning layer
+ *                  (nearest analog, Planning/PlannedDevelopment, is PD
+ *                  districts — a different dataset). See
+ *                  {@link bastropZoningAdapter}.
+ */
 const BASTROP_ENDPOINTS = {
   parcels:
-    "https://gis.bastropcountytx.gov/arcgis/rest/services/Cadastral/Parcels/MapServer/0",
-  zoning:
-    "https://gis.bastropcountytx.gov/arcgis/rest/services/LandUse/Zoning/MapServer/0",
+    "https://maps.co.bastrop.tx.us/server/rest/services/Cadastral_BP/Bastrop_County_Parcels/FeatureServer/0",
   floodplain:
-    "https://gis.bastropcountytx.gov/arcgis/rest/services/Hazards/Floodplain/MapServer/0",
+    "https://maps.co.bastrop.tx.us/server/rest/services/Emergency_Management/FEMA_Flood_Hazard_Areas/MapServer/0",
 } as const;
 
 /**
@@ -115,31 +132,20 @@ export const bastropZoningAdapter: Adapter = {
   provider: "Bastrop County, TX GIS",
   jurisdictionGate: { local: "bastrop-tx" },
   appliesTo: bastropApplies,
-  async run(ctx: AdapterContext): Promise<AdapterResult> {
-    const result = await arcgisPointQuery({
-      serviceUrl: BASTROP_ENDPOINTS.zoning,
-      latitude: ctx.parcel.latitude,
-      longitude: ctx.parcel.longitude,
-      outFields: "*",
-      returnGeometry: true,
-      fetchImpl: ctx.fetchImpl,
-      signal: ctx.signal,
-    });
-    if (result.features.length === 0) {
-      throw new AdapterRunError(
-        "no-coverage",
-        "Lat/lng did not intersect a Bastrop County zoning polygon.",
-      );
-    }
-    return {
-      adapterKey: this.adapterKey,
-      tier: this.tier,
-      layerKind: this.layerKind,
-      sourceKind: this.sourceKind,
-      provider: this.provider,
-      snapshotDate: nowIso(),
-      payload: { kind: "zoning", zoning: result.features[0] },
-    };
+  async run(): Promise<AdapterResult> {
+    // Dead upstream: the county's LandUse/Zoning MapServer went away
+    // with the `gis.bastropcountytx.gov` host decommission (DNS
+    // ENOTFOUND), and the replacement catalog on
+    // `maps.co.bastrop.tx.us` publishes no county zoning service
+    // (enumerated 2026-07-13; the closest layer,
+    // Planning/PlannedDevelopment, covers PD districts only — not a
+    // zoning substitute). Emit a deterministic no-coverage verdict
+    // instead of a DNS network-error so the UI renders the neutral
+    // pill and the briefing can attribute the gap to a named source.
+    throw new AdapterRunError(
+      "no-coverage",
+      "Bastrop County no longer publishes a zoning GIS service — the legacy LandUse/Zoning layer was retired with the gis.bastropcountytx.gov host, and maps.co.bastrop.tx.us has no zoning replacement.",
+    );
   },
 };
 

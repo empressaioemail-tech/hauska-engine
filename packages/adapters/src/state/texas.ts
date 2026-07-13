@@ -22,12 +22,34 @@ import {
   type AdapterResult,
 } from "../types";
 
+const TCEQ_AUSTIN_EDWARDS_ENV_MAPSERVER =
+  "https://maps.austintexas.gov/arcgis/rest/services/Shared/Environmental_3/MapServer";
+
 const TCEQ_ENDPOINTS = {
+  /** Legacy TCEQ path 404 on live probe 2026-06-19 — Austin COA mirror is primary. */
   recharge:
     "https://gisweb.tceq.texas.gov/arcgis/rest/services/EdwardsAquifer/RechargeZone/MapServer/0",
-  contributing:
+  rechargeMirror: `${TCEQ_AUSTIN_EDWARDS_ENV_MAPSERVER}/4`,
+  contributing: `${TCEQ_AUSTIN_EDWARDS_ENV_MAPSERVER}/6`,
+  contributingFallback:
     "https://gisweb.tceq.texas.gov/arcgis/rest/services/EdwardsAquifer/ContributingZone/MapServer/0",
 } as const;
+
+/** Live recharge mirror (City of Austin Environmental_3 layer 4). */
+export const TCEQ_AUSTIN_EDWARDS_RECHARGE_LAYER = TCEQ_ENDPOINTS.rechargeMirror;
+
+export const EDWARDS_RECHARGE_LAYER_CANDIDATES = [
+  TCEQ_ENDPOINTS.rechargeMirror,
+  TCEQ_ENDPOINTS.recharge,
+] as const;
+
+export const EDWARDS_CONTRIBUTING_LAYER_CANDIDATES = [
+  TCEQ_ENDPOINTS.contributing,
+  TCEQ_ENDPOINTS.contributingFallback,
+] as const;
+
+export const TCEQ_EDWARDS_RECHARGE_LAYER = TCEQ_ENDPOINTS.rechargeMirror;
+export const TCEQ_EDWARDS_CONTRIBUTING_LAYER = TCEQ_ENDPOINTS.contributing;
 
 /**
  * Freshness window for the TCEQ Edwards Aquifer adapter snapshot,
@@ -55,6 +77,31 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+async function queryEdwardsPointLayer(
+  ctx: AdapterContext,
+  candidates: readonly string[],
+  upstreamLabel: string,
+): Promise<Awaited<ReturnType<typeof arcgisPointQuery>>> {
+  let lastErr: unknown;
+  for (const serviceUrl of candidates) {
+    try {
+      return await arcgisPointQuery({
+        serviceUrl,
+        latitude: ctx.parcel.latitude,
+        longitude: ctx.parcel.longitude,
+        outFields: "*",
+        returnGeometry: false,
+        fetchImpl: ctx.fetchImpl,
+        signal: ctx.signal,
+        upstreamLabel,
+      });
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 export const texasEdwardsAquiferAdapter: Adapter = {
   adapterKey: "tceq:edwards-aquifer",
   tier: "state",
@@ -68,24 +115,16 @@ export const texasEdwardsAquiferAdapter: Adapter = {
     // so any rate limiting applies symmetrically and the wall-clock
     // cost is one round-trip not two.
     const [recharge, contributing] = await Promise.all([
-      arcgisPointQuery({
-        serviceUrl: TCEQ_ENDPOINTS.recharge,
-        latitude: ctx.parcel.latitude,
-        longitude: ctx.parcel.longitude,
-        outFields: "*",
-        returnGeometry: false,
-        fetchImpl: ctx.fetchImpl,
-        signal: ctx.signal,
-      }),
-      arcgisPointQuery({
-        serviceUrl: TCEQ_ENDPOINTS.contributing,
-        latitude: ctx.parcel.latitude,
-        longitude: ctx.parcel.longitude,
-        outFields: "*",
-        returnGeometry: false,
-        fetchImpl: ctx.fetchImpl,
-        signal: ctx.signal,
-      }),
+      queryEdwardsPointLayer(
+        ctx,
+        EDWARDS_RECHARGE_LAYER_CANDIDATES,
+        "TCEQ Edwards recharge zone",
+      ),
+      queryEdwardsPointLayer(
+        ctx,
+        EDWARDS_CONTRIBUTING_LAYER_CANDIDATES,
+        "TCEQ Edwards contributing zone",
+      ),
     ]);
 
     return {

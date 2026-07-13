@@ -37,6 +37,60 @@ export const USGS_GROUNDWATER_PROVIDER_LABEL =
 
 export const USGS_GROUNDWATER_FRESHNESS_THRESHOLD_MONTHS = 12;
 
+export type NwisGwSitePoint = {
+  siteNo: string;
+  siteName: string | null;
+  latitude: number;
+  longitude: number;
+};
+
+export function buildNwisGwSiteBboxUrl(bbox: {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}): string {
+  const url = new URL(USGS_NWIS_SITE_ENDPOINT);
+  url.searchParams.set("format", "rdb");
+  url.searchParams.set(
+    "bBox",
+    `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`,
+  );
+  url.searchParams.set("siteType", "GW");
+  return url.toString();
+}
+
+/** NWIS site/ only returns bbox queries reliably with format=rdb (json+bBox → HTTP 400). */
+export function parseNwisGwSitesFromRdb(text: string): NwisGwSitePoint[] {
+  const lines = text
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
+  if (lines.length < 2) return [];
+
+  const header = lines[0]!.split("\t");
+  const siteIdx = header.indexOf("site_no");
+  const nameIdx = header.indexOf("station_nm");
+  const latIdx = header.indexOf("dec_lat_va");
+  const lonIdx = header.indexOf("dec_long_va");
+  if (siteIdx < 0 || latIdx < 0 || lonIdx < 0) return [];
+
+  const sites: NwisGwSitePoint[] = [];
+  for (const line of lines.slice(2)) {
+    const cols = line.split("\t");
+    const siteNo = cols[siteIdx]?.trim() ?? "";
+    const lat = Number(cols[latIdx]);
+    const lon = Number(cols[lonIdx]);
+    if (!siteNo || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    sites.push({
+      siteNo,
+      siteName: nameIdx >= 0 ? cols[nameIdx]?.trim() || null : null,
+      latitude: lat,
+      longitude: lon,
+    });
+  }
+  return sites;
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -53,71 +107,6 @@ function searchBbox(
   };
 }
 
-interface NwisSite {
-  siteNo: string;
-  siteName: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  distanceMiles: number | null;
-}
-
-function parseSites(json: unknown, parcelLat: number, parcelLon: number): NwisSite[] {
-  if (!json || typeof json !== "object") return [];
-  const value = (json as { value?: unknown }).value;
-  if (!value || typeof value !== "object") return [];
-
-  const sites: NwisSite[] = [];
-
-  const timeSeries = (value as { timeSeries?: unknown }).timeSeries;
-  if (Array.isArray(timeSeries)) {
-    for (const entry of timeSeries) {
-      if (!entry || typeof entry !== "object") continue;
-      const sourceInfo = (entry as { sourceInfo?: unknown }).sourceInfo;
-      if (!sourceInfo || typeof sourceInfo !== "object") continue;
-      const info = sourceInfo as Record<string, unknown>;
-      const siteCodes = info.siteCode;
-      const firstCode =
-        Array.isArray(siteCodes) && siteCodes[0] && typeof siteCodes[0] === "object"
-          ? (siteCodes[0] as { value?: unknown }).value
-          : null;
-      const siteNo = typeof firstCode === "string" ? firstCode.trim() : "";
-      if (!siteNo) continue;
-      const geo = info.geoLocation as
-        | { geogLocation?: { latitude?: unknown; longitude?: unknown } }
-        | undefined;
-      const latRaw = geo?.geogLocation?.latitude;
-      const lonRaw = geo?.geogLocation?.longitude;
-      const lat =
-        typeof latRaw === "number"
-          ? latRaw
-          : typeof latRaw === "string"
-            ? Number(latRaw)
-            : null;
-      const lon =
-        typeof lonRaw === "number"
-          ? lonRaw
-          : typeof lonRaw === "string"
-            ? Number(lonRaw)
-            : null;
-      sites.push({
-        siteNo,
-        siteName: typeof info.siteName === "string" ? info.siteName : null,
-        latitude: Number.isFinite(lat) ? lat : null,
-        longitude: Number.isFinite(lon) ? lon : null,
-        distanceMiles:
-          lat !== null &&
-          lon !== null &&
-          Number.isFinite(lat) &&
-          Number.isFinite(lon)
-            ? haversineMiles(parcelLat, parcelLon, lat, lon)
-            : null,
-      });
-    }
-  }
-
-  return sites;
-}
-
 function haversineMiles(
   lat1: number,
   lon1: number,
@@ -132,6 +121,30 @@ function haversineMiles(
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * r * Math.asin(Math.sqrt(a));
+}
+
+async function fetchNwisSites(
+  ctx: AdapterContext,
+  url: string,
+  label: string,
+): Promise<NwisGwSitePoint[]> {
+  const { response: res, attempts } = await fetchWithRetry(
+    url,
+    { signal: ctx.signal },
+    {
+      fetchImpl: ctx.fetchImpl,
+      signal: ctx.signal,
+      upstreamLabel: label,
+    },
+  );
+  if (!res.ok) {
+    throw new AdapterRunError(
+      "upstream-error",
+      `${label} responded with HTTP ${res.status} after ${attempts} attempt${attempts === 1 ? "" : "s"}. Use Force refresh to retry.`,
+    );
+  }
+  const text = await res.text();
+  return parseNwisGwSitesFromRdb(text);
 }
 
 async function fetchJson(
@@ -211,22 +224,26 @@ export const usgsGroundwaterAdapter: Adapter = {
   async run(ctx: AdapterContext): Promise<AdapterResult> {
     const { latitude, longitude } = ctx.parcel;
     const bbox = searchBbox(latitude, longitude);
-    const siteUrl = new URL(USGS_NWIS_SITE_ENDPOINT);
-    siteUrl.searchParams.set("format", "json");
-    siteUrl.searchParams.set(
-      "bBox",
-      `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`,
-    );
-    siteUrl.searchParams.set("siteType", "GW");
-    siteUrl.searchParams.set("siteStatus", "active");
-    siteUrl.searchParams.set("hasDataTypeCd", "DV,GW");
+    const siteUrl = buildNwisGwSiteBboxUrl(bbox);
 
-    const siteJson = await fetchJson(ctx, siteUrl.toString(), "USGS NWIS site");
-    const sites = parseSites(siteJson, latitude, longitude).sort(
-      (a, b) =>
-        (a.distanceMiles ?? Number.POSITIVE_INFINITY) -
-        (b.distanceMiles ?? Number.POSITIVE_INFINITY),
-    );
+    const sites = (await fetchNwisSites(ctx, siteUrl, "USGS NWIS site"))
+      .map((site) => ({
+        siteNo: site.siteNo,
+        siteName: site.siteName,
+        latitude: site.latitude,
+        longitude: site.longitude,
+        distanceMiles: haversineMiles(
+          latitude,
+          longitude,
+          site.latitude,
+          site.longitude,
+        ),
+      }))
+      .sort(
+        (a, b) =>
+          (a.distanceMiles ?? Number.POSITIVE_INFINITY) -
+          (b.distanceMiles ?? Number.POSITIVE_INFINITY),
+      );
 
     if (sites.length === 0) {
       return {

@@ -1,9 +1,38 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { engineEnvelopeSchema } from "@hauska-engine/engine-core/envelope";
 import type { EngineApiConfig } from "../config.js";
 import { GATE_FRONT_HEADERS } from "../gate-front-context.js";
 import { buildApp } from "../server.js";
+
+// The /assemble fan-out (Cotality parcels/zoning, FEMA NFHL, USGS 3DEP
+// via the wave-3 slots) otherwise escapes to the REAL network — this
+// suite had no fetch mock at all. That made the assemble test
+// nondeterministic: upstream latency above vitest's 5s default timeout
+// is an observed failure mode (PR #92 CI, and a local repro of the
+// identical 5s timeout on origin/main). Stub every upstream with an
+// instant, non-retryable 404 (fetchWithRetry retries 408/429/5xx, so a
+// 404 guarantees a single attempt); the assembler degrades each layer
+// to a pending/failed slot with a sealed envelope, which is exactly the
+// contract the assemble test asserts. Hono's app.request dispatches
+// handlers in-process and never touches global fetch, so the stub only
+// intercepts adapter/upstream calls.
+beforeAll(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ error: "unit-test: outbound network disabled" }),
+          { status: 404, headers: { "content-type": "application/json" } },
+        ),
+    ),
+  );
+});
+
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
 
 function gateHeaders(
   overrides: Partial<Record<string, string>> = {},

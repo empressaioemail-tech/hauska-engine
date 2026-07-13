@@ -24,8 +24,8 @@ import {
 } from "../__fixtures__/arcgisFixtures";
 import {
   nwisGwIvReading,
-  nwisSiteEmpty,
-  nwisSiteWithWell,
+  nwisSiteEmptyRdb,
+  nwisSiteWithWellRdb,
   qfaultsEmpty,
   qfaultsFeature,
   sgmcGeologyFeature,
@@ -268,7 +268,12 @@ describe("USGS groundwater adapter", () => {
   it("returns nearest-well depth when NWIS sites and IV data exist", async () => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse(nwisSiteWithWell))
+      .mockResolvedValueOnce(
+        new Response(nwisSiteWithWellRdb, {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse(nwisGwIvReading));
     const outcomes = await runAdapters({
       adapters: [usgsGroundwaterAdapter],
@@ -284,7 +289,13 @@ describe("USGS groundwater adapter", () => {
   });
 
   it("emits ok with wellCount=0 (not failed) when no wells are nearby", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse(nwisSiteEmpty));
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(nwisSiteEmptyRdb, {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        }),
+    );
     const outcomes = await runAdapters({
       adapters: [usgsGroundwaterAdapter],
       context: { ...bastrop, fetchImpl },
