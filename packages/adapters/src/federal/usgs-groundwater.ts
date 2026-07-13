@@ -44,6 +44,20 @@ export type NwisGwSitePoint = {
   longitude: number;
 };
 
+/**
+ * NWIS rejects bBox components carrying more than 7 digits right of the
+ * decimal point ("BBox list argument at element N failed validation:
+ * requires a decimal number with at most 7 digits to the right of the
+ * decimal point", HTTP 400). Raw float arithmetic in `searchBbox`
+ * produces exactly that (e.g. `30.1105 + 0.09 = 30.200499999999998`),
+ * so every component is rounded to 6 decimals (~0.11 m — far below the
+ * search-radius tolerance) before serialization. `Number(...)` strips
+ * trailing zeros, which NWIS also accepts.
+ */
+function nwisCoord(value: number): string {
+  return String(Number(value.toFixed(6)));
+}
+
 export function buildNwisGwSiteBboxUrl(bbox: {
   west: number;
   south: number;
@@ -54,7 +68,7 @@ export function buildNwisGwSiteBboxUrl(bbox: {
   url.searchParams.set("format", "rdb");
   url.searchParams.set(
     "bBox",
-    `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`,
+    [bbox.west, bbox.south, bbox.east, bbox.north].map(nwisCoord).join(","),
   );
   url.searchParams.set("siteType", "GW");
   return url.toString();
