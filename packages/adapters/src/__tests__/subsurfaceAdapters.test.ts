@@ -264,6 +264,46 @@ describe("USGS geology adapter", () => {
   });
 });
 
+describe("buildNwisGwSiteBboxUrl", () => {
+  it("clamps bBox components to <=7 decimal digits (NWIS 400s on float noise)", async () => {
+    const { buildNwisGwSiteBboxUrl } = await import(
+      "../federal/usgs-groundwater"
+    );
+    // Mirror the adapter's searchBbox arithmetic for the Bastrop parcel
+    // that triggered the production failure: 30.1105 + 0.09 =
+    // 30.200499999999998 in IEEE-754, which NWIS rejects with HTTP 400
+    // ("requires a decimal number with at most 7 digits to the right of
+    // the decimal point").
+    const delta = 0.09;
+    const latitude = 30.1105;
+    const longitude = -97.3186;
+    const url = new URL(
+      buildNwisGwSiteBboxUrl({
+        west: longitude - delta,
+        south: latitude - delta,
+        east: longitude + delta,
+        north: latitude + delta,
+      }),
+    );
+    const components = url.searchParams.get("bBox")!.split(",");
+    expect(components).toHaveLength(4);
+    for (const component of components) {
+      expect(component).toMatch(/^-?\d+(\.\d{1,7})?$/);
+    }
+    // Rounding must not move the box: each component stays within 1e-6
+    // of the exact arithmetic value.
+    const exact = [
+      longitude - delta,
+      latitude - delta,
+      longitude + delta,
+      latitude + delta,
+    ];
+    components.forEach((component, i) => {
+      expect(Math.abs(Number(component) - exact[i]!)).toBeLessThan(1e-6);
+    });
+  });
+});
+
 describe("USGS groundwater adapter", () => {
   it("returns nearest-well depth when NWIS sites and IV data exist", async () => {
     const fetchImpl = vi
