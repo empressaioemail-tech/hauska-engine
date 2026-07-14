@@ -34,6 +34,20 @@ RUN pip3 install --break-system-packages -r /tmp/hydrology-requirements.txt
 # the image itself has a loadable pysheds.
 RUN python3 -c "import numpy, scipy, rasterio; from pysheds.grid import Grid; print('hydrology deps OK:', numpy.__version__, scipy.__version__, rasterio.__version__)"
 
+# ── numba JIT cache, baked at build time ────────────────────────────
+# pysheds' _sgrid kernels are eager-compiled numba @njit functions (most
+# with cache=True). A cold worker process pays the full JIT compile —
+# measured >45s on Cloud Run, which is precisely the production
+# "pysheds worker exceeded 45000ms" timeout that forced every drainage
+# request onto the native-D8 fallback (0 flow lines on flat TX terrain).
+# Warm the kernels during the build so the cache=True compile artifacts
+# ship in the image layer; runtime spawns then skip the bulk of the JIT.
+ENV NUMBA_CACHE_DIR=/opt/numba-cache
+COPY artifacts/hydrology-worker/warm.py /tmp/hydrology-warm.py
+RUN mkdir -p /opt/numba-cache \
+  && python3 /tmp/hydrology-warm.py \
+  && echo "numba cache entries: $(find /opt/numba-cache -type f | wc -l)"
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
 COPY services/engine-api ./services/engine-api
@@ -44,5 +58,9 @@ RUN corepack enable && corepack prepare pnpm@10.27.0 --activate \
 
 ENV PORT=8080
 ENV HYDROLOGY_PYTHON=python3
+# 45s (the old default) is not enough headroom for the uncached subset of
+# pysheds' eager-compiled kernels on a throttled cold instance. 120s stays
+# inside the ldt spine call timeout (180s) and Cloud Run request timeout.
+ENV HYDROLOGY_WORKER_TIMEOUT_MS=120000
 WORKDIR /app
 CMD ["pnpm", "--filter", "@hauska-engine/engine-api", "exec", "tsx", "src/index.ts"]
