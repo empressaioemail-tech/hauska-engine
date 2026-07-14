@@ -84,19 +84,43 @@ def _mask_to_geojson_polygons(
 
 
 def _river_network_to_geojson(
-    grid: Grid, branches: list[dict[str, Any]]
+    grid: Grid, branches: Any
 ) -> dict[str, Any]:
+    """Normalize extract_river_network output to a FeatureCollection.
+
+    pysheds >=0.3 (sgrid) returns a GeoJSON-like FeatureCollection dict
+    (``{"type": ..., "features": [{"geometry": {"coordinates": ...}}]}``);
+    older code paths returned a list of branch dicts with a top-level
+    ``coordinates`` key. Handle both — iterating the dict form as a list
+    yields its string keys and crashed the worker with AttributeError.
+    """
+    if isinstance(branches, dict):
+        raw = branches.get("features") or []
+    elif isinstance(branches, list):
+        raw = branches
+    else:
+        raw = []
+
     features: list[dict[str, Any]] = []
-    for branch in branches:
-        coords = branch.get("coordinates") or []
+    for branch in raw:
+        if not isinstance(branch, dict):
+            continue
+        geometry = branch.get("geometry")
+        if isinstance(geometry, dict):
+            coords = geometry.get("coordinates") or []
+        else:
+            coords = branch.get("coordinates") or []
         if len(coords) < 2:
             continue
         line = [[float(c[0]), float(c[1])] for c in coords]
+        props = branch.get("properties") if isinstance(branch.get("properties"), dict) else {}
         features.append(
             {
                 "type": "Feature",
                 "geometry": {"type": "LineString", "coordinates": line},
-                "properties": {"accumulation": branch.get("accumulation")},
+                "properties": {
+                    "accumulation": branch.get("accumulation", props.get("accumulation")),
+                },
             }
         )
     return {"type": "FeatureCollection", "features": features}
