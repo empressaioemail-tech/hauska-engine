@@ -115,6 +115,6 @@ is `pending` with honest degradation — no silent fallback to dropped providers
 |------------------|-------------------|
 | `generate-layers` adapter fan-out | `map-layers/assemble` |
 | `siteTopographyIngest` (DEM) | `topography/dem` + pending `dem` slot |
-| FEMA / Cotality / Regrid adapters | same adapters via `@hauska-engine/adapters` |
+| FEMA / Cotality adapters | same adapters via `@hauska-engine/adapters` (Regrid purged 2026-07-13) |
 
 Persistence (briefing_sources supersession) stays cortex-side for now.

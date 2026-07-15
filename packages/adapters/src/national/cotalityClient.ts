@@ -137,7 +137,7 @@ export function requireCotalityAppCredentials(
   throw new AdapterRunError(
     "no-coverage",
     fallbackMessage ??
-      `${CRED_ENV[app].label} is not configured on this deployment. Regrid remains the active national parcel/zoning provider.`,
+      `${CRED_ENV[app].label} is not configured on this deployment. National parcel/zoning degrades to no-coverage (county-GIS / CAD public-record path is the live provider per the 2026-07-13 swap).`,
   );
 }
 

@@ -34,9 +34,10 @@ export type AdapterTier = "federal" | "state" | "local";
  * `manual-upload` and `federal-adapter` are pre-existing values; the
  * DA-PI-4 sprint added `state-adapter` and `local-adapter`; the
  * Cortex prop-intel SCOPE B (2026-05-23) adds `national-aggregator`
- * for Regrid and any future national public-records aggregator that
+ * for Cotality and any future national public-records aggregator that
  * is neither a federal agency direct-publish (USGS / FEMA / FCC / EPA)
- * nor a per-jurisdiction GIS feed.
+ * nor a per-jurisdiction GIS feed. (Regrid, the original consumer of
+ * this source_kind, was purged 2026-07-13.)
  */
 export type AdapterSourceKind =
   | "federal-adapter"
@@ -68,9 +69,9 @@ export interface AdapterParcelContext {
  * partner city (Bastrop, TX today; more in follow-on). Gates the
  * per-county GIS adapters as opportunistic ENRICHMENT layers — for
  * non-partner jurisdictions the per-county adapters are skipped
- * entirely and Regrid (the national aggregator) is the sole baseline.
- * For partner cities, both fire: the per-county adapter as enrichment,
- * Regrid as baseline.
+ * entirely and the national aggregator (Cotality) is the sole
+ * baseline. For partner cities, both fire: the per-county adapter as
+ * enrichment, the national aggregator as baseline.
  *
  * Default is `false` / `undefined`. The api-server route that builds
  * the AdapterContext is responsible for stamping the flag from the

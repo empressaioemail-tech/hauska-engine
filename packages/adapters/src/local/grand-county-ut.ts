@@ -117,8 +117,10 @@ export const GRAND_COUNTY_ROADS_FRESHNESS_THRESHOLD_MONTHS = 12;
  * DEPRECATED AS BASELINE per Cortex prop-intel SCOPE B
  * (2026-05-23). These Grand County, UT adapters used to be the
  * sole parcel + zoning source for Moab-area engagements. After
- * SCOPE B, Regrid (`regrid:parcels` + `regrid:zoning`) is the
- * national baseline and fires for EVERY geocoded engagement.
+ * SCOPE B, the national parcel/zoning provider (Cotality:
+ * `cotality:parcels` + `cotality:zoning`, config-gated per the
+ * 2026-07-13 swap) is the baseline and fires for EVERY geocoded
+ * engagement. (The former Regrid baseline was purged 2026-07-13.)
  *
  * The per-county adapters in this file are now opportunistic
  * ENRICHMENT layers that fire ONLY when the engagement's
@@ -126,8 +128,8 @@ export const GRAND_COUNTY_ROADS_FRESHNESS_THRESHOLD_MONTHS = 12;
  * NOT currently a Hauska substrate partner city (Bastrop, TX is
  * the canonical partner; see `doc_repo/_decisions/2026-05-23_
  * partnership_first_scoping.md`), so on a default engagement
- * these adapters return `no-coverage` and Regrid is the sole
- * authoritative source.
+ * these adapters return `no-coverage` and the national provider
+ * is the sole authoritative source.
  *
  * The adapters are kept in tree (not deleted) because:
  *   1. If Grand County onboards as a partner city, flipping
