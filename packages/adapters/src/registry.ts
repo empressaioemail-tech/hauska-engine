@@ -20,10 +20,6 @@ import { usgsGroundwaterAdapter } from "./federal/usgs-groundwater";
 import { usgsSeismicAdapter } from "./federal/usgs-seismic";
 import { fccBroadbandAdapter } from "./federal/fcc-broadband";
 import {
-  regridParcelsAdapter,
-  regridZoningAdapter,
-} from "./national/regrid";
-import {
   cotalityParcelsAdapter,
   cotalityZoningAdapter,
 } from "./national/cotality";
@@ -117,16 +113,26 @@ export const FEDERAL_ADAPTERS: ReadonlyArray<Adapter> = [
   // in when the operator flips `FCC_ENABLED=true` on the Cloud Run
   // service env.
   ...(isFccEnabled() ? [fccBroadbandAdapter] : []),
-  // Cortex prop-intel SCOPE B (2026-05-23) — Regrid national
-  // parcel + zoning baseline. Tier-housed under FEDERAL_ADAPTERS
-  // for cache-predicate reuse (the runner's default cache predicate
-  // caches federal-tier outcomes). The operator-visible attribution
-  // is source_kind = "national-aggregator", which the UI reads.
-  regridParcelsAdapter,
-  regridZoningAdapter,
-  // 2026-06-06 cotality parcel provider decision — Cotality selected as
-  // launch provider for parcel/zoning (Regrid kept as interim fallback).
-  // COTALITY_* creds absent → clean no-coverage (Regrid fallback).
+  // National parcel + zoning provider — Cotality (2026-06-06 provider
+  // decision). Tier-housed under FEDERAL_ADAPTERS for cache-predicate
+  // reuse (the runner's default cache predicate caches federal-tier
+  // outcomes). The operator-visible attribution is source_kind =
+  // "national-aggregator", which the UI reads.
+  //
+  // Config-gated dormant per the 2026-07-13 Cotality-swap decision:
+  // when COTALITY_* creds are absent the adapters throw an
+  // AdapterRunError("no-coverage", ...) that the runner normalizes to a
+  // neutral `no-coverage` outcome, so a national land-use call degrades
+  // honestly rather than failing. Re-entry is a config flip (mount
+  // creds); no code change. Do NOT remove — the swap decision keeps the
+  // Cotality scaffolding in place as the config-gated re-entry path.
+  //
+  // The former Regrid national baseline (regrid:parcels / regrid:zoning)
+  // was removed here: Regrid was purged ("no Regrid ever", 2026-07-13),
+  // its readApiKey() threw an unconditional upstream-error (→ failed) on
+  // every national land-use call because REGRID_API_KEY is unmounted,
+  // and nothing depends on it (the map path already asserts no Regrid
+  // fallback). See PR removing the dead throwing stubs.
   cotalityParcelsAdapter,
   cotalityZoningAdapter,
   ...COTALITY_EXTENDED_ADAPTERS,
