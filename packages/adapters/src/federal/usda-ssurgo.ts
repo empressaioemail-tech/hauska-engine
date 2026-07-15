@@ -1,17 +1,27 @@
 /**
  * USDA NRCS SSURGO soils — federal subsurface adapter.
  *
- * SSURGO map-unit polygons are published as gSSURGO on the NRCS ArcGIS
- * host; dominant-component and map-unit aggregated attributes (drainage
- * class, hydrologic soil group, depth-to-bedrock, shrink-swell where
- * mapped) come from Soil Data Access (SDA).
+ * Source of truth is USDA Soil Data Access (SDA) on
+ * `sdmdataaccess.sc.egov.usda.gov`: the tabular POST endpoint resolves the
+ * map unit at a point (`SDA_Get_Mukey_from_intersection_with_WktWgs84`)
+ * plus dominant-component and muaggatt attributes in one query.
  *
- * Two upstream calls run in parallel:
- *   1. gSSURGO MapServer point intersect → mukey / musym / muname
- *   2. SDA tabular POST → dominant-component + muaggatt readings
+ * The gSSURGO ArcGIS host (`nrcsgeoservices.sc.egov.usda.gov`) resets TLS
+ * handshakes from Cloud Run (and most non-browser clients) — the long-lived
+ * "SSURGO ECONNRESET" degradation. It is therefore only queried as
+ * best-effort enrichment; its failure never fails the adapter when SDA
+ * answers. `Promise.allSettled` (not `Promise.all`) keeps a dead ArcGIS
+ * host from failing the whole adapter when SDA answered.
  *
  * Off-US or unmapped parcels emit a deterministic `no-coverage` verdict
  * (neutral pill) rather than a red failure.
+ *
+ * Ported from the ldt cortex-side fix (ldt PR #248) verbatim in behavior:
+ * the SDA SQL named nonexistent muaggatt columns (`brockdepmax` /
+ * `wtdepannmax` / `drainsubclass`) and USDA 400'd every call; the
+ * response parser read named keys off the header row (`Table[0]`) of the
+ * `JSON+COLUMNNAME` array-of-arrays wire shape and got nothing on success;
+ * the SDA call needs a browser-ish User-Agent or USDA front doors reset.
  */
 
 import { arcgisPointQuery } from "../arcgis";
@@ -24,12 +34,19 @@ import {
 } from "../types";
 import { federalGeocodeApplies, isUsLatLng } from "./_federalGeocodeGate";
 
-/** gSSURGO map-unit polygon layer (national). */
+/** gSSURGO map-unit polygon layer (national). Enrichment-only; see header. */
 export const USDA_SSURGO_MAPUNIT_LAYER =
   "https://nrcsgeoservices.sc.egov.usda.gov/arcgis/rest/services/soils/gssurgo/MapServer/0";
 
 export const USDA_SSURGO_SDA_ENDPOINT =
   "https://sdmdataaccess.sc.egov.usda.gov/tabular/post.rest";
+
+/**
+ * Browser-ish UA for USDA hosts. Several USDA front doors 406/reset
+ * requests without a recognizable User-Agent.
+ */
+export const USDA_HTTP_USER_AGENT =
+  "Mozilla/5.0 (compatible; HauskaEngine/1.0; +https://hauska.dev)";
 
 export const USDA_SSURGO_PROVIDER_LABEL =
   "USDA NRCS Soil Survey Geographic Database (SSURGO)";
@@ -49,6 +66,16 @@ function wktPoint(longitude: number, latitude: number): string {
   return `POINT(${longitude} ${latitude})`;
 }
 
+/**
+ * Point query against SDA. Column set verified against the live schema
+ * (2026-07-14 in the ldt fix, re-checked here): muaggatt has
+ * `brockdepmin` / `wtdepannmin` but no `brockdepmax` / `wtdepannmax` /
+ * `drainsubclass` — the previous query named those and SDA rejected it
+ * with HTTP 400 "Invalid column name" on every call. `areasymbol` comes
+ * from the legend join; `drclassdcd` / `hydgrpdcd` are map-unit-level
+ * fallbacks for the component readings. muaggatt is LEFT JOINed so a
+ * mapped mukey with no aggregate row still returns the component.
+ */
 function buildSdaSoilQuery(longitude: number, latitude: number): string {
   const wkt = wktPoint(longitude, latitude);
   return `
@@ -56,11 +83,11 @@ SELECT TOP 1
   mu.mukey,
   mu.musym,
   mu.muname,
-  ma.drainsubclass,
+  l.areasymbol,
   ma.brockdepmin,
-  ma.brockdepmax,
   ma.wtdepannmin,
-  ma.wtdepannmax,
+  ma.drclassdcd,
+  ma.hydgrpdcd,
   c.compname,
   c.drainagecl,
   c.hydgrp,
@@ -71,8 +98,9 @@ SELECT TOP 1
       AND ci.mrulename = 'ENG - Shrink-Swell Potential'
       AND ci.ruledepth = 0) AS shrinkswell
 FROM mapunit mu
-INNER JOIN muaggatt ma ON ma.mukey = mu.mukey
+INNER JOIN legend l ON l.lkey = mu.lkey
 INNER JOIN component c ON c.mukey = mu.mukey AND c.majcompflag = 'Yes'
+LEFT JOIN muaggatt ma ON ma.mukey = mu.mukey
 WHERE mu.mukey IN (
   SELECT * FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('${wkt}')
 )
@@ -82,6 +110,45 @@ ORDER BY c.comppct_r DESC
 
 interface SdaTableRow {
   [key: string]: unknown;
+}
+
+/**
+ * Parse an SDA `format=JSON+COLUMNNAME` response body into keyed rows.
+ *
+ * The real wire shape is `{ "Table": [[col, col, …], [val, val, …], …] }`
+ * — the FIRST row is column names and every subsequent row is a value
+ * array. The previous implementation indexed `Table[0]` and read named
+ * properties off it, i.e. it always consumed the header row and every
+ * attribute came back `undefined` even on a successful call. Object rows
+ * are still tolerated in case a proxy or fixture provides them.
+ */
+export function parseSdaTableRows(json: unknown): SdaTableRow[] {
+  if (!json || typeof json !== "object") return [];
+  const table = (json as { Table?: unknown }).Table;
+  if (!Array.isArray(table) || table.length === 0) return [];
+
+  const first = table[0];
+  if (Array.isArray(first)) {
+    const columns = first.map((c) => String(c));
+    const rows: SdaTableRow[] = [];
+    for (let i = 1; i < table.length; i++) {
+      const values = table[i];
+      if (!Array.isArray(values)) continue;
+      const row: SdaTableRow = {};
+      for (let c = 0; c < columns.length; c++) {
+        const key = columns[c];
+        if (key === undefined) continue;
+        row[key] = values[c] ?? null;
+      }
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  return table.filter(
+    (row): row is SdaTableRow =>
+      Boolean(row) && typeof row === "object" && !Array.isArray(row),
+  );
 }
 
 async function querySdaSoils(
@@ -105,6 +172,9 @@ async function querySdaSoils(
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json, */*;q=0.1",
+        // Several USDA front doors 406/reset requests without a
+        // recognizable User-Agent — send a browser-ish one.
+        "User-Agent": USDA_HTTP_USER_AGENT,
       },
       body: body.toString(),
       signal: ctx.signal,
@@ -156,10 +226,8 @@ async function querySdaSoils(
       "USDA Soil Data Access response was not a JSON object",
     );
   }
-  const table = (json as { Table?: unknown }).Table;
-  if (!Array.isArray(table) || table.length === 0) return null;
-  const row = table[0];
-  return row && typeof row === "object" ? (row as SdaTableRow) : null;
+  const rows = parseSdaTableRows(json);
+  return rows[0] ?? null;
 }
 
 function pickString(value: unknown): string | null {
@@ -175,6 +243,12 @@ function pickNumber(value: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+/** muaggatt depth attributes are centimeters; payload fields are feet. */
+function cmToFeet(value: number | null): number | null {
+  if (value === null) return null;
+  return Math.round((value / 30.48) * 10) / 10;
 }
 
 export const usdaSsurgoSoilsAdapter: Adapter = {
@@ -301,25 +375,33 @@ export const usdaSsurgoSoilsAdapter: Adapter = {
         mukey,
         musym,
         muname,
-        areaSymbol: pickString(attrs.AREASYMBOL),
+        areaSymbol:
+          pickString(attrs.AREASYMBOL) ??
+          pickString(sdaRow?.areasymbol) ??
+          pickString(sdaRow?.AREASYMBOL),
         drainageClass:
           pickString(sdaRow?.drainagecl) ??
-          pickString(sdaRow?.drainsubclass) ??
-          pickString(sdaRow?.DRAINAGECL),
+          pickString(sdaRow?.DRAINAGECL) ??
+          pickString(sdaRow?.drclassdcd),
         hydrologicSoilGroup:
-          pickString(sdaRow?.hydgrp) ?? pickString(sdaRow?.HYDGRP),
+          pickString(sdaRow?.hydgrp) ??
+          pickString(sdaRow?.HYDGRP) ??
+          pickString(sdaRow?.hydgrpdcd),
         dominantComponent:
           pickString(sdaRow?.compname) ?? pickString(sdaRow?.COMPNAME),
         slopePercentRounded:
           pickNumber(sdaRow?.slope_r) ?? pickNumber(sdaRow?.SLOPE_R),
-        depthToBedrockMinFeet:
+        // muaggatt reports cm; converted so the field names stay honest.
+        // The *Max* columns do not exist in muaggatt (SDA 400s on them),
+        // so max depths are null pending a corestrictions-based source.
+        depthToBedrockMinFeet: cmToFeet(
           pickNumber(sdaRow?.brockdepmin) ?? pickNumber(sdaRow?.BROCKDEPMIN),
-        depthToBedrockMaxFeet:
-          pickNumber(sdaRow?.brockdepmax) ?? pickNumber(sdaRow?.BROCKDEPMAX),
-        waterTableDepthMinFeet:
+        ),
+        depthToBedrockMaxFeet: null,
+        waterTableDepthMinFeet: cmToFeet(
           pickNumber(sdaRow?.wtdepannmin) ?? pickNumber(sdaRow?.WTDEPANNMIN),
-        waterTableDepthMaxFeet:
-          pickNumber(sdaRow?.wtdepannmax) ?? pickNumber(sdaRow?.WTDEPANNMAX),
+        ),
+        waterTableDepthMaxFeet: null,
         shrinkSwellPotential:
           pickString(sdaRow?.shrinkswell) ?? pickString(sdaRow?.SHRINKSWELL),
         rawMapUnitAttributes: attrs,

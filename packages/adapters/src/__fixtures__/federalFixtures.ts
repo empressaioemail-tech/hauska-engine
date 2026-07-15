@@ -125,23 +125,47 @@ export const ssurgoMapUnitFeature = {
   ],
 };
 
+/**
+ * REAL SDA `FORMAT=JSON+COLUMNNAME` wire shape: `Table` is an
+ * array-of-arrays whose FIRST row is the column names and every
+ * subsequent row is a value array. The previous fixture encoded a fake
+ * object-row shape (`Table: [{ mukey: … }]`) that masked the header-row
+ * parse bug — the adapter read named keys off `Table[0]` and got them
+ * only because the fixture handed it an object row. Columns mirror the
+ * fixed `buildSdaSoilQuery` SELECT list exactly.
+ */
 export const ssurgoSdaTable = {
   Table: [
-    {
-      mukey: "123456",
-      musym: "Pf",
-      muname: "Pflugerville-Rock outcrop complex, 1 to 8 percent slopes",
-      drainsubclass: "Well drained",
-      brockdepmin: 0,
-      brockdepmax: 20,
-      wtdepannmin: 60,
-      wtdepannmax: 72,
-      compname: "Pflugerville",
-      drainagecl: "Well drained",
-      hydgrp: "C",
-      slope_r: 5,
-      shrinkswell: "Moderate",
-    },
+    [
+      "mukey",
+      "musym",
+      "muname",
+      "areasymbol",
+      "brockdepmin",
+      "wtdepannmin",
+      "drclassdcd",
+      "hydgrpdcd",
+      "compname",
+      "drainagecl",
+      "hydgrp",
+      "slope_r",
+      "shrinkswell",
+    ],
+    [
+      "123456",
+      "Pf",
+      "Pflugerville-Rock outcrop complex, 1 to 8 percent slopes",
+      "TX021",
+      0,
+      60,
+      "Well drained",
+      "C",
+      "Pflugerville",
+      "Well drained",
+      "C",
+      5,
+      "Moderate",
+    ],
   ],
 };
 
