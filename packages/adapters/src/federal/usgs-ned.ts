@@ -36,6 +36,28 @@ const USGS_EPQS_LABEL = "USGS EPQS";
 const EPQS_NODATA_SENTINEL = -1_000_000;
 
 /**
+ * EPQS `rasterId` sentinel for "no source raster resolved this point".
+ *
+ * The v1 EPQS envelope carries a `rasterId` integer that identifies the
+ * specific staged 3DEP source raster the point resolved against. It is
+ * the ONLY coverage-honesty signal the point service exposes: it is the
+ * discriminator between a 1m lidar-derived DEM and the 1/3 arc-second
+ * (~10m) national fallback for the queried location. Prior to this the
+ * adapter discarded it, so the read model could not tell measured lidar
+ * coverage from interpolated fallback, a coverage-blindness the parcel
+ * mesh / IFC build (Layer 0 coverage-honesty fix) must not inherit.
+ *
+ * We DO NOT map `rasterId` to a resolution here. The EPQS service does
+ * not publish a stable rasterId-to-resolution table on the point
+ * endpoint, and fabricating one would present an unearned resolution
+ * (structural commitment #2). We carry the raw `rasterId` through so a
+ * downstream consumer that DOES hold the 3DEP staged-product catalog can
+ * resolve lidar-vs-fallback honestly; here it is provenance, not an
+ * asserted resolution.
+ */
+const EPQS_NO_RASTER_SENTINEL = 0;
+
+/**
  * Freshness window for the USGS NED elevation snapshot.
  *
  * The 3DEP/NED raster is reprocessed in multi-year blocks per region;
@@ -114,6 +136,7 @@ export const usgsNedAdapter: Adapter = {
       value?: unknown;
       units?: unknown;
       location?: unknown;
+      rasterId?: unknown;
     };
     // EPQS has shipped both `number` and stringified-number variants of
     // `value` over the years — accept either.
@@ -134,6 +157,24 @@ export const usgsNedAdapter: Adapter = {
       typeof env.units === "string" && env.units.length > 0
         ? env.units
         : "Feet";
+    // Carry the source `rasterId` through as coverage provenance. EPQS
+    // ships it as a number on current deployments and (rarely) as a
+    // stringified number on older ones; normalize to a finite integer or
+    // null. `0` is the "no source raster" sentinel and is normalized to
+    // null so a consumer never mistakes it for a real raster id. This is
+    // the lidar-vs-fallback discriminator the read model was previously
+    // blind to; it is NOT converted into a resolution here (see the
+    // EPQS_NO_RASTER_SENTINEL comment).
+    const rawRasterId =
+      typeof env.rasterId === "number"
+        ? env.rasterId
+        : typeof env.rasterId === "string" && env.rasterId.trim() !== ""
+          ? Number(env.rasterId)
+          : NaN;
+    const sourceRasterId =
+      Number.isFinite(rawRasterId) && rawRasterId !== EPQS_NO_RASTER_SENTINEL
+        ? Math.trunc(rawRasterId)
+        : null;
 
     return {
       adapterKey: this.adapterKey,
@@ -150,6 +191,12 @@ export const usgsNedAdapter: Adapter = {
           x: ctx.parcel.longitude,
           y: ctx.parcel.latitude,
         },
+        // EPQS source-raster id: the lidar-vs-fallback coverage signal.
+        // `null` when the service resolved no source raster (off-coverage)
+        // or omitted the field. A downstream holding the 3DEP staged
+        // catalog resolves this to an actual resolution / collection; it is
+        // deliberately NOT resolved to a resolution number here.
+        sourceRasterId,
       },
       note: isNoData
         ? "USGS NED has no elevation value at this point (off-raster)."
