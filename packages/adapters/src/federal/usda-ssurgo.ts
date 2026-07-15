@@ -136,7 +136,9 @@ export function parseSdaTableRows(json: unknown): SdaTableRow[] {
       if (!Array.isArray(values)) continue;
       const row: SdaTableRow = {};
       for (let c = 0; c < columns.length; c++) {
-        row[columns[c]] = values[c] ?? null;
+        const key = columns[c];
+        if (key === undefined) continue;
+        row[key] = values[c] ?? null;
       }
       rows.push(row);
     }
