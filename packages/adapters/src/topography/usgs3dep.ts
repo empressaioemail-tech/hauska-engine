@@ -124,8 +124,41 @@ export interface FetchUsgs3depDemResult {
   contentType: string;
   /** Echo of the requested bbox, for provenance / atom payload. */
   bbox: BboxWgs84;
-  /** Echo of the requested resolution. */
+  /**
+   * Echo of the REQUESTED resolution. This is what we asked the
+   * ImageServer to resample to; it is NOT necessarily the native
+   * resolution of the source raster the mosaic drew from. Retained for
+   * backward compatibility; new consumers should read the explicit
+   * `resolutionMetersRequested` / `resolutionMetersActual` pair below so
+   * the requested-vs-measured distinction is not silently conflated.
+   */
   resolutionMeters: number;
+  /**
+   * The resolution (meters per pixel) the caller asked the ImageServer
+   * to resample the clip to. Identical to {@link resolutionMeters}; named
+   * explicitly so the coverage-honesty consumer reads "requested" and is
+   * never tempted to treat it as measured native resolution.
+   */
+  resolutionMetersRequested: number;
+  /**
+   * The ACTUAL native resolution of the source raster behind the clip,
+   * when known. Always `null` on the `/exportImage?f=image` path: that
+   * operation returns raw resampled GeoTIFF bytes and exposes NO
+   * source-raster metadata (neither a native cellsize header nor a
+   * source-dataset id) in the response headers or body. The ImageServer
+   * resamples the national mosaic to our requested `size`, so the pixel
+   * grid we get back reflects our request, not the source cellsize.
+   *
+   * We deliberately leave this `null` rather than echo the requested
+   * value into it: presenting the requested resolution as the actual one
+   * would fabricate a coverage claim (structural commitment #2, never an
+   * unearned number presented as earned). Resolving the true native
+   * resolution requires either the `/exportImage?f=json` envelope's
+   * `pixelSizeX/Y` (a separate call) or the ImageServer `identify` /
+   * source-raster catalog; both are out of scope for this narrow client
+   * and are the honest place to fill this field in later.
+   */
+  resolutionMetersActual: number | null;
   /** Computed raster width in pixels. */
   widthPx: number;
   /** Computed raster height in pixels. */
@@ -403,6 +436,11 @@ export async function fetchUsgs3depDem(
     contentType,
     bbox,
     resolutionMeters: opts.resolutionMeters,
+    // Coverage-honesty pair: we know what we asked for, we do NOT know
+    // the source raster's native resolution from this response, so
+    // `actual` stays null rather than echoing the request into it.
+    resolutionMetersRequested: opts.resolutionMeters,
+    resolutionMetersActual: null,
     widthPx,
     heightPx,
     endpoint,
