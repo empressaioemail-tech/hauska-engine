@@ -1,0 +1,22 @@
+{
+  "key": "cook_county_il_stub",
+  "displayName": "Cook County IL (stub)",
+  "jurisdictionTenant": "cook_county_il_stub",
+  "parcelFips": "17031",
+  "defaultAccessPolicy": "public-free",
+  "sourceAdapter": "descriptor-fixture",
+  "sourceUrl": "https://example.invalid/cook-county-il-stub",
+  "setbackTable": {
+    "rows": [
+      {
+        "atom_did": "did:hauska:code-section:cook-stub/RS-4.2",
+        "match_basis": "exact",
+        "district_code": "RS-1",
+        "front_ft": { "value": 25, "confidence": 0.88, "verification_state": "transcribed" },
+        "rear_ft": { "value": 15, "confidence": 0.88, "verification_state": "transcribed" },
+        "side_ft": { "value": 5, "confidence": 0.88, "verification_state": "transcribed" },
+        "side_corner_ft": { "value": 10, "confidence": 0.88, "verification_state": "transcribed" }
+      }
+    ]
+  }
+}

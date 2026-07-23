@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CodeSectionAtomInstance } from "@hauska-engine/atoms";
+import { createWidthedConfidence } from "@empressaio/atom-contract/read-contract";
 
 import { PgStorage } from "../pg-storage.js";
 import {
@@ -191,5 +192,55 @@ describe("PgStorage", () => {
     );
     expect(hits).toHaveLength(1);
     expect(hits[0]?.entityId).toBe(section.entityId);
+  });
+
+  it("writePropertyAtom persists zoning-fact jsonb and serves via getAtomByDid", async () => {
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    const propertyAtom = {
+      entityType: "zoning-fact" as const,
+      entityId: "17031:STUB/zoning-v1",
+      jurisdictionTenant: "cook_county_il_stub",
+      parcelNodeId: "17031:STUB",
+      fetchedAt: "2026-07-23T12:00:00.000Z",
+      extractedAt: "2026-07-23T12:00:00.000Z",
+      sourceAdapter: "test",
+      sourceUrl: "https://example.invalid/zoning",
+      sourceCitation: "stub",
+      contentHash: "abc123",
+      accessPolicy: "public-free" as const,
+      atomTier: "data" as const,
+      status: "active" as const,
+      versionStamp: "v1",
+      districtCode: "RS-1",
+      matchBasis: "exact" as const,
+      reasoningChain: { reasoningKind: "observed" as const },
+      readAxes: {
+        assertedConfidence: createWidthedConfidence({
+          estimate: 0.9,
+          n: 0,
+          intervalWidth: 0.12,
+          provenance: "asserted",
+        }),
+        calibratedConfidence: createWidthedConfidence({
+          estimate: 0.9,
+          n: 0,
+          intervalWidth: 0.12,
+          provenance: "seed",
+        }),
+        consequence: {
+          kind: "not-applicable" as const,
+          reason: "test",
+          assertedAt: "2026-07-23T12:00:00.000Z",
+        },
+      },
+    };
+    const { atomDid } = await storage.writePropertyAtom(propertyAtom);
+    const roundTrip = await storage.getAtomByDid(atomDid);
+    expect(roundTrip).toMatchObject({
+      entityType: "zoning-fact",
+      districtCode: "RS-1",
+      parcelNodeId: "17031:STUB",
+    });
   });
 });

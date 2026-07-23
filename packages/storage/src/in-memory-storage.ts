@@ -8,7 +8,12 @@
  */
 
 import { buildAtomDid, type AtomLink } from "@hauska-engine/atoms";
-import type { CodeAtomInstance } from "@hauska-engine/atoms";
+import type {
+  CodeAtomInstance,
+  PropertyAtomInstance,
+  StoredAtomInstance,
+} from "@hauska-engine/atoms";
+import { isPropertyEntityType } from "@hauska-engine/atoms";
 
 import { HotCache, InProcessIpfsPin } from "./in-process-cache.js";
 import type {
@@ -25,7 +30,7 @@ import {
 } from "./search-scoring.js";
 
 export class InMemoryStorage implements StoragePort {
-  private readonly atoms = new Map<string, CodeAtomInstance>();
+  private readonly atoms = new Map<string, StoredAtomInstance>();
   /** atomDid -> cid */
   private readonly cids = new Map<string, string>();
   private readonly links: AtomLink[] = [];
@@ -35,6 +40,17 @@ export class InMemoryStorage implements StoragePort {
 
   async writeAtom(
     instance: CodeAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }> {
+    const atomDid = buildAtomDid(instance.entityType, instance.entityId).raw;
+    const pin = await this.ipfs.pin(instance.contentHash, JSON.stringify(instance));
+    this.atoms.set(atomDid, instance);
+    this.cids.set(atomDid, pin.cid);
+    this.cache.set(atomDid, instance);
+    return { atomDid, cid: pin.cid };
+  }
+
+  async writePropertyAtom(
+    instance: PropertyAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {
     const atomDid = buildAtomDid(instance.entityType, instance.entityId).raw;
     const pin = await this.ipfs.pin(instance.contentHash, JSON.stringify(instance));
@@ -79,7 +95,7 @@ export class InMemoryStorage implements StoragePort {
     return (inst as T | undefined) ?? null;
   }
 
-  async getAtomByDid(atomDid: string): Promise<CodeAtomInstance | null> {
+  async getAtomByDid(atomDid: string): Promise<StoredAtomInstance | null> {
     const cached = this.cache.get(atomDid);
     if (cached) return cached;
     return this.atoms.get(atomDid) ?? null;
@@ -99,8 +115,8 @@ export class InMemoryStorage implements StoragePort {
   async traverse(
     fromAtomDid: string,
     linkType?: AtomLink["linkType"],
-  ): Promise<ReadonlyArray<AtomLink & { toAtom: CodeAtomInstance | null }>> {
-    const out: Array<AtomLink & { toAtom: CodeAtomInstance | null }> = [];
+  ): Promise<ReadonlyArray<AtomLink & { toAtom: StoredAtomInstance | null }>> {
+    const out: Array<AtomLink & { toAtom: StoredAtomInstance | null }> = [];
     for (const link of this.links) {
       const fromDid = buildAtomDid(link.fromEntityType, link.fromEntityId).raw;
       if (fromDid !== fromAtomDid) continue;
@@ -115,9 +131,9 @@ export class InMemoryStorage implements StoragePort {
     toAtomDid: string,
     linkType?: AtomLink["linkType"],
   ): Promise<
-    ReadonlyArray<AtomLink & { fromAtom: CodeAtomInstance | null }>
+    ReadonlyArray<AtomLink & { fromAtom: StoredAtomInstance | null }>
   > {
-    const out: Array<AtomLink & { fromAtom: CodeAtomInstance | null }> = [];
+    const out: Array<AtomLink & { fromAtom: StoredAtomInstance | null }> = [];
     for (const link of this.links) {
       const linkToDid = buildAtomDid(link.toEntityType, link.toEntityId).raw;
       if (linkToDid !== toAtomDid) continue;
@@ -194,7 +210,9 @@ export class InMemoryStorage implements StoragePort {
       format: CORPUS_SNAPSHOT_FORMAT,
       generatedAt: new Date().toISOString(),
       ...(provenance ? { provenance } : {}),
-      atoms: Array.from(this.atoms.values()),
+      atoms: Array.from(this.atoms.values()).filter(
+        (inst): inst is CodeAtomInstance => !isPropertyEntityType(inst.entityType),
+      ),
       links: [...this.links],
       jurisdictionStatus: Array.from(this.jurisdictionStatus.values()),
     };

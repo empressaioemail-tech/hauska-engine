@@ -14,6 +14,8 @@
 import type {
   AtomLink,
   JurisdictionalOverlayAmendmentInstance,
+  PropertyAtomInstance,
+  StoredAtomInstance,
 } from "@hauska-engine/atoms";
 
 import type {
@@ -25,13 +27,13 @@ import type {
 export interface AtomQuery {
   q?: string;
   jurisdiction?: string;
-  entityType?: CodeAtomEntityType;
+  entityType?: CodeAtomEntityType | string;
   limit?: number;
 }
 
 export interface AtomSearchResult {
   atomDid: string;
-  entityType: CodeAtomEntityType;
+  entityType: string;
   entityId: string;
   jurisdictionTenant: string;
   sectionNumber: string | null;
@@ -68,6 +70,14 @@ export interface StoragePort {
   /** Atomic write: pin to IPFS, index in Postgres, emit event. */
   writeAtom(instance: CodeAtomInstance): Promise<{ atomDid: string; cid: string }>;
 
+  /**
+   * Property reasoning atoms (zoning-fact / setback-rule / buildable-envelope).
+   * Persists jsonb body to the same `atoms` table (Phase 1b).
+   */
+  writePropertyAtom(
+    instance: PropertyAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }>;
+
   /** Batch write — atomization output. */
   writeAtoms(
     instances: ReadonlyArray<CodeAtomInstance>,
@@ -83,7 +93,7 @@ export interface StoragePort {
   ): Promise<Extract<CodeAtomInstance, { entityType: T }> | null>;
 
   /** Read by DID. */
-  getAtomByDid(atomDid: string): Promise<CodeAtomInstance | null>;
+  getAtomByDid(atomDid: string): Promise<StoredAtomInstance | null>;
 
   /** Hybrid search (structural + vector). */
   search(query: AtomQuery): Promise<ReadonlyArray<AtomSearchResult>>;
@@ -118,14 +128,14 @@ export interface StoragePort {
   traverse(
     fromAtomDid: string,
     linkType?: AtomLink["linkType"],
-  ): Promise<ReadonlyArray<AtomLink & { toAtom: CodeAtomInstance | null }>>;
+  ): Promise<ReadonlyArray<AtomLink & { toAtom: StoredAtomInstance | null }>>;
 
   /** Graph traversal: inbound edges pointing at an atom by link type. */
   traverseInbound(
     toAtomDid: string,
     linkType?: AtomLink["linkType"],
   ): Promise<
-    ReadonlyArray<AtomLink & { fromAtom: CodeAtomInstance | null }>
+    ReadonlyArray<AtomLink & { fromAtom: StoredAtomInstance | null }>
   >;
 
   /** Per-jurisdiction status snapshot for the coverage dashboard + MCP list_jurisdictions tool. */

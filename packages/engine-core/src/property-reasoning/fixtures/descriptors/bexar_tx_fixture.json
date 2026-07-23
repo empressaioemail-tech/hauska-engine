@@ -1,0 +1,12 @@
+{
+  "key": "bexar_tx_fixture",
+  "displayName": "Bexar County TX (test fixture only)",
+  "jurisdictionTenant": "bexar_tx_fixture",
+  "parcelFips": "48029",
+  "defaultAccessPolicy": "public-free",
+  "sourceAdapter": "descriptor-fixture",
+  "sourceUrl": "https://example.invalid/bexar-tx-fixture",
+  "setbackTable": {
+    "rows": []
+  }
+}
