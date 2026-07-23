@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { HybridRetrieval } from "@hauska-engine/retrieval";
 import type { Scope } from "@hauska-engine/atom-contract-pin";
+import type { CalibrationOverlayPort } from "@hauska-engine/engine-core/property-reasoning";
 import {
   InMemoryStorage,
   type AccessPolicy,
@@ -104,11 +105,18 @@ export interface ServerOptions {
   apiKey?: string;
   /** Substrate Neon URL for `/healthz` db liveness; falls back to env. */
   substrateDatabaseUrl?: string;
+  /**
+   * Migration 0037 overlay port (cortex Neon). When set, property-atom
+   * READ resolves calibratedConfidence via parcel-node / atom DID keys.
+   */
+  calibrationOverlay?: CalibrationOverlayPort | null;
 }
 
 export function buildApp(options: ServerOptions = {}): Hono {
   const storage = options.storage ?? new InMemoryStorage();
-  const retrieval = new HybridRetrieval(storage);
+  const retrieval = new HybridRetrieval(storage, {
+    calibrationOverlay: options.calibrationOverlay ?? null,
+  });
   const apiKey = options.apiKey ?? process.env.RETRIEVAL_API_KEY ?? "";
   const substrateDatabaseUrl = options.substrateDatabaseUrl;
   const startedAt = new Date().toISOString();

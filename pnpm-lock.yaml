@@ -225,10 +225,16 @@ importers:
       '@hauska-engine/corpus':
         specifier: workspace:*
         version: link:../corpus
+      '@hauska-engine/engine-core':
+        specifier: workspace:*
+        version: link:../engine-core
       '@hauska-engine/storage':
         specifier: workspace:*
         version: link:../storage
     devDependencies:
+      '@empressaio/atom-contract':
+        specifier: ^1.9.0
+        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
       typescript:
         specifier: ~5.7.2
         version: 5.7.3
@@ -356,9 +362,15 @@ importers:
 
   services/retrieval-api:
     dependencies:
+      '@empressaio/atom-contract':
+        specifier: ^1.9.0
+        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/atom-contract-pin':
         specifier: workspace:*
         version: link:../../packages/atom-contract-pin
+      '@hauska-engine/engine-core':
+        specifier: workspace:*
+        version: link:../../packages/engine-core
       '@hauska-engine/retrieval':
         specifier: workspace:*
         version: link:../../packages/retrieval
