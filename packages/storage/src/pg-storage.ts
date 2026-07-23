@@ -13,6 +13,9 @@ import {
   type CodeAtomInstance,
   type CodeAtomEntityType,
   type JurisdictionalOverlayAmendmentInstance,
+  isPropertyAtomInstance,
+  type PropertyAtomInstance,
+  type StoredAtomInstance,
 } from "@hauska-engine/atoms";
 import postgres from "postgres";
 
@@ -58,14 +61,17 @@ interface JurisdictionStatusRow {
   access_policy: string;
 }
 
-function parseStoredAtom(body: unknown): CodeAtomInstance | null {
+function parseStoredAtom(body: unknown): StoredAtomInstance | null {
   if (typeof body !== "object" || body === null) return null;
+  if (isPropertyAtomInstance(body)) return body;
   const candidate = body as Partial<CodeAtomInstance>;
   if (!candidate.entityType || !candidate.entityId) return null;
   return body as CodeAtomInstance;
 }
 
-function resolveAccessPolicy(instance: CodeAtomInstance): string {
+function resolveAccessPolicy(
+  instance: CodeAtomInstance | PropertyAtomInstance,
+): string {
   const maybePolicy = (instance as { accessPolicy?: string }).accessPolicy;
   return maybePolicy ?? "public-free";
 }
@@ -140,6 +146,61 @@ export class PgStorage implements StoragePort {
     return { atomDid, cid: pin.cid };
   }
 
+  async writePropertyAtom(
+    instance: PropertyAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }> {
+    const atomDid = buildAtomDid(instance.entityType, instance.entityId).raw;
+    const pin = await this.ipfs.pin(instance.contentHash, JSON.stringify(instance));
+
+    await this.sql`
+      INSERT INTO atoms (
+        atom_did,
+        cid,
+        content_hash,
+        entity_type,
+        entity_id,
+        jurisdiction_tenant,
+        section_number,
+        subsection_path,
+        source_adapter,
+        source_url,
+        fetched_at,
+        body,
+        access_policy
+      ) VALUES (
+        ${atomDid},
+        ${pin.cid},
+        ${instance.contentHash},
+        ${instance.entityType},
+        ${instance.entityId},
+        ${instance.jurisdictionTenant},
+        ${null},
+        ${null},
+        ${instance.sourceAdapter},
+        ${instance.sourceUrl},
+        ${instance.fetchedAt},
+        ${this.sql.json(instance as unknown as Parameters<typeof this.sql.json>[0])},
+        ${resolveAccessPolicy(instance)}
+      )
+      ON CONFLICT (atom_did) DO UPDATE SET
+        cid = EXCLUDED.cid,
+        content_hash = EXCLUDED.content_hash,
+        entity_type = EXCLUDED.entity_type,
+        entity_id = EXCLUDED.entity_id,
+        jurisdiction_tenant = EXCLUDED.jurisdiction_tenant,
+        section_number = EXCLUDED.section_number,
+        subsection_path = EXCLUDED.subsection_path,
+        source_adapter = EXCLUDED.source_adapter,
+        source_url = EXCLUDED.source_url,
+        fetched_at = EXCLUDED.fetched_at,
+        body = EXCLUDED.body,
+        access_policy = EXCLUDED.access_policy,
+        updated_at = now()
+    `;
+
+    return { atomDid, cid: pin.cid };
+  }
+
   async writeAtoms(
     instances: ReadonlyArray<CodeAtomInstance>,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
@@ -177,7 +238,7 @@ export class PgStorage implements StoragePort {
     >;
   }
 
-  async getAtomByDid(atomDid: string): Promise<CodeAtomInstance | null> {
+  async getAtomByDid(atomDid: string): Promise<StoredAtomInstance | null> {
     const rows = await this.sql<AtomBodyRow[]>`
       SELECT body
       FROM atoms
@@ -251,7 +312,7 @@ export class PgStorage implements StoragePort {
   async traverse(
     fromAtomDid: string,
     linkType?: AtomLink["linkType"],
-  ): Promise<ReadonlyArray<AtomLink & { toAtom: CodeAtomInstance | null }>> {
+  ): Promise<ReadonlyArray<AtomLink & { toAtom: StoredAtomInstance | null }>> {
     const rows = linkType
       ? await this.sql<AtomLinkRow[]>`
           SELECT from_atom_did, to_atom_did, link_type, context
@@ -264,7 +325,7 @@ export class PgStorage implements StoragePort {
           FROM atom_links
           WHERE from_atom_did = ${fromAtomDid}
         `;
-    const out: Array<AtomLink & { toAtom: CodeAtomInstance | null }> = [];
+    const out: Array<AtomLink & { toAtom: StoredAtomInstance | null }> = [];
     for (const row of rows) {
       const fromParsed = parseAtomDid(row.from_atom_did);
       const toAtom = await this.getAtomByDid(row.to_atom_did);
@@ -289,7 +350,7 @@ export class PgStorage implements StoragePort {
     toAtomDid: string,
     linkType?: AtomLink["linkType"],
   ): Promise<
-    ReadonlyArray<AtomLink & { fromAtom: CodeAtomInstance | null }>
+    ReadonlyArray<AtomLink & { fromAtom: StoredAtomInstance | null }>
   > {
     const rows = linkType
       ? await this.sql<AtomLinkRow[]>`
@@ -303,7 +364,7 @@ export class PgStorage implements StoragePort {
           FROM atom_links
           WHERE to_atom_did = ${toAtomDid}
         `;
-    const out: Array<AtomLink & { fromAtom: CodeAtomInstance | null }> = [];
+    const out: Array<AtomLink & { fromAtom: StoredAtomInstance | null }> = [];
     for (const row of rows) {
       const fromAtom = await this.getAtomByDid(row.from_atom_did);
       const toParsed = parseAtomDid(row.to_atom_did);

@@ -2,7 +2,7 @@
  * Shared token search scoring for StoragePort back-ends.
  */
 
-import type { CodeAtomInstance } from "@hauska-engine/atoms";
+import type { CodeAtomInstance, PropertyAtomInstance, StoredAtomInstance } from "@hauska-engine/atoms";
 
 import type { AtomQuery, AtomSearchResult } from "./port.js";
 
@@ -13,7 +13,15 @@ export function tokenize(s: string): ReadonlyArray<string> {
     .filter((t) => t.length >= 2 || /^[0-9]$/.test(t));
 }
 
-export function buildSnippet(inst: CodeAtomInstance): string {
+export function buildSnippet(inst: StoredAtomInstance): string {
+  if (
+    inst.entityType === "zoning-fact" ||
+    inst.entityType === "setback-rule" ||
+    inst.entityType === "buildable-envelope"
+  ) {
+    const property = inst as PropertyAtomInstance;
+    return `${property.entityType} ${property.parcelNodeId} ${property.sourceCitation}`;
+  }
   switch (inst.entityType) {
     case "code-section":
       return `${inst.sectionNumber} ${inst.title}. ${inst.bodyText}`;
@@ -36,13 +44,13 @@ export function buildSnippet(inst: CodeAtomInstance): string {
 
 export function buildSearchResult(
   atomDid: string,
-  inst: CodeAtomInstance,
+  inst: StoredAtomInstance,
   snippet: string,
   score: number,
 ): AtomSearchResult {
   return {
     atomDid,
-    entityType: inst.entityType,
+    entityType: inst.entityType as AtomSearchResult["entityType"],
     entityId: inst.entityId,
     jurisdictionTenant: inst.jurisdictionTenant,
     sectionNumber: inst.entityType === "code-section" ? inst.sectionNumber : null,
@@ -52,7 +60,7 @@ export function buildSearchResult(
 }
 
 export function scoreAtomSearch(
-  inst: CodeAtomInstance,
+  inst: StoredAtomInstance,
   atomDid: string,
   query: AtomQuery,
 ): AtomSearchResult | null {
@@ -106,7 +114,7 @@ export function rankSearchResults(
 }
 
 export function matchesAtomQuery(
-  inst: CodeAtomInstance,
+  inst: StoredAtomInstance,
   query: AtomQuery,
 ): boolean {
   if (query.jurisdiction && inst.jurisdictionTenant !== query.jurisdiction) {

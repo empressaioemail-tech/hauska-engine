@@ -99,6 +99,7 @@ export {
 } from "./types/planReviewDiscipline.js";
 
 export * as mapLayers from "./map-layers/index.js";
+export * as propertyReasoning from "./property-reasoning/index.js";
 export {
   MAP_LAYER_KEYS,
   MAP_LAYERS_PACKAGE_ID,

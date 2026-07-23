@@ -7,7 +7,7 @@
  * and adds Postgres-only atoms so /healthz corpus>0 stays true.
  */
 
-import { buildAtomDid, type AtomLink, type CodeAtomInstance } from "@hauska-engine/atoms";
+import { buildAtomDid, type AtomLink, type CodeAtomInstance, type PropertyAtomInstance, type StoredAtomInstance } from "@hauska-engine/atoms";
 
 import type {
   AtomQuery,
@@ -37,6 +37,10 @@ export class LayeredStorage implements StoragePort {
     return this.primary.writeAtom(instance);
   }
 
+  writePropertyAtom(instance: PropertyAtomInstance) {
+    return this.primary.writePropertyAtom(instance);
+  }
+
   writeAtoms(instances: ReadonlyArray<CodeAtomInstance>) {
     return this.primary.writeAtoms(instances);
   }
@@ -54,7 +58,7 @@ export class LayeredStorage implements StoragePort {
     return this.snapshot.getAtom(entityType, entityId);
   }
 
-  async getAtomByDid(atomDid: string): Promise<CodeAtomInstance | null> {
+  async getAtomByDid(atomDid: string): Promise<StoredAtomInstance | null> {
     const primaryHit = await this.primary.getAtomByDid(atomDid);
     if (primaryHit) return primaryHit;
     return this.snapshot.getAtomByDid(atomDid);

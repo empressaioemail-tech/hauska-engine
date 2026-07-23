@@ -12,23 +12,23 @@
  * hashes resolve consistently.
  */
 
-import type { CodeAtomInstance } from "@hauska-engine/atoms";
+import type { StoredAtomInstance } from "@hauska-engine/atoms";
 
 import type { IpfsPort, IpfsPinResult } from "./ipfs-port.js";
 
 export class HotCache {
-  private readonly store = new Map<string, CodeAtomInstance>();
+  private readonly store = new Map<string, StoredAtomInstance>();
   private readonly maxEntries: number;
 
   constructor(maxEntries = 2_000) {
     this.maxEntries = maxEntries;
   }
 
-  get(atomDid: string): CodeAtomInstance | null {
+  get(atomDid: string): StoredAtomInstance | null {
     return this.store.get(atomDid) ?? null;
   }
 
-  set(atomDid: string, instance: CodeAtomInstance): void {
+  set(atomDid: string, instance: StoredAtomInstance): void {
     if (this.store.size >= this.maxEntries) {
       const firstKey = this.store.keys().next().value;
       if (firstKey) this.store.delete(firstKey);
