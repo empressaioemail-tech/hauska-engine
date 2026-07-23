@@ -93,3 +93,23 @@ export {
   type SetbackTable,
   type SetbackDistrict,
 } from "./local/setbacks";
+
+/** Master WDLL 3.10 — public-record permit-outcome fuel for calibration. */
+export {
+  PERMIT_OUTCOME_KINDS,
+  fetchPermitOutcomes,
+  fetchPermitOutcomeBundle,
+  fetchAustinSodaPermitOutcomes,
+  fetchBastropMygovPermitOutcomes,
+  fetchGrandCountyUtPermitOutcomes,
+  normalizeAustinSodaRow,
+  mapStatusToOutcomeKind,
+  toFindingOutcomePayload,
+  permitOutcomeEntityId,
+  type PermitOutcomeKind,
+  type PermitOutcomeJurisdiction,
+  type PermitOutcomeSourceId,
+  type NormalizedPermitOutcome,
+  type PermitOutcomeFetchResult,
+  type PermitOutcomeFetchOptions,
+} from "./portal/permit-outcomes/index";
