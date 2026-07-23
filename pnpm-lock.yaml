@@ -453,6 +453,31 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.19)
 
+  tools/permit-outcome-cli:
+    dependencies:
+      '@hauska-engine/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.2
+      typescript:
+        specifier: ~5.7.2
+        version: 5.7.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)
+
   tools/rrc-ratio-report:
     dependencies:
       '@hauska-engine/og-sources':

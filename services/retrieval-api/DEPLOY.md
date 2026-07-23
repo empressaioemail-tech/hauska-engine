@@ -189,6 +189,20 @@ OVERLAY_DATABASE_URL='postgres://...neon.tech/neondb?sslmode=require' \
   node packages/storage/scripts/seed-calibration-overlay-hays.mjs
 ```
 
+**Prefer adapter fuel (Master WDLL 3.10):** Austin SODA permit outcomes
+write `finding.outcome.recorded` ledger rows and upsert overlay with
+`code_ref` `permit-outcome-adapter:austin-soda:…` (replaces hand-seed
+provenance when run with `--write`):
+
+```bash
+OVERLAY_DATABASE_URL='postgres://...neon.tech/neondb?sslmode=require' \
+  pnpm --filter @hauska-engine/permit-outcome-cli dev run -- \
+    --limit 25 --write --also-austin-overlay
+```
+
+`bastrop_tx` / `grand_county_ut` grade PARTIAL (no public bulk feed
+without secrets). See `tools/permit-outcome-cli/README.md`.
+
 Proof curl (calibrated axis ≠ asserted 0.88):
 
 ```bash

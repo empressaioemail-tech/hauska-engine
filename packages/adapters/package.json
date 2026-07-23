@@ -110,8 +110,13 @@
     "./arcgis": {
       "types": "./src/arcgis.ts",
       "import": "./src/arcgis.ts"
+    },
+    "./portal/permit-outcomes": {
+      "types": "./src/portal/permit-outcomes/index.ts",
+      "import": "./src/portal/permit-outcomes/index.ts"
     }
   },
+
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",

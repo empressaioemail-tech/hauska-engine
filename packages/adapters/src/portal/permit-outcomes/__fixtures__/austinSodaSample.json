@@ -1,0 +1,35 @@
+[
+  {
+    "permittype": "BP",
+    "permit_type_desc": "Building Permit",
+    "permit_number": "2026-TEST-001 BP",
+    "permit_class_mapped": "Residential",
+    "work_class": "New",
+    "permit_location": "100 TEST ST",
+    "description": "New single family residence",
+    "tcad_id": "0220101909",
+    "applieddate": "2026-01-10T00:00:00.000",
+    "issue_date": "2026-07-01T00:00:00.000",
+    "status_current": "Active",
+    "statusdate": "2026-07-01T00:00:00.000",
+    "original_address1": "100 TEST ST",
+    "original_city": "AUSTIN",
+    "original_state": "TX",
+    "link": {
+      "url": "https://abc.austintexas.gov/web/permit/public-search-other?t_detail=1&t_selected_folderrsn=999"
+    }
+  },
+  {
+    "permit_number": "2026-TEST-002 BP",
+    "status_current": "Denied",
+    "issue_date": "2026-07-02T00:00:00.000",
+    "original_address1": "200 TEST ST"
+  },
+  {
+    "permit_number": "2026-TEST-003 BP",
+    "status_current": "Final",
+    "issue_date": "2026-06-15T00:00:00.000",
+    "original_address1": "300 TEST ST",
+    "tcad_id": "0247230505"
+  }
+]

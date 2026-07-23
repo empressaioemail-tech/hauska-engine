@@ -1,0 +1,29 @@
+{
+  "name": "@hauska-engine/permit-outcome-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fetch public-record permit outcomes → atom_events ledger → atom_calibration_overlay backtest upsert (Master WDLL 3.10).",
+  "bin": {
+    "permit-outcome-cli": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "node --use-system-ca --import tsx src/index.ts",
+    "start": "node --use-system-ca dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@hauska-engine/adapters": "workspace:*",
+    "commander": "^12.1.0",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
