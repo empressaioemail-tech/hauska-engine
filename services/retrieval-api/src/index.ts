@@ -26,6 +26,10 @@ import { readFile } from "node:fs/promises";
 import { InMemoryStorage, isCorpusSnapshot } from "@hauska-engine/storage";
 
 import { bootRetrievalStorage } from "./boot-storage.js";
+import {
+  createPgCalibrationOverlayPort,
+  resolveOverlayDatabaseUrl,
+} from "./pg-calibration-overlay.js";
 import { startServer, buildApp } from "./server.js";
 
 /**
@@ -61,6 +65,11 @@ if (isMain) {
   const boot = bootRetrievalStorage({ snapshot });
   const storage = boot.storage;
 
+  const overlayUrl = resolveOverlayDatabaseUrl();
+  const overlayHandle = overlayUrl
+    ? createPgCalibrationOverlayPort({ databaseUrl: overlayUrl })
+    : null;
+
   if (snapshotPath) {
     const jurisdictions = await storage.listJurisdictionStatus();
     console.log(
@@ -70,6 +79,7 @@ if (isMain) {
         event: "corpus.loaded",
         snapshotPath,
         layered: Boolean(process.env.SUBSTRATE_DATABASE_URL ?? process.env.DATABASE_URL),
+        calibrationOverlay: Boolean(overlayHandle),
         jurisdictions: jurisdictions.length,
         atomCount: await storage.countAtoms(),
         ts: new Date().toISOString(),
@@ -87,11 +97,28 @@ if (isMain) {
     );
   }
 
-  const app = buildApp({ storage });
+  if (!overlayHandle) {
+    console.log(
+      JSON.stringify({
+        level: "warn",
+        service: "retrieval-api",
+        event: "calibration.overlay.not_configured",
+        message:
+          "OVERLAY_DATABASE_URL / CORTEX_DATABASE_URL unset — property calibratedConfidence stays asserted placeholder",
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
+
+  const app = buildApp({
+    storage,
+    calibrationOverlay: overlayHandle?.port ?? null,
+  });
   startServer(app, port);
 
   const shutdown = async () => {
     await boot.close();
+    if (overlayHandle) await overlayHandle.close();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

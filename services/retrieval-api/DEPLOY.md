@@ -165,6 +165,38 @@ curl -s -H "Authorization: Bearer <key>" \
   "https://<service-url>/atoms/did:hauska:zoning-fact:48209:156346"
 ```
 
+### Gate C I-E — calibration overlay read-through (Master WDLL 3.10)
+
+`calibratedConfidence` resolves at **READ** via cortex Neon migration
+`0037` table `atom_calibration_overlay` (same host as
+`DEPLOYMENT_DATABASE_URL` / secret `CORTEX_DATABASE_URL` → database
+`neondb`). Substrate `hauska_mcp` does **not** host this table.
+
+Wire at deploy:
+
+```bash
+--set-secrets=SUBSTRATE_DATABASE_URL=DATABASE_URL:latest,OVERLAY_DATABASE_URL=CORTEX_DATABASE_URL:latest
+```
+
+Env resolution order: `OVERLAY_DATABASE_URL` → `CORTEX_DATABASE_URL` →
+`DEPLOYMENT_DATABASE_URL`.
+
+Seed Hays gold parcel overlay (estimate `0.71`, provenance `backtest`,
+keyed on parcel node `48209:156346` / tenant `hays_tx_proof`):
+
+```bash
+OVERLAY_DATABASE_URL='postgres://...neon.tech/neondb?sslmode=require' \
+  node packages/storage/scripts/seed-calibration-overlay-hays.mjs
+```
+
+Proof curl (calibrated axis ≠ asserted 0.88):
+
+```bash
+curl -s -H "Authorization: Bearer <key>" \
+  "https://<service-url>/property-nodes/48209:156346/atom-chain" \
+  | jq '.buildableEnvelope.readContract.axes'
+```
+
 ## Health (`GET /healthz`)
 
 Observability surface per [`76e_platform_observability_sprint`](../../doc_repo/76e_platform_observability_sprint.md). Returns `{status, db, corpus}`:

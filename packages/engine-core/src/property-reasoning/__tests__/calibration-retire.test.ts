@@ -11,7 +11,7 @@ import type { JurisdictionDescriptor } from "../types.js";
 
 import cookStub from "../fixtures/descriptors/cook_county_il_stub.json" with { type: "json" };
 
-describe("calibration overlay read-through (WDLL 3.10 stub)", () => {
+describe("calibration overlay read-through (WDLL 3.10)", () => {
   it("resolves calibrated axis from overlay keyed by atom_id + jurisdiction_tenant", async () => {
     const overlay = new InMemoryCalibrationOverlayPort();
     const atomId = "17031:PARCEL1";
@@ -38,6 +38,24 @@ describe("calibration overlay read-through (WDLL 3.10 stub)", () => {
     });
     expect(resolved.estimate).toBe(0.82);
     expect(resolved.provenance).toBe("live");
+  });
+
+  it("no overlay row keeps asserted baseline (honest empty earn)", async () => {
+    const overlay = new InMemoryCalibrationOverlayPort();
+    const asserted = createWidthedConfidence({
+      estimate: 0.88,
+      n: 0,
+      intervalWidth: 0.15,
+      provenance: "asserted",
+    });
+    const resolved = await resolveCalibratedConfidence({
+      atomId: "48209:156346",
+      jurisdictionTenant: "hays_tx_proof",
+      assertedBaseline: asserted,
+      overlayPort: overlay,
+    });
+    expect(resolved.estimate).toBe(0.88);
+    expect(resolved.provenance).toBe("asserted");
   });
 });
 

@@ -22,9 +22,11 @@
     "@hauska-engine/atom-contract-pin": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",
     "@hauska-engine/corpus": "workspace:*",
+    "@hauska-engine/engine-core": "workspace:*",
     "@hauska-engine/storage": "workspace:*"
   },
   "devDependencies": {
+    "@empressaio/atom-contract": "^1.9.0",
     "typescript": "~5.7.2",
     "vitest": "^2.1.8"
   }

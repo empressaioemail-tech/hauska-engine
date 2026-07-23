@@ -1,5 +1,7 @@
+import { createWidthedConfidence } from "@empressaio/atom-contract/read-contract";
 import { describe, expect, it } from "vitest";
 
+import { InMemoryCalibrationOverlayPort } from "@hauska-engine/engine-core/property-reasoning";
 import { InMemoryStorage } from "@hauska-engine/storage";
 import {
   buildBexarAbsenceZoningProof,
@@ -65,5 +67,41 @@ describe("GET /property-nodes/:parcelNodeId/atom-chain (Gate C)", () => {
     };
     expect(atomBody.atom?.entityType).toBe("zoning-fact");
     expect(atomBody.atom?.district).toBe("RS");
+  });
+
+  it("resolves calibratedConfidence from overlay at READ (not frozen multiply)", async () => {
+    const storage = new InMemoryStorage();
+    await storage.writePropertyAtom(buildHaysEnvelopeProof());
+    const overlay = new InMemoryCalibrationOverlayPort();
+    overlay.seed("48209:156346", "hays_tx_proof", {
+      calibratedConfidence: createWidthedConfidence({
+        estimate: 0.71,
+        n: 3,
+        intervalWidth: 0.2,
+        provenance: "backtest",
+      }),
+    });
+    const app = buildApp({ storage, apiKey: "", calibrationOverlay: overlay });
+    const res = await app.request("/property-nodes/48209:156346/atom-chain");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      buildableEnvelope: {
+        readContract: {
+          axes: {
+            assertedConfidence: { estimate: number };
+            calibratedConfidence: { estimate: number; provenance: string };
+          };
+        };
+      } | null;
+    };
+    expect(body.buildableEnvelope?.readContract.axes.assertedConfidence.estimate).toBe(
+      0.88,
+    );
+    expect(
+      body.buildableEnvelope?.readContract.axes.calibratedConfidence.estimate,
+    ).toBe(0.71);
+    expect(
+      body.buildableEnvelope?.readContract.axes.calibratedConfidence.provenance,
+    ).toBe("backtest");
   });
 });
