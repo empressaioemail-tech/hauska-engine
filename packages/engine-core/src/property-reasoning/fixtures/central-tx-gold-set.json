@@ -1,0 +1,54 @@
+{
+  "id": "central-tx-pe-gold-atom-bake-2026-07-23",
+  "purpose": "Named PE gold + Gate C proof parcels for Master WDLL 3.12 / 3.7 anti-zombie cut. Full-county bake deferred; orchestrators honest-decline when atom missing.",
+  "parcels": [
+    {
+      "parcelNodeId": "48209:156346",
+      "role": "hays-proof-full-chain",
+      "source": "property-atom-proof",
+      "expect": "zoning+setback+envelope"
+    },
+    {
+      "parcelNodeId": "48029:410119",
+      "role": "bexar-honest-absence",
+      "source": "property-atom-proof",
+      "expect": "zoning-absence"
+    },
+    {
+      "parcelNodeId": "48055:11386",
+      "role": "caldwell-roads-zoning",
+      "source": "property-atom-proof",
+      "expect": "zoning"
+    },
+    {
+      "parcelNodeId": "48021:33512",
+      "role": "bastrop-p5-gold",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning+setback+envelope"
+    },
+    {
+      "parcelNodeId": "48055:10068",
+      "role": "caldwell-landuse-probe",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning-absence"
+    },
+    {
+      "parcelNodeId": "48209:140136",
+      "role": "hays-san-marcos-gold",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning"
+    },
+    {
+      "parcelNodeId": "48453:907247",
+      "role": "travis-pflugerville-gold",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning+setback+envelope"
+    },
+    {
+      "parcelNodeId": "48491:R062578",
+      "role": "williamson-sf2-gold",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning+setback+envelope"
+    }
+  ]
+}

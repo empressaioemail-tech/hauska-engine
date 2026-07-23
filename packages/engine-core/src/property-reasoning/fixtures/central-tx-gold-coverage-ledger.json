@@ -1,0 +1,259 @@
+{
+  "id": "central-tx-pe-gold-atom-bake-2026-07-23",
+  "bakedAt": "2026-07-23T22:13:38.219Z",
+  "purpose": "Named PE gold + Gate C proof parcels for Master WDLL 3.12 / 3.7 anti-zombie cut. Full-county bake deferred; orchestrators honest-decline when atom missing.",
+  "parcels": [
+    {
+      "parcelNodeId": "48209:156346",
+      "role": "hays-proof-full-chain",
+      "source": "property-atom-proof",
+      "expect": "zoning+setback+envelope",
+      "written": [
+        {
+          "atomDid": "did:hauska:zoning-fact:48209:156346",
+          "cid": "bafy-gate-c-hays-zoning-v1",
+          "entityType": "zoning-fact",
+          "district": "RS",
+          "absence": null,
+          "outcome": null
+        },
+        {
+          "atomDid": "did:hauska:setback-rule:48209:156346",
+          "cid": "bafy-gate-c-hays-setback-v1",
+          "entityType": "setback-rule",
+          "district": null,
+          "absence": null,
+          "outcome": null
+        },
+        {
+          "atomDid": "did:hauska:buildable-envelope:48209:156346",
+          "cid": "bafy-gate-c-hays-envelope-v1",
+          "entityType": "buildable-envelope",
+          "district": null,
+          "absence": null,
+          "outcome": "buildable"
+        }
+      ],
+      "notes": [
+        "proof-builder"
+      ],
+      "ok": true,
+      "chainCount": 3
+    },
+    {
+      "parcelNodeId": "48029:410119",
+      "role": "bexar-honest-absence",
+      "source": "property-atom-proof",
+      "expect": "zoning-absence",
+      "written": [
+        {
+          "atomDid": "did:hauska:zoning-fact:48029:410119",
+          "cid": "bafy-gate-c-bexar-zoning-absence-v1",
+          "entityType": "zoning-fact",
+          "district": null,
+          "absence": "no-zoning-stamp",
+          "outcome": null
+        }
+      ],
+      "notes": [
+        "proof-builder"
+      ],
+      "ok": true,
+      "chainCount": 1
+    },
+    {
+      "parcelNodeId": "48055:11386",
+      "role": "caldwell-roads-zoning",
+      "source": "property-atom-proof",
+      "expect": "zoning",
+      "written": [
+        {
+          "atomDid": "did:hauska:zoning-fact:48055:11386",
+          "cid": "bafy-gate-c-caldwell-zoning-v1",
+          "entityType": "zoning-fact",
+          "district": "AG",
+          "absence": null,
+          "outcome": null
+        }
+      ],
+      "notes": [
+        "proof-builder"
+      ],
+      "ok": true,
+      "chainCount": 1
+    },
+    {
+      "parcelNodeId": "48021:33512",
+      "role": "bastrop-p5-gold",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning+setback+envelope",
+      "written": [
+        {
+          "atomDid": "did:hauska:zoning-fact:48021:33512",
+          "cid": "bafy-bc4f8fd97770a034515054f80f5e6d37ea87fc41112b93f787f3bb3b5f38562e",
+          "entityType": "zoning-fact",
+          "district": "P-5",
+          "absence": null,
+          "outcome": null
+        },
+        {
+          "atomDid": "did:hauska:setback-rule:48021:33512",
+          "cid": "bafy-262d1e1cc9a1cab684ab4773761b65dc1b6941db2a7a2722d4f92f7b92d88b94",
+          "entityType": "setback-rule",
+          "district": null,
+          "absence": null,
+          "outcome": null
+        },
+        {
+          "atomDid": "did:hauska:buildable-envelope:48021:33512",
+          "cid": "bafy-b235b9a4a1ed8b26794db66da64f7dd3941f0b02c3d6412570a49f0cf1a3d878",
+          "entityType": "buildable-envelope",
+          "district": null,
+          "absence": null,
+          "outcome": "no-buildable-area"
+        }
+      ],
+      "notes": [
+        "zoning",
+        "setback",
+        "envelope"
+      ],
+      "ok": true,
+      "chainCount": 3
+    },
+    {
+      "parcelNodeId": "48055:10068",
+      "role": "caldwell-landuse-probe",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning-absence",
+      "written": [
+        {
+          "atomDid": "did:hauska:zoning-fact:48055:10068",
+          "cid": "bafy-ea92a4d95759381bc07cfa77e8f547a372b3b6c5de19f0c1ff1c59058da3729a",
+          "entityType": "zoning-fact",
+          "district": null,
+          "absence": "no-zoning-stamp",
+          "outcome": null
+        }
+      ],
+      "notes": [
+        "zoning-absence"
+      ],
+      "ok": true,
+      "chainCount": 1
+    },
+    {
+      "parcelNodeId": "48209:140136",
+      "role": "hays-san-marcos-gold",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning",
+      "written": [
+        {
+          "atomDid": "did:hauska:zoning-fact:48209:140136",
+          "cid": "bafy-909761462d73e12c284b7c8535dd64bf71ced0c7fecd22bfce470e0509cc4394",
+          "entityType": "zoning-fact",
+          "district": "D",
+          "absence": null,
+          "outcome": null
+        }
+      ],
+      "notes": [
+        "zoning",
+        "setback-omitted-no-snapshot-dims"
+      ],
+      "ok": true,
+      "chainCount": 1
+    },
+    {
+      "parcelNodeId": "48453:907247",
+      "role": "travis-pflugerville-gold",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning+setback+envelope",
+      "written": [
+        {
+          "atomDid": "did:hauska:zoning-fact:48453:907247",
+          "cid": "bafy-40d0015494c51eada5764b156d8cd07ba3a324bd2dedba7d8f859a9aa9a2a52d",
+          "entityType": "zoning-fact",
+          "district": "SF-R",
+          "absence": null,
+          "outcome": null
+        },
+        {
+          "atomDid": "did:hauska:setback-rule:48453:907247",
+          "cid": "bafy-8b33dd1949ea226be67cc783cc4600f255f9f6c71a464f6c118c1e1148190e9a",
+          "entityType": "setback-rule",
+          "district": null,
+          "absence": null,
+          "outcome": null
+        },
+        {
+          "atomDid": "did:hauska:buildable-envelope:48453:907247",
+          "cid": "bafy-3be32614e3f034f4248e5127ae7da4d7617cf21633f72d406c5dbb333714288a",
+          "entityType": "buildable-envelope",
+          "district": null,
+          "absence": null,
+          "outcome": "buildable"
+        }
+      ],
+      "notes": [
+        "zoning",
+        "setback",
+        "envelope"
+      ],
+      "ok": true,
+      "chainCount": 3
+    },
+    {
+      "parcelNodeId": "48491:R062578",
+      "role": "williamson-sf2-gold",
+      "source": "cortex-tier1-snapshot",
+      "expect": "zoning+setback+envelope",
+      "written": [
+        {
+          "atomDid": "did:hauska:zoning-fact:48491:R062578",
+          "cid": "bafy-8b540bc3d348bf93d7c696bce0654ad6d5f8a77496e8b56819dcf05870daa402",
+          "entityType": "zoning-fact",
+          "district": "SF2",
+          "absence": null,
+          "outcome": null
+        },
+        {
+          "atomDid": "did:hauska:setback-rule:48491:R062578",
+          "cid": "bafy-0d4140fb679bb6816d520a1e6174393fe97632334827d367bed4c2b04bfa0827",
+          "entityType": "setback-rule",
+          "district": null,
+          "absence": null,
+          "outcome": null
+        },
+        {
+          "atomDid": "did:hauska:buildable-envelope:48491:R062578",
+          "cid": "bafy-c42c61f8a0544d8534213bdddae061d5e4c71cdae74247b4235bb7902e3b01e4",
+          "entityType": "buildable-envelope",
+          "district": null,
+          "absence": null,
+          "outcome": "no-buildable-area"
+        }
+      ],
+      "notes": [
+        "zoning",
+        "setback",
+        "envelope"
+      ],
+      "ok": true,
+      "chainCount": 3
+    }
+  ],
+  "totals": {
+    "parcels": 8,
+    "atomsWritten": 16,
+    "zoning": 8,
+    "setback": 4,
+    "envelope": 4,
+    "absence": 2
+  },
+  "compute": {
+    "units": 21,
+    "wallMs": 3778,
+    "approxUsdNote": "Neon read/write units only; under $1 for named gold set (I-H). Full-county (~984k tier1 envelopes) deferred."
+  }
+}
