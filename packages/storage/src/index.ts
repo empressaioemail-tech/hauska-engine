@@ -17,6 +17,7 @@ export * from "./snapshot.js";
 export * from "./pg-storage.js";
 export * from "./layered-storage.js";
 export * from "./storage-port-proof.js";
+export * from "./property-atom-proof.js";
 export * from "./search-scoring.js";
 
 // Re-export AccessPolicy so consumers of the storage port (retrieval,

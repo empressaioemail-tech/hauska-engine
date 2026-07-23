@@ -141,6 +141,30 @@ curl -s -H "Authorization: Bearer <key>" \
 curl -s https://<service-url>/healthz/
 ```
 
+### Gate C property atom chain (master WDLL / Phase 1c)
+
+Writers bake under `PROPERTY_ATOM_PATH=1`. The read path
+`GET /property-nodes/:parcelNodeId/atom-chain` is always-on against
+StoragePort (empty slots when no atoms). Do not flip cortex live
+envelope dual-serve from this flag; property-explorer is untouched.
+
+```bash
+# bake proof atoms into hauska_mcp Neon
+PROPERTY_ATOM_PATH=1 DATABASE_URL='postgres://.../hauska_mcp?sslmode=require' \
+  pnpm exec tsx packages/storage/scripts/write-property-atom-proof.mjs
+
+# Hays gold chain (zoning + setback + envelope)
+curl -s -H "Authorization: Bearer <key>" \
+  "https://<service-url>/property-nodes/48209:156346/atom-chain"
+
+# Bexar honest-absence zoning (absence.kind=no-zoning-stamp, not I-2)
+curl -s -H "Authorization: Bearer <key>" \
+  "https://<service-url>/property-nodes/48029:410119/atom-chain"
+
+curl -s -H "Authorization: Bearer <key>" \
+  "https://<service-url>/atoms/did:hauska:zoning-fact:48209:156346"
+```
+
 ## Health (`GET /healthz`)
 
 Observability surface per [`76e_platform_observability_sprint`](../../doc_repo/76e_platform_observability_sprint.md). Returns `{status, db, corpus}`:

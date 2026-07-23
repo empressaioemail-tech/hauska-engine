@@ -207,6 +207,27 @@ export function buildApp(options: ServerOptions = {}): Hono {
     return c.json(result);
   });
 
+  /**
+   * Property reasoning chain for a parcel node (MCP get_property_atom_chain).
+   * Always-on read of StoragePort; empty slots when no property atoms baked.
+   * Dual-serve: PROPERTY_ATOM_PATH gates writers; this route never invents values.
+   */
+  app.get("/property-nodes/:parcelNodeId{.+}/atom-chain", async (c) => {
+    const parcelNodeId = decodeURIComponent(c.req.param("parcelNodeId"));
+    if (!/^\d{5}:[A-Za-z0-9._-]+$/.test(parcelNodeId)) {
+      return c.json(
+        {
+          error: "invalid parcelNodeId",
+          hint: "expected {county_fips}:{prop_id} e.g. 48209:156346",
+          parcelNodeId,
+        },
+        400,
+      );
+    }
+    const chain = await retrieval.getPropertyAtomChain(parcelNodeId);
+    return c.json(chain);
+  });
+
   app.get("/jurisdictions", async (c) => {
     const qualityBarOnly = c.req.query("qualityBarOnly") === "true";
     const parsedPolicies = parseAccessPolicies(c.req.query("accessPolicies"));

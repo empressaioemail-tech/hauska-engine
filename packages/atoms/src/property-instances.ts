@@ -1,23 +1,44 @@
 /**
- * Property reasoning atom instance shapes (Phase 1b).
+ * Property reasoning atom instances (Gate C / Phase 1c).
  *
- * Mirrors Gate B / pending @empressaio/atom-contract@1.9.0 property kinds.
- * TODO: replace local mirrors with contract exports when 1.9.0 publishes.
+ * Contract shapes come from `@empressaio/atom-contract/property` (1.9.0+).
+ * Engine persistence fields (`entityId`, `contentHash`, `status`, …) layer on
+ * top so StoragePort + MCP `AtomInstanceBase` stay compatible. Do not invent
+ * a parallel SourceAttribution type — obligations reuse actor-record +
+ * ObligationAtomInstance from the contract.
  */
 
 import type {
-  AtomInputRef,
-  ReasoningChain,
-} from "@empressaio/atom-contract/reasoning";
-import type {
-  PropertyConsequence,
-  ReasoningThreeAxisConfidence,
-  WidthedConfidence,
-} from "@empressaio/atom-contract/read-contract";
-
-import type { AccessPolicy } from "@hauska-engine/atom-contract-pin";
+  BuildableEnvelopeAtomInstance as ContractBuildableEnvelopeAtomInstance,
+  SetbackMatchBasis,
+  SetbackRuleAtomInstance as ContractSetbackRuleAtomInstance,
+  ZoningFactAtomInstance as ContractZoningFactAtomInstance,
+} from "@empressaio/atom-contract/property";
 
 import type { CodeAtomInstance } from "./instances.js";
+
+export type {
+  ZoningAbsence,
+  SetbackAbsence,
+  SetbackMatchBasis,
+  SetbackFieldProvenance,
+  SetbackFieldProvenanceEntry,
+  ZoningFactAtomInstance as ContractZoningFactAtomInstance,
+  SetbackRuleAtomInstance as ContractSetbackRuleAtomInstance,
+  BuildableEnvelopeAtomInstance as ContractBuildableEnvelopeAtomInstance,
+} from "@empressaio/atom-contract/property";
+
+export {
+  ZONING_ABSENCE_KIND,
+  SETBACK_ABSENCE_KIND,
+  SETBACK_MATCH_BASIS_VALUES,
+  PROPERTY_ATOM_TIER,
+  PROPERTY_DEFAULT_ACCESS_POLICY,
+  BUILDABLE_ENVELOPE_DERIVATION_METHOD,
+  createZoningFact,
+  createSetbackRule,
+  createBuildableEnvelope,
+} from "@empressaio/atom-contract/property";
 
 export type PropertyEntityType =
   | "zoning-fact"
@@ -32,46 +53,34 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
 
 export type PropertyAtomStatus = "active" | "retired";
 
-export type MatchBasis = "exact" | "prefix" | "fallback";
+/** Alias kept for emitter call sites. */
+export type MatchBasis = SetbackMatchBasis;
 
-/** Typed citation to a code-section atom (not a bare string). */
-export interface SourceCodeAtomRef {
-  atomDid: string;
-  entityType: "code-section";
-  sectionNumber?: string;
-  editionId?: string;
-}
-
-export interface PropertyAtomBase {
-  entityType: PropertyEntityType;
+/**
+ * Engine + MCP persistence fields layered on the contract property payload.
+ * Canonical active `entityId` is the parcel node id (MCP
+ * `did:hauska:<entityType>:<parcelNodeId>`).
+ */
+export interface EnginePropertyPersistence {
   entityId: string;
   jurisdictionTenant: string;
-  /** Parcel node `{fips}:{propId}` — invariant anchor for calibration overlay. */
-  parcelNodeId: string;
   fetchedAt: string;
-  extractedAt: string;
   sourceAdapter: string;
   sourceUrl: string;
-  sourceCitation: string;
   contentHash: string;
-  accessPolicy: AccessPolicy;
-  atomTier: "data";
   status: PropertyAtomStatus;
-  versionStamp: string;
-  reasoningChain: ReasoningChain;
-  readAxes: ReasoningThreeAxisConfidence;
+  versionStamp?: string;
   retiredAt?: string;
   supersedesEntityId?: string;
 }
 
-export interface ZoningFactAtomInstance extends PropertyAtomBase {
-  entityType: "zoning-fact";
-  districtCode: string;
-  districtLabel?: string;
-  matchBasis: MatchBasis;
-  prefixMatched?: string;
-}
+/** Optional envelope geometry outcome (engine extension; not a confidence multiply). */
+export type EnvelopeHonestOutcome =
+  | { kind: "buildable"; areaSqFt: number }
+  | { kind: "no-buildable-area"; reason: string }
+  | { kind: "provisional-front-edge"; reason: string };
 
+/** Dimensional helper used by setback table resolution (maps to contract front/side/rear). */
 export interface SetbackDimensions {
   frontFt: number;
   rearFt: number;
@@ -82,28 +91,27 @@ export interface SetbackDimensions {
   maxImperviousPct?: number;
 }
 
-export interface SetbackRuleAtomInstance extends PropertyAtomBase {
-  entityType: "setback-rule";
-  districtCode: string;
-  matchBasis: MatchBasis;
-  prefixMatched?: string;
-  setbacks: SetbackDimensions;
-  sourceCodeAtomRef: SourceCodeAtomRef;
-  /** Per-field confidence consumed from setback JSON provenance. */
-  fieldConfidence: Readonly<Record<keyof SetbackDimensions, WidthedConfidence>>;
-}
+export type ZoningFactAtomInstance = ContractZoningFactAtomInstance &
+  EnginePropertyPersistence & {
+    districtLabel?: string;
+    matchBasis?: MatchBasis;
+    prefixMatched?: string;
+  };
 
-export type EnvelopeHonestOutcome =
-  | { kind: "buildable"; areaSqFt: number }
-  | { kind: "no-buildable-area"; reason: string }
-  | { kind: "provisional-front-edge"; reason: string };
+export type SetbackRuleAtomInstance = ContractSetbackRuleAtomInstance &
+  EnginePropertyPersistence & {
+    districtCode?: string;
+    prefixMatched?: string;
+    sideCornerFt?: number;
+    maxHeightFt?: number;
+    maxLotCoveragePct?: number;
+    maxImperviousPct?: number;
+  };
 
-export interface BuildableEnvelopeAtomInstance extends PropertyAtomBase {
-  entityType: "buildable-envelope";
-  derivationMethod: string;
-  inputAtomRefs: ReadonlyArray<AtomInputRef>;
-  outcome: EnvelopeHonestOutcome;
-}
+export type BuildableEnvelopeAtomInstance = ContractBuildableEnvelopeAtomInstance &
+  EnginePropertyPersistence & {
+    outcome?: EnvelopeHonestOutcome;
+  };
 
 export type PropertyAtomInstance =
   | ZoningFactAtomInstance
@@ -124,8 +132,9 @@ export function isPropertyAtomInstance(
   return (
     typeof candidate.entityType === "string" &&
     isPropertyEntityType(candidate.entityType) &&
-    typeof candidate.entityId === "string" &&
-    typeof candidate.parcelNodeId === "string"
+    typeof candidate.parcelNodeId === "string" &&
+    (typeof candidate.atomDid === "string" ||
+      typeof candidate.entityId === "string")
   );
 }
 

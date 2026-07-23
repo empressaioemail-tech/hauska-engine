@@ -54,7 +54,13 @@ describe("cook_county_il_stub golden descriptor (WDLL 3.8 I-B anti-zombie)", () 
       sourceCitation: "Cook stub GIS zoning layer",
       extractedAt: "2026-07-23T12:00:00.000Z",
     });
-    expect(zoning).toMatchObject({ entityType: "zoning-fact", districtCode: "RS-1" });
+    expect(zoning).toMatchObject({
+      entityType: "zoning-fact",
+      district: "RS-1",
+      entityId: parcelNodeId,
+      atomDid: buildAtomDid("zoning-fact", parcelNodeId).raw,
+    });
+    expect(zoning.absence).toBeUndefined();
 
     const row = resolveSetbackTableRow(descriptor.setbackTable, "RS-1");
     expect(row).not.toHaveProperty("kind", "honest-absence");
@@ -68,23 +74,24 @@ describe("cook_county_il_stub golden descriptor (WDLL 3.8 I-B anti-zombie)", () 
     );
     expect(setback).toMatchObject({
       entityType: "setback-rule",
-      sourceCodeAtomRef: { entityType: "code-section" },
+      sourceCodeAtomRef: { entityType: "code-section", role: "rule" },
+      front: 25,
+      side: 5,
+      rear: 15,
     });
     if ("kind" in setback) throw new Error("expected setback atom");
 
     const envelope = emitBuildableEnvelope({
       descriptor,
       parcelNodeId,
-      zoningFactAtomDid: buildAtomDid("zoning-fact", (zoning as { entityId: string }).entityId)
-        .raw,
-      setbackRuleAtomDid: buildAtomDid("setback-rule", setback.entityId).raw,
+      zoningFactAtomDid: zoning.atomDid,
+      setbackRuleAtomDid: setback.atomDid,
       geometryRefId: `${parcelNodeId}/geometry`,
       frontEdgeRefId: `${parcelNodeId}/front-edge`,
       outcome: { kind: "buildable", areaSqFt: 4200 },
       inputAssertedConfidences: [
-        (zoning as { readAxes: { assertedConfidence: { estimate: number } } }).readAxes
-          .assertedConfidence,
-        setback.readAxes.assertedConfidence,
+        zoning.readContract!.axes.assertedConfidence,
+        setback.readContract!.axes.assertedConfidence,
       ],
       sourceCitation: "Derived buildable envelope from stub chain",
       extractedAt: "2026-07-23T12:00:00.000Z",
@@ -93,13 +100,17 @@ describe("cook_county_il_stub golden descriptor (WDLL 3.8 I-B anti-zombie)", () 
       entityType: "buildable-envelope",
       reasoningChain: { reasoningKind: "derived" },
     });
+    if ("kind" in envelope) throw new Error("expected envelope atom");
+    expect(envelope.readContract?.axes.calibratedConfidence.provenance).toBe(
+      "asserted",
+    );
   });
 });
 
 describe("Bexar null-zoning honest absence (WDLL 3.3)", () => {
   const descriptor = bexarFixture as JurisdictionDescriptor;
 
-  it("returns honest-absence for null zoning, not an I-2 stamp", () => {
+  it("returns zoning-fact with absence.kind no-zoning-stamp, not an I-2 stamp", () => {
     const result = emitZoningFact(descriptor, {
       parcelNodeId: `${descriptor.parcelFips}:BEXAR-NULL-001`,
       districtCode: null,
@@ -109,10 +120,11 @@ describe("Bexar null-zoning honest absence (WDLL 3.3)", () => {
     });
     expect(result).toEqual(
       expect.objectContaining({
-        kind: "honest-absence",
-        code: "zoning-null",
+        entityType: "zoning-fact",
+        absence: expect.objectContaining({ kind: "no-zoning-stamp" }),
       }),
     );
+    expect(result.district).toBeUndefined();
     expect(JSON.stringify(result)).not.toMatch(/I-2|"I2"|industrial/i);
   });
 });

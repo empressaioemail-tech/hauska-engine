@@ -49,8 +49,8 @@ importers:
   packages/atoms:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.8.0
-        version: 1.8.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.9.0
+        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/atom-contract-pin':
         specifier: workspace:*
         version: link:../atom-contract-pin
@@ -130,8 +130,8 @@ importers:
         specifier: ^0.78.0
         version: 0.78.0(zod@3.25.76)
       '@empressaio/atom-contract':
-        specifier: ^1.8.0
-        version: 1.8.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.9.0
+        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/atoms':
         specifier: workspace:*
         version: link:../atoms
@@ -255,8 +255,8 @@ importers:
         version: 3.4.9
     devDependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.8.0
-        version: 1.8.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.9.0
+        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
@@ -476,8 +476,8 @@ packages:
     resolution: {integrity: sha512-KAU9m38OvcX+/nxz4vC3SYuHiaIyIXL0jzw+/7QSWTbyGg1Hd2R1A6F4qkmgmmZRrJkd/mhN1x2AvB2EiGhEkA==}
     engines: {node: '>=18.18.0'}
 
-  '@empressaio/atom-contract@1.8.0':
-    resolution: {integrity: sha512-Mvedwg/6qYq/GzEcDQdNIyAOJLDVeMnuBnSOcTvRqO4nWovSpv1huHQhu8JU/agEJLIpz4bmvQLgqBwkgKIojw==}
+  '@empressaio/atom-contract@1.9.0':
+    resolution: {integrity: sha512-/YzMAOqrOpRZQaM/0HU6d0DSSA2bDptuWcIP9FUd8VxsvhATtV97Go3fdMGbKXCbYv2lbUvQrK16FtSAV04iuw==}
     engines: {node: '>=18.18.0'}
 
   '@esbuild/aix-ppc64@0.21.5':
@@ -1850,7 +1850,7 @@ snapshots:
       - sql.js
       - sqlite3
 
-  '@empressaio/atom-contract@1.8.0(@types/pg@8.20.0)(postgres@3.4.9)':
+  '@empressaio/atom-contract@1.9.0(@types/pg@8.20.0)(postgres@3.4.9)':
     dependencies:
       drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
       zod: 3.25.76

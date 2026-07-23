@@ -17,15 +17,17 @@ export function flipPropertyAtomRetired<T extends PropertyAtomInstance>(
 /**
  * Emit path returns a new version identity; caller persists both retired prior
  * and the new active row when storage supports history.
+ *
+ * Active canonical entityId is the parcel node; successors use `/vN`.
  */
 export function successorPropertyAtomIdentity(
   prior: PropertyAtomInstance,
 ): { entityId: string; versionStamp: string; supersedesEntityId: string } {
-  const versionMatch = /-v(\d+)$/.exec(prior.entityId);
+  const versionMatch = /\/v(\d+)$/.exec(prior.entityId);
   const priorVersion = versionMatch ? Number(versionMatch[1]) : 1;
   const nextVersion = priorVersion + 1;
-  const base = prior.entityId.replace(/-v\d+$/, "");
-  const entityId = `${base}-v${nextVersion}`;
+  const base = prior.entityId.replace(/\/v\d+$/, "");
+  const entityId = `${base}/v${nextVersion}`;
   const versionStamp = `${prior.parcelNodeId}:${prior.entityType}:${nextVersion}:${Date.now()}`;
   return {
     entityId,

@@ -78,6 +78,14 @@ export interface StoragePort {
     instance: PropertyAtomInstance,
   ): Promise<{ atomDid: string; cid: string }>;
 
+  /**
+   * Active property atoms linked to a parcel node via body.parcelNodeId
+   * (no schema migration — linkage lives in jsonb payload).
+   */
+  listPropertyAtomsByParcelNodeId(
+    parcelNodeId: string,
+  ): Promise<ReadonlyArray<PropertyAtomInstance>>;
+
   /** Batch write — atomization output. */
   writeAtoms(
     instances: ReadonlyArray<CodeAtomInstance>,
