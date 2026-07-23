@@ -14,7 +14,7 @@ import {
   type CodeAtomEntityType,
   type JurisdictionalOverlayAmendmentInstance,
 } from "@hauska-engine/atoms";
-import type postgres from "postgres";
+import postgres from "postgres";
 
 import { InProcessIpfsPin } from "./in-process-cache.js";
 import type {
