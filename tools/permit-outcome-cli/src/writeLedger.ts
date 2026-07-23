@@ -114,6 +114,14 @@ export async function writeOutcomeLedger(
       actor,
     });
 
+    // postgres.json expects JSONValue; payload is a plain JSON object.
+    const actorJson = JSON.parse(JSON.stringify(actor)) as Parameters<
+      typeof sql.json
+    >[0];
+    const payloadJson = JSON.parse(JSON.stringify(payload)) as Parameters<
+      typeof sql.json
+    >[0];
+
     await sql`
       INSERT INTO atom_events (
         id, entity_type, entity_id, event_type, actor, payload,
@@ -123,8 +131,8 @@ export async function writeOutcomeLedger(
         ${entityType},
         ${entityId},
         ${FINDING_OUTCOME_RECORDED_EVENT_TYPE},
-        ${sql.json(actor)},
-        ${sql.json(payload)},
+        ${sql.json(actorJson)},
+        ${sql.json(payloadJson)},
         ${prevHash},
         ${chainHash},
         ${occurredAt.toISOString()}
