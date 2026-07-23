@@ -10,10 +10,12 @@ import type { ConsequenceClassificationInputs } from "@hauska-engine/atoms";
 import {
   bootstrapEngineAtomRegistry,
   buildAtomDid,
+  isPropertyAtomInstance,
   type AtomInstance,
   type AtomLink,
   type CodeAtomEntityType,
   type CodeAtomInstance,
+  type StoredAtomInstance,
 } from "@hauska-engine/atoms";
 import type { ContextSummary, Scope } from "@hauska-engine/atom-contract-pin";
 import { deriveConsequenceStrata } from "@hauska-engine/corpus/consequence";
@@ -29,8 +31,13 @@ export interface AtomProvenance {
 
 export interface TraceEdge {
   link: AtomLink;
-  atom: CodeAtomInstance | null;
+  atom: StoredAtomInstance | null;
   atomDid: string;
+}
+
+function asCodeAtom(stored: StoredAtomInstance | null): CodeAtomInstance | null {
+  if (!stored || isPropertyAtomInstance(stored)) return null;
+  return stored;
 }
 
 export interface AtomTraceOutput {
@@ -108,8 +115,9 @@ export async function getAtomTrace(
   storage: StoragePort,
   input: { atomDid: string; audience?: Scope["audience"] },
 ): Promise<AtomTraceOutput | null> {
-  const atom = await storage.getAtomByDid(input.atomDid);
-  if (!atom) return null;
+  const stored = await storage.getAtomByDid(input.atomDid);
+  if (!stored || isPropertyAtomInstance(stored)) return null;
+  const atom = stored;
 
   const scope: Scope = { audience: input.audience ?? "user" };
   const contextSummary = await resolveContextSummary(atom, scope, storage);
@@ -146,7 +154,7 @@ export async function getAtomTrace(
   const citations: Array<AtomTraceOutput["citations"][number]> = [];
   for (const edge of outbound) {
     if (edge.link.toEntityType !== "code-cross-reference") continue;
-    const xref = edge.atom;
+    const xref = asCodeAtom(edge.atom);
     const targetSectionId =
       xref && xref.entityType === "code-cross-reference"
         ? xref.toSectionId
@@ -155,7 +163,7 @@ export async function getAtomTrace(
       ? buildAtomDid("code-section", targetSectionId).raw
       : null;
     const targetAtom = targetAtomDid
-      ? await storage.getAtomByDid(targetAtomDid)
+      ? asCodeAtom(await storage.getAtomByDid(targetAtomDid))
       : null;
     citations.push({
       link: edge.link,

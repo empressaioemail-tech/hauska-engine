@@ -9,10 +9,12 @@
  * the same interface once pgvector + embedding pipeline are wired.
  */
 
+import { isPropertyAtomInstance, buildAtomDid } from "@hauska-engine/atoms";
 import type {
   AtomLink,
   CodeAtomEntityType,
   CodeAtomInstance,
+  StoredAtomInstance,
 } from "@hauska-engine/atoms";
 import type { Scope } from "@hauska-engine/atom-contract-pin";
 import type {
@@ -54,8 +56,13 @@ export interface GetAtomOutput {
   /** Composition-resolved children when `includeComposition === true`. */
   composition?: ReadonlyArray<{
     link: AtomLink;
-    atom: CodeAtomInstance | null;
+    atom: StoredAtomInstance | null;
   }>;
+}
+
+function asCodeAtom(stored: StoredAtomInstance | null): CodeAtomInstance | null {
+  if (!stored || isPropertyAtomInstance(stored)) return null;
+  return stored;
 }
 
 export interface QueryJurisdictionInput {
@@ -87,13 +94,15 @@ export class HybridRetrieval {
   async getAtom(input: GetAtomInput): Promise<GetAtomOutput> {
     let atom: CodeAtomInstance | null = null;
     if (input.atomDid) {
-      atom = await this.storage.getAtomByDid(input.atomDid);
+      atom = asCodeAtom(await this.storage.getAtomByDid(input.atomDid));
     } else if (input.entityType && input.entityId) {
       atom = await this.storage.getAtom(input.entityType, input.entityId);
     }
     if (!atom) return { atom: null };
     if (!input.includeComposition) return { atom };
-    const atomDid = input.atomDid ?? "";
+    const atomDid =
+      input.atomDid ??
+      (atom ? buildAtomDid(atom.entityType, atom.entityId).raw : "");
     const composition = atom
       ? await this.storage.traverse(atomDid)
       : [];
