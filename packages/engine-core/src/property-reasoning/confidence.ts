@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 
-import { createWidthedConfidence } from "@empressaio/atom-contract/read-contract";
+import {
+  createReasoningReadContract,
+  createWidthedConfidence,
+} from "@empressaio/atom-contract/read-contract";
 
 import type { MatchBasis } from "@hauska-engine/atoms";
 import type {
   PropertyConsequence,
+  ReasoningReadContract,
   ReasoningThreeAxisConfidence,
   WidthedConfidence,
 } from "@empressaio/atom-contract/read-contract";
@@ -97,29 +101,63 @@ export function propertyNotApplicableConsequence(
 
 export function buildReasoningReadAxes(args: {
   asserted: WidthedConfidence;
-  calibrated?: WidthedConfidence;
+  /**
+   * Placeholder calibrated snapshot at write. Pass `null` to omit a frozen
+   * calibrated value (READ resolves via overlay). Never invent a labeling×district
+   * multiply here.
+   */
+  calibrated?: WidthedConfidence | null;
   consequence: PropertyConsequence;
 }): ReasoningThreeAxisConfidence {
+  const calibrated =
+    args.calibrated === null
+      ? createWidthedConfidence({
+          estimate: args.asserted.estimate,
+          n: 0,
+          intervalWidth: args.asserted.intervalWidth,
+          provenance: "asserted",
+        })
+      : (args.calibrated ??
+        createWidthedConfidence({
+          estimate: args.asserted.estimate,
+          n: 0,
+          intervalWidth: args.asserted.intervalWidth,
+          provenance: "seed",
+        }));
   return {
     assertedConfidence: args.asserted,
-    calibratedConfidence:
-      args.calibrated ??
-      createWidthedConfidence({
-        estimate: args.asserted.estimate,
-        n: 0,
-        intervalWidth: args.asserted.intervalWidth,
-        provenance: "seed",
-      }),
+    calibratedConfidence: calibrated,
     consequence: args.consequence,
   };
 }
 
+export function buildPropertyReadContract(args: {
+  asserted: WidthedConfidence;
+  calibrated?: WidthedConfidence | null;
+  consequence: PropertyConsequence;
+  assembledAt: string;
+}): ReasoningReadContract {
+  return createReasoningReadContract({
+    axes: buildReasoningReadAxes({
+      asserted: args.asserted,
+      calibrated: args.calibrated,
+      consequence: args.consequence,
+    }),
+    assembledAt: args.assembledAt,
+  });
+}
+
+/**
+ * Canonical active entityId is the parcel node (MCP
+ * `did:hauska:<entityType>:<parcelNodeId>`). Versioned history uses `/vN`.
+ */
 export function propertyEntityId(
   parcelNodeId: string,
-  kind: "zoning" | "setback" | "envelope",
+  _kind: "zoning" | "setback" | "envelope",
   version: number,
 ): string {
-  return `${parcelNodeId}/${kind}-v${version}`;
+  if (version <= 1) return parcelNodeId;
+  return `${parcelNodeId}/v${version}`;
 }
 
 export function nextVersionFromEntityId(entityId: string): number {

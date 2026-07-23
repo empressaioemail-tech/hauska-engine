@@ -14,7 +14,7 @@ import cookStub from "../fixtures/descriptors/cook_county_il_stub.json" with { t
 describe("calibration overlay read-through (WDLL 3.10 stub)", () => {
   it("resolves calibrated axis from overlay keyed by atom_id + jurisdiction_tenant", async () => {
     const overlay = new InMemoryCalibrationOverlayPort();
-    const atomId = "17031:PARCEL1/zoning";
+    const atomId = "17031:PARCEL1";
     const tenant = "cook_county_il_stub";
     const calibrated = createWidthedConfidence({
       estimate: 0.82,
@@ -52,11 +52,11 @@ describe("retire-not-overwrite", () => {
       sourceCitation: "stub",
       extractedAt: "2026-07-23T12:00:00.000Z",
     });
-    if ("kind" in active) throw new Error("expected zoning atom");
+    expect(active.entityId).toBe(parcelNodeId);
     const retired = flipPropertyAtomRetired(active);
     expect(retired.status).toBe("retired");
     const next = successorPropertyAtomIdentity(active);
-    expect(next.entityId).toMatch(/-v2$/);
+    expect(next.entityId).toBe(`${parcelNodeId}/v2`);
     expect(next.supersedesEntityId).toBe(active.entityId);
   });
 });

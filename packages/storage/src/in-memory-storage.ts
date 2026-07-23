@@ -52,12 +52,33 @@ export class InMemoryStorage implements StoragePort {
   async writePropertyAtom(
     instance: PropertyAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {
-    const atomDid = buildAtomDid(instance.entityType, instance.entityId).raw;
+    const atomDid =
+      typeof instance.atomDid === "string" &&
+      instance.atomDid.startsWith("did:hauska:")
+        ? instance.atomDid
+        : buildAtomDid(instance.entityType, instance.entityId).raw;
     const pin = await this.ipfs.pin(instance.contentHash, JSON.stringify(instance));
     this.atoms.set(atomDid, instance);
     this.cids.set(atomDid, pin.cid);
     this.cache.set(atomDid, instance);
     return { atomDid, cid: pin.cid };
+  }
+
+  async listPropertyAtomsByParcelNodeId(
+    parcelNodeId: string,
+  ): Promise<ReadonlyArray<PropertyAtomInstance>> {
+    const byType = new Map<string, PropertyAtomInstance>();
+    for (const inst of this.atoms.values()) {
+      if (!isPropertyEntityType(inst.entityType)) continue;
+      const property = inst as PropertyAtomInstance;
+      if (property.parcelNodeId !== parcelNodeId) continue;
+      if (property.status && property.status !== "active") continue;
+      const prior = byType.get(property.entityType);
+      if (!prior || property.entityId === parcelNodeId) {
+        byType.set(property.entityType, property);
+      }
+    }
+    return [...byType.values()];
   }
 
   async writeAtoms(

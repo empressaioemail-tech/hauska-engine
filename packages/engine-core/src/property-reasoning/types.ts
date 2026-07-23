@@ -5,13 +5,13 @@
  * data — never in reasoning modules (WDLL 3.8 / I-B).
  */
 
+import type { AtomInputRef } from "@empressaio/atom-contract/property";
+import type { WidthedConfidence } from "@empressaio/atom-contract/read-contract";
 import type {
+  AccessPolicy,
   MatchBasis,
   SetbackDimensions,
-  SourceCodeAtomRef,
 } from "@hauska-engine/atoms";
-import type { AccessPolicy } from "@hauska-engine/atoms";
-import type { WidthedConfidence } from "@empressaio/atom-contract/read-contract";
 
 /** Per-field provenance carried in setback table JSON (fan gift). */
 export interface SetbackFieldProvenance {
@@ -52,7 +52,7 @@ export interface JurisdictionDescriptor {
 
 export interface ParcelZoningObservation {
   parcelNodeId: string;
-  /** Null or empty => honest-absence (never invent I-2 or other fallback district). */
+  /** Null or empty => honest-absence atom with absence.kind no-zoning-stamp. */
   districtCode: string | null;
   districtLabel?: string;
   matchBasis: MatchBasis;
@@ -89,6 +89,7 @@ export interface ResolvedSetbackRow {
   matchBasis: MatchBasis;
   prefixMatched?: string;
   setbacks: SetbackDimensions;
-  sourceCodeAtomRef: SourceCodeAtomRef;
+  /** Typed AtomInputRef with required role (rule|fact) — never a bare string. */
+  sourceCodeAtomRef: AtomInputRef;
   fieldConfidence: Readonly<Record<keyof SetbackDimensions, WidthedConfidence>>;
 }

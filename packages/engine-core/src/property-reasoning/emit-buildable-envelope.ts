@@ -1,15 +1,17 @@
-import type { BuildableEnvelopeAtomInstance } from "@hauska-engine/atoms";
+import {
+  BUILDABLE_ENVELOPE_DERIVATION_METHOD,
+  buildAtomDid,
+  type BuildableEnvelopeAtomInstance,
+} from "@hauska-engine/atoms";
 
 import {
-  buildReasoningReadAxes,
+  buildPropertyReadContract,
   composeDerivedAssertedConfidence,
   propertyEntityId,
   propertyNotApplicableConsequence,
   sha256HexCanonical,
 } from "./confidence.js";
 import type { EmitBuildableEnvelopeInputs, HonestAbsence } from "./types.js";
-
-const DERIVATION_METHOD = "buildable-envelope-inset-v1";
 
 export function emitBuildableEnvelope(
   inputs: EmitBuildableEnvelopeInputs,
@@ -27,6 +29,30 @@ export function emitBuildableEnvelope(
   const version = inputs.version ?? 1;
   const extractedAt = inputs.extractedAt;
   const entityId = propertyEntityId(inputs.parcelNodeId, "envelope", version);
+  const atomDid = buildAtomDid("buildable-envelope", entityId).raw;
+
+  const inputAtomRefs = [
+    {
+      atomDid: inputs.zoningFactAtomDid,
+      role: "fact" as const,
+      entityType: "zoning-fact",
+    },
+    {
+      atomDid: inputs.setbackRuleAtomDid,
+      role: "rule" as const,
+      entityType: "setback-rule",
+    },
+    {
+      atomDid: inputs.geometryRefId,
+      role: "reference-field" as const,
+      citationLabel: "parcel-geometry-ring",
+    },
+    {
+      atomDid: inputs.frontEdgeRefId,
+      role: "reference-field" as const,
+      citationLabel: "front-edge-anchor",
+    },
+  ];
 
   const consequenceBasis =
     inputs.outcome.kind === "no-buildable-area"
@@ -37,6 +63,7 @@ export function emitBuildableEnvelope(
 
   const instance: BuildableEnvelopeAtomInstance = {
     entityType: "buildable-envelope",
+    atomDid,
     entityId,
     jurisdictionTenant: inputs.descriptor.jurisdictionTenant,
     parcelNodeId: inputs.parcelNodeId,
@@ -49,58 +76,17 @@ export function emitBuildableEnvelope(
     atomTier: "data",
     status: "active",
     versionStamp: `${inputs.parcelNodeId}:buildable-envelope:${version}:${extractedAt}`,
-    derivationMethod: DERIVATION_METHOD,
-    inputAtomRefs: [
-      {
-        atomDid: inputs.zoningFactAtomDid,
-        role: "fact",
-        entityType: "zoning-fact",
-      },
-      {
-        atomDid: inputs.setbackRuleAtomDid,
-        role: "rule",
-        entityType: "setback-rule",
-      },
-      {
-        atomDid: inputs.geometryRefId,
-        role: "reference-field",
-        citationLabel: "parcel-geometry-ring",
-      },
-      {
-        atomDid: inputs.frontEdgeRefId,
-        role: "reference-field",
-        citationLabel: "front-edge-anchor",
-      },
-    ],
     outcome: inputs.outcome,
     reasoningChain: {
       reasoningKind: "derived",
-      derivationMethod: DERIVATION_METHOD,
-      inputAtomRefs: [
-        {
-          atomDid: inputs.zoningFactAtomDid,
-          role: "fact",
-          entityType: "zoning-fact",
-        },
-        {
-          atomDid: inputs.setbackRuleAtomDid,
-          role: "rule",
-          entityType: "setback-rule",
-        },
-        {
-          atomDid: inputs.geometryRefId,
-          role: "reference-field",
-          citationLabel: "parcel-geometry-ring",
-        },
-        {
-          atomDid: inputs.frontEdgeRefId,
-          role: "reference-field",
-          citationLabel: "front-edge-anchor",
-        },
-      ],
+      derivationMethod: BUILDABLE_ENVELOPE_DERIVATION_METHOD,
+      inputAtomRefs,
     },
-    readAxes: buildReasoningReadAxes({
+    // assertedConfidence only at write; calibratedConfidence is a placeholder
+    // resolved at READ via overlay (I-E) — never a frozen labeling×district multiply.
+    readContract: buildPropertyReadContract({
       asserted: composed,
+      calibrated: null,
       consequence:
         inputs.outcome.kind === "no-buildable-area" ||
         inputs.outcome.kind === "provisional-front-edge"
@@ -114,6 +100,7 @@ export function emitBuildableEnvelope(
               "envelope-geometry-derivation-has-no-life-safety-stratum",
               extractedAt,
             ),
+      assembledAt: extractedAt,
     }),
     contentHash: "",
   };

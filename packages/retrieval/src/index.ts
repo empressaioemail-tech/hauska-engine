@@ -52,7 +52,8 @@ export interface GetAtomInput {
 }
 
 export interface GetAtomOutput {
-  atom: CodeAtomInstance | null;
+  /** Code-section or property reasoning atom (Gate C serves both). */
+  atom: StoredAtomInstance | null;
   /** Composition-resolved children when `includeComposition === true`. */
   composition?: ReadonlyArray<{
     link: AtomLink;
@@ -60,9 +61,18 @@ export interface GetAtomOutput {
   }>;
 }
 
-function asCodeAtom(stored: StoredAtomInstance | null): CodeAtomInstance | null {
-  if (!stored || isPropertyAtomInstance(stored)) return null;
-  return stored;
+export interface PropertyAtomChainWire {
+  parcelNodeId: string;
+  zoningFact: StoredAtomInstance | null;
+  setbackRule: StoredAtomInstance | null;
+  buildableEnvelope: StoredAtomInstance | null;
+  atoms: ReadonlyArray<{
+    did: string;
+    type: string;
+    kind: string;
+    accessPolicy: string;
+    payload: StoredAtomInstance;
+  }>;
 }
 
 export interface QueryJurisdictionInput {
@@ -92,9 +102,9 @@ export class HybridRetrieval {
   }
 
   async getAtom(input: GetAtomInput): Promise<GetAtomOutput> {
-    let atom: CodeAtomInstance | null = null;
+    let atom: StoredAtomInstance | null = null;
     if (input.atomDid) {
-      atom = asCodeAtom(await this.storage.getAtomByDid(input.atomDid));
+      atom = await this.storage.getAtomByDid(input.atomDid);
     } else if (input.entityType && input.entityId) {
       atom = await this.storage.getAtom(input.entityType, input.entityId);
     }
@@ -102,10 +112,10 @@ export class HybridRetrieval {
     if (!input.includeComposition) return { atom };
     const atomDid =
       input.atomDid ??
-      (atom ? buildAtomDid(atom.entityType, atom.entityId).raw : "");
-    const composition = atom
-      ? await this.storage.traverse(atomDid)
-      : [];
+      (isPropertyAtomInstance(atom)
+        ? (atom.atomDid ?? buildAtomDid(atom.entityType, atom.entityId).raw)
+        : buildAtomDid(atom.entityType, atom.entityId).raw);
+    const composition = await this.storage.traverse(atomDid);
     return {
       atom,
       composition: composition.map((edge) => ({
@@ -119,6 +129,42 @@ export class HybridRetrieval {
         },
         atom: edge.toAtom,
       })),
+    };
+  }
+
+  /**
+   * Resolve zoning-fact → setback-rule → buildable-envelope for a parcel node.
+   * Always-on storage read; empty slots when no PROPERTY_ATOM_PATH rows exist.
+   */
+  async getPropertyAtomChain(parcelNodeId: string): Promise<PropertyAtomChainWire> {
+    const rows = await this.storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
+    let zoningFact: StoredAtomInstance | null = null;
+    let setbackRule: StoredAtomInstance | null = null;
+    let buildableEnvelope: StoredAtomInstance | null = null;
+    for (const row of rows) {
+      if (row.entityType === "zoning-fact") zoningFact = row;
+      else if (row.entityType === "setback-rule") setbackRule = row;
+      else if (row.entityType === "buildable-envelope") buildableEnvelope = row;
+    }
+    const atoms = rows.map((payload) => {
+      const did =
+        typeof payload.atomDid === "string" && payload.atomDid.startsWith("did:")
+          ? payload.atomDid
+          : buildAtomDid(payload.entityType, payload.entityId).raw;
+      return {
+        did,
+        type: payload.entityType,
+        kind: payload.entityType,
+        accessPolicy: payload.accessPolicy ?? "public-free",
+        payload,
+      };
+    });
+    return {
+      parcelNodeId,
+      zoningFact,
+      setbackRule,
+      buildableEnvelope,
+      atoms,
     };
   }
 

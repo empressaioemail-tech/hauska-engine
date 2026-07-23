@@ -1,10 +1,13 @@
-import type {
-  SetbackDimensions,
-  SetbackRuleAtomInstance,
+import {
+  buildAtomDid,
+  type SetbackDimensions,
+  type SetbackRuleAtomInstance,
 } from "@hauska-engine/atoms";
+import type { AtomInputRef } from "@empressaio/atom-contract/property";
+import type { WidthedConfidence } from "@empressaio/atom-contract/read-contract";
 
 import {
-  buildReasoningReadAxes,
+  buildPropertyReadContract,
   propertyEntityId,
   propertyNotApplicableConsequence,
   sha256HexCanonical,
@@ -20,16 +23,6 @@ import type {
 
 function rowToResolved(row: SetbackTableRowProvenance): ResolvedSetbackRow | HonestAbsence {
   const basis = row.match_basis;
-  if (basis === "fallback") {
-    return {
-      kind: "honest-absence",
-      parcelNodeId: "",
-      reason:
-        "Setback table row match basis is fallback — honest absence instead of inventing dimensional rules.",
-      code: "setback-fallback",
-    };
-  }
-
   const front = row.front_ft;
   const rear = row.rear_ft;
   const side = row.side_ft;
@@ -53,6 +46,12 @@ function rowToResolved(row: SetbackTableRowProvenance): ResolvedSetbackRow | Hon
     maxImperviousPct: row.max_impervious_pct?.value,
   };
 
+  const sourceCodeAtomRef: AtomInputRef = {
+    atomDid: row.atom_did,
+    role: "rule",
+    entityType: "code-section",
+  };
+
   const fieldConfidence = {
     frontFt: widthedFromFieldProvenance(front, basis),
     rearFt: widthedFromFieldProvenance(rear, basis),
@@ -61,17 +60,14 @@ function rowToResolved(row: SetbackTableRowProvenance): ResolvedSetbackRow | Hon
     maxHeightFt: widthedFromFieldProvenance(row.max_height_ft, basis),
     maxLotCoveragePct: widthedFromFieldProvenance(row.max_lot_coverage_pct, basis),
     maxImperviousPct: widthedFromFieldProvenance(row.max_impervious_pct, basis),
-  } as Readonly<Record<keyof SetbackDimensions, ReturnType<typeof widthedFromFieldProvenance>>>;
+  } as Readonly<Record<keyof SetbackDimensions, WidthedConfidence>>;
 
   return {
     districtCode: row.district_code,
     matchBasis: basis,
     prefixMatched: row.prefix_matched,
     setbacks,
-    sourceCodeAtomRef: {
-      atomDid: row.atom_did,
-      entityType: "code-section",
-    },
+    sourceCodeAtomRef,
     fieldConfidence,
   };
 }
@@ -137,8 +133,11 @@ export function emitSetbackRule(
   const asserted = widthedFromMatchBasis(row.matchBasis);
   const extractedAt = new Date().toISOString();
   const entityId = propertyEntityId(parcelNodeId, "setback", version);
+  const atomDid = buildAtomDid("setback-rule", entityId).raw;
+
   const instance: SetbackRuleAtomInstance = {
     entityType: "setback-rule",
+    atomDid,
     entityId,
     jurisdictionTenant: descriptor.jurisdictionTenant,
     parcelNodeId,
@@ -154,16 +153,45 @@ export function emitSetbackRule(
     districtCode: row.districtCode,
     matchBasis: row.matchBasis,
     prefixMatched: row.prefixMatched,
-    setbacks: row.setbacks,
+    front: row.setbacks.frontFt,
+    side: row.setbacks.sideFt,
+    rear: row.setbacks.rearFt,
+    sideCornerFt: row.setbacks.sideCornerFt,
+    maxHeightFt: row.setbacks.maxHeightFt,
+    maxLotCoveragePct: row.setbacks.maxLotCoveragePct,
+    maxImperviousPct: row.setbacks.maxImperviousPct,
     sourceCodeAtomRef: row.sourceCodeAtomRef,
-    fieldConfidence: row.fieldConfidence,
+    fieldProvenance: {
+      front: {
+        atomDid: row.sourceCodeAtomRef.atomDid,
+        confidence: row.fieldConfidence.frontFt,
+      },
+      side: {
+        atomDid: row.sourceCodeAtomRef.atomDid,
+        confidence: row.fieldConfidence.sideFt,
+      },
+      rear: {
+        atomDid: row.sourceCodeAtomRef.atomDid,
+        confidence: row.fieldConfidence.rearFt,
+      },
+    },
+    ...(row.matchBasis === "fallback"
+      ? {
+          absence: {
+            kind: "setback-fallback" as const,
+            reason:
+              "Setback table row match basis is fallback — honest absence grading on conservative default.",
+          },
+        }
+      : {}),
     reasoningChain: { reasoningKind: "observed" },
-    readAxes: buildReasoningReadAxes({
+    readContract: buildPropertyReadContract({
       asserted,
       consequence: propertyNotApplicableConsequence(
         "setback-rule-citation-has-no-life-safety-stratum",
         extractedAt,
       ),
+      assembledAt: extractedAt,
     }),
     contentHash: "",
   };

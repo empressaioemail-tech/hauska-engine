@@ -149,7 +149,11 @@ export class PgStorage implements StoragePort {
   async writePropertyAtom(
     instance: PropertyAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {
-    const atomDid = buildAtomDid(instance.entityType, instance.entityId).raw;
+    const atomDid =
+      typeof instance.atomDid === "string" &&
+      instance.atomDid.startsWith("did:hauska:")
+        ? instance.atomDid
+        : buildAtomDid(instance.entityType, instance.entityId).raw;
     const pin = await this.ipfs.pin(instance.contentHash, JSON.stringify(instance));
 
     await this.sql`
@@ -199,6 +203,34 @@ export class PgStorage implements StoragePort {
     `;
 
     return { atomDid, cid: pin.cid };
+  }
+
+  async listPropertyAtomsByParcelNodeId(
+    parcelNodeId: string,
+  ): Promise<ReadonlyArray<PropertyAtomInstance>> {
+    const rows = await this.sql<AtomBodyRow[]>`
+      SELECT body
+      FROM atoms
+      WHERE entity_type IN ('zoning-fact', 'setback-rule', 'buildable-envelope')
+        AND body->>'parcelNodeId' = ${parcelNodeId}
+        AND COALESCE(body->>'status', 'active') = 'active'
+      ORDER BY entity_type ASC, updated_at DESC
+    `;
+    // One active atom per entityType; prefer canonical entityId (= parcelNodeId).
+    const byType = new Map<string, PropertyAtomInstance>();
+    for (const row of rows) {
+      const inst = parseStoredAtom(row.body);
+      if (!inst || !isPropertyAtomInstance(inst)) continue;
+      const prior = byType.get(inst.entityType);
+      if (!prior) {
+        byType.set(inst.entityType, inst);
+        continue;
+      }
+      if (inst.entityId === parcelNodeId && prior.entityId !== parcelNodeId) {
+        byType.set(inst.entityType, inst);
+      }
+    }
+    return [...byType.values()];
   }
 
   async writeAtoms(
