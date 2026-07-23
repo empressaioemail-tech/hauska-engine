@@ -1,0 +1,473 @@
+/**
+ * Postgres-backed StoragePort for code-corpus atoms (Phase 1a).
+ *
+ * Persists atom instances to the `atoms` / `atom_links` / `jurisdiction_status`
+ * tables defined in schema.ts + migration 005. The injected `postgres.Sql`
+ * handle owns connection lifecycle — this class never opens its own connection.
+ */
+
+import {
+  buildAtomDid,
+  parseAtomDid,
+  type AtomLink,
+  type CodeAtomInstance,
+  type CodeAtomEntityType,
+  type JurisdictionalOverlayAmendmentInstance,
+} from "@hauska-engine/atoms";
+import postgres from "postgres";
+
+import { InProcessIpfsPin } from "./in-process-cache.js";
+import type {
+  AtomQuery,
+  AtomSearchResult,
+  JurisdictionStatusSnapshot,
+  StoragePort,
+} from "./port.js";
+import {
+  matchesAtomQuery,
+  rankSearchResults,
+  scoreAtomSearch,
+} from "./search-scoring.js";
+
+interface AtomBodyRow {
+  body: unknown;
+}
+
+interface AtomDidRow {
+  atom_did: string;
+}
+
+interface AtomLinkRow {
+  from_atom_did: string;
+  to_atom_did: string;
+  link_type: string;
+  context: string | null;
+}
+
+interface JurisdictionStatusRow {
+  jurisdiction_tenant: string;
+  jurisdiction_name: string;
+  current_edition_did: string | null;
+  quality_bar: string;
+  top3_score: number | null;
+  section_num_score: number | null;
+  cross_ref_score: number | null;
+  atom_count: number;
+  last_refreshed_at: Date | string | null;
+  drift_status: string;
+  access_policy: string;
+}
+
+function parseStoredAtom(body: unknown): CodeAtomInstance | null {
+  if (typeof body !== "object" || body === null) return null;
+  const candidate = body as Partial<CodeAtomInstance>;
+  if (!candidate.entityType || !candidate.entityId) return null;
+  return body as CodeAtomInstance;
+}
+
+function resolveAccessPolicy(instance: CodeAtomInstance): string {
+  const maybePolicy = (instance as { accessPolicy?: string }).accessPolicy;
+  return maybePolicy ?? "public-free";
+}
+
+function toIsoString(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  return value;
+}
+
+export class PgStorage implements StoragePort {
+  private readonly ipfs = new InProcessIpfsPin();
+
+  constructor(private readonly sql: postgres.Sql) {}
+
+  async writeAtom(
+    instance: CodeAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }> {
+    const atomDid = buildAtomDid(instance.entityType, instance.entityId).raw;
+    const pin = await this.ipfs.pin(instance.contentHash, JSON.stringify(instance));
+    const sectionNumber =
+      instance.entityType === "code-section" ? instance.sectionNumber : null;
+    const subsectionPath =
+      instance.entityType === "code-section" ? instance.subsectionPath : null;
+
+    await this.sql`
+      INSERT INTO atoms (
+        atom_did,
+        cid,
+        content_hash,
+        entity_type,
+        entity_id,
+        jurisdiction_tenant,
+        section_number,
+        subsection_path,
+        source_adapter,
+        source_url,
+        fetched_at,
+        body,
+        access_policy
+      ) VALUES (
+        ${atomDid},
+        ${pin.cid},
+        ${instance.contentHash},
+        ${instance.entityType},
+        ${instance.entityId},
+        ${instance.jurisdictionTenant},
+        ${sectionNumber},
+        ${subsectionPath},
+        ${instance.sourceAdapter},
+        ${instance.sourceUrl},
+        ${instance.fetchedAt},
+        ${this.sql.json(instance as unknown as Parameters<typeof this.sql.json>[0])},
+        ${resolveAccessPolicy(instance)}
+      )
+      ON CONFLICT (atom_did) DO UPDATE SET
+        cid = EXCLUDED.cid,
+        content_hash = EXCLUDED.content_hash,
+        entity_type = EXCLUDED.entity_type,
+        entity_id = EXCLUDED.entity_id,
+        jurisdiction_tenant = EXCLUDED.jurisdiction_tenant,
+        section_number = EXCLUDED.section_number,
+        subsection_path = EXCLUDED.subsection_path,
+        source_adapter = EXCLUDED.source_adapter,
+        source_url = EXCLUDED.source_url,
+        fetched_at = EXCLUDED.fetched_at,
+        body = EXCLUDED.body,
+        access_policy = EXCLUDED.access_policy,
+        updated_at = now()
+    `;
+
+    return { atomDid, cid: pin.cid };
+  }
+
+  async writeAtoms(
+    instances: ReadonlyArray<CodeAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
+    const out: Array<{ atomDid: string; cid: string }> = [];
+    for (const inst of instances) {
+      out.push(await this.writeAtom(inst));
+    }
+    return out;
+  }
+
+  async writeAtomLinks(links: ReadonlyArray<AtomLink>): Promise<void> {
+    for (const link of links) {
+      const fromAtomDid = buildAtomDid(link.fromEntityType, link.fromEntityId).raw;
+      const toAtomDid = buildAtomDid(link.toEntityType, link.toEntityId).raw;
+      await this.sql`
+        INSERT INTO atom_links (from_atom_did, to_atom_did, link_type, context)
+        VALUES (
+          ${fromAtomDid},
+          ${toAtomDid},
+          ${link.linkType},
+          ${link.context ?? null}
+        )
+        ON CONFLICT (from_atom_did, to_atom_did, link_type) DO NOTHING
+      `;
+    }
+  }
+
+  async getAtom<T extends CodeAtomEntityType>(
+    entityType: T,
+    entityId: string,
+  ): Promise<Extract<CodeAtomInstance, { entityType: T }> | null> {
+    const atomDid = buildAtomDid(entityType, entityId).raw;
+    return this.getAtomByDid(atomDid) as Promise<
+      Extract<CodeAtomInstance, { entityType: T }> | null
+    >;
+  }
+
+  async getAtomByDid(atomDid: string): Promise<CodeAtomInstance | null> {
+    const rows = await this.sql<AtomBodyRow[]>`
+      SELECT body
+      FROM atoms
+      WHERE atom_did = ${atomDid}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return null;
+    return parseStoredAtom(row.body);
+  }
+
+  async search(query: AtomQuery): Promise<ReadonlyArray<AtomSearchResult>> {
+    const rows = await this.sql<AtomBodyRow[]>`
+      SELECT body
+      FROM atoms
+      ORDER BY updated_at DESC
+    `;
+    const results: AtomSearchResult[] = [];
+    for (const row of rows) {
+      const inst = parseStoredAtom(row.body);
+      if (!inst) continue;
+      if (!matchesAtomQuery(inst, query)) continue;
+      const atomDid = buildAtomDid(inst.entityType, inst.entityId).raw;
+      const scored = scoreAtomSearch(inst, atomDid, query);
+      if (scored) results.push(scored);
+    }
+    return rankSearchResults(results, query.limit ?? 25);
+  }
+
+  async getSectionsBySectionNumber(
+    jurisdictionTenant: string,
+    sectionNumber: string,
+  ): Promise<ReadonlyArray<Extract<CodeAtomInstance, { entityType: "code-section" }>>> {
+    const rows = await this.sql<AtomBodyRow[]>`
+      SELECT body
+      FROM atoms
+      WHERE entity_type = 'code-section'
+        AND jurisdiction_tenant = ${jurisdictionTenant}
+        AND section_number = ${sectionNumber}
+    `;
+    const out: Array<Extract<CodeAtomInstance, { entityType: "code-section" }>> = [];
+    for (const row of rows) {
+      const inst = parseStoredAtom(row.body);
+      if (inst?.entityType === "code-section") out.push(inst);
+    }
+    return out;
+  }
+
+  async getJurisdictionalOverlays(
+    jurisdictionTenant: string,
+    baseSectionId: string,
+  ): Promise<ReadonlyArray<JurisdictionalOverlayAmendmentInstance>> {
+    const rows = await this.sql<AtomBodyRow[]>`
+      SELECT body
+      FROM atoms
+      WHERE entity_type = 'code-amendment'
+        AND jurisdiction_tenant = ${jurisdictionTenant}
+    `;
+    const out: JurisdictionalOverlayAmendmentInstance[] = [];
+    for (const row of rows) {
+      const inst = parseStoredAtom(row.body);
+      if (inst?.entityType !== "code-amendment") continue;
+      if (inst.amendmentScope !== "jurisdictional-overlay") continue;
+      if (!inst.affectedSectionIds.includes(baseSectionId)) continue;
+      out.push(inst);
+    }
+    out.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
+    return out;
+  }
+
+  async traverse(
+    fromAtomDid: string,
+    linkType?: AtomLink["linkType"],
+  ): Promise<ReadonlyArray<AtomLink & { toAtom: CodeAtomInstance | null }>> {
+    const rows = linkType
+      ? await this.sql<AtomLinkRow[]>`
+          SELECT from_atom_did, to_atom_did, link_type, context
+          FROM atom_links
+          WHERE from_atom_did = ${fromAtomDid}
+            AND link_type = ${linkType}
+        `
+      : await this.sql<AtomLinkRow[]>`
+          SELECT from_atom_did, to_atom_did, link_type, context
+          FROM atom_links
+          WHERE from_atom_did = ${fromAtomDid}
+        `;
+    const out: Array<AtomLink & { toAtom: CodeAtomInstance | null }> = [];
+    for (const row of rows) {
+      const fromParsed = parseAtomDid(row.from_atom_did);
+      const toAtom = await this.getAtomByDid(row.to_atom_did);
+      out.push({
+        fromEntityType: fromParsed.entityType,
+        fromEntityId: fromParsed.localId,
+        toEntityType: toAtom
+          ? toAtom.entityType
+          : parseAtomDid(row.to_atom_did).entityType,
+        toEntityId: toAtom
+          ? toAtom.entityId
+          : parseAtomDid(row.to_atom_did).localId,
+        linkType: row.link_type as AtomLink["linkType"],
+        context: row.context ?? undefined,
+        toAtom,
+      });
+    }
+    return out;
+  }
+
+  async traverseInbound(
+    toAtomDid: string,
+    linkType?: AtomLink["linkType"],
+  ): Promise<
+    ReadonlyArray<AtomLink & { fromAtom: CodeAtomInstance | null }>
+  > {
+    const rows = linkType
+      ? await this.sql<AtomLinkRow[]>`
+          SELECT from_atom_did, to_atom_did, link_type, context
+          FROM atom_links
+          WHERE to_atom_did = ${toAtomDid}
+            AND link_type = ${linkType}
+        `
+      : await this.sql<AtomLinkRow[]>`
+          SELECT from_atom_did, to_atom_did, link_type, context
+          FROM atom_links
+          WHERE to_atom_did = ${toAtomDid}
+        `;
+    const out: Array<AtomLink & { fromAtom: CodeAtomInstance | null }> = [];
+    for (const row of rows) {
+      const fromAtom = await this.getAtomByDid(row.from_atom_did);
+      const toParsed = parseAtomDid(row.to_atom_did);
+      out.push({
+        fromEntityType: fromAtom
+          ? fromAtom.entityType
+          : parseAtomDid(row.from_atom_did).entityType,
+        fromEntityId: fromAtom
+          ? fromAtom.entityId
+          : parseAtomDid(row.from_atom_did).localId,
+        toEntityType: toParsed.entityType,
+        toEntityId: toParsed.localId,
+        linkType: row.link_type as AtomLink["linkType"],
+        context: row.context ?? undefined,
+        fromAtom,
+      });
+    }
+    return out;
+  }
+
+  async listJurisdictionStatus(filter?: {
+    qualityBarOnly?: boolean;
+    accessPolicies?: ReadonlyArray<
+      import("@hauska-engine/atoms").AccessPolicy
+    >;
+  }): Promise<ReadonlyArray<JurisdictionStatusSnapshot>> {
+    const rows = await this.sql<JurisdictionStatusRow[]>`
+      SELECT
+        jurisdiction_tenant,
+        jurisdiction_name,
+        current_edition_did,
+        quality_bar,
+        top3_score,
+        section_num_score,
+        cross_ref_score,
+        atom_count,
+        last_refreshed_at,
+        drift_status,
+        access_policy
+      FROM jurisdiction_status
+      ORDER BY jurisdiction_tenant ASC
+    `;
+    let snapshots = rows.map(rowToSnapshot);
+    if (filter?.qualityBarOnly) {
+      snapshots = snapshots.filter((s) => s.qualityBar.startsWith("passing"));
+    }
+    if (filter?.accessPolicies && filter.accessPolicies.length > 0) {
+      const allowed = new Set(filter.accessPolicies);
+      snapshots = snapshots.filter((s) =>
+        allowed.has(s.accessPolicy ?? "public-free"),
+      );
+    }
+    return snapshots;
+  }
+
+  async upsertJurisdictionStatus(
+    snapshot: JurisdictionStatusSnapshot,
+  ): Promise<void> {
+    await this.sql`
+      INSERT INTO jurisdiction_status (
+        jurisdiction_tenant,
+        jurisdiction_name,
+        current_edition_did,
+        quality_bar,
+        top3_score,
+        section_num_score,
+        cross_ref_score,
+        atom_count,
+        last_refreshed_at,
+        drift_status,
+        access_policy
+      ) VALUES (
+        ${snapshot.jurisdictionTenant},
+        ${snapshot.jurisdictionName},
+        ${snapshot.currentEditionDid},
+        ${snapshot.qualityBar},
+        ${snapshot.top3Score},
+        ${snapshot.sectionNumScore},
+        ${snapshot.crossRefScore},
+        ${snapshot.atomCount},
+        ${snapshot.lastRefreshedAt},
+        ${snapshot.driftStatus},
+        ${snapshot.accessPolicy ?? "public-free"}
+      )
+      ON CONFLICT (jurisdiction_tenant) DO UPDATE SET
+        jurisdiction_name = EXCLUDED.jurisdiction_name,
+        current_edition_did = EXCLUDED.current_edition_did,
+        quality_bar = EXCLUDED.quality_bar,
+        top3_score = EXCLUDED.top3_score,
+        section_num_score = EXCLUDED.section_num_score,
+        cross_ref_score = EXCLUDED.cross_ref_score,
+        atom_count = EXCLUDED.atom_count,
+        last_refreshed_at = EXCLUDED.last_refreshed_at,
+        drift_status = EXCLUDED.drift_status,
+        access_policy = EXCLUDED.access_policy
+    `;
+  }
+
+  async countAtoms(): Promise<number> {
+    const rows = await this.sql<[{ count: string }]>`
+      SELECT COUNT(*)::text AS count FROM atoms
+    `;
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  /** Return all atom DIDs currently stored in Postgres. */
+  async listAtomDids(): Promise<ReadonlyArray<string>> {
+    const rows = await this.sql<AtomDidRow[]>`
+      SELECT atom_did FROM atoms ORDER BY atom_did ASC
+    `;
+    return rows.map((row) => row.atom_did);
+  }
+}
+
+function rowToSnapshot(row: JurisdictionStatusRow): JurisdictionStatusSnapshot {
+  return {
+    jurisdictionTenant: row.jurisdiction_tenant,
+    jurisdictionName: row.jurisdiction_name,
+    currentEditionDid: row.current_edition_did,
+    qualityBar: row.quality_bar as JurisdictionStatusSnapshot["qualityBar"],
+    top3Score: row.top3_score,
+    sectionNumScore: row.section_num_score,
+    crossRefScore: row.cross_ref_score,
+    atomCount: row.atom_count,
+    lastRefreshedAt: toIsoString(row.last_refreshed_at),
+    driftStatus: row.drift_status as JurisdictionStatusSnapshot["driftStatus"],
+    accessPolicy: row.access_policy as JurisdictionStatusSnapshot["accessPolicy"],
+  };
+}
+
+export interface CreatePgStorageOptions {
+  databaseUrl: string;
+  /** Override max pool size (default 5). */
+  maxConnections?: number;
+}
+
+export interface PgStorageHandle {
+  storage: PgStorage;
+  sql: postgres.Sql;
+  close: () => Promise<void>;
+}
+
+/** Open a shared Postgres handle and wrap it in `PgStorage`. */
+export function createPgStorage(options: CreatePgStorageOptions): PgStorageHandle {
+  const ssl =
+    options.databaseUrl.includes("sslmode=require") ||
+    options.databaseUrl.includes("neon.tech")
+      ? ("require" as const)
+      : false;
+  const sql = postgres(options.databaseUrl, {
+    ssl,
+    max: options.maxConnections ?? 5,
+  });
+  return {
+    storage: new PgStorage(sql),
+    sql,
+    close: async () => {
+      await sql.end({ timeout: 5 });
+    },
+  };
+}
+
+export function resolveSubstrateDatabaseUrl(
+  explicit?: string,
+): string | undefined {
+  return explicit ?? process.env.SUBSTRATE_DATABASE_URL ?? process.env.DATABASE_URL;
+}

@@ -16,16 +16,16 @@
  *
  * Corpus loading (Lane E Phase E0): when `CORPUS_SNAPSHOT_PATH` is set,
  * the service boots an `InMemoryStorage` hydrated from that committed
- * snapshot artifact rather than the empty dev-mode storage. The
- * production read-only catalog is small enough to hold in memory; the
- * Postgres-backed StoragePort is a separate sprint and swaps in behind
- * the same `buildApp({ storage })` seam without touching this file.
+ * snapshot artifact. When `SUBSTRATE_DATABASE_URL` is also set, a
+ * `LayeredStorage` overlay serves Postgres-first reads (Phase 1a
+ * StoragePort) while preserving snapshot corpus count for /healthz.
  */
 
 import { readFile } from "node:fs/promises";
 
 import { InMemoryStorage, isCorpusSnapshot } from "@hauska-engine/storage";
 
+import { bootRetrievalStorage } from "./boot-storage.js";
 import { startServer, buildApp } from "./server.js";
 
 /**
@@ -54,11 +54,14 @@ if (isMain) {
   const port = Number(process.env.PORT ?? 8080);
   const snapshotPath = process.env.CORPUS_SNAPSHOT_PATH;
 
-  const storage = snapshotPath
+  const snapshot = snapshotPath
     ? await loadCorpusSnapshot(snapshotPath)
-    : undefined;
+    : new InMemoryStorage();
 
-  if (storage) {
+  const boot = bootRetrievalStorage({ snapshot });
+  const storage = boot.storage;
+
+  if (snapshotPath) {
     const jurisdictions = await storage.listJurisdictionStatus();
     console.log(
       JSON.stringify({
@@ -66,7 +69,9 @@ if (isMain) {
         service: "retrieval-api",
         event: "corpus.loaded",
         snapshotPath,
+        layered: Boolean(process.env.SUBSTRATE_DATABASE_URL ?? process.env.DATABASE_URL),
         jurisdictions: jurisdictions.length,
+        atomCount: await storage.countAtoms(),
         ts: new Date().toISOString(),
       }),
     );
@@ -82,8 +87,16 @@ if (isMain) {
     );
   }
 
-  const app = buildApp(storage ? { storage } : {});
+  const app = buildApp({ storage });
   startServer(app, port);
+
+  const shutdown = async () => {
+    await boot.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 export { buildApp, startServer };
+export { bootRetrievalStorage } from "./boot-storage.js";
