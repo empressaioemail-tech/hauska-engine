@@ -35,9 +35,47 @@ against its curated-query set; drifted live sources that return zero
 sections are skipped (logged for B.5 drift follow-up) rather than
 failing the build. Commit the regenerated `snapshot.json`.
 
-When the Postgres-backed `StoragePort` lands, the service swaps to it
-behind the same `buildApp({ storage })` seam and the snapshot becomes a
-dev/test convenience.
+## Phase 1a StoragePort overlay (Gate A / master WDLL 3.1)
+
+When `SUBSTRATE_DATABASE_URL` is set at boot, retrieval-api wraps the
+snapshot in `LayeredStorage`: Postgres-first `getAtomByDid`, merged
+search, snapshot-backed `/healthz` corpus count preserved.
+
+### 1. Apply migration 005 (operator — substrate Neon)
+
+```bash
+DATABASE_URL='postgres://...neon.tech/...?sslmode=require' \
+  node packages/storage/scripts/apply-migration.mjs
+```
+
+### 2. Write the proof atom (operator)
+
+```bash
+DATABASE_URL='postgres://...neon.tech/...?sslmode=require' \
+  pnpm exec tsx packages/storage/scripts/write-storage-port-proof.mjs
+```
+
+Proof atom:
+- entityId: `storage-port-proof/phase-1a`
+- DID: `did:hauska:code-section:storage-port-proof/phase-1a`
+- search token: `storage-port-proof`
+
+This code-section is intentionally absent from `snapshot.json`.
+
+### 3. Deploy with substrate URL wired
+
+```bash
+gcloud run deploy hauska-retrieval-api \
+  --source . \
+  --project=hauska-prod-497015 \
+  --region=us-central1 \
+  --allow-unauthenticated \
+  --port=8080 \
+  --memory=1Gi \
+  --cpu=1 \
+  --set-env-vars=RETRIEVAL_API_KEY=<key>,CORPUS_SNAPSHOT_PATH=services/retrieval-api/corpus/snapshot.json \
+  --set-secrets=SUBSTRATE_DATABASE_URL=substrate-database-url:latest
+```
 
 ## Auth
 
@@ -75,6 +113,8 @@ ship source-direct exports per `REPO_NOTES.md`).
 
 ## Verify
 
+Replace `<service-url>` with the Cloud Run URL and `<key>` with `RETRIEVAL_API_KEY`.
+
 ```bash
 curl -s https://<service-url>/health
 curl -s https://<service-url>/healthz/
@@ -82,6 +122,23 @@ curl -s -H "Authorization: Bearer <key>" \
   "https://<service-url>/jurisdictions?qualityBarOnly=true"
 curl -s -H "Authorization: Bearer <key>" \
   "https://<service-url>/search?q=setback&limit=3"
+```
+
+### Gate A live verify (master WDLL 3.1)
+
+After migration + proof write + redeploy with `SUBSTRATE_DATABASE_URL`:
+
+```bash
+# 200 with body NOT in snapshot.json
+curl -s -H "Authorization: Bearer <key>" \
+  "https://<service-url>/atoms/did:hauska:code-section:storage-port-proof/phase-1a"
+
+# ideally finds the proof atom
+curl -s -H "Authorization: Bearer <key>" \
+  "https://<service-url>/search?q=storage-port-proof&limit=5"
+
+# corpus still > 0; db up when substrate URL wired
+curl -s https://<service-url>/healthz/
 ```
 
 ## Health (`GET /healthz`)

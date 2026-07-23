@@ -18,6 +18,11 @@ import type {
   StoragePort,
 } from "./port.js";
 import { CORPUS_SNAPSHOT_FORMAT, type CorpusSnapshot } from "./snapshot.js";
+import {
+  matchesAtomQuery,
+  rankSearchResults,
+  scoreAtomSearch,
+} from "./search-scoring.js";
 
 export class InMemoryStorage implements StoragePort {
   private readonly atoms = new Map<string, CodeAtomInstance>();
@@ -81,74 +86,14 @@ export class InMemoryStorage implements StoragePort {
   }
 
   async search(query: AtomQuery): Promise<ReadonlyArray<AtomSearchResult>> {
-    const q = (query.q ?? "").toLowerCase().trim();
-    const tokens = tokenize(q);
-    const limit = Math.max(1, Math.min(query.limit ?? 25, 100));
+    const limit = query.limit ?? 25;
     const results: AtomSearchResult[] = [];
     for (const [atomDid, inst] of this.atoms) {
-      if (query.jurisdiction && inst.jurisdictionTenant !== query.jurisdiction) {
-        continue;
-      }
-      if (query.entityType && inst.entityType !== query.entityType) continue;
-      const snippet = buildSnippet(inst);
-      const lowerSnippet = snippet.toLowerCase();
-      // Token-based scoring: count how many query tokens appear in the
-      // snippet. Pure substring match was too brittle ("B3 Code" in
-      // query doesn't substring-match "(B3) Code" in body). Tokenize
-      // by punctuation + whitespace so parens, dashes, periods don't
-      // sink retrieval.
-      if (q.length === 0) {
-        results.push(buildResult(atomDid, inst, snippet, 1));
-        continue;
-      }
-      if (tokens.length === 0) continue;
-      let matched = 0;
-      for (const t of tokens) {
-        if (lowerSnippet.includes(t)) matched++;
-      }
-      if (matched === 0) continue;
-      // Section-number anchor boost: when the user includes the
-      // atom's section number in the query (e.g. "Section 503
-      // ignition resistant" or "2.3 SLR district"), that atom ranks
-      // higher than peers sharing topic tokens but not the number.
-      // Boost is small enough that a fully-matching atom still wins;
-      // acts as a deterministic tiebreaker. Also matches against the
-      // `#partN`-stripped form so a query like "4.4 PUD" anchors atom
-      // whose sectionNumber is "4.4#part1" (legacy ingest splits
-      // over-cap sections via the #partN convention).
-      //
-      // Match is token-equality (not substring) so short labels like
-      // Roman numerals ("I", "V", "X") don't mis-fire as substring hits
-      // inside English words ("drainage", "service", "tax"). The
-      // tokenizer preserves dots, so "1.1.001" stays a single token.
-      let bonus = 0;
-      if (inst.entityType === "code-section" && inst.sectionNumber) {
-        // Strip trailing punctuation (Municode atomization can carry
-        // "36-7." with trailing period; queries naturally drop it) plus
-        // the `#partN` ingest-artifact suffix.
-        const sectionLower = inst.sectionNumber
-          .toLowerCase()
-          .replace(/[.,;:!?]+$/, "");
-        if (sectionLower) {
-          if (tokens.includes(sectionLower)) {
-            bonus += 0.25;
-          } else {
-            const stripped = sectionLower.split("#")[0];
-            if (
-              stripped &&
-              stripped !== sectionLower &&
-              tokens.includes(stripped)
-            ) {
-              bonus += 0.25;
-            }
-          }
-        }
-      }
-      const score = matched / tokens.length + bonus;
-      results.push(buildResult(atomDid, inst, snippet, score));
+      if (!matchesAtomQuery(inst, query)) continue;
+      const scored = scoreAtomSearch(inst, atomDid, query);
+      if (scored) results.push(scored);
     }
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
+    return rankSearchResults(results, limit);
   }
 
   async traverse(
@@ -278,68 +223,4 @@ export class InMemoryStorage implements StoragePort {
   async countAtoms(): Promise<number> {
     return this.atoms.size;
   }
-}
-
-function tokenize(s: string): ReadonlyArray<string> {
-  // Preserve dots AND hyphens so compound section labels survive
-  // intact: "36-7", "46-1", "5.04(b)", "R301.1" all stay single tokens.
-  // Without `-` in the keep-set the anchor-boost match for Municode-
-  // style chapter-number labels (e.g. "36-7.") would never fire.
-  //
-  // Single-character tokens are dropped as noise (stray "a", "I" from
-  // "(a)" / Roman numerals) — EXCEPT a lone digit, which is a real
-  // section-number anchor. Embedded-ordinance exhibits (Leander's
-  // Subdivision / Zoning Exhibit A) number sections with bare integers
-  // `1.`-`9.`; dropping the digit would silently disable the
-  // section-number boost for every one of them.
-  return s
-    .split(/[^a-z0-9.-]+/i)
-    .map((t) => t.toLowerCase())
-    .filter((t) => t.length >= 2 || /^[0-9]$/.test(t));
-}
-
-function buildResult(
-  atomDid: string,
-  inst: CodeAtomInstance,
-  snippet: string,
-  score: number,
-): AtomSearchResult {
-  return {
-    atomDid,
-    entityType: inst.entityType,
-    entityId: inst.entityId,
-    jurisdictionTenant: inst.jurisdictionTenant,
-    sectionNumber: inst.entityType === "code-section" ? inst.sectionNumber : null,
-    snippet,
-    score,
-  };
-}
-
-function buildSnippet(inst: CodeAtomInstance): string {
-  switch (inst.entityType) {
-    case "code-section":
-      return `${inst.sectionNumber} ${inst.title}. ${inst.bodyText}`;
-    case "code-definition":
-      return `${inst.term} — ${inst.definitionText}`;
-    case "code-cross-reference":
-      return `${inst.referenceText} (${inst.referenceType})`;
-    case "code-amendment":
-      return `Ordinance ${inst.ordinanceId}: ${inst.amendmentText}`;
-    case "code-edition":
-      return inst.editionLabel;
-    case "jurisdiction-corpus":
-      return inst.jurisdictionName;
-    default: {
-      const exhaustive: never = inst;
-      return String(exhaustive);
-    }
-  }
-}
-
-function scoreMatch(haystack: string, needle: string): number {
-  if (!needle) return 0;
-  const i = haystack.indexOf(needle);
-  if (i < 0) return 0;
-  // Prefer earlier matches + shorter haystacks.
-  return 1 - i / haystack.length;
 }

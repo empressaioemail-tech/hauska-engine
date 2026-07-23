@@ -16,7 +16,9 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo 'no lint configured'"
+    "lint": "echo 'no lint configured'",
+    "apply-migration": "node scripts/apply-migration.mjs",
+    "write-storage-port-proof": "tsx scripts/write-storage-port-proof.mjs"
   },
   "dependencies": {
     "@hauska-engine/atom-contract-pin": "workspace:*",

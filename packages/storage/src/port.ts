@@ -1,9 +1,10 @@
 /**
  * Storage port — the abstract surface every storage back-end satisfies.
  *
- * The Postgres + IPFS implementation lives in `./pg-storage.ts` (lands
- * with the storage migration sprint); the `./in-memory-storage.ts`
- * implementation supports tests and the retrieval-api dev mode.
+ * Postgres + IPFS implementation lives in `./pg-storage.ts`; the
+ * `./in-memory-storage.ts` implementation supports tests and the
+ * retrieval-api dev mode. Production retrieval-api uses `LayeredStorage`
+ * to merge Postgres overlay reads with the committed snapshot corpus.
  *
  * Reads + writes are framed in atom-DID + atom-link terms. The port
  * does NOT expose Postgres or IPFS primitives directly — consumers
