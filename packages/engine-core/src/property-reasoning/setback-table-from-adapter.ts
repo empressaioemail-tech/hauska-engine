@@ -96,13 +96,14 @@ function rowFromDistrict(d: AdapterDistrict): SetbackTableRowProvenance | null {
 
 /** Build descriptor setback table from an adapter JSON table (or null). */
 export function setbackTableDescriptorFromAdapter(
-  table: AdapterSetbackTable | null | undefined,
+  table: AdapterSetbackTable | null | undefined | { districts?: unknown },
 ): SetbackTableDescriptor | undefined {
   if (!table || !Array.isArray(table.districts) || table.districts.length === 0) {
     return undefined;
   }
   const rows: SetbackTableRowProvenance[] = [];
-  for (const d of table.districts) {
+  for (const raw of table.districts) {
+    const d = raw as AdapterDistrict;
     const row = rowFromDistrict(d);
     if (row) rows.push(row);
   }

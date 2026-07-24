@@ -157,7 +157,7 @@ export function emitFromTier1Snapshot(
   }
 
   const resolved = resolveSetbackTableRow(setbackTable, zoningDistrict);
-  if ("kind" in resolved && resolved.kind === "honest-absence") {
+  if ("kind" in resolved) {
     out.notes.push(`setback-absence:${resolved.code}`);
     return out;
   }
