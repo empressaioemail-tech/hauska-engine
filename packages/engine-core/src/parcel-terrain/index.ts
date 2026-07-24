@@ -4,7 +4,16 @@ export {
   TERRAIN_MESH_CRS_CONVENTION,
   type TerrainMeshGeometry,
 } from "./mesh.js";
-export { buildDxfPreamble, emitDxf3dFace, emitDxfContours, emitIfc, type IfcWorkerResult } from "./emitters.js";
+export {
+  collectContourPolylines,
+  emitDxf3dFace,
+  emitDxfContours,
+  emitIfc,
+  type ContourPolyline2d,
+  type DxfWorkerResult,
+  type IfcWorkerResult,
+} from "./emitters.js";
+
 export {
   authorParcelTerrainExport,
   type AuthorParcelTerrainExportOptions,

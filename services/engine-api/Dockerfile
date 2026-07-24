@@ -33,6 +33,14 @@ RUN python3 -m venv /opt/ifc-venv \
   && /opt/ifc-venv/bin/pip install --no-cache-dir -r /tmp/ifc-requirements.txt \
   && /opt/ifc-venv/bin/python -c "import ifcopenshell, numpy; print('IFC deps OK')"
 
+# DXF/R2000 writer (ezdxf) — separate venv so hydrology NumPy 1 and IFC NumPy 2
+# stay isolated. Revit Link CAD requires a full AC1015 graph (handles,
+# BLOCK_RECORD, OBJECTS/LAYOUT); hand-rolled ENTITIES fragments fail Import/Link.
+COPY artifacts/dxf-worker/requirements.txt /tmp/dxf-requirements.txt
+RUN python3 -m venv /opt/dxf-venv \
+  && /opt/dxf-venv/bin/pip install --no-cache-dir -r /tmp/dxf-requirements.txt \
+  && /opt/dxf-venv/bin/python -c "import ezdxf; print('DXF deps OK:', ezdxf.__version__)"
+
 # Fail the build if pysheds/rasterio/numpy can't import — this is the
 # exact failure the runtime worker hits ("pysheds not installed"). Better
 # to surface it at build time than to ship an image that silently falls
@@ -60,6 +68,7 @@ COPY packages ./packages
 COPY services/engine-api ./services/engine-api
 COPY artifacts/hydrology-worker ./artifacts/hydrology-worker
 COPY artifacts/ifc-worker ./artifacts/ifc-worker
+COPY artifacts/dxf-worker ./artifacts/dxf-worker
 
 RUN corepack enable && corepack prepare pnpm@10.27.0 --activate \
   && pnpm install --frozen-lockfile=false
@@ -68,6 +77,8 @@ ENV PORT=8080
 ENV HYDROLOGY_PYTHON=python3
 ENV IFC_PYTHON=/opt/ifc-venv/bin/python \
     IFC_WORKER_PATH=/app/artifacts/ifc-worker/run.py
+ENV DXF_PYTHON=/opt/dxf-venv/bin/python \
+    DXF_WORKER_PATH=/app/artifacts/dxf-worker/run.py
 # 45s (the old default) is not enough headroom for the uncached subset of
 # pysheds' eager-compiled kernels on a throttled cold instance. 120s stays
 # inside the ldt spine call timeout (180s) and Cloud Run request timeout.
