@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
-import { fetchUsgs3depDem, type BboxWgs84 } from "@hauska-engine/adapters";
+import {
+  fetchUsgs3depDem,
+  selectAdaptiveResolutionMeters,
+  type BboxWgs84,
+} from "@hauska-engine/adapters";
 import type { ParcelTerrainModelAtomInstance } from "@hauska-engine/atoms";
 import type { StoragePort } from "@hauska-engine/storage";
 
@@ -51,10 +55,18 @@ export async function authorParcelTerrainExport(
     );
   }
   const fetchedAt = new Date().toISOString();
-  const resolutionMeters = options.resolutionMeters ?? 10;
+  const resolutionMetersRequested = options.resolutionMeters ?? 10;
+  const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
+    resolved.bbox,
+    resolutionMetersRequested,
+  );
   const contourIntervalMeters = options.contourIntervalMeters ?? 1;
   const fetchDem = options.fetchDem ?? fetchUsgs3depDem;
-  const demFetch = await fetchDem(resolved.bbox, { resolutionMeters });
+  const demFetch = await fetchDem(resolved.bbox, { resolutionMeters: resolutionMetersAdapted });
+  const resolutionAdaptedNote =
+    resolutionMetersAdapted !== resolutionMetersRequested
+      ? `; DEM fetch auto-tightened to ${resolutionMetersAdapted}m/px (requested ${resolutionMetersRequested}m/px for 16px floor)`
+      : "";
   const dem = await (options.parseDem ?? parseDemBytes)(demFetch.bytes);
   const mesh = buildTerrainMeshGeometry(dem, resolved.bbox);
 
@@ -127,11 +139,17 @@ export async function authorParcelTerrainExport(
       coverageFraction: 1 - dem.nodataCount / (dem.width * dem.height),
       nodataCount: dem.nodataCount,
       totalCells: dem.width * dem.height,
-      resolutionMetersRequested: demFetch.resolutionMetersRequested,
+      resolutionMetersRequested,
       resolutionMetersActual: demFetch.resolutionMetersActual,
       touchesNodata: dem.nodataCount > 0,
     },
-    confidence: { value: 0.6, kind: "asserted", provenance: "USGS 3DEP DEM field; calibration pending", n: 0, intervalWidth: 1 },
+    confidence: {
+      value: 0.6,
+      kind: "asserted",
+      provenance: `USGS 3DEP DEM field; calibration pending${resolutionAdaptedNote}`,
+      n: 0,
+      intervalWidth: 1,
+    },
   };
   atom.contentHash = checksum(atom);
   await options.storage.writePropertyAtom(atom);

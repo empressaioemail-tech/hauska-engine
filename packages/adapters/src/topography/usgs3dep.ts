@@ -65,6 +65,15 @@ const MAX_PIXELS_PER_AXIS = 4096;
 const MIN_PIXELS_PER_AXIS = 16;
 
 /**
+ * Finest practical 3DEP resample target (lidar-derived 1m where staged).
+ * Used as the auto-tighten floor before an honest decline.
+ */
+const FINEST_PRACTICAL_RESOLUTION_METERS = 1;
+
+/** Standard coarse-to-fine ladder for auto-tighten (meters per pixel). */
+const PRACTICAL_RESOLUTION_LADDER = [10, 5, 3, 2, 1] as const;
+
+/**
  * Default request budget. Raster export is heavier than a feature
  * query (the ImageServer regenerates the clip on demand against the
  * national mosaic) so 60s is the floor — observed p95 against the
@@ -288,6 +297,77 @@ export function computeRasterSize(
   return { widthPx, heightPx };
 }
 
+export interface SelectAdaptiveResolutionMetersResult {
+  /** Caller/default requested resolution (meters per pixel). */
+  resolutionMetersRequested: number;
+  /** Effective resolution passed to fetchUsgs3depDem after the 16px floor check. */
+  resolutionMetersAdapted: number;
+}
+
+function adaptiveResolutionCandidates(requestedMeters: number): number[] {
+  const candidates: number[] = PRACTICAL_RESOLUTION_LADDER.filter((step) => step <= requestedMeters);
+  if (!candidates.some((candidate) => candidate === requestedMeters)) {
+    candidates.unshift(requestedMeters);
+  }
+  return [...new Set(candidates)].sort((a, b) => b - a);
+}
+
+/**
+ * Pick an effective DEM resolution that satisfies {@link MIN_PIXELS_PER_AXIS}
+ * on both axes. When the requested resolution is too coarse for the bbox, auto-
+ * tightens toward {@link FINEST_PRACTICAL_RESOLUTION_METERS}. If even 1m/px
+ * cannot meet the floor, throws an honest decline (no geometry invention).
+ */
+export function selectAdaptiveResolutionMeters(
+  bbox: BboxWgs84,
+  requestedMeters: number = 10,
+): SelectAdaptiveResolutionMetersResult {
+  if (!isFiniteNumber(requestedMeters) || requestedMeters <= 0) {
+    throw new Usgs3depFetchError(
+      "invalid-resolution",
+      `resolutionMeters must be a positive finite number; got ${requestedMeters}`,
+    );
+  }
+
+  const candidates = adaptiveResolutionCandidates(requestedMeters);
+
+  for (const candidate of candidates) {
+    try {
+      computeRasterSize(bbox, candidate);
+      return {
+        resolutionMetersRequested: requestedMeters,
+        resolutionMetersAdapted: candidate,
+      };
+    } catch (err) {
+      if (err instanceof Usgs3depFetchError && err.code === "raster-too-small") {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (candidates[candidates.length - 1] !== FINEST_PRACTICAL_RESOLUTION_METERS) {
+    try {
+      computeRasterSize(bbox, FINEST_PRACTICAL_RESOLUTION_METERS);
+      return {
+        resolutionMetersRequested: requestedMeters,
+        resolutionMetersAdapted: FINEST_PRACTICAL_RESOLUTION_METERS,
+      };
+    } catch (err) {
+      if (!(err instanceof Usgs3depFetchError && err.code === "raster-too-small")) {
+        throw err;
+      }
+    }
+  }
+
+  const { widthM, heightM } = bboxMetersExtent(bbox);
+  throw new Usgs3depFetchError(
+    "raster-too-small",
+    `parcel bbox (~${Math.round(widthM)}m x ${Math.round(heightM)}m) cannot meet ` +
+      `${MIN_PIXELS_PER_AXIS}px floor even at ${FINEST_PRACTICAL_RESOLUTION_METERS}m/px; decline`,
+  );
+}
+
 /**
  * Compose the caller's signal with a timeout-derived signal. Either
  * one aborting cancels the in-flight `fetch`. Skipped when the caller
@@ -454,5 +534,6 @@ export {
   USGS_3DEP_LABEL,
   MAX_PIXELS_PER_AXIS,
   MIN_PIXELS_PER_AXIS,
+  FINEST_PRACTICAL_RESOLUTION_METERS,
   DEFAULT_TIMEOUT_MS,
 };

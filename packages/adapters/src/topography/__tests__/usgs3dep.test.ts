@@ -13,9 +13,11 @@ import {
   fetchUsgs3depDem,
   bboxMetersExtent,
   computeRasterSize,
+  selectAdaptiveResolutionMeters,
   Usgs3depFetchError,
   USGS_3DEP_EXPORT_ENDPOINT,
   MAX_PIXELS_PER_AXIS,
+  MIN_PIXELS_PER_AXIS,
   type BboxWgs84,
 } from "../usgs3dep.js";
 
@@ -31,6 +33,22 @@ const MOAB_BBOX: BboxWgs84 = {
   southLat: 38.5675,
   eastLng: -109.5375,
   northLat: 38.5775,
+};
+
+/** ~30m x 30m parcel — fails through 2m/px, passes at 1m/px. */
+const SMALL_PARCEL_BBOX: BboxWgs84 = {
+  westLng: -97.7400,
+  southLat: 30.2600,
+  eastLng: -97.739689,
+  northLat: 30.260269,
+};
+
+/** ~8m x 8m — below the 16px floor even at 1m/px. */
+const TINY_PARCEL_BBOX: BboxWgs84 = {
+  westLng: -97.7400,
+  southLat: 30.2600,
+  eastLng: -97.73993,
+  northLat: 30.26007,
 };
 
 /**
@@ -126,6 +144,49 @@ describe("computeRasterSize", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(Usgs3depFetchError);
       expect((err as Usgs3depFetchError).code).toBe("invalid-resolution");
+    }
+  });
+});
+
+describe("selectAdaptiveResolutionMeters", () => {
+  it("keeps the default 10m request when the bbox already meets the 16px floor", () => {
+    const result = selectAdaptiveResolutionMeters(MOAB_BBOX);
+    expect(result.resolutionMetersRequested).toBe(10);
+    expect(result.resolutionMetersAdapted).toBe(10);
+  });
+
+  it("auto-tightens from 10m to 1m for a small parcel bbox", () => {
+    try {
+      computeRasterSize(SMALL_PARCEL_BBOX, 10);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(Usgs3depFetchError);
+      expect((err as Usgs3depFetchError).code).toBe("raster-too-small");
+    }
+    const result = selectAdaptiveResolutionMeters(SMALL_PARCEL_BBOX, 10);
+    expect(result.resolutionMetersRequested).toBe(10);
+    expect(result.resolutionMetersAdapted).toBe(1);
+    expect(() => computeRasterSize(SMALL_PARCEL_BBOX, result.resolutionMetersAdapted)).not.toThrow();
+  });
+
+  it("declines honestly when even 1m/px cannot satisfy the 16px floor", () => {
+    try {
+      selectAdaptiveResolutionMeters(TINY_PARCEL_BBOX, 10);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(Usgs3depFetchError);
+      expect((err as Usgs3depFetchError).code).toBe("raster-too-small");
+      expect((err as Usgs3depFetchError).message).toMatch(/decline/i);
+    }
+  });
+
+  it("surfaces raster-too-large when the requested resolution is too fine", () => {
+    try {
+      selectAdaptiveResolutionMeters(MOAB_BBOX, 0.1);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(Usgs3depFetchError);
+      expect((err as Usgs3depFetchError).code).toBe("raster-too-large");
     }
   });
 });

@@ -10,6 +10,9 @@ import {
   type ParcelGeometryResolver,
   type TerrainArtifactStore,
 } from "@hauska-engine/engine-core/parcel-terrain";
+import {
+  GcsTerrainArtifactStore,
+} from "../terrain/gcs-artifact-store.js";
 
 const bbox = z.object({
   westLng: z.number(), southLat: z.number(), eastLng: z.number(), northLat: z.number(),
@@ -42,6 +45,8 @@ const EXTENSIONS: Record<DownloadableFormat, string> = {
 interface ReadableArtifactStore extends TerrainArtifactStore {
   get(ref: string): Promise<Uint8Array | null>;
 }
+
+export { type ReadableArtifactStore };
 
 class MemoryArtifactStore implements ReadableArtifactStore {
   readonly data = new Map<string, Uint8Array>();
@@ -77,13 +82,18 @@ class LocalDiskArtifactStore implements ReadableArtifactStore {
 }
 
 function artifactStoreFromEnv(env: NodeJS.ProcessEnv = process.env): ReadableArtifactStore {
+  if (env.TERRAIN_ARTIFACT_BUCKET) {
+    return new GcsTerrainArtifactStore({ bucket: env.TERRAIN_ARTIFACT_BUCKET });
+  }
   // /tmp is a canary-only persistence seam. Cloud Run instances may be
-  // replaced; Gate X download works same-instance after refresh. Durable
-  // GCS artifact storage remains the post-Gate-X hardening item.
+  // replaced; Gate X download works same-instance after refresh. Prefer
+  // TERRAIN_ARTIFACT_BUCKET for cross-instance download durability.
   return env.TERRAIN_ARTIFACT_DIR
     ? new LocalDiskArtifactStore(env.TERRAIN_ARTIFACT_DIR)
     : new MemoryArtifactStore();
 }
+
+export { artifactStoreFromEnv };
 
 function isDownloadableFormat(value: string | undefined): value is DownloadableFormat {
   return !!value && (DOWNLOADABLE_FORMATS as readonly string[]).includes(value);
