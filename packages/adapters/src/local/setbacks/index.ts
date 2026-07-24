@@ -9,16 +9,13 @@
  * Adding a new jurisdiction:
  *   1. Drop a `<jurisdiction-key>.json` next to this file.
  *   2. Append the import + entry to the SETBACK_TABLES record below.
- *
- * The schema is intentionally a plain JSON object (not a Zod schema)
- * because the tables are read at server boot and validated once via
- * the structural typecheck below — adding a Zod runtime check would
- * just duplicate the typescript guarantees we already have.
  */
 
 import grandCountyUt from "./grand-county-ut.json" with { type: "json" };
 import lemhiCountyId from "./lemhi-county-id.json" with { type: "json" };
 import bastropTx from "./bastrop-tx.json" with { type: "json" };
+import austinTx from "./austin-tx.json" with { type: "json" };
+import sanAntonioTx from "./san-antonio-tx.json" with { type: "json" };
 import utahUnincorporated from "./utah-unincorporated.json" with { type: "json" };
 import idahoUnincorporated from "./idaho-unincorporated.json" with { type: "json" };
 
@@ -33,6 +30,8 @@ export interface SetbackDistrict {
   max_lot_coverage_pct: number;
   max_impervious_pct: number;
   citation_url: string;
+  /** Fan-gift per-field provenance (optional on legacy tables). */
+  provenance?: Record<string, unknown>;
 }
 
 export interface SetbackTable {
@@ -47,11 +46,17 @@ const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = {
   "grand-county-ut": grandCountyUt as SetbackTable,
   "lemhi-county-id": lemhiCountyId as SetbackTable,
   "bastrop-tx": bastropTx as SetbackTable,
+  "austin-tx": austinTx as SetbackTable,
+  "san-antonio-tx": sanAntonioTx as SetbackTable,
   "utah-unincorporated": utahUnincorporated as SetbackTable,
   "idaho-unincorporated": idahoUnincorporated as SetbackTable,
 };
 
 export const SETBACK_JURISDICTION_KEYS = Object.keys(SETBACK_TABLES);
+
+function normalizeJurisdictionKey(key: string): string {
+  return key.toLowerCase().replace(/_/g, "-");
+}
 
 /**
  * Returns the setback table for a jurisdiction key, or null if no table
@@ -59,7 +64,7 @@ export const SETBACK_JURISDICTION_KEYS = Object.keys(SETBACK_TABLES);
  * dimensional rules available — fall back to base IBC/IRC".
  */
 export function getSetbackTable(jurisdictionKey: string): SetbackTable | null {
-  return SETBACK_TABLES[jurisdictionKey] ?? null;
+  return SETBACK_TABLES[normalizeJurisdictionKey(jurisdictionKey)] ?? null;
 }
 
 /**
