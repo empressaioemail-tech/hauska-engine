@@ -1,7 +1,7 @@
 /**
  * Shared Tier-1 snapshot → property atom emit (gold bake + county breadth).
  * Confidence composed via contract emitters — never labeling×district multiply.
- * Honest absence: no-zoning-stamp when district missing (Bexar rule at scale).
+ * Honest absence: no-zoning-stamp when district missing (null-zoning rule at scale).
  */
 
 import { STORAGE_PORT_PROOF_ATOM_DID } from "@hauska-engine/storage";
