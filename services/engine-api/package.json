@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@google-cloud/storage": "^7.14.0",
     "@hauska-engine/adapters": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",
     "@hauska-engine/document-ingest": "workspace:*",
