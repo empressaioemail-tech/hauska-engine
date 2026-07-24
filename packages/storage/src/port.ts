@@ -79,6 +79,14 @@ export interface StoragePort {
   ): Promise<{ atomDid: string; cid: string }>;
 
   /**
+   * Batch property-atom write (breadth bake). Same semantics as
+   * writePropertyAtom; multi-row INSERT for county-scale throughput.
+   */
+  writePropertyAtomsBatch(
+    instances: ReadonlyArray<PropertyAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>>;
+
+  /**
    * Active property atoms linked to a parcel node via body.parcelNodeId
    * (no schema migration — linkage lives in jsonb payload).
    */

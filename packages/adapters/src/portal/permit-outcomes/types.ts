@@ -20,12 +20,20 @@ export type PermitOutcomeKind = (typeof PERMIT_OUTCOME_KINDS)[number];
 export type PermitOutcomeJurisdiction =
   | "austin_tx"
   | "bastrop_tx"
-  | "grand_county_ut";
+  | "grand_county_ut"
+  | "san_marcos_tx"
+  | "san_antonio_tx"
+  | "cedar_park_tx"
+  | "new_braunfels_tx";
 
 export type PermitOutcomeSourceId =
   | "austin-soda"
   | "bastrop-mygov"
-  | "grand-county-ut";
+  | "grand-county-ut"
+  | "san-marcos-arcgis"
+  | "san-antonio-csv"
+  | "cedar-park-arcgis"
+  | "new-braunfels-arcgis";
 
 /**
  * Normalized finding-outcome shape (LDT-compatible payload fields) plus

@@ -49,7 +49,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "echo 'no lint configured'",
-    "bake-property-atom-gold-set": "tsx scripts/bake-property-atom-gold-set.mjs"
+    "bake-property-atom-gold-set": "tsx scripts/bake-property-atom-gold-set.mjs",
+    "bake-property-atom-county": "tsx scripts/bake-property-atom-county.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

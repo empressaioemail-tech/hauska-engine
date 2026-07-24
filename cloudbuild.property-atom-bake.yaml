@@ -1,0 +1,42 @@
+# Cloud Build — Central-TX property-atom county bake (WDLL 3.12 / breadth).
+# Project: hauska-prod-497015
+#
+#   gcloud builds submit --config=cloudbuild.property-atom-bake.yaml \
+#     --project=hauska-prod-497015 \
+#     --substitutions=_COUNTY=48055,_LIMIT=0,_OFFSET=0
+#
+# Secrets: DATABASE_URL (hauska_mcp), CORTEX_DATABASE_URL (cortex neondb).
+
+substitutions:
+  _COUNTY: "48055"
+  _LIMIT: "0"
+  _OFFSET: "0"
+  _BATCH: "200"
+
+steps:
+  - name: node:22
+    entrypoint: bash
+    secretEnv: ["DATABASE_URL", "CORTEX_DATABASE_URL"]
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        corepack enable
+        pnpm install --frozen-lockfile
+        export PROPERTY_ATOM_PATH=1
+        export SUBSTRATE_DATABASE_URL="$$DATABASE_URL"
+        pnpm --filter @hauska-engine/engine-core run bake-property-atom-county -- \
+          --county=${_COUNTY} --limit=${_LIMIT} --offset=${_OFFSET} --batch=${_BATCH}
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/hauska-prod-497015/secrets/DATABASE_URL/versions/latest
+      env: DATABASE_URL
+    - versionName: projects/hauska-prod-497015/secrets/CORTEX_DATABASE_URL/versions/latest
+      env: CORTEX_DATABASE_URL
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 7200s
