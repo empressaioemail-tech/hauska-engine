@@ -1,9 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { InMemoryStorage } from "@hauska-engine/storage";
 import {
   authorParcelTerrainExport,
+  createParcelGeometryResolverFromEnv,
   type ParcelGeometryResolver,
   type TerrainArtifactStore,
 } from "@hauska-engine/engine-core/parcel-terrain";
@@ -28,15 +31,35 @@ class MemoryArtifactStore implements TerrainArtifactStore {
   }
 }
 
+class LocalDiskArtifactStore implements TerrainArtifactStore {
+  constructor(private readonly root: string) {}
+  async put(input: { parcelNodeId: string; format: string; bytes: Uint8Array }): Promise<string> {
+    const safeNodeId = input.parcelNodeId.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const dir = join(this.root, safeNodeId);
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${input.format}-${Date.now()}`);
+    await writeFile(path, input.bytes);
+    return `file://${path.replace(/\\/g, "/")}`;
+  }
+}
+
+function artifactStoreFromEnv(env: NodeJS.ProcessEnv = process.env): TerrainArtifactStore {
+  // /tmp is a canary-only persistence seam. Cloud Run instances may be
+  // replaced, so Gate X needs GCS wiring before artifact refs are durable.
+  return env.TERRAIN_ARTIFACT_DIR
+    ? new LocalDiskArtifactStore(env.TERRAIN_ARTIFACT_DIR)
+    : new MemoryArtifactStore();
+}
+
 /**
- * Engine-api has no configured place-store client yet. The route therefore
- * accepts the documented bboxOverride for operator tests and reports an honest
- * geometry-unavailable error for parcel-only calls until its resolver is wired.
+ * TxGIO-backed counties resolve directly from the shared parcel store when
+ * TXGIO_DATABASE_URL (or DATABASE_URL) is configured. bboxOverride remains an
+ * explicit test fallback; non-TxGIO counties return an honest unresolved error.
  */
 export function buildParcelTerrainRoutes(
-  resolver: ParcelGeometryResolver = { resolve: async () => null },
+  resolver: ParcelGeometryResolver = createParcelGeometryResolverFromEnv(),
   storage = new InMemoryStorage(),
-  artifactStore = new MemoryArtifactStore(),
+  artifactStore = artifactStoreFromEnv(),
 ): Hono {
   const app = new Hono();
   app.post("/:parcelNodeId/terrain-export/refresh", async (c) => {

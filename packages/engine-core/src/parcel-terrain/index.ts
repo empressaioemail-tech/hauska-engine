@@ -11,3 +11,11 @@ export {
   type ParcelGeometryResolver,
   type TerrainArtifactStore,
 } from "./author.js";
+export {
+  TxgioDatabaseParcelGeometryResolver,
+  ArcGisParcelGeometryResolver,
+  createParcelGeometryResolverFromEnv,
+  type ArcGisParcelSource,
+  type ParcelGeometryRow,
+  type TxgioDatabaseResolverOptions,
+} from "./parcel-geometry-resolver.js";
