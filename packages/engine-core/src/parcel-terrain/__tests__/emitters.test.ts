@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { emitDxf3dFace, emitDxfContours } from "../emitters.js";
+import { emitDxf3dFace, emitDxfContours, emitIfc } from "../emitters.js";
 import { buildTerrainMeshGeometry, emitGlb } from "../mesh.js";
+
 
 const bbox = { westLng: -97.1, southLat: 30.1, eastLng: -97.09, northLat: 30.11 };
 const dem = {
@@ -53,4 +54,27 @@ describe("parcel terrain emitters", () => {
     assertRevitValidR2000(dxf);
     expect(dxf).toContain("TERRAIN_CONTOURS");
   });
+
+  it("authors a complete IFC Project→Site→placed terrain tree with MapConversion", async () => {
+    const mesh = buildTerrainMeshGeometry(dem, bbox);
+    const ifc = await emitIfc(mesh, "USGS 3DEP");
+    expect(ifc.status).toBe("ok");
+    expect(ifc.ifcText).toBeTruthy();
+    expect(ifc.spatialValidation?.ok).toBe(true);
+    expect(ifc.spatialValidation?.IfcSite).toBeGreaterThanOrEqual(1);
+    expect(ifc.spatialValidation?.IfcRelAggregates).toBeGreaterThanOrEqual(1);
+    expect(ifc.spatialValidation?.IfcRelContainedInSpatialStructure).toBeGreaterThanOrEqual(1);
+    expect(ifc.spatialValidation?.IfcLocalPlacement).toBeGreaterThanOrEqual(1);
+    expect(ifc.spatialValidation?.IfcMapConversion).toBeGreaterThanOrEqual(1);
+    expect(ifc.spatialValidation?.projectAggregatesSite).toBe(true);
+    expect(ifc.spatialValidation?.siteContainsElement).toBe(true);
+    expect(ifc.spatialValidation?.elementHasPlacement).toBe(true);
+    expect(ifc.triangleCount).toBe(mesh.triangleCount);
+    expect(ifc.ifcText).toContain("IFCSITE");
+    expect(ifc.ifcText).toContain("IFCRELAGGREGATES");
+    expect(ifc.ifcText).toContain("IFCRELCONTAINEDINSPATIALSTRUCTURE");
+    expect(ifc.ifcText).toContain("IFCLOCALPLACEMENT");
+    expect(ifc.ifcText).toContain("IFCMAPCONVERSION");
+  });
 });
+

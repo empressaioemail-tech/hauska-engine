@@ -11,8 +11,10 @@ export {
   emitIfc,
   type ContourPolyline2d,
   type DxfWorkerResult,
+  type IfcSpatialValidation,
   type IfcWorkerResult,
 } from "./emitters.js";
+
 
 export {
   authorParcelTerrainExport,

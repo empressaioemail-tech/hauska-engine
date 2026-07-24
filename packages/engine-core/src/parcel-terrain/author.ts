@@ -100,14 +100,21 @@ export async function authorParcelTerrainExport(
   });
 
   const ifc = await (options.emitIfc ?? emitIfc)(mesh, "USGS 3DEP");
-  if (ifc.status === "ok" && ifc.ifcText) {
-    await persist("ifc", new TextEncoder().encode(ifc.ifcText), "application/step", {
-      vertexCount: ifc.vertexCount ?? mesh.vertexCount,
-      triangleCount: ifc.triangleCount ?? mesh.triangleCount,
-    });
-  } else {
-    throw new Error(`IFC4 IfcTriangulatedFaceSet emission failed: ${ifc.message ?? "unknown worker error"}`);
+  if (ifc.status !== "ok" || !ifc.ifcText) {
+    throw new Error(`IFC4 emission failed: ${ifc.message ?? "unknown worker error"}`);
   }
+  if (!ifc.spatialValidation?.ok) {
+    throw new Error(
+      `IFC4 spatial model incomplete (refusing to ship empty Project tree): ${
+        ifc.spatialValidation?.errors?.join("; ") ?? ifc.message ?? "validation missing"
+      }`,
+    );
+  }
+  await persist("ifc", new TextEncoder().encode(ifc.ifcText), "application/step", {
+    vertexCount: ifc.vertexCount ?? mesh.vertexCount,
+    triangleCount: ifc.triangleCount ?? mesh.triangleCount,
+  });
+
   artifacts["landxml-tin"] = {
     format: "landxml-tin",
     ref: "deferred:landxml-tin",
