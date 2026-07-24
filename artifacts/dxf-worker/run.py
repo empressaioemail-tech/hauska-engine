@@ -12,8 +12,10 @@ and $EXTMIN/$EXTMAX from real modelspace geometry — not unset 1e20 sentinels).
 from __future__ import annotations
 
 import json
+import re
 import sys
 from io import StringIO
+
 
 try:
     import ezdxf
@@ -63,12 +65,25 @@ def _new_doc(vertical_datum: dict) -> "ezdxf.document.Drawing":
     return doc
 
 
+def _patch_header_point(text: str, varname: str, point) -> str:
+    """ezdxf.write resets $EXTMIN/$EXTMAX to sentinels — patch after serialize."""
+    marker = "$%s" % varname.lstrip("$")
+    idx = text.find(marker)
+    if idx < 0:
+        return text
+    # Replace the next three 10/20/30 value pairs after the marker.
+    # Format: $EXTMIN\n 10\n<x>\n 20\n<y>\n 30\n<z>\n
+    pattern = re.compile(
+
+        r"(\$" + re.escape(varname.lstrip("$")) + r"\n\s*10\n)([^\n]+)(\n\s*20\n)([^\n]+)(\n\s*30\n)([^\n]+)"
+    )
+    repl = r"\g<1>%s\g<3>%s\g<5>%s" % (point[0], point[1], point[2])
+    return pattern.sub(repl, text, count=1)
+
+
 def _finalize(doc, entity_count: int, kind: str, vertical_datum: dict) -> dict:
     msp = doc.modelspace()
     extents = ez_bbox.extents(msp)
-    if extents.has_data:
-        doc.header["$EXTMIN"] = extents.extmin
-        doc.header["$EXTMAX"] = extents.extmax
     stream = StringIO()
     doc.write(stream)
     text = stream.getvalue()
@@ -82,13 +97,19 @@ def _finalize(doc, entity_count: int, kind: str, vertical_datum: dict) -> dict:
             % summary
         )
         text = banner + text
+    if extents.has_data:
+        text = _patch_header_point(text, "EXTMIN", extents.extmin)
+        text = _patch_header_point(text, "EXTMAX", extents.extmax)
     return {
         "status": "ok",
         "dxfText": text,
         "entityCount": entity_count,
         "kind": kind,
         "verticalDatum": vertical_datum,
+        "extmin": list(extents.extmin) if extents.has_data else None,
+        "extmax": list(extents.extmax) if extents.has_data else None,
     }
+
 
 
 def emit_contours(request: dict) -> dict:
