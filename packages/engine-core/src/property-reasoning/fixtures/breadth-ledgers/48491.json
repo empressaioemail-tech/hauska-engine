@@ -1,0 +1,1138 @@
+{
+  "id": "breadth-county-48491",
+  "countyFips": "48491",
+  "countyName": "Williamson",
+  "bakedAt": "2026-07-24T01:50:54.310Z",
+  "purpose": "WDLL 3.12 / breadth Central-TX property-atom county bake",
+  "geometryCeiling": "include-all-10 — live txgio_parcel has geometry for all metro counties",
+  "bounds": {
+    "denominatorTier1": 282570,
+    "offset": 0,
+    "limit": null,
+    "explicitCap": false,
+    "dryRun": false
+  },
+  "totals": {
+    "parcelsSeen": 282570,
+    "parcelsEmitted": 282570,
+    "atomsWritten": 531568,
+    "zoningPresent": 124633,
+    "zoningAbsence": 157937,
+    "setbackPresent": 124499,
+    "envelopePresent": 124499,
+    "emitErrors": 0
+  },
+  "honestAbsenceRate": {
+    "zoning": 0.5589305304880207,
+    "note": "zoningAbsence / parcelsSeen — spike monitor vs baseline window"
+  },
+  "spikeFlags": [
+    {
+      "atParcel": 1304,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 1805,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.992,
+      "spikePp": 65.99999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 2306,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.997,
+      "spikePp": 66.5,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 2807,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.996,
+      "spikePp": 66.39999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 3308,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.996,
+      "spikePp": 66.39999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 3809,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.989,
+      "spikePp": 65.7,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 4310,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.986,
+      "spikePp": 65.39999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 4811,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.994,
+      "spikePp": 66.19999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 5312,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.992,
+      "spikePp": 65.99999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 5813,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.976,
+      "spikePp": 64.39999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 6314,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.982,
+      "spikePp": 64.99999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 6815,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.997,
+      "spikePp": 66.5,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 7316,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.996,
+      "spikePp": 66.39999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 7817,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.882,
+      "spikePp": 55.00000000000001,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 8318,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.746,
+      "spikePp": 41.4,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 8819,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.739,
+      "spikePp": 40.699999999999996,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 11926,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 12427,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.815,
+      "spikePp": 48.29999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 12928,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.853,
+      "spikePp": 52.099999999999994,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 13429,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.812,
+      "spikePp": 48.00000000000001,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 14493,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 14994,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.884,
+      "spikePp": 55.2,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 15495,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.919,
+      "spikePp": 58.699999999999996,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 15996,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.882,
+      "spikePp": 55.00000000000001,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 16497,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.816,
+      "spikePp": 48.39999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 19424,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 19925,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 22313,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 22814,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.743,
+      "spikePp": 41.099999999999994,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 31155,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 33085,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 33586,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.927,
+      "spikePp": 59.5,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 34087,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.996,
+      "spikePp": 66.39999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 37437,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 44817,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 45318,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.998,
+      "spikePp": 66.6,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 45819,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 1,
+      "spikePp": 66.8,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 46320,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.889,
+      "spikePp": 55.699999999999996,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 46821,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.784,
+      "spikePp": 45.2,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 47322,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.858,
+      "spikePp": 52.6,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 47823,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.881,
+      "spikePp": 54.89999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 50213,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 54053,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 54554,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.788,
+      "spikePp": 45.6,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 59111,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 60505,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 62126,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 66281,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 66782,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.816,
+      "spikePp": 48.39999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 67283,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.825,
+      "spikePp": 49.3,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 67784,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.777,
+      "spikePp": 44.5,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 72295,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 78088,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 88764,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 91722,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 95083,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 96772,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 99140,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 99641,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.79,
+      "spikePp": 45.800000000000004,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 102880,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 103381,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.918,
+      "spikePp": 58.60000000000001,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 103882,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.778,
+      "spikePp": 44.6,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 107023,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 107524,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.878,
+      "spikePp": 54.6,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 108731,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 109932,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 137634,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 153100,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 155940,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 161797,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 162888,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 163548,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 167649,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 168150,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.902,
+      "spikePp": 57.00000000000001,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 168651,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.744,
+      "spikePp": 41.199999999999996,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 169846,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 171247,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 172766,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 173267,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.786,
+      "spikePp": 45.4,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 175889,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 176390,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.884,
+      "spikePp": 55.2,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 177641,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 178142,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.793,
+      "spikePp": 46.1,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 180511,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 181012,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.911,
+      "spikePp": 57.9,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 181513,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.793,
+      "spikePp": 46.1,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 182241,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 183882,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 185007,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 185508,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.737,
+      "spikePp": 40.5,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 187005,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 187506,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.923,
+      "spikePp": 59.099999999999994,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 188007,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.759,
+      "spikePp": 42.699999999999996,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 190086,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 190587,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.797,
+      "spikePp": 46.5,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 194403,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 194904,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.864,
+      "spikePp": 53.2,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 195405,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.784,
+      "spikePp": 45.2,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 205183,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 205684,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.944,
+      "spikePp": 61.19999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 206185,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.808,
+      "spikePp": 47.6,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 206931,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 207432,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.856,
+      "spikePp": 52.400000000000006,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 207933,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.845,
+      "spikePp": 51.29999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 211994,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 213395,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 213896,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.792,
+      "spikePp": 46,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 214397,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.802,
+      "spikePp": 47,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 214970,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 215471,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.76,
+      "spikePp": 42.8,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 220377,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 220878,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.761,
+      "spikePp": 42.9,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 221379,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.735,
+      "spikePp": 40.3,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 223649,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 225225,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 225726,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.836,
+      "spikePp": 50.4,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 226953,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 227454,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.744,
+      "spikePp": 41.199999999999996,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 228173,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 232392,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 233802,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 237137,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 238950,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 239451,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.918,
+      "spikePp": 58.60000000000001,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 242377,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 243684,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 244793,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 245320,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 247057,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 247558,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.815,
+      "spikePp": 48.29999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 248119,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 248620,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.875,
+      "spikePp": 54.29999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 250087,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 250588,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.808,
+      "spikePp": 47.6,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 254380,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 257515,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 260298,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 260799,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.774,
+      "spikePp": 44.2,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 265139,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 265640,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.757,
+      "spikePp": 42.5,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 266141,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.858,
+      "spikePp": 52.6,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 266642,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.737,
+      "spikePp": 40.5,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 267860,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 268361,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.908,
+      "spikePp": 57.60000000000001,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 268862,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.92,
+      "spikePp": 58.80000000000001,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 270765,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 272514,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 273015,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.884,
+      "spikePp": 55.2,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 273516,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.791,
+      "spikePp": 45.9,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 274017,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.868,
+      "spikePp": 53.6,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 274518,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.753,
+      "spikePp": 42.1,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 276665,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 277166,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.801,
+      "spikePp": 46.900000000000006,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 279166,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 280712,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.732,
+      "spikePp": 40,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    },
+    {
+      "atParcel": 281213,
+      "baselineAbsenceRate": 0.332,
+      "windowAbsenceRate": 0.956,
+      "spikePp": 62.39999999999999,
+      "message": "Honest-absence rate spike — possible source outage; do not treat as silent no-answer"
+    }
+  ],
+  "compute": {
+    "units": 532981,
+    "wallMs": 2716687,
+    "approxUsdNote": "wall=2716687ms units=532981; approx $1.0933 (0.25 CU × $0.16/hr + $0.000002/atom write heuristic)",
+    "costGateUsd": 200,
+    "flaggedOverCost": false,
+    "approxUsd": 1.0933
+  },
+  "status": "completed-with-spike-flags",
+  "bakedPct": {
+    "ofTier1Denominator": 1,
+    "zoningPresentOfSeen": 0.44106946951197934,
+    "setbackOfSeen": 0.4405952507343313,
+    "envelopeOfSeen": 0.4405952507343313
+  }
+}

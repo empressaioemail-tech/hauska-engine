@@ -1,0 +1,45 @@
+{
+  "id": "breadth-county-48309",
+  "countyFips": "48309",
+  "countyName": "McLennan",
+  "bakedAt": "2026-07-24T01:34:40.298Z",
+  "purpose": "WDLL 3.12 / breadth Central-TX property-atom county bake",
+  "geometryCeiling": "include-all-10 — live txgio_parcel has geometry for all metro counties",
+  "bounds": {
+    "denominatorTier1": 114255,
+    "offset": 0,
+    "limit": null,
+    "explicitCap": false,
+    "dryRun": false
+  },
+  "totals": {
+    "parcelsSeen": 114255,
+    "parcelsEmitted": 114255,
+    "atomsWritten": 114255,
+    "zoningPresent": 0,
+    "zoningAbsence": 114255,
+    "setbackPresent": 0,
+    "envelopePresent": 0,
+    "emitErrors": 0
+  },
+  "honestAbsenceRate": {
+    "zoning": 1,
+    "note": "zoningAbsence / parcelsSeen — spike monitor vs baseline window"
+  },
+  "spikeFlags": [],
+  "compute": {
+    "units": 114827,
+    "wallMs": 402220,
+    "approxUsdNote": "wall=402220ms units=114827; approx $0.233 (0.25 CU × $0.16/hr + $0.000002/atom write heuristic)",
+    "costGateUsd": 200,
+    "flaggedOverCost": false,
+    "approxUsd": 0.233
+  },
+  "status": "completed",
+  "bakedPct": {
+    "ofTier1Denominator": 1,
+    "zoningPresentOfSeen": 0,
+    "setbackOfSeen": 0,
+    "envelopeOfSeen": 0
+  }
+}
