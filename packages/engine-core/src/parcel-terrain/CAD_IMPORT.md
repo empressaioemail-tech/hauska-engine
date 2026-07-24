@@ -39,6 +39,12 @@ Do not expect Civil3D proxy / AECC objects — we emit only standard `3DFACE` /
 
 ## Alternatives in Revit
 
-- **IFC** (`ifc` artifact): triangulated `IfcTriangulatedFaceSet` (georef rigor /
-  `IfcMapConversion` still a logged follow-up).
+- **IFC** (`ifc` artifact): complete IFC4 spatial model — `IfcProject` →
+  `IfcRelAggregates` → `IfcSite` (RefLat/RefLong + `IfcMapConversion` to local-ENU
+  metres) → `IfcRelContainedInSpatialStructure` → placed `IfcGeographicElement`
+  (`IfcTriangulatedFaceSet`). A floating mesh with no Site/containment/placement
+  is rejected by the worker and must not ship.
 - **GLB**: mesh preview outside Revit; not a native Revit import path.
+
+See also `artifacts/ifc-worker/validate_spatial.py` (fails closed on empty trees).
+

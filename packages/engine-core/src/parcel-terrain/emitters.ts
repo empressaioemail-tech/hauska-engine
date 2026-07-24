@@ -134,11 +134,29 @@ export async function emitDxfContours(
   };
 }
 
+export interface IfcSpatialValidation {
+  IfcProject: number;
+  IfcSite: number;
+  IfcRelAggregates: number;
+  IfcRelContainedInSpatialStructure: number;
+  IfcLocalPlacement: number;
+  IfcGeographicElement: number;
+  IfcMapConversion: number;
+  IfcProjectedCRS: number;
+  projectAggregatesSite: boolean;
+  siteContainsElement: boolean;
+  elementHasPlacement: boolean;
+  siteHasPlacement: boolean;
+  ok: boolean;
+  errors: string[];
+}
+
 export interface IfcWorkerResult {
   status: "ok" | "error";
   ifcText?: string;
   vertexCount?: number;
   triangleCount?: number;
+  spatialValidation?: IfcSpatialValidation;
   message?: string;
 }
 
