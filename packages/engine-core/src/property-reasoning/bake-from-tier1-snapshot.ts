@@ -107,32 +107,36 @@ export function emitFromTier1Snapshot(
     typeof setbacks.side_ft === "number" &&
     typeof setbacks.rear_ft === "number";
 
-  if (!hasSetbacks) {
+  if (!hasSetbacks || !setbacks) {
     out.notes.push("setback-omitted-no-snapshot-dims");
     return out;
   }
+
+  const frontFt = setbacks.front_ft as number;
+  const sideFt = setbacks.side_ft as number;
+  const rearFt = setbacks.rear_ft as number;
 
   const row = {
     atom_did: STORAGE_PORT_PROOF_ATOM_DID,
     match_basis: "exact" as const,
     district_code: zoningDistrict,
     front_ft: {
-      value: setbacks.front_ft,
+      value: frontFt,
       confidence: 0.85,
       verification_state: "transcribed" as const,
     },
     side_ft: {
-      value: setbacks.side_ft,
+      value: sideFt,
       confidence: 0.85,
       verification_state: "transcribed" as const,
     },
     rear_ft: {
-      value: setbacks.rear_ft,
+      value: rearFt,
       confidence: 0.85,
       verification_state: "transcribed" as const,
     },
     side_corner_ft: {
-      value: setbacks.side_ft,
+      value: sideFt,
       confidence: 0.7,
       verification_state: "transcribed" as const,
     },
@@ -153,17 +157,28 @@ export function emitFromTier1Snapshot(
   out.setbackPresent = true;
 
   const status = env?.status;
+  const setbackAtom = setback as PropertyAtomInstance;
+  const zAsserted = z.readContract?.axes.assertedConfidence;
+  const sAsserted = setbackAtom.readContract?.axes.assertedConfidence;
+  if (!zAsserted || !sAsserted) {
+    out.notes.push("envelope-omitted-missing-asserted-confidence");
+    return out;
+  }
+
   let outcome:
-    | { kind: "no-buildable-area"; areaSqFt: 0 }
+    | { kind: "no-buildable-area"; reason: string }
     | { kind: "buildable"; areaSqFt: number }
     | null = null;
   if (status === "no-buildable-area") {
-    outcome = { kind: "no-buildable-area", areaSqFt: 0 };
+    outcome = {
+      kind: "no-buildable-area",
+      reason: "Tier-1 snapshot status no-buildable-area",
+    };
   } else if (status === "ok") {
     outcome = {
       kind: "buildable",
       areaSqFt:
-        typeof env.buildableAreaSqFt === "number" ? env.buildableAreaSqFt : 0,
+        typeof env?.buildableAreaSqFt === "number" ? env.buildableAreaSqFt : 0,
     };
   } else {
     out.notes.push(`envelope-omitted-status:${status || "null"}`);
@@ -174,14 +189,11 @@ export function emitFromTier1Snapshot(
     descriptor,
     parcelNodeId,
     zoningFactAtomDid: z.atomDid,
-    setbackRuleAtomDid: (setback as PropertyAtomInstance).atomDid,
+    setbackRuleAtomDid: setbackAtom.atomDid,
     geometryRefId: `${parcelNodeId}/geometry`,
     frontEdgeRefId: `${parcelNodeId}/front-edge`,
     outcome,
-    inputAssertedConfidences: [
-      z.readContract.axes.assertedConfidence,
-      (setback as PropertyAtomInstance).readContract.axes.assertedConfidence,
-    ],
+    inputAssertedConfidences: [zAsserted, sAsserted],
     sourceCitation:
       "Breadth bake derived envelope from cortex snapshot geometry outcome — assertedConfidence composed via contract (not labeling×district)",
     extractedAt,

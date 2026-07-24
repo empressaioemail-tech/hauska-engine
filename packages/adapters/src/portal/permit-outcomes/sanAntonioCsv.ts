@@ -57,14 +57,19 @@ export function normalizeSanAntonioCsvRows(
 ): NormalizedPermitOutcome[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
+  const headerLine = lines[0] ?? "";
+  const headers = parseCsvLine(headerLine).map((h) => h.trim().toLowerCase());
   const idx = (name: string) => headers.indexOf(name);
   const outcomes: NormalizedPermitOutcome[] = [];
   for (let i = 1; i < lines.length && outcomes.length < limit; i++) {
-    const cols = parseCsvLine(lines[i]);
+    const line = lines[i];
+    if (!line) continue;
+    const cols = parseCsvLine(line);
     const get = (name: string) => {
       const j = idx(name);
-      return j >= 0 ? cols[j]?.trim() || null : null;
+      if (j < 0) return null;
+      const cell = cols[j];
+      return cell?.trim() || null;
     };
     const permitNumber =
       get("permit number") ??
