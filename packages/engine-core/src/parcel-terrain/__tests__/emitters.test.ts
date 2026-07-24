@@ -69,12 +69,43 @@ describe("parcel terrain emitters", () => {
     expect(ifc.spatialValidation?.projectAggregatesSite).toBe(true);
     expect(ifc.spatialValidation?.siteContainsElement).toBe(true);
     expect(ifc.spatialValidation?.elementHasPlacement).toBe(true);
+    expect(ifc.spatialValidation?.verticalDatum).toBe("NAVD88");
     expect(ifc.triangleCount).toBe(mesh.triangleCount);
     expect(ifc.ifcText).toContain("IFCSITE");
     expect(ifc.ifcText).toContain("IFCRELAGGREGATES");
     expect(ifc.ifcText).toContain("IFCRELCONTAINEDINSPATIALSTRUCTURE");
     expect(ifc.ifcText).toContain("IFCLOCALPLACEMENT");
     expect(ifc.ifcText).toContain("IFCMAPCONVERSION");
+    expect(ifc.ifcText).toContain("NAVD88");
+  });
+
+  it("stamps NAVD88 into DXF comments and keeps entity Z above sea-level band", async () => {
+    const elevDem = {
+      width: 3,
+      height: 3,
+      values: new Float32Array([145, 146, 147, 148, 149, 150, 151, 152, 153]),
+      minElevation: 145,
+      maxElevation: 153,
+      nodataCount: 0,
+    };
+    const mesh = buildTerrainMeshGeometry(elevDem, bbox);
+    const dxf = new TextDecoder().decode(await emitDxf3dFace(mesh));
+    expect(dxf).toContain("NAVD88");
+    expect(dxf).toMatch(/orthometric/i);
+    // Entity Z must not include a 0.0 spike (header EXTMIN sentinels are not entities).
+    const zs: number[] = [];
+    const lines = dxf.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]!.trim() !== "3DFACE") continue;
+      for (let j = i + 1; j < lines.length && lines[j]!.trim() !== "0"; j++) {
+        if (["30", "31", "32", "33"].includes(lines[j]!.trim()) && lines[j + 1]) {
+          zs.push(Number(lines[j + 1]));
+        }
+      }
+    }
+    expect(zs.length).toBeGreaterThan(0);
+    expect(Math.min(...zs)).toBeGreaterThan(100);
   });
 });
+
 

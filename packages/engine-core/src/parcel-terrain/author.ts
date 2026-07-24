@@ -9,8 +9,10 @@ import type { ParcelTerrainModelAtomInstance } from "@hauska-engine/atoms";
 import type { StoragePort } from "@hauska-engine/storage";
 
 import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
+import { assertTerrainElevationIntegrity, TERRAIN_VERTICAL_DATUM } from "./elevation.js";
 import { emitDxf3dFace, emitDxfContours, emitIfc } from "./emitters.js";
 import { buildTerrainMeshGeometry, emitGlb } from "./mesh.js";
+
 
 export interface ParcelGeometryResolver {
   resolve(parcelNodeId: string): Promise<{ bbox: BboxWgs84; sourceRef: string } | null>;
@@ -69,6 +71,7 @@ export async function authorParcelTerrainExport(
       : "";
   const dem = await (options.parseDem ?? parseDemBytes)(demFetch.bytes);
   const mesh = buildTerrainMeshGeometry(dem, resolved.bbox);
+  const elev = assertTerrainElevationIntegrity(mesh, dem);
 
   const artifacts: ParcelTerrainModelAtomInstance["artifacts"] = {};
   const persist = async (
@@ -99,6 +102,8 @@ export async function authorParcelTerrainExport(
     contourPolylineCount: contours.polylineCount,
   });
 
+
+
   const ifc = await (options.emitIfc ?? emitIfc)(mesh, "USGS 3DEP");
   if (ifc.status !== "ok" || !ifc.ifcText) {
     throw new Error(`IFC4 emission failed: ${ifc.message ?? "unknown worker error"}`);
@@ -119,8 +124,11 @@ export async function authorParcelTerrainExport(
     format: "landxml-tin",
     ref: "deferred:landxml-tin",
     deferred: true,
-    deferredReason: "LandXML TIN writer is deferred; this phase ships the shared mesh and required GLB/IFC/DXF emitters without inventing a second TIN triangulation.",
+    deferredReason:
+      "LandXML TIN writer is deferred; when shipped, CoordinateSystem must set " +
+      `verticalDatum=${TERRAIN_VERTICAL_DATUM.name} (orthometric ${TERRAIN_VERTICAL_DATUM.units}).`,
   };
+
 
   const atom: ParcelTerrainModelAtomInstance = {
     entityType: "parcel-terrain-model",
@@ -154,7 +162,10 @@ export async function authorParcelTerrainExport(
     confidence: {
       value: 0.6,
       kind: "asserted",
-      provenance: `USGS 3DEP DEM field; calibration pending${resolutionAdaptedNote}`,
+      provenance:
+        `USGS 3DEP DEM field; Z=${TERRAIN_VERTICAL_DATUM.summary}; ` +
+        `mesh Z band [${elev.minZ.toFixed(3)}, ${elev.maxZ.toFixed(3)}] m; ` +
+        `calibration pending${resolutionAdaptedNote}`,
       n: 0,
       intervalWidth: 1,
     },

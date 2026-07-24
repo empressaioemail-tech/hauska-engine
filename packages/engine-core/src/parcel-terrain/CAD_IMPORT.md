@@ -18,9 +18,13 @@ AutoCAD 2000 (`AC1015`) drawing, not a hand-rolled ENTITIES fragment:
 - `EOF`
 
 Coordinates are **parcel-local ENU meters** (origin at southwest of the DEM bbox),
-not state-plane feet and not WGS84 lon/lat. A typical small parcel is only tens of
-meters across — after Link CAD, use **Zoom to Fit** / **Zoom All** or the contours
-look “missing” next to a large aerial site.
+not state-plane feet and not WGS84 lon/lat. **Z is NAVD88 orthometric metres**
+(USGS 3DEP MSL / geoid height — not ellipsoidal height). Declared in DXF group-999
+comments (`Vertical: NAVD88 orthometric metres…`). A typical small parcel is only
+tens of meters across — after Link CAD, use **Zoom to Fit** / **Zoom All** or the
+contours look “missing” next to a large aerial site. `$EXTMIN`/`$EXTMAX` are written
+from real modelspace geometry (not unset 1e20 sentinels).
+
 
 ## Revit (product path)
 
@@ -42,9 +46,14 @@ Do not expect Civil3D proxy / AECC objects — we emit only standard `3DFACE` /
 - **IFC** (`ifc` artifact): complete IFC4 spatial model — `IfcProject` →
   `IfcRelAggregates` → `IfcSite` (RefLat/RefLong + `IfcMapConversion` to local-ENU
   metres) → `IfcRelContainedInSpatialStructure` → placed `IfcGeographicElement`
-  (`IfcTriangulatedFaceSet`). A floating mesh with no Site/containment/placement
-  is rejected by the worker and must not ship.
+  (`IfcTriangulatedFaceSet`). `IfcProjectedCRS.VerticalDatum = NAVD88`. A floating
+  mesh with no Site/containment/placement is rejected by the worker and must not ship.
 - **GLB**: mesh preview outside Revit; not a native Revit import path.
+- **LandXML** (deferred): when shipped, `<CoordinateSystem verticalDatum="NAVD88">`
+  (orthometric metres) is mandatory — same datum as IFC/DXF.
 
-See also `artifacts/ifc-worker/validate_spatial.py` (fails closed on empty trees).
+See also `artifacts/ifc-worker/validate_spatial.py` (fails closed on empty trees /
+missing VerticalDatum) and `assertTerrainElevationIntegrity` (rejects nodata-as-zero
+spikes before any format emit).
+
 

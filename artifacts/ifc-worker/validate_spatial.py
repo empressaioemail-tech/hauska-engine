@@ -51,6 +51,8 @@ def validate(path: str) -> dict:
     )
     element_placed = bool(elements and elements[0].ObjectPlacement is not None)
     site_placed = bool(sites and sites[0].ObjectPlacement is not None)
+    projected = list(f.by_type("IfcProjectedCRS"))
+    vertical_datum = getattr(projected[0], "VerticalDatum", None) if projected else None
 
     if sites and projects and not project_aggregates_site:
         errors.append("IfcProject does not aggregate IfcSite")
@@ -60,10 +62,13 @@ def validate(path: str) -> dict:
         errors.append("terrain element unplaced")
     if sites and not site_placed:
         errors.append("IfcSite unplaced")
+    if not vertical_datum:
+        errors.append("IfcProjectedCRS.VerticalDatum missing (expected NAVD88)")
 
     return {
         "path": path,
         "counts": counts,
+        "verticalDatum": vertical_datum,
         "projectAggregatesSite": project_aggregates_site,
         "siteContainsElement": site_contains_element,
         "elementHasPlacement": element_placed,
@@ -71,6 +76,7 @@ def validate(path: str) -> dict:
         "ok": not errors,
         "errors": errors,
     }
+
 
 
 if __name__ == "__main__":

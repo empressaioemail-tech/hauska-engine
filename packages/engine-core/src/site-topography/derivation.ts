@@ -32,6 +32,23 @@ export interface ParsedDem {
   nodataCount: number;
 }
 
+function gdalNodataValue(image: {
+  getGDALNoData?: () => number | null;
+  fileDirectory?: { GDAL_NODATA?: string | number };
+}): number | null {
+  const fromFn = image.getGDALNoData?.();
+  if (typeof fromFn === "number" && Number.isFinite(fromFn)) return fromFn;
+  const raw = image.fileDirectory?.GDAL_NODATA;
+  if (raw === undefined || raw === null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Parse a USGS 3DEP (or compatible) GeoTIFF DEM. Nodata cells become NaN so
+ * triangulation skips them — never written as elevation 0.0 (a ~150 m spike
+ * below Central-TX ground when void fills leak through as zero).
+ */
 export async function parseDemBytes(bytes: Uint8Array): Promise<ParsedDem> {
   const tiff = await geotiffFromArrayBuffer(
     bytes.buffer.slice(
@@ -45,20 +62,44 @@ export async function parseDemBytes(bytes: Uint8Array): Promise<ParsedDem> {
   const width = image.getWidth();
   const height = image.getHeight();
   const total = width * height;
+  const taggedNodata = gdalNodataValue(image);
+
+  // Pass 1: classic / tagged nodata → NaN; collect land-like samples for median.
   const values = new Float32Array(total);
-  let min = Infinity;
-  let max = -Infinity;
-  let nodataCount = 0;
+  const landSamples: number[] = [];
   for (let i = 0; i < total; i++) {
     const raw = Number((band0 as ArrayLike<number>)[i]);
-    if (!Number.isFinite(raw) || raw <= -1e30) {
+    const isTagged = taggedNodata !== null && raw === taggedNodata;
+    if (!Number.isFinite(raw) || raw <= -1e30 || isTagged) {
       values[i] = Number.NaN;
-      nodataCount++;
       continue;
     }
     values[i] = raw;
-    if (raw < min) min = raw;
-    if (raw > max) max = raw;
+    if (raw > -500 && raw < 9000) landSamples.push(raw);
+  }
+  landSamples.sort((a, b) => a - b);
+  const median =
+    landSamples.length === 0
+      ? NaN
+      : landSamples[Math.floor(landSamples.length / 2)]!;
+
+  // Pass 2: on clearly elevated land DEMs, treat exact 0.0 as void fill (not MSL).
+  let nodataCount = 0;
+  let min = Infinity;
+  let max = -Infinity;
+  const zeroIsNodata = Number.isFinite(median) && median > 20;
+  for (let i = 0; i < total; i++) {
+    let v = values[i]!;
+    if (zeroIsNodata && v === 0) {
+      values[i] = Number.NaN;
+      v = Number.NaN;
+    }
+    if (!Number.isFinite(v)) {
+      nodataCount++;
+      continue;
+    }
+    if (v < min) min = v;
+    if (v > max) max = v;
   }
   if (!Number.isFinite(min)) {
     throw new Error(
