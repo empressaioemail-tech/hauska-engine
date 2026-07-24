@@ -1,0 +1,58 @@
+{
+  "id": "breadth-metro-central-tx",
+  "bakedAt": "2026-07-24T04:52:51.672Z",
+  "geometryCeiling": "include-all-10 — live txgio_parcel geometry for Guadalupe/Bell/McLennan; kickoff gap premise corrected",
+  "wallMs": 13888518,
+  "results": [
+    {
+      "fips": "48055",
+      "exitCode": 0,
+      "ok": true
+    },
+    {
+      "fips": "48021",
+      "exitCode": 0,
+      "ok": true
+    },
+    {
+      "fips": "48091",
+      "exitCode": 0,
+      "ok": true
+    },
+    {
+      "fips": "48209",
+      "exitCode": 0,
+      "ok": true
+    },
+    {
+      "fips": "48187",
+      "exitCode": 0,
+      "ok": true
+    },
+    {
+      "fips": "48309",
+      "exitCode": 0,
+      "ok": true
+    },
+    {
+      "fips": "48027",
+      "exitCode": 0,
+      "ok": true
+    },
+    {
+      "fips": "48491",
+      "exitCode": 0,
+      "ok": true
+    },
+    {
+      "fips": "48453",
+      "exitCode": 0,
+      "ok": true
+    },
+    {
+      "fips": "48029",
+      "exitCode": 0,
+      "ok": true
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "breadth-county-48187",
+  "countyFips": "48187",
+  "countyName": "Guadalupe",
+  "bakedAt": "2026-07-24T01:29:08.039Z",
+  "purpose": "WDLL 3.12 / breadth Central-TX property-atom county bake",
+  "geometryCeiling": "include-all-10 — live txgio_parcel has geometry for all metro counties",
+  "bounds": {
+    "denominatorTier1": 93728,
+    "offset": 0,
+    "limit": null,
+    "explicitCap": false,
+    "dryRun": false
+  },
+  "totals": {
+    "parcelsSeen": 93728,
+    "parcelsEmitted": 93728,
+    "atomsWritten": 93728,
+    "zoningPresent": 0,
+    "zoningAbsence": 93728,
+    "setbackPresent": 0,
+    "envelopePresent": 0,
+    "emitErrors": 0
+  },
+  "honestAbsenceRate": {
+    "zoning": 1,
+    "note": "zoningAbsence / parcelsSeen — spike monitor vs baseline window"
+  },
+  "spikeFlags": [],
+  "compute": {
+    "units": 94197,
+    "wallMs": 331206,
+    "approxUsdNote": "wall=331206ms units=94197; approx $0.1911 (0.25 CU × $0.16/hr + $0.000002/atom write heuristic)",
+    "costGateUsd": 200,
+    "flaggedOverCost": false,
+    "approxUsd": 0.1911
+  },
+  "status": "completed",
+  "bakedPct": {
+    "ofTier1Denominator": 1,
+    "zoningPresentOfSeen": 0,
+    "setbackOfSeen": 0,
+    "envelopeOfSeen": 0
+  }
+}

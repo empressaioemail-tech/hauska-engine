@@ -1,0 +1,45 @@
+{
+  "id": "breadth-county-48029",
+  "countyFips": "48029",
+  "countyName": "Bexar",
+  "bakedAt": "2026-07-24T03:13:12.307Z",
+  "purpose": "WDLL 3.12 / breadth Central-TX property-atom county bake",
+  "geometryCeiling": "include-all-10 — live txgio_parcel has geometry for all metro counties",
+  "bounds": {
+    "denominatorTier1": 703258,
+    "offset": 0,
+    "limit": null,
+    "explicitCap": false,
+    "dryRun": false
+  },
+  "totals": {
+    "parcelsSeen": 703258,
+    "parcelsEmitted": 703258,
+    "atomsWritten": 704886,
+    "zoningPresent": 2605,
+    "zoningAbsence": 700653,
+    "setbackPresent": 814,
+    "envelopePresent": 814,
+    "emitErrors": 0
+  },
+  "honestAbsenceRate": {
+    "zoning": 0.9962958117788919,
+    "note": "zoningAbsence / parcelsSeen — spike monitor vs baseline window"
+  },
+  "spikeFlags": [],
+  "compute": {
+    "units": 708403,
+    "wallMs": 5995412,
+    "approxUsdNote": "wall=5995412ms units=708403; approx $1.4764 (0.25 CU × $0.16/hr + $0.000002/atom write heuristic)",
+    "costGateUsd": 200,
+    "flaggedOverCost": false,
+    "approxUsd": 1.4764
+  },
+  "status": "completed",
+  "bakedPct": {
+    "ofTier1Denominator": 1,
+    "zoningPresentOfSeen": 0.0037041882211080427,
+    "setbackOfSeen": 0.0011574699470180219,
+    "envelopeOfSeen": 0.0011574699470180219
+  }
+}

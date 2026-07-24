@@ -1,0 +1,45 @@
+{
+  "id": "breadth-county-48453",
+  "countyFips": "48453",
+  "countyName": "Travis",
+  "bakedAt": "2026-07-24T02:36:10.577Z",
+  "purpose": "WDLL 3.12 / breadth Central-TX property-atom county bake",
+  "geometryCeiling": "include-all-10 — live txgio_parcel has geometry for all metro counties",
+  "bounds": {
+    "denominatorTier1": 380918,
+    "offset": 0,
+    "limit": null,
+    "explicitCap": false,
+    "dryRun": false
+  },
+  "totals": {
+    "parcelsSeen": 380918,
+    "parcelsEmitted": 380918,
+    "atomsWritten": 424940,
+    "zoningPresent": 22034,
+    "zoningAbsence": 358884,
+    "setbackPresent": 22011,
+    "envelopePresent": 22011,
+    "emitErrors": 0
+  },
+  "honestAbsenceRate": {
+    "zoning": 0.9421555295365407,
+    "note": "zoningAbsence / parcelsSeen — spike monitor vs baseline window"
+  },
+  "spikeFlags": [],
+  "compute": {
+    "units": 426845,
+    "wallMs": 2209028,
+    "approxUsdNote": "wall=2209028ms units=426845; approx $0.8744 (0.25 CU × $0.16/hr + $0.000002/atom write heuristic)",
+    "costGateUsd": 200,
+    "flaggedOverCost": false,
+    "approxUsd": 0.8744
+  },
+  "status": "completed",
+  "bakedPct": {
+    "ofTier1Denominator": 1,
+    "zoningPresentOfSeen": 0.05784447046345933,
+    "setbackOfSeen": 0.057784090014123775,
+    "envelopeOfSeen": 0.057784090014123775
+  }
+}

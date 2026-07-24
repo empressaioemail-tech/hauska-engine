@@ -1,0 +1,45 @@
+{
+  "id": "breadth-county-48027",
+  "countyFips": "48027",
+  "countyName": "Bell",
+  "bakedAt": "2026-07-24T01:41:23.803Z",
+  "purpose": "WDLL 3.12 / breadth Central-TX property-atom county bake",
+  "geometryCeiling": "include-all-10 — live txgio_parcel has geometry for all metro counties",
+  "bounds": {
+    "denominatorTier1": 165574,
+    "offset": 0,
+    "limit": null,
+    "explicitCap": false,
+    "dryRun": false
+  },
+  "totals": {
+    "parcelsSeen": 165574,
+    "parcelsEmitted": 165574,
+    "atomsWritten": 165574,
+    "zoningPresent": 0,
+    "zoningAbsence": 165574,
+    "setbackPresent": 0,
+    "envelopePresent": 0,
+    "emitErrors": 0
+  },
+  "honestAbsenceRate": {
+    "zoning": 1,
+    "note": "zoningAbsence / parcelsSeen — spike monitor vs baseline window"
+  },
+  "spikeFlags": [],
+  "compute": {
+    "units": 166402,
+    "wallMs": 563581,
+    "approxUsdNote": "wall=563581ms units=166402; approx $0.3374 (0.25 CU × $0.16/hr + $0.000002/atom write heuristic)",
+    "costGateUsd": 200,
+    "flaggedOverCost": false,
+    "approxUsd": 0.3374
+  },
+  "status": "completed",
+  "bakedPct": {
+    "ofTier1Denominator": 1,
+    "zoningPresentOfSeen": 0,
+    "setbackOfSeen": 0,
+    "envelopeOfSeen": 0
+  }
+}
