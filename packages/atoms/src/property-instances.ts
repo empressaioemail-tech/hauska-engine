@@ -43,12 +43,15 @@ export {
 export type PropertyEntityType =
   | "zoning-fact"
   | "setback-rule"
-  | "buildable-envelope";
+  | "buildable-envelope"
+  // Vendored from @empressaio/atom-contract PR #9 until 1.10.0 is published.
+  | "parcel-terrain-model";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "zoning-fact",
   "setback-rule",
   "buildable-envelope",
+  "parcel-terrain-model",
 ];
 
 export type PropertyAtomStatus = "active" | "retired";
@@ -113,10 +116,66 @@ export type BuildableEnvelopeAtomInstance = ContractBuildableEnvelopeAtomInstanc
     outcome?: EnvelopeHonestOutcome;
   };
 
+export type TerrainExportFormat =
+  | "glb"
+  | "ifc"
+  | "dxf-3dface"
+  | "dxf-contour"
+  | "landxml-tin";
+
+/**
+ * Compatibility shape matching atom-contract PR #9. It is deliberately local
+ * while the package remains pinned to ^1.9.0; remove this alias when 1.10.0
+ * is published and the contract export is available.
+ */
+export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistence {
+  entityType: "parcel-terrain-model";
+  atomDid: string;
+  parcelNodeId: string;
+  accessPolicy: "public-paid";
+  atomTier: "data";
+  extractedAt: string;
+  sourceCitation: string;
+  // The contract's read-contract type is vendored with the 1.10.0 lift.
+  // Keep `any` at this compatibility seam so existing overlay reads retain
+  // their exact WidthedConfidence shape until the package export is present.
+  readContract?: any;
+  reasoningChain: {
+    reasoningKind: "derived";
+    derivationMethod: "parcel-terrain-mesh-ifc-v1";
+    inputAtomRefs: Array<{
+      atomDid: string;
+      role: "reference-field";
+      citationLabel: "usgs-3dep-dem";
+    }>;
+  };
+  artifacts: Partial<Record<TerrainExportFormat, {
+    format: TerrainExportFormat;
+    ref: string;
+    byteCount?: number;
+    vertexCount?: number;
+    triangleCount?: number;
+    contourIntervalMeters?: number;
+    contourPolylineCount?: number;
+    deferred?: boolean;
+    deferredReason?: string;
+  }>>;
+  coverage: {
+    coverageFraction: number;
+    nodataCount: number;
+    totalCells: number;
+    resolutionMetersRequested: number | null;
+    resolutionMetersActual: number | null;
+    touchesNodata: boolean;
+  };
+  confidence: { value: number; kind: "asserted"; provenance: string; n: number; intervalWidth: number };
+}
+
 export type PropertyAtomInstance =
   | ZoningFactAtomInstance
   | SetbackRuleAtomInstance
-  | BuildableEnvelopeAtomInstance;
+  | BuildableEnvelopeAtomInstance
+  | ParcelTerrainModelAtomInstance;
 
 export function isPropertyEntityType(
   value: string,

@@ -38,6 +38,10 @@
     "./property-reasoning": {
       "types": "./src/property-reasoning/index.ts",
       "import": "./src/property-reasoning/index.ts"
+    },
+    "./parcel-terrain": {
+      "types": "./src/parcel-terrain/index.ts",
+      "import": "./src/parcel-terrain/index.ts"
     }
   },
   "scripts": {
@@ -50,6 +54,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@empressaio/atom-contract": "^1.9.0",
+    "@gltf-transform/core": "^4.2.1",
+    "@hauska-engine/adapters": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",
     "@hauska-engine/storage": "workspace:*",
     "d3-contour": "^4.0.2",

@@ -17,7 +17,8 @@ export function buildSnippet(inst: StoredAtomInstance): string {
   if (
     inst.entityType === "zoning-fact" ||
     inst.entityType === "setback-rule" ||
-    inst.entityType === "buildable-envelope"
+    inst.entityType === "buildable-envelope" ||
+    inst.entityType === "parcel-terrain-model"
   ) {
     const property = inst as PropertyAtomInstance;
     return `${property.entityType} ${property.parcelNodeId} ${property.sourceCitation}`;

@@ -26,6 +26,13 @@ WORKDIR /app
 COPY artifacts/hydrology-worker/requirements.txt /tmp/hydrology-requirements.txt
 RUN pip3 install --break-system-packages -r /tmp/hydrology-requirements.txt
 
+# IFC/OpenShell requires NumPy 2 while the hydrology worker requires NumPy 1,
+# so terrain IFC runs in an isolated venv rather than silently downgrading one.
+COPY artifacts/ifc-worker/requirements.txt /tmp/ifc-requirements.txt
+RUN python3 -m venv /opt/ifc-venv \
+  && /opt/ifc-venv/bin/pip install --no-cache-dir -r /tmp/ifc-requirements.txt \
+  && /opt/ifc-venv/bin/python -c "import ifcopenshell, numpy; print('IFC deps OK')"
+
 # Fail the build if pysheds/rasterio/numpy can't import — this is the
 # exact failure the runtime worker hits ("pysheds not installed"). Better
 # to surface it at build time than to ship an image that silently falls
@@ -52,12 +59,15 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
 COPY services/engine-api ./services/engine-api
 COPY artifacts/hydrology-worker ./artifacts/hydrology-worker
+COPY artifacts/ifc-worker ./artifacts/ifc-worker
 
 RUN corepack enable && corepack prepare pnpm@10.27.0 --activate \
   && pnpm install --frozen-lockfile=false
 
 ENV PORT=8080
 ENV HYDROLOGY_PYTHON=python3
+ENV IFC_PYTHON=/opt/ifc-venv/bin/python \
+    IFC_WORKER_PATH=/app/artifacts/ifc-worker/run.py
 # 45s (the old default) is not enough headroom for the uncached subset of
 # pysheds' eager-compiled kernels on a throttled cold instance. 120s stays
 # inside the ldt spine call timeout (180s) and Cloud Run request timeout.
