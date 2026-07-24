@@ -89,15 +89,16 @@ export async function authorParcelTerrainExport(
     vertexCount: mesh.vertexCount,
     triangleCount: mesh.triangleCount,
   });
-  await persist("dxf-3dface", emitDxf3dFace(mesh), "application/dxf", {
+  await persist("dxf-3dface", await emitDxf3dFace(mesh), "application/dxf", {
     vertexCount: mesh.vertexCount,
     triangleCount: mesh.triangleCount,
   });
-  const contours = emitDxfContours(dem, resolved.bbox, contourIntervalMeters);
+  const contours = await emitDxfContours(dem, resolved.bbox, contourIntervalMeters);
   await persist("dxf-contour", contours.bytes, "application/dxf", {
     contourIntervalMeters,
     contourPolylineCount: contours.polylineCount,
   });
+
   const ifc = await (options.emitIfc ?? emitIfc)(mesh, "USGS 3DEP");
   if (ifc.status === "ok" && ifc.ifcText) {
     await persist("ifc", new TextEncoder().encode(ifc.ifcText), "application/step", {
