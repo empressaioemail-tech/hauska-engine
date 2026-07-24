@@ -55,6 +55,8 @@ export {
   type ResolveJurisdictionInput,
 } from "./jurisdictionResolver";
 
+export * from "./topography/index";
+
 export {
   isRecord,
   pickString,

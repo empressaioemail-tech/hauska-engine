@@ -20,6 +20,7 @@ import { buildFindingsRoutes } from "./routes/findings.js";
 import { buildHydrologyRoutes } from "./routes/hydrology.js";
 import { buildSiteContextRoutes } from "./routes/site-context.js";
 import { buildTopographyRoutes } from "./routes/topography.js";
+import { buildParcelTerrainRoutes } from "./routes/parcel-terrain.js";
 import { buildMapLayersRoutes } from "./routes/map-layers.js";
 import { validateEnvelopeMiddleware } from "./middleware/validateEnvelope.js";
 
@@ -178,6 +179,7 @@ export function buildApp(options: ServerOptions): Hono {
   v1.route("/chat", buildChatRoutes());
   v1.route("/map-layers", buildMapLayersRoutes());
   v1.route("/document-ingest", buildDocumentIngestRoutes());
+  v1.route("/property-nodes", buildParcelTerrainRoutes());
   app.route("/v1", v1);
 
   app.all("/v1/*", (c) =>
