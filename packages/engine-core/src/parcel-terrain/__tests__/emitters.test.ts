@@ -17,9 +17,10 @@ function assertRevitFriendlyDxf(dxf: string): void {
   expect(dxf.startsWith("0\nSECTION\n2\nHEADER\n")).toBe(true);
   expect(dxf).toContain("$ACADVER");
   expect(dxf).toContain("AC1015");
-  expect(dxf).toContain("$INSUNITS");
-  // group 70 value 6 = meters, immediately after $INSUNITS in our preamble
   expect(dxf).toMatch(/\$INSUNITS\n70\n6\n/);
+  expect(dxf).toContain("\n2\nLTYPE\n");
+  expect(dxf).toContain("\n2\nCONTINUOUS\n");
+  expect(dxf).toContain("\n2\nBLOCKS\n");
   expect(dxf).toContain("TABLES");
   expect(dxf).toContain("ENTITIES");
   expect(dxf.trimEnd().endsWith("EOF")).toBe(true);
@@ -40,17 +41,24 @@ describe("parcel terrain emitters", () => {
     expect(dxf).toContain("TERRAIN");
   });
 
-  it("emits contour polylines, never 3DFACE entities", () => {
+  it("emits classic 3D POLYLINE contours, never faces or LWPOLYLINE", () => {
     const dxf = new TextDecoder().decode(emitDxfContours(dem, bbox, 2).bytes);
-    expect(dxf).toContain("LWPOLYLINE");
+    expect(dxf).toContain("POLYLINE");
+    expect(dxf).toContain("VERTEX");
+    expect(dxf).toContain("SEQEND");
+    expect(dxf).not.toContain("LWPOLYLINE");
     expect(dxf).not.toContain("3DFACE");
     assertRevitFriendlyDxf(dxf);
     expect(dxf).toContain("TERRAIN_CONTOURS");
   });
 
-  it("buildDxfPreamble registers requested layers", () => {
+  it("buildDxfPreamble registers LTYPE CONTINUOUS before layers", () => {
     const text = buildDxfPreamble(["TERRAIN", "TERRAIN_CONTOURS"]).join("\n");
-    expect(text).toContain("\n2\nTERRAIN\n");
-    expect(text).toContain("\n2\nTERRAIN_CONTOURS\n");
+    const ltypeAt = text.indexOf("\n2\nLTYPE\n");
+    const layerAt = text.indexOf("\n2\nLAYER\n");
+    expect(ltypeAt).toBeGreaterThan(-1);
+    expect(layerAt).toBeGreaterThan(ltypeAt);
+    expect(text).toContain("\n2\nCONTINUOUS\n");
+    expect(text).toContain("\n2\nBLOCKS\n");
   });
 });
