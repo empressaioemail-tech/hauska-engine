@@ -3,7 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { deriveContoursGeoJson, type BboxWgs84, type ParsedDem } from "../site-topography/index.js";
+import { TERRAIN_VERTICAL_DATUM } from "./elevation.js";
 import type { TerrainMeshGeometry } from "./mesh.js";
+
 
 const text = new TextEncoder();
 
@@ -103,12 +105,17 @@ export async function emitDxf3dFace(geometry: TerrainMeshGeometry): Promise<Uint
     layer: "TERRAIN",
     positions: Array.from(geometry.positions),
     indices: Array.from(geometry.indices),
+    verticalDatum: TERRAIN_VERTICAL_DATUM,
   });
   if (result.status !== "ok" || !result.dxfText) {
     throw new Error(`DXF 3DFACE emission failed: ${result.message ?? "unknown worker error"}`);
   }
+  if (!result.dxfText.includes("NAVD88")) {
+    throw new Error("DXF 3DFACE missing NAVD88 vertical-datum declaration");
+  }
   return text.encode(result.dxfText);
 }
+
 
 /**
  * Contour DXF via ezdxf R2000 writer. Never emits 3DFACE. Contours are closed
@@ -124,10 +131,15 @@ export async function emitDxfContours(
     kind: "contours",
     layer: "TERRAIN_CONTOURS",
     polylines,
+    verticalDatum: TERRAIN_VERTICAL_DATUM,
   });
   if (result.status !== "ok" || !result.dxfText) {
     throw new Error(`DXF contour emission failed: ${result.message ?? "unknown worker error"}`);
   }
+  if (!result.dxfText.includes("NAVD88")) {
+    throw new Error("DXF contour missing NAVD88 vertical-datum declaration");
+  }
+
   return {
     bytes: text.encode(result.dxfText),
     polylineCount: result.entityCount ?? polylines.length,
@@ -143,6 +155,7 @@ export interface IfcSpatialValidation {
   IfcGeographicElement: number;
   IfcMapConversion: number;
   IfcProjectedCRS: number;
+  verticalDatum?: string | null;
   projectAggregatesSite: boolean;
   siteContainsElement: boolean;
   elementHasPlacement: boolean;
@@ -150,6 +163,7 @@ export interface IfcSpatialValidation {
   ok: boolean;
   errors: string[];
 }
+
 
 export interface IfcWorkerResult {
   status: "ok" | "error";
@@ -173,8 +187,10 @@ export async function emitIfc(
     indices: Array.from(geometry.indices),
     georefOrigin: geometry.georefOrigin,
     crsConvention: geometry.crsConvention,
+    verticalDatum: TERRAIN_VERTICAL_DATUM,
     provenance: { sourceCitation, hasHoles: geometry.hasHoles },
   });
+
   return new Promise((resolve) => {
     const child = spawn(python, [workerPath], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let stdout = "";

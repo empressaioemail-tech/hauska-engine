@@ -5,6 +5,9 @@ Hand-rolled ENTITIES-only / partial-TABLES DXF opens in AutoCAD (which repairs
 on save) but fails Revit Link/Import CAD with the ActiveX / proprietary dialog.
 ezdxf writes the full R2000 graph: handles (group 5), BLOCK_RECORD for
 *Model_Space/*Paper_Space, OBJECTS/LAYOUT dictionaries, LTYPE, LAYER.
+
+Z values are USGS 3DEP NAVD88 orthometric metres (declared in DXF 999 comments
+and $EXTMIN/$EXTMAX from real modelspace geometry — not unset 1e20 sentinels).
 """
 from __future__ import annotations
 
@@ -14,10 +17,20 @@ from io import StringIO
 
 try:
     import ezdxf
+    from ezdxf import bbox as ez_bbox
     from ezdxf import units
 except ImportError as exc:
     print(json.dumps({"status": "error", "message": "missing DXF dependencies: %s" % exc}))
     sys.exit(0)
+
+
+DEFAULT_VERTICAL_DATUM = {
+    "name": "NAVD88",
+    "kind": "orthometric",
+    "units": "metre",
+    "source": "USGS 3DEP",
+    "summary": "NAVD88 orthometric metres (USGS 3DEP; not ellipsoidal height)",
+}
 
 
 def _ensure_layer(doc, name: str, color: int = 3) -> None:
@@ -25,25 +38,71 @@ def _ensure_layer(doc, name: str, color: int = 3) -> None:
         doc.layers.add(name, color=color)
 
 
-def _new_doc() -> "ezdxf.document.Drawing":
+def _vertical_datum(request: dict) -> dict:
+    vd = request.get("verticalDatum") or {}
+    out = dict(DEFAULT_VERTICAL_DATUM)
+    out.update({k: v for k, v in vd.items() if v is not None})
+    return out
+
+
+def _new_doc(vertical_datum: dict) -> "ezdxf.document.Drawing":
     # setup=False keeps the file smaller while still emitting handles,
     # BLOCK_RECORD, OBJECTS, and LAYOUT — the pieces Revit requires.
     doc = ezdxf.new("R2000", setup=False)
     doc.units = units.M
     doc.header["$INSUNITS"] = 6
     doc.header["$MEASUREMENT"] = 1
+    # DXF group-999 comments survive round-trips and declare the vertical datum
+    # for surveyor / Civil3D consumers (HEADER alone has no VerticalDatum field).
+    doc.comments = [
+        "Hauska parcel terrain export",
+        "Horizontal: local ENU metres from DEM bbox southwest origin",
+        "Vertical: %s" % vertical_datum.get("summary", DEFAULT_VERTICAL_DATUM["summary"]),
+        "Units: metres ($INSUNITS=6); Z is orthometric MSL height, not ellipsoid",
+    ]
     return doc
+
+
+def _finalize(doc, entity_count: int, kind: str, vertical_datum: dict) -> dict:
+    msp = doc.modelspace()
+    extents = ez_bbox.extents(msp)
+    if extents.has_data:
+        doc.header["$EXTMIN"] = extents.extmin
+        doc.header["$EXTMAX"] = extents.extmax
+    stream = StringIO()
+    doc.write(stream)
+    text = stream.getvalue()
+    # Belt-and-suspenders: ensure 999 comments are present even if writer omits.
+    summary = vertical_datum.get("summary", DEFAULT_VERTICAL_DATUM["summary"])
+    if "NAVD88" not in text:
+        banner = (
+            "999\nHauska parcel terrain export\n"
+            "999\nVertical: %s\n"
+            "999\nUnits: metres ($INSUNITS=6); Z orthometric MSL, not ellipsoid\n"
+            % summary
+        )
+        text = banner + text
+    return {
+        "status": "ok",
+        "dxfText": text,
+        "entityCount": entity_count,
+        "kind": kind,
+        "verticalDatum": vertical_datum,
+    }
 
 
 def emit_contours(request: dict) -> dict:
     layer = request.get("layer") or "TERRAIN_CONTOURS"
     polylines = request.get("polylines") or []
-    doc = _new_doc()
+    vertical_datum = _vertical_datum(request)
+    doc = _new_doc(vertical_datum)
     _ensure_layer(doc, layer)
     msp = doc.modelspace()
     entity_count = 0
     for poly in polylines:
         elevation = float(poly["elevation"])
+        if not (elevation == elevation):  # NaN
+            raise ValueError("contour elevation is NaN — nodata must not ship")
         points_2d = poly.get("points") or []
         if len(points_2d) < 2:
             continue
@@ -55,25 +114,23 @@ def emit_contours(request: dict) -> dict:
             continue
         msp.add_polyline3d(pts, close=True, dxfattribs={"layer": layer})
         entity_count += 1
-    stream = StringIO()
-    doc.write(stream)
-    return {
-        "status": "ok",
-        "dxfText": stream.getvalue(),
-        "entityCount": entity_count,
-        "kind": "contours",
-    }
+    return _finalize(doc, entity_count, "contours", vertical_datum)
 
 
 def emit_3dface(request: dict) -> dict:
     layer = request.get("layer") or "TERRAIN"
     positions = request["positions"]
     indices = request["indices"]
+    vertical_datum = _vertical_datum(request)
     if len(positions) % 3 != 0:
         raise ValueError("positions length %s is not a multiple of 3" % len(positions))
     if len(indices) % 3 != 0:
         raise ValueError("indices length %s is not a multiple of 3" % len(indices))
-    doc = _new_doc()
+    # Reject nodata-as-zero / non-finite Z before writing faces.
+    zs = [float(positions[i]) for i in range(2, len(positions), 3)]
+    if any(z != z for z in zs):  # NaN
+        raise ValueError("mesh contains NaN Z — nodata cells must be dropped before emit")
+    doc = _new_doc(vertical_datum)
     _ensure_layer(doc, layer)
     msp = doc.modelspace()
     entity_count = 0
@@ -85,14 +142,7 @@ def emit_3dface(request: dict) -> dict:
         # 3DFACE wants four corners; degenerate fourth = third for triangles.
         msp.add_3dface([a, b, c, c], dxfattribs={"layer": layer})
         entity_count += 1
-    stream = StringIO()
-    doc.write(stream)
-    return {
-        "status": "ok",
-        "dxfText": stream.getvalue(),
-        "entityCount": entity_count,
-        "kind": "3dface",
-    }
+    return _finalize(doc, entity_count, "3dface", vertical_datum)
 
 
 def main() -> None:

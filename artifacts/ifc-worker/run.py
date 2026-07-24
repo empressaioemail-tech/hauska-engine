@@ -99,6 +99,10 @@ def assert_complete_spatial_model(f) -> dict:
         errors.append("IfcMapConversion missing")
     if len(projected) < 1:
         errors.append("IfcProjectedCRS missing")
+    vertical_ok = bool(projected and getattr(projected[0], "VerticalDatum", None))
+    if projected and not vertical_ok:
+        errors.append("IfcProjectedCRS.VerticalDatum missing (expected NAVD88)")
+
 
     project_aggregates_site = False
     for rel in aggregates:
@@ -133,6 +137,7 @@ def assert_complete_spatial_model(f) -> dict:
         "IfcGeographicElement": len(elements),
         "IfcMapConversion": len(map_conversions),
         "IfcProjectedCRS": len(projected),
+        "verticalDatum": getattr(projected[0], "VerticalDatum", None) if projected else None,
         "projectAggregatesSite": project_aggregates_site,
         "siteContainsElement": site_contains_element,
         "elementHasPlacement": element_placed,
@@ -140,6 +145,7 @@ def assert_complete_spatial_model(f) -> dict:
         "ok": not errors,
         "errors": errors,
     }
+
     if errors:
         raise ValueError("incomplete IFC spatial model: " + "; ".join(errors))
     return report
@@ -191,18 +197,23 @@ def main():
         UnitsInContext=units,
     )
 
+    vertical_datum = (request.get("verticalDatum") or {}).get("name") or "NAVD88"
+    vertical_kind = (request.get("verticalDatum") or {}).get("kind") or "orthometric"
     # Target CRS + map conversion: local ENU metres with known WGS84 SW origin.
     # Eastings/Northings are metres in the engineering/map frame (origin = 0,0);
     # geographic origin is carried on IfcSite RefLongitude/RefLatitude.
+    # Z is USGS 3DEP orthometric height on NAVD88 (not ellipsoidal).
     projected_crs = f.create_entity(
         "IfcProjectedCRS",
         Name="local-ENU-metres",
         Description=(
             "%s; origin WGS84 lon=%s lat=%s (bbox SW); "
-            "mesh XYZ are east/north/up metres from that origin"
-            % (crs_convention, origin_lng, origin_lat)
+            "mesh XYZ are east/north/up metres from that origin; "
+            "Z=%s %s metres (USGS 3DEP)"
+            % (crs_convention, origin_lng, origin_lat, vertical_datum, vertical_kind)
         ),
         GeodeticDatum="WGS84",
+        VerticalDatum=vertical_datum,
         MapUnit=length_unit,
     )
     f.create_entity(
@@ -222,7 +233,11 @@ def main():
         "IfcSite",
         GlobalId=guid(),
         Name="Parcel site",
-        Description="Terrain site; georeferenced at DEM bbox southwest origin",
+        Description=(
+            "Terrain site; georeferenced at DEM bbox southwest origin; "
+            "elevations are %s %s metres (USGS 3DEP)"
+            % (vertical_datum, vertical_kind)
+        ),
         ObjectPlacement=site_placement,
         CompositionType="ELEMENT",
         RefLatitude=to_compound_plane_angle(origin_lat),

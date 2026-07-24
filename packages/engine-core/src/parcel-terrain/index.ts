@@ -5,6 +5,13 @@ export {
   type TerrainMeshGeometry,
 } from "./mesh.js";
 export {
+  assertTerrainElevationIntegrity,
+  meshElevationStats,
+  TERRAIN_VERTICAL_DATUM,
+  type MeshElevationStats,
+  type TerrainVerticalDatum,
+} from "./elevation.js";
+export {
   collectContourPolylines,
   emitDxf3dFace,
   emitDxfContours,
