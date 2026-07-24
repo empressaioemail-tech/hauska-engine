@@ -47,9 +47,37 @@ export {
   fetchGrandCountyUtPermitOutcomes,
 } from "./grandCountyUt";
 
+export {
+  SAN_MARCOS_SOURCE_ID,
+  SAN_MARCOS_JURISDICTION,
+  fetchSanMarcosPermitOutcomes,
+} from "./sanMarcosArcGis";
+
+export {
+  SAN_ANTONIO_SOURCE_ID,
+  SAN_ANTONIO_JURISDICTION,
+  fetchSanAntonioPermitOutcomes,
+} from "./sanAntonioCsv";
+
+export {
+  CEDAR_PARK_SOURCE_ID,
+  CEDAR_PARK_JURISDICTION,
+  fetchCedarParkPermitOutcomes,
+} from "./cedarParkArcGis";
+
+export {
+  NEW_BRAUNFELS_SOURCE_ID,
+  NEW_BRAUNFELS_JURISDICTION,
+  fetchNewBraunfelsPermitOutcomes,
+} from "./newBraunfelsArcGis";
+
 import { fetchAustinSodaPermitOutcomes } from "./austinSoda";
 import { fetchBastropMygovPermitOutcomes } from "./bastropMygov";
+import { fetchCedarParkPermitOutcomes } from "./cedarParkArcGis";
 import { fetchGrandCountyUtPermitOutcomes } from "./grandCountyUt";
+import { fetchNewBraunfelsPermitOutcomes } from "./newBraunfelsArcGis";
+import { fetchSanAntonioPermitOutcomes } from "./sanAntonioCsv";
+import { fetchSanMarcosPermitOutcomes } from "./sanMarcosArcGis";
 import type {
   PermitOutcomeFetchOptions,
   PermitOutcomeFetchResult,
@@ -67,6 +95,14 @@ export async function fetchPermitOutcomes(
       return fetchBastropMygovPermitOutcomes(options);
     case "grand-county-ut":
       return fetchGrandCountyUtPermitOutcomes(options);
+    case "san-marcos-arcgis":
+      return fetchSanMarcosPermitOutcomes(options);
+    case "san-antonio-csv":
+      return fetchSanAntonioPermitOutcomes(options);
+    case "cedar-park-arcgis":
+      return fetchCedarParkPermitOutcomes(options);
+    case "new-braunfels-arcgis":
+      return fetchNewBraunfelsPermitOutcomes(options);
     default: {
       const _exhaustive: never = sourceId;
       throw new Error(`unknown permit-outcome source: ${_exhaustive}`);
@@ -74,14 +110,17 @@ export async function fetchPermitOutcomes(
   }
 }
 
-/** Run Austin (live fuel) + bastrop/grand PARTIAL probes. */
+/** Live bulk feeds + PARTIAL probes for breadth 3.10. */
 export async function fetchPermitOutcomeBundle(
   options?: PermitOutcomeFetchOptions,
 ): Promise<PermitOutcomeFetchResult[]> {
-  const [austin, bastrop, grand] = await Promise.all([
+  return Promise.all([
     fetchAustinSodaPermitOutcomes(options),
+    fetchSanMarcosPermitOutcomes(options),
+    fetchSanAntonioPermitOutcomes(options),
+    fetchCedarParkPermitOutcomes(options),
+    fetchNewBraunfelsPermitOutcomes(options),
     fetchBastropMygovPermitOutcomes(options),
     fetchGrandCountyUtPermitOutcomes(options),
   ]);
-  return [austin, bastrop, grand];
 }

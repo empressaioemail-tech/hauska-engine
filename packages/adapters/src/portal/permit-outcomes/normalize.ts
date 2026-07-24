@@ -31,14 +31,16 @@ export function mapStatusToOutcomeKind(
     return "variance-granted";
   }
   if (
-    /\b(issued|active|final|finaled|approved|complete|closed|certificate of occupancy|co issued)\b/.test(
+    /\b(issued|active|final|finaled|approved|complete|completed|closed|certificate of occupancy|co issued)\b/.test(
       s,
     )
   ) {
     return "permit-approved";
   }
   // Austin "Active" after issue_date is the common happy path.
-  if (s === "active" || s === "issued") return "permit-approved";
+  if (s === "active" || s === "issued" || s === "completed") {
+    return "permit-approved";
+  }
   return null;
 }
 

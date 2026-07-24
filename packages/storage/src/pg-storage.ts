@@ -205,6 +205,106 @@ export class PgStorage implements StoragePort {
     return { atomDid, cid: pin.cid };
   }
 
+  async writePropertyAtomsBatch(
+    instances: ReadonlyArray<PropertyAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
+    if (instances.length === 0) return [];
+    const prepared: Array<{
+      atom_did: string;
+      cid: string;
+      content_hash: string;
+      entity_type: string;
+      entity_id: string;
+      jurisdiction_tenant: string;
+      source_adapter: string;
+      source_url: string;
+      fetched_at: string;
+      body: PropertyAtomInstance;
+      access_policy: string;
+    }> = [];
+    const out: Array<{ atomDid: string; cid: string }> = [];
+
+    for (const instance of instances) {
+      const atomDid =
+        typeof instance.atomDid === "string" &&
+        instance.atomDid.startsWith("did:hauska:")
+          ? instance.atomDid
+          : buildAtomDid(instance.entityType, instance.entityId).raw;
+      const pin = await this.ipfs.pin(
+        instance.contentHash,
+        JSON.stringify(instance),
+      );
+      prepared.push({
+        atom_did: atomDid,
+        cid: pin.cid,
+        content_hash: instance.contentHash,
+        entity_type: instance.entityType,
+        entity_id: instance.entityId,
+        jurisdiction_tenant: instance.jurisdictionTenant,
+        source_adapter: instance.sourceAdapter,
+        source_url: instance.sourceUrl,
+        fetched_at: instance.fetchedAt,
+        body: instance,
+        access_policy: resolveAccessPolicy(instance),
+      });
+      out.push({ atomDid, cid: pin.cid });
+    }
+
+    // Concurrent upserts within the batch (breadth throughput).
+    const CONCURRENCY = 32;
+    for (let i = 0; i < prepared.length; i += CONCURRENCY) {
+      const slice = prepared.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        slice.map(
+          (row) => this.sql`
+            INSERT INTO atoms (
+              atom_did,
+              cid,
+              content_hash,
+              entity_type,
+              entity_id,
+              jurisdiction_tenant,
+              section_number,
+              subsection_path,
+              source_adapter,
+              source_url,
+              fetched_at,
+              body,
+              access_policy
+            ) VALUES (
+              ${row.atom_did},
+              ${row.cid},
+              ${row.content_hash},
+              ${row.entity_type},
+              ${row.entity_id},
+              ${row.jurisdiction_tenant},
+              ${null},
+              ${null},
+              ${row.source_adapter},
+              ${row.source_url},
+              ${row.fetched_at},
+              ${this.sql.json(row.body as unknown as Parameters<typeof this.sql.json>[0])},
+              ${row.access_policy}
+            )
+            ON CONFLICT (atom_did) DO UPDATE SET
+              cid = EXCLUDED.cid,
+              content_hash = EXCLUDED.content_hash,
+              entity_type = EXCLUDED.entity_type,
+              entity_id = EXCLUDED.entity_id,
+              jurisdiction_tenant = EXCLUDED.jurisdiction_tenant,
+              source_adapter = EXCLUDED.source_adapter,
+              source_url = EXCLUDED.source_url,
+              fetched_at = EXCLUDED.fetched_at,
+              body = EXCLUDED.body,
+              access_policy = EXCLUDED.access_policy,
+              updated_at = now()
+          `,
+        ),
+      );
+    }
+    return out;
+  }
+
   async listPropertyAtomsByParcelNodeId(
     parcelNodeId: string,
   ): Promise<ReadonlyArray<PropertyAtomInstance>> {

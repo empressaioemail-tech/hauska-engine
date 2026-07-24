@@ -64,6 +64,16 @@ export class InMemoryStorage implements StoragePort {
     return { atomDid, cid: pin.cid };
   }
 
+  async writePropertyAtomsBatch(
+    instances: ReadonlyArray<PropertyAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
+    const out: Array<{ atomDid: string; cid: string }> = [];
+    for (const inst of instances) {
+      out.push(await this.writePropertyAtom(inst));
+    }
+    return out;
+  }
+
   async listPropertyAtomsByParcelNodeId(
     parcelNodeId: string,
   ): Promise<ReadonlyArray<PropertyAtomInstance>> {

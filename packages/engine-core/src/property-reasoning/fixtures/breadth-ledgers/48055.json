@@ -1,0 +1,45 @@
+{
+  "id": "breadth-county-48055",
+  "countyFips": "48055",
+  "countyName": "Caldwell",
+  "bakedAt": "2026-07-24T01:01:25.959Z",
+  "purpose": "WDLL 3.12 / breadth Central-TX property-atom county bake",
+  "geometryCeiling": "include-all-10 — live txgio_parcel has geometry for all metro counties",
+  "bounds": {
+    "denominatorTier1": 24989,
+    "offset": 0,
+    "limit": null,
+    "explicitCap": false,
+    "dryRun": false
+  },
+  "totals": {
+    "parcelsSeen": 24989,
+    "parcelsEmitted": 24989,
+    "atomsWritten": 36001,
+    "zoningPresent": 6490,
+    "zoningAbsence": 18499,
+    "setbackPresent": 5506,
+    "envelopePresent": 5506,
+    "emitErrors": 0
+  },
+  "honestAbsenceRate": {
+    "zoning": 0.7402857257193165,
+    "note": "zoningAbsence / parcelsSeen — spike monitor vs baseline window"
+  },
+  "spikeFlags": [],
+  "compute": {
+    "units": 36126,
+    "wallMs": 126449,
+    "approxUsdNote": "wall=126449ms units=36126; approx $0.0734 (0.25 CU × $0.16/hr + $0.000002/atom write heuristic)",
+    "costGateUsd": 200,
+    "flaggedOverCost": false,
+    "approxUsd": 0.0734
+  },
+  "status": "completed",
+  "bakedPct": {
+    "ofTier1Denominator": 1,
+    "zoningPresentOfSeen": 0.2597142742806835,
+    "setbackOfSeen": 0.22033694825723318,
+    "envelopeOfSeen": 0.22033694825723318
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "id": "breadth-county-48021",
+  "countyFips": "48021",
+  "countyName": "Bastrop",
+  "bakedAt": "2026-07-24T01:03:35.154Z",
+  "purpose": "WDLL 3.12 / breadth Central-TX property-atom county bake",
+  "geometryCeiling": "include-all-10 — live txgio_parcel has geometry for all metro counties",
+  "bounds": {
+    "denominatorTier1": 62257,
+    "offset": 0,
+    "limit": null,
+    "explicitCap": false,
+    "dryRun": false
+  },
+  "totals": {
+    "parcelsSeen": 62257,
+    "parcelsEmitted": 62257,
+    "atomsWritten": 73709,
+    "zoningPresent": 5769,
+    "zoningAbsence": 56488,
+    "setbackPresent": 5726,
+    "envelopePresent": 5726,
+    "emitErrors": 0
+  },
+  "honestAbsenceRate": {
+    "zoning": 0.9073357212843536,
+    "note": "zoningAbsence / parcelsSeen — spike monitor vs baseline window"
+  },
+  "spikeFlags": [],
+  "compute": {
+    "units": 74021,
+    "wallMs": 261438,
+    "approxUsdNote": "wall=261438ms units=74021; approx $0.1503 (0.25 CU × $0.16/hr + $0.000002/atom write heuristic)",
+    "costGateUsd": 200,
+    "flaggedOverCost": false,
+    "approxUsd": 0.1503
+  },
+  "status": "completed",
+  "bakedPct": {
+    "ofTier1Denominator": 1,
+    "zoningPresentOfSeen": 0.09266427871564643,
+    "setbackOfSeen": 0.09197359333087042,
+    "envelopeOfSeen": 0.09197359333087042
+  }
+}
