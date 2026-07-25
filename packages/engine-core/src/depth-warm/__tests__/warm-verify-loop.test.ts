@@ -10,7 +10,7 @@ import type { Ring } from "../geometry.js";
 import {
   PARCEL_714_SPRING_33512,
 } from "../fixtures/parcelRings.js";
-import { projectRing } from "../geometry.js";
+import { edgeLabels714SpringHonest } from "../fixtures/edgeLabels714Spring.js";
 import { emitDepthWarmPromotion } from "../promote.js";
 import {
   DEPTH_WARM_PROMOTION_MARKER,
@@ -37,18 +37,6 @@ const SPRING_ROAD = {
   ] as [number, number][],
 };
 
-function edgeLabels714SpringUniform() {
-  const n = projectRing(PARCEL_714_SPRING_33512)!.points.length;
-  // P-5 side/rear are not_specified — partial single-edge inset degenerates;
-  // warm pilot applies uniform front setback for envelope geometry (live Front 15').
-  return Array.from({ length: n }, (_, index) => ({
-    index,
-    label: "front" as const,
-    roadClass: "residential" as const,
-    osmHighwayTag: "residential",
-  }));
-}
-
 describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
   it("geometry gate rejects parcel-as-inset inject", () => {
     const good = computeWarmCandidate({
@@ -57,7 +45,7 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
       parcelRing: PARCEL_714_SPRING_33512,
       descriptor,
       roads: [SPRING_ROAD],
-      edgeLabels: edgeLabels714SpringUniform(),
+      edgeLabels: edgeLabels714SpringHonest(),
     });
     expect(good.empty).toBe(false);
     expect(good.insetRing).not.toBeNull();
@@ -76,7 +64,7 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
       parcelRing: PARCEL_714_SPRING_33512,
       descriptor,
       roads: [SPRING_ROAD],
-      edgeLabels: edgeLabels714SpringUniform(),
+      edgeLabels: edgeLabels714SpringHonest(),
     });
     const tampered = {
       ...good,
@@ -100,12 +88,22 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
       parcelRing: PARCEL_714_SPRING_33512,
       descriptor,
       roads: [SPRING_ROAD],
-      edgeLabels: edgeLabels714SpringUniform(),
+      edgeLabels: edgeLabels714SpringHonest(),
       zoningFactAtomDid: `did:hauska:zoning-fact:${PARCEL_ID}`,
       promote: false,
     });
 
     expect(result.verify.pass).toBe(true);
+    expect(result.candidate.empty).toBe(false);
+    expect(result.candidate.edges.map((e) => e.insetFeet)).toEqual([
+      0, 0, 0, 0, 0, 15,
+    ]);
+    const frontEdge = result.candidate.edges.find((e) => e.label === "front");
+    expect(frontEdge?.insetFeet).toBe(15);
+    for (const edge of result.candidate.edges.filter((e) => e.label !== "front")) {
+      expect(edge.insetFeet).toBe(0);
+    }
+
     expect(result.atoms).not.toBeNull();
     expect(result.atoms!.length).toBe(2);
 
@@ -177,7 +175,7 @@ describe("emitDepthWarmPromotion read-path marker", () => {
       parcelRing: PARCEL_714_SPRING_33512,
       descriptor,
       roads: [SPRING_ROAD],
-      edgeLabels: edgeLabels714SpringUniform(),
+      edgeLabels: edgeLabels714SpringHonest(),
     });
     const atoms = emitDepthWarmPromotion({
       candidate,

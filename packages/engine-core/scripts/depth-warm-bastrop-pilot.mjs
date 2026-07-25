@@ -19,10 +19,10 @@ import { fileURLToPath } from "node:url";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
+import { edgeLabels714SpringHonest } from "../src/depth-warm/fixtures/edgeLabels714Spring.ts";
 import {
   PARCEL_714_SPRING_33512,
 } from "../src/depth-warm/fixtures/parcelRings.ts";
-import { projectRing } from "../src/depth-warm/geometry.ts";
 import {
   injectBadWarmCandidate,
 } from "../src/depth-warm/warm-compute.ts";
@@ -46,16 +46,6 @@ const PILOT_PARCELS = [
     situsStreet: "Spring Street",
   },
 ];
-
-function edgeLabelsForSpring714() {
-  const n = projectRing(PARCEL_714_SPRING_33512).points.length;
-  return Array.from({ length: n }, (_, index) => ({
-    index,
-    label: "front",
-    roadClass: "residential",
-    osmHighwayTag: "residential",
-  }));
-}
 
 async function main() {
   const roadPilot = JSON.parse(readFileSync(ROAD_FIXTURE, "utf8"));
@@ -93,7 +83,7 @@ async function main() {
       parcelRing: parcel.ring,
       descriptor: bastropDescriptor,
       roads: [springRoad],
-      edgeLabels: edgeLabelsForSpring714(),
+      edgeLabels: edgeLabels714SpringHonest(),
       zoningFactAtomDid: `did:hauska:zoning-fact:${parcel.parcelNodeId}`,
       promote: false,
     };
@@ -123,7 +113,7 @@ async function main() {
       parcelRing: parcel.ring,
       descriptor: bastropDescriptor,
       roads: [springRoad],
-      edgeLabels: edgeLabelsForSpring714(),
+      edgeLabels: edgeLabels714SpringHonest(),
       zoningFactAtomDid: `did:hauska:zoning-fact:${parcel.parcelNodeId}`,
       storage: storage ?? undefined,
       promote: !dryRun && !!storage,
