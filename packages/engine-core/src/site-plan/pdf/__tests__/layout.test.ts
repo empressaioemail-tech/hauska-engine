@@ -104,6 +104,35 @@ describe("buildSitePlanDrawingLayout", () => {
     expect(layout.streets.anchors).toHaveLength(0);
   });
 
+  // Planner HOLD-2 (2026-07-25): this fixture's DEM bbox is deliberately
+  // larger than the parcel ring (contours reach x/y extents the ring never
+  // does), so it's a real regression case for "contour extent must feed
+  // the fit-to-box transform" rather than a contrived one.
+  it("includes contour extent in the drawing transform bounds, so CONTOUR points land inside the drawing box like every other layer", () => {
+    const model = buildModel();
+    const ringXs = model.ringLocal.map((p) => p.x);
+    const ringYs = model.ringLocal.map((p) => p.y);
+    const contourXs = model.contours.flatMap((c) => c.points.map(([x]) => x));
+    const contourYs = model.contours.flatMap((c) => c.points.map(([, y]) => y));
+    expect(contourXs.length).toBeGreaterThan(0);
+    // Sanity check on the fixture: contours genuinely extend past the ring
+    // bounding box on at least one axis, or this test wouldn't exercise
+    // the bug at all.
+    expect(Math.min(...contourXs)).toBeLessThan(Math.min(...ringXs));
+    expect(Math.max(...contourYs)).toBeGreaterThan(Math.max(...ringYs));
+
+    const layout = buildSitePlanDrawingLayout(model, box);
+    expect(layout.contours.length).toBeGreaterThan(0);
+    for (const contour of layout.contours) {
+      for (const p of contour.points) {
+        expect(p.x).toBeGreaterThanOrEqual(box.x - 1);
+        expect(p.x).toBeLessThanOrEqual(box.x + box.width + 1);
+        expect(p.y).toBeGreaterThanOrEqual(box.y - 1);
+        expect(p.y).toBeLessThanOrEqual(box.y + box.height + 1);
+      }
+    }
+  });
+
   it("projects supplied street anchors through the same transform when present", () => {
     const model = buildModel([{ name: "N PINE ST", points: [[-98.4999, 29.4002], [-98.4995, 29.4002]], sourceRef: "osm:way/123" }]);
     const layout = buildSitePlanDrawingLayout(model, box);

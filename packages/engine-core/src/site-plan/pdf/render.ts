@@ -129,14 +129,43 @@ function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font:
   });
 }
 
+const SUMMARY_VALUE_X = MARGIN + 150;
+const SUMMARY_VALUE_SIZE = 9;
+
+/** Greedy word-wrap so long honesty notes (e.g. the buildable-area
+ * provisional note) never run off the page edge instead of just being
+ * silently truncated by the PDF viewer. */
+function wrapTextToWidth(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (font.widthOfTextAtSize(candidate, size) > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 function drawSummaryBlock(page: PDFPage, model: SitePlanModel, bold: PDFFont, font: PDFFont): number {
   const s = model.summary;
   let y = PAGE_HEIGHT - MARGIN;
   page.drawText("SUMMARY", { x: MARGIN, y, size: 13, font: bold, color: BLACK });
   y -= 20;
 
+  // A numeric buildable area and a provisional honesty note are NOT
+  // mutually exclusive (planner HOLD-1, 2026-07-25) — a heuristic or
+  // uniform-minimum front-edge basis still yields a drawable offset ring
+  // and a number, but that number must never be presented as certain.
   const buildableAreaLine = s.buildableAreaSqFt !== null
-    ? `${s.buildableAreaSqFt.toFixed(0)} sq ft`
+    ? s.buildableAreaHonestNote
+      ? `${s.buildableAreaSqFt.toFixed(0)} sq ft (PROVISIONAL — ${s.buildableAreaHonestNote})`
+      : `${s.buildableAreaSqFt.toFixed(0)} sq ft`
     : `unavailable — ${s.buildableAreaHonestNote ?? "setback offset degenerate"}`;
   const floodLine = "zone" in s.floodZone
     ? `${s.floodZone.zone ?? "outside mapped SFHA"} (${s.floodZone.inSpecialFloodHazardArea ? "in" : "not in"} special flood hazard area)`
@@ -160,10 +189,15 @@ function drawSummaryBlock(page: PDFPage, model: SitePlanModel, bold: PDFFont, fo
     ],
   ];
 
+  const maxValueWidth = PAGE_WIDTH - MARGIN - SUMMARY_VALUE_X;
   for (const [label, value] of rows) {
     page.drawText(`${label}:`, { x: MARGIN, y, size: 9, font: bold, color: BLACK });
-    page.drawText(value, { x: MARGIN + 150, y, size: 9, font, color: BLACK });
-    y -= 16;
+    const lines = wrapTextToWidth(value, font, SUMMARY_VALUE_SIZE, maxValueWidth);
+    for (const line of lines) {
+      page.drawText(line, { x: SUMMARY_VALUE_X, y, size: SUMMARY_VALUE_SIZE, font, color: BLACK });
+      y -= 12;
+    }
+    y -= 4;
   }
   return y;
 }

@@ -36,9 +36,13 @@ function projectRing(transform: PdfTransform, ring: LocalPoint[]): PageXY[] {
 }
 
 /**
- * Fits the model's full drawn extent (ring + setback offset + north arrow
- * reach) into `box` with uniform scale (no axis distortion) and 10% margin,
- * centered. Same fit logic regardless of parcel shape or size.
+ * Fits the model's full drawn extent (ring + setback offset + contour +
+ * street + north arrow reach) into `box` with uniform scale (no axis
+ * distortion) and 10% margin, centered. Same fit logic regardless of parcel
+ * shape or size. Contours are DEM-bbox-derived and can legitimately extend
+ * beyond the parcel ring, so they must contribute to these bounds or CONTOUR
+ * geometry silently clips/mis-scales relative to the DXF/IFC emitters that
+ * draw the same points at full extent (planner HOLD-2, 2026-07-25).
  */
 export function computeDrawingTransform(model: SitePlanModel, box: DrawingBox): PdfTransform {
   const northTip: LocalPoint = {
@@ -48,6 +52,13 @@ export function computeDrawingTransform(model: SitePlanModel, box: DrawingBox): 
   const points: LocalPoint[] = [...model.ringLocal, model.north.originLocal, northTip];
   if (model.setback.offsetRingLocal) points.push(...model.setback.offsetRingLocal);
   for (const anchor of model.streets.anchors) points.push(...anchor.pointsLocal);
+  // Contours span the DEM bbox, not just the parcel ring — planner HOLD-2
+  // (2026-07-25): without this, CONTOUR draws clipped/mis-scaled relative
+  // to the exact same points the DXF/IFC emitters place at full DEM extent,
+  // breaking the "same layers as CAD" guarantee for this layer specifically.
+  for (const contour of model.contours) {
+    for (const [x, y] of contour.points) points.push({ x, y });
+  }
 
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);

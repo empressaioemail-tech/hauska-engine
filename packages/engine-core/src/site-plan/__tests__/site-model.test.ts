@@ -190,4 +190,60 @@ describe("composeSitePlanModel", () => {
     });
     expect(model.setback.basis).toBe("front-edge-hint");
   });
+
+  // Planner HOLD-1 (2026-07-25): a heuristic or unresolved front-edge basis
+  // must carry the provisional honesty note on the PDF summary even when a
+  // numeric buildable area IS drawn — this was previously silent whenever
+  // the offset itself did not degenerate, which is the common case (this
+  // very fixture, with no frontEdgeIndex hint, resolves via the default
+  // geometric heuristic).
+  it("flags the buildable-area honesty note for a resolved-but-heuristic front-edge basis, not only the degenerate-offset case", () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      // No frontEdgeIndex -> falls through to the geometric heuristic.
+    });
+    expect(model.setback.basis).toBe("geometric-heuristic:shortest-edge-pair-south-most");
+    expect(model.setback.degenerate).toBe(false);
+    expect(model.summary.buildableAreaSqFt).not.toBeNull();
+    expect(model.summary.buildableAreaHonestNote).toBeTruthy();
+    expect(model.summary.buildableAreaHonestNote).toMatch(/provisional/i);
+    expect(model.summary.buildableAreaHonestNote).toMatch(/geometric heuristic/i);
+  });
+
+  it("does not flag the honesty note when the front edge is caller-resolved and no envelope outcome contradicts it", () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      frontEdgeIndex: 0,
+    });
+    expect(model.setback.basis).toBe("front-edge-hint");
+    expect(model.summary.buildableAreaHonestNote).toBeUndefined();
+  });
+
+  it("flags the honesty note when the buildable-envelope atom independently reports provisional-front-edge, even on a resolved front-edge-hint basis", () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      frontEdgeIndex: 0,
+      envelopeOutcome: { kind: "provisional-front-edge", reason: "front-edge-anchor atom unresolved" },
+    });
+    expect(model.setback.basis).toBe("front-edge-hint");
+    expect(model.summary.buildableAreaSqFt).not.toBeNull();
+    expect(model.summary.buildableAreaHonestNote).toBeTruthy();
+    expect(model.summary.buildableAreaHonestNote).toMatch(/provisional-front-edge/i);
+    expect(model.summary.buildableAreaHonestNote).toMatch(/front-edge-anchor atom unresolved/);
+  });
 });

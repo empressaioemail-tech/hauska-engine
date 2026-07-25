@@ -13,6 +13,7 @@ import {
   type LocalPoint,
   type RingSegment,
   type SetbackAssignment,
+  type SetbackOffsetResult,
 } from "./ring-geometry.js";
 
 const METERS_PER_FOOT = 0.3048;
@@ -54,6 +55,16 @@ export type FloodZoneSummaryInput =
     }
   | { honestUnavailable: true; reason: string };
 
+/** Minimal shape of the buildable-envelope atom's own honest outcome —
+ * declared locally rather than imported from `@hauska-engine/atoms` so
+ * `engine-core`'s site-plan module doesn't take on that package as a
+ * required dependency just for one union type; the `kind`/`reason` fields
+ * are structurally identical to `EnvelopeHonestOutcome`. */
+export type EnvelopeOutcomeInput =
+  | { kind: "buildable"; areaSqFt: number }
+  | { kind: "no-buildable-area"; reason: string }
+  | { kind: "provisional-front-edge"; reason: string };
+
 export interface ComposeSitePlanModelInputs {
   parcelNodeId: string;
   bbox: BboxWgs84;
@@ -82,6 +93,11 @@ export interface ComposeSitePlanModelInputs {
   /** FEMA flood-zone read for the summary block, or an honest-unavailable
    * verdict (e.g. no live network egress, upstream error). */
   floodZone?: FloodZoneSummaryInput;
+  /** The parcel's buildable-envelope atom outcome, if the caller has one on
+   * file (planner HOLD 2026-07-25: a `provisional-front-edge` envelope
+   * outcome must also trigger the buildable-area honesty note, even on a
+   * ring shape whose own offset-basis heuristic happened to resolve). */
+  envelopeOutcome?: EnvelopeOutcomeInput;
 }
 
 export interface ElevationLabel {
@@ -196,6 +212,42 @@ function sampleDemNearest(
   const x = Math.min(dem.width - 1, Math.max(0, xRaw));
   const y = Math.min(dem.height - 1, Math.max(0, yRaw));
   return dem.values[y * dem.width + x]!;
+}
+
+/**
+ * Buildable area is only ever a certain, non-provisional figure when the
+ * front edge is a resolved anchor (`front-edge-hint`) AND no upstream
+ * buildable-envelope atom has independently flagged the parcel provisional.
+ * Every other basis (a geometric heuristic, or a uniform-minimum fallback
+ * for an irregular ring) is a planning estimate, not a permit-ready number,
+ * and the honesty note must say so even when a numeric area IS drawn
+ * (planner HOLD-1, 2026-07-25 — a degenerate offset is a separate, harder
+ * failure already covered by `offsetDegenerateReason` below).
+ */
+function computeBuildableAreaHonestNote(
+  offset: Pick<SetbackOffsetResult, "offsetRing" | "offsetDegenerateReason" | "basis">,
+  envelopeOutcome: EnvelopeOutcomeInput | undefined,
+): string | undefined {
+  if (!offset.offsetRing) {
+    return offset.offsetDegenerateReason;
+  }
+  const envelopeProvisional = envelopeOutcome?.kind === "provisional-front-edge";
+  if (offset.basis === "front-edge-hint" && !envelopeProvisional) {
+    return undefined;
+  }
+  const basisNote =
+    offset.basis === "geometric-heuristic:shortest-edge-pair-south-most"
+      ? "front edge assigned by a geometric heuristic (shortest roughly-parallel edge pair, south-most side), not a resolved road-anchor"
+      : offset.basis === "unresolved-uniform-min"
+        ? "front edge unresolved on this ring shape; the uniform minimum of front/side/rear was applied to every edge as a conservative estimate"
+        : "front-edge basis resolved by hint, but the parcel's buildable-envelope atom independently reports a provisional front edge";
+  const envelopeNote = envelopeProvisional
+    ? ` Buildable-envelope atom outcome: provisional-front-edge (${envelopeOutcome.reason}).`
+    : "";
+  return (
+    `Buildable area is provisional pending front-edge resolution: ${basisNote}.${envelopeNote} ` +
+    "Treat this figure as a planning estimate, not a permit-ready boundary."
+  );
 }
 
 /** Rounds to a "nice" scale-bar length (1/2/5 * 10^n) at or below maxMeters. */
@@ -318,7 +370,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     zoningHonestAbsenceReason,
     lotAreaSqFt,
     buildableAreaSqFt,
-    buildableAreaHonestNote: offset.offsetRing ? undefined : offset.offsetDegenerateReason,
+    buildableAreaHonestNote: computeBuildableAreaHonestNote(offset, inputs.envelopeOutcome),
     elevationRangeMeters: { min: inputs.dem.minElevation, max: inputs.dem.maxElevation },
     verticalDatumSummary: TERRAIN_VERTICAL_DATUM.summary,
     floodZone,

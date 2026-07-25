@@ -121,4 +121,19 @@ describe("emitPdfSitePlan", () => {
     const decoded = decodeAllContentStreams(bytes);
     expect(decoded).toContain("unavailable");
   });
+
+  // Planner HOLD-1 (2026-07-25): buildModel() above uses the default 4-edge
+  // ring with no frontEdgeIndex hint, so its own basis is already the
+  // geometric heuristic — the PDF summary must print the provisional
+  // honesty note ALONGSIDE the numeric buildable area, not only when the
+  // area itself is unavailable.
+  it("prints the provisional honesty note on the summary page even though a numeric buildable area is also drawn", async () => {
+    const model = buildModel();
+    expect(model.setback.basis).toBe("geometric-heuristic:shortest-edge-pair-south-most");
+    expect(model.summary.buildableAreaSqFt).not.toBeNull();
+    const { bytes } = await emitPdfSitePlan(model);
+    const decoded = decodeAllContentStreams(bytes);
+    expect(decoded).toContain("PROVISIONAL");
+    expect(decoded).toContain("sq ft");
+  });
 });

@@ -5,6 +5,7 @@ import {
 } from "@hauska-engine/adapters";
 import { femaNfhlAdapter } from "@hauska-engine/adapters/federal/fema-nfhl";
 import type {
+  BuildableEnvelopeAtomInstance,
   ParcelTerrainModelAtomInstance,
   SetbackRuleAtomInstance,
   ZoningFactAtomInstance,
@@ -20,6 +21,7 @@ import { emitDxfSitePlan, emitIfcSitePlan } from "./emitters.js";
 import { emitPdfSitePlan } from "./pdf/render.js";
 import {
   composeSitePlanModel,
+  type EnvelopeOutcomeInput,
   type FloodZoneSummaryInput,
   type SitePlanDescriptorInput,
   type StreetAnchorInput,
@@ -95,6 +97,23 @@ async function resolveFloodZoneSummary(
   }
 }
 
+/**
+ * Best-effort lookup of the parcel's own buildable-envelope atom outcome
+ * (a separate reasoning pipeline from this composer's own front-edge-basis
+ * heuristic — see `property-reasoning/emit-buildable-envelope.ts`). Absent
+ * atom is not an error: the site-plan buildable-area figure and its honesty
+ * note stand on the composer's own ring-geometry basis regardless.
+ */
+async function resolveEnvelopeOutcome(
+  parcelNodeId: string,
+  storage: StoragePort,
+): Promise<EnvelopeOutcomeInput | undefined> {
+  const envelope = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
+    (candidate): candidate is BuildableEnvelopeAtomInstance => candidate.entityType === "buildable-envelope",
+  );
+  return envelope?.outcome;
+}
+
 function centroidOfRing(ringWgs84: Array<[number, number]>): { latitude: number; longitude: number } {
   const n = ringWgs84.length;
   let sumLng = 0;
@@ -134,6 +153,10 @@ export interface AuthorParcelSitePlanExportOptions {
    * any failure. */
   floodZoneOverride?: FloodZoneSummaryInput;
   fetchFloodZone?: (input: { latitude: number; longitude: number }) => Promise<FloodZoneSummaryInput>;
+  /** Explicit buildable-envelope outcome override (test seam); production
+   * path looks up the parcel's buildable-envelope atom from storage when
+   * omitted (absence is not an error — see `resolveEnvelopeOutcome`). */
+  envelopeOutcomeOverride?: EnvelopeOutcomeInput;
 }
 
 export interface AuthorParcelSitePlanExportResult {
@@ -184,6 +207,8 @@ export async function authorParcelSitePlanExport(
     options.zoningOverride ?? (await resolveZoningSummary(options.parcelNodeId, options.storage));
   const centroid = centroidOfRing(ringWgs84);
   const floodZone: FloodZoneSummaryInput = options.floodZoneOverride ?? (await resolveFloodZoneSummary(centroid, options.fetchFloodZone));
+  const envelopeOutcome: EnvelopeOutcomeInput | undefined =
+    options.envelopeOutcomeOverride ?? (await resolveEnvelopeOutcome(options.parcelNodeId, options.storage));
 
   const model = composeSitePlanModel({
     parcelNodeId: options.parcelNodeId,
@@ -204,6 +229,7 @@ export async function authorParcelSitePlanExport(
     descriptor: options.descriptor,
     zoning,
     floodZone,
+    envelopeOutcome,
   });
 
   const solidMassOptions: BuildTerrainSolidMassOptions = {
