@@ -3,7 +3,13 @@ import {
   selectAdaptiveResolutionMeters,
   type BboxWgs84,
 } from "@hauska-engine/adapters";
-import type { ParcelTerrainModelAtomInstance, SetbackRuleAtomInstance } from "@hauska-engine/atoms";
+import { femaNfhlAdapter } from "@hauska-engine/adapters/federal/fema-nfhl";
+import type {
+  BuildableEnvelopeAtomInstance,
+  ParcelTerrainModelAtomInstance,
+  SetbackRuleAtomInstance,
+  ZoningFactAtomInstance,
+} from "@hauska-engine/atoms";
 import type { StoragePort } from "@hauska-engine/storage";
 
 import { TERRAIN_VERTICAL_DATUM } from "../parcel-terrain/elevation.js";
@@ -12,7 +18,112 @@ import { DEFAULT_SKIRT_DEPTH_FEET, type BuildTerrainSolidMassOptions } from "../
 import type { ParcelGeometryResolver, TerrainArtifactStore } from "../parcel-terrain/author.js";
 import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
 import { emitDxfSitePlan, emitIfcSitePlan } from "./emitters.js";
-import { composeSitePlanModel, type StreetAnchorInput } from "./site-model.js";
+import { emitPdfSitePlan } from "./pdf/render.js";
+import {
+  composeSitePlanModel,
+  type EnvelopeOutcomeInput,
+  type FloodZoneSummaryInput,
+  type SitePlanDescriptorInput,
+  type StreetAnchorInput,
+  type ZoningSummaryInput,
+} from "./site-model.js";
+
+/**
+ * Best-effort live FEMA NFHL read for the PDF summary block. Any failure
+ * (no network egress, upstream error, timeout) degrades to an honest
+ * unavailable verdict rather than blocking the export or fabricating a
+ * zone — mirrors the street-anchor honest-absence pattern above it.
+ */
+async function defaultFetchFloodZone(input: { latitude: number; longitude: number }): Promise<FloodZoneSummaryInput> {
+  try {
+    const result = await femaNfhlAdapter.run({
+      parcel: { latitude: input.latitude, longitude: input.longitude },
+      jurisdiction: { stateKey: null, localKey: null },
+      signal: AbortSignal.timeout(8_000),
+    });
+    const payload = result.payload as { floodZone?: string | null; inSpecialFloodHazardArea?: boolean };
+    return {
+      zone: payload.floodZone ?? null,
+      inSpecialFloodHazardArea: Boolean(payload.inSpecialFloodHazardArea),
+      sourceCitation: result.provider,
+      asOfIso: result.snapshotDate,
+    };
+  } catch (error) {
+    return {
+      honestUnavailable: true,
+      reason: `FEMA NFHL lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/**
+ * Looks up the parcel's zoning-fact atom for the summary block's zoning
+ * district field. Honest-absence (never fabricated) when no atom exists or
+ * the atom itself carries the fact-level honest-absence verdict.
+ */
+async function resolveZoningSummary(parcelNodeId: string, storage: StoragePort): Promise<ZoningSummaryInput> {
+  const zoningFact = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
+    (candidate): candidate is ZoningFactAtomInstance => candidate.entityType === "zoning-fact",
+  );
+  if (!zoningFact) {
+    return { honestAbsence: true, reason: "No zoning-fact atom on file for this parcel." };
+  }
+  if (zoningFact.district) {
+    return { district: zoningFact.district };
+  }
+  return {
+    honestAbsence: true,
+    reason: zoningFact.absence?.kind ?? "zoning-fact atom carries no district (honest absence).",
+  };
+}
+
+/**
+ * Wraps the (default or caller-supplied) flood-zone lookup so ANY failure —
+ * upstream, network, or a broken test stub — degrades to honest-unavailable
+ * rather than rejecting the whole export. A missing flood read is never a
+ * reason to withhold parcel/setback/terrain data the caller already has.
+ */
+async function resolveFloodZoneSummary(
+  centroid: { latitude: number; longitude: number },
+  fetchFloodZone: ((input: { latitude: number; longitude: number }) => Promise<FloodZoneSummaryInput>) | undefined,
+): Promise<FloodZoneSummaryInput> {
+  try {
+    return await (fetchFloodZone ?? defaultFetchFloodZone)(centroid);
+  } catch (error) {
+    return {
+      honestUnavailable: true,
+      reason: `Flood-zone lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/**
+ * Best-effort lookup of the parcel's own buildable-envelope atom outcome
+ * (a separate reasoning pipeline from this composer's own front-edge-basis
+ * heuristic — see `property-reasoning/emit-buildable-envelope.ts`). Absent
+ * atom is not an error: the site-plan buildable-area figure and its honesty
+ * note stand on the composer's own ring-geometry basis regardless.
+ */
+async function resolveEnvelopeOutcome(
+  parcelNodeId: string,
+  storage: StoragePort,
+): Promise<EnvelopeOutcomeInput | undefined> {
+  const envelope = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
+    (candidate): candidate is BuildableEnvelopeAtomInstance => candidate.entityType === "buildable-envelope",
+  );
+  return envelope?.outcome;
+}
+
+function centroidOfRing(ringWgs84: Array<[number, number]>): { latitude: number; longitude: number } {
+  const n = ringWgs84.length;
+  let sumLng = 0;
+  let sumLat = 0;
+  for (const [lng, lat] of ringWgs84) {
+    sumLng += lng;
+    sumLat += lat;
+  }
+  return { longitude: sumLng / n, latitude: sumLat / n };
+}
 
 export interface AuthorParcelSitePlanExportOptions {
   parcelNodeId: string;
@@ -32,6 +143,20 @@ export interface AuthorParcelSitePlanExportOptions {
   skirtDepthFeet?: number;
   fetchDem?: typeof fetchUsgs3depDem;
   parseDem?: (bytes: Uint8Array) => Promise<ParsedDem>;
+  /** PDF summary-block-only descriptors (Wave 2). Caller-supplied only. */
+  descriptor?: SitePlanDescriptorInput;
+  /** Explicit zoning override (test seam); production path looks up the
+   * parcel's zoning-fact atom from storage when omitted. */
+  zoningOverride?: ZoningSummaryInput;
+  /** Explicit flood-zone override (test seam); production path calls the
+   * FEMA NFHL adapter when omitted, degrading to honest-unavailable on
+   * any failure. */
+  floodZoneOverride?: FloodZoneSummaryInput;
+  fetchFloodZone?: (input: { latitude: number; longitude: number }) => Promise<FloodZoneSummaryInput>;
+  /** Explicit buildable-envelope outcome override (test seam); production
+   * path looks up the parcel's buildable-envelope atom from storage when
+   * omitted (absence is not an error — see `resolveEnvelopeOutcome`). */
+  envelopeOutcomeOverride?: EnvelopeOutcomeInput;
 }
 
 export interface AuthorParcelSitePlanExportResult {
@@ -39,6 +164,9 @@ export interface AuthorParcelSitePlanExportResult {
   setbackDegenerate: boolean;
   setbackDegenerateReason?: string;
   streetHonestAbsence: boolean;
+  zoningHonestAbsence: boolean;
+  floodZoneHonestUnavailable: boolean;
+  pdfPageCount: number;
 }
 
 /**
@@ -75,6 +203,13 @@ export async function authorParcelSitePlanExport(
   const dem = await (options.parseDem ?? parseDemBytes)(demFetch.bytes);
   const mesh = buildTerrainMeshGeometry(dem, resolved.bbox);
 
+  const zoning: ZoningSummaryInput =
+    options.zoningOverride ?? (await resolveZoningSummary(options.parcelNodeId, options.storage));
+  const centroid = centroidOfRing(ringWgs84);
+  const floodZone: FloodZoneSummaryInput = options.floodZoneOverride ?? (await resolveFloodZoneSummary(centroid, options.fetchFloodZone));
+  const envelopeOutcome: EnvelopeOutcomeInput | undefined =
+    options.envelopeOutcomeOverride ?? (await resolveEnvelopeOutcome(options.parcelNodeId, options.storage));
+
   const model = composeSitePlanModel({
     parcelNodeId: options.parcelNodeId,
     bbox: resolved.bbox,
@@ -91,6 +226,10 @@ export async function authorParcelSitePlanExport(
     streetAnchors: options.streetAnchors,
     geometrySourceRef: resolved.sourceRef,
     demSourceCitation: TERRAIN_VERTICAL_DATUM.source,
+    descriptor: options.descriptor,
+    zoning,
+    floodZone,
+    envelopeOutcome,
   });
 
   const solidMassOptions: BuildTerrainSolidMassOptions = {
@@ -166,6 +305,17 @@ export async function authorParcelSitePlanExport(
     contentType: "application/step",
   });
 
+  const pdf = await emitPdfSitePlan(model);
+  const pdfRef = await options.artifactStore.put({
+    parcelNodeId: options.parcelNodeId,
+    format: "pdf-site-plan",
+    bytes: pdf.bytes,
+    contentType: "application/pdf",
+  });
+
+  const zoningHonestAbsence = "honestAbsence" in zoning;
+  const floodZoneHonestUnavailable = "honestUnavailable" in floodZone;
+
   atom.artifacts["dxf-site-plan"] = {
     format: "dxf-site-plan",
     ref: dxfRef,
@@ -186,6 +336,17 @@ export async function authorParcelSitePlanExport(
     setbackDegenerateReason: model.setback.degenerateReason,
     streetHonestAbsence: model.streets.honestAbsence,
   };
+  atom.artifacts["pdf-site-plan"] = {
+    format: "pdf-site-plan",
+    ref: pdfRef,
+    byteCount: pdf.bytes.byteLength,
+    pageCount: pdf.pageCount,
+    setbackDegenerate: model.setback.degenerate,
+    setbackDegenerateReason: model.setback.degenerateReason,
+    streetHonestAbsence: model.streets.honestAbsence,
+    zoningHonestAbsence,
+    floodZoneHonestUnavailable,
+  };
 
   await options.storage.writePropertyAtom(atom);
 
@@ -194,5 +355,8 @@ export async function authorParcelSitePlanExport(
     setbackDegenerate: model.setback.degenerate,
     setbackDegenerateReason: model.setback.degenerateReason,
     streetHonestAbsence: model.streets.honestAbsence,
+    zoningHonestAbsence,
+    floodZoneHonestUnavailable,
+    pdfPageCount: pdf.pageCount,
   };
 }

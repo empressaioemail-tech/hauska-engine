@@ -13,6 +13,7 @@ import {
   type LocalPoint,
   type RingSegment,
   type SetbackAssignment,
+  type SetbackOffsetResult,
 } from "./ring-geometry.js";
 
 const METERS_PER_FOOT = 0.3048;
@@ -31,6 +32,38 @@ export interface StreetAnchorInput {
   points: Array<[number, number]>;
   sourceRef?: string;
 }
+
+/** Non-geometry descriptors no atom holds today (address, county name).
+ * Optional and caller-supplied only — the composer never fabricates these;
+ * the summary falls back to what IS derivable (county FIPS from the
+ * parcelNodeId) when absent. */
+export interface SitePlanDescriptorInput {
+  address?: string;
+  countyName?: string;
+}
+
+export type ZoningSummaryInput =
+  | { district: string }
+  | { honestAbsence: true; reason: string };
+
+export type FloodZoneSummaryInput =
+  | {
+      zone: string | null;
+      inSpecialFloodHazardArea: boolean;
+      sourceCitation: string;
+      asOfIso: string;
+    }
+  | { honestUnavailable: true; reason: string };
+
+/** Minimal shape of the buildable-envelope atom's own honest outcome —
+ * declared locally rather than imported from `@hauska-engine/atoms` so
+ * `engine-core`'s site-plan module doesn't take on that package as a
+ * required dependency just for one union type; the `kind`/`reason` fields
+ * are structurally identical to `EnvelopeHonestOutcome`. */
+export type EnvelopeOutcomeInput =
+  | { kind: "buildable"; areaSqFt: number }
+  | { kind: "no-buildable-area"; reason: string }
+  | { kind: "provisional-front-edge"; reason: string };
 
 export interface ComposeSitePlanModelInputs {
   parcelNodeId: string;
@@ -51,6 +84,20 @@ export interface ComposeSitePlanModelInputs {
   geometrySourceRef?: string;
   /** DEM/USGS 3DEP source citation, mirrors the terrain-export atom's sourceCitation. */
   demSourceCitation?: string;
+  /** PDF summary-block-only, non-geometry descriptors (Wave 2). Optional;
+   * honest fallback when absent — never fabricated. */
+  descriptor?: SitePlanDescriptorInput;
+  /** Zoning district for the summary block, or an honest-absence verdict
+   * (mirrors the zoning-fact atom's own honest-absence shape). */
+  zoning?: ZoningSummaryInput;
+  /** FEMA flood-zone read for the summary block, or an honest-unavailable
+   * verdict (e.g. no live network egress, upstream error). */
+  floodZone?: FloodZoneSummaryInput;
+  /** The parcel's buildable-envelope atom outcome, if the caller has one on
+   * file (planner HOLD 2026-07-25: a `provisional-front-edge` envelope
+   * outcome must also trigger the buildable-area honesty note, even on a
+   * ring shape whose own offset-basis heuristic happened to resolve). */
+  envelopeOutcome?: EnvelopeOutcomeInput;
 }
 
 export interface ElevationLabel {
@@ -85,6 +132,32 @@ export interface SitePlanNorthModel {
   lengthMeters: number;
 }
 
+/**
+ * Non-CAD summary data (PDF sheet only — WDLL 5) computed from the SAME
+ * ring/setback/DEM inputs every other field on this model reads. DXF/IFC
+ * emitters ignore this block entirely; it exists so the PDF renders off the
+ * identical `SitePlanModel` object rather than a second derivation.
+ */
+export interface SitePlanSummaryModel {
+  parcelNodeId: string;
+  /** Parsed from the parcelNodeId (`{countyFips}:{propId}`); always available. */
+  countyFips: string | null;
+  /** Caller-supplied only — never fabricated. Undefined = not on file. */
+  countyName?: string;
+  address?: string;
+  zoningDistrict?: string;
+  zoningHonestAbsenceReason?: string;
+  lotAreaSqFt: number;
+  /** Null when the setback offset degenerated (see `buildableAreaHonestNote`). */
+  buildableAreaSqFt: number | null;
+  buildableAreaHonestNote?: string;
+  elevationRangeMeters: { min: number; max: number };
+  verticalDatumSummary: string;
+  floodZone:
+    | { zone: string | null; inSpecialFloodHazardArea: boolean; sourceCitation: string; asOfIso: string }
+    | { honestUnavailable: true; reason: string };
+}
+
 export interface SitePlanModel {
   parcelNodeId: string;
   ringLocal: LocalPoint[];
@@ -97,11 +170,33 @@ export interface SitePlanModel {
   scaleBar: { lengthMeters: number };
   verticalDatum: TerrainVerticalDatum;
   crsConvention: typeof TERRAIN_MESH_CRS_CONVENTION;
+  summary: SitePlanSummaryModel;
   citations: {
     propertyLine: string;
     setback: string;
     contour: string;
+    zoning?: string;
+    flood?: string;
   };
+}
+
+/** Shoelace polygon area in the same local-ENU metre frame as `ringLocal`. */
+function polygonAreaSqMeters(ring: LocalPoint[]): number {
+  let sum = 0;
+  const n = ring.length;
+  for (let i = 0; i < n; i++) {
+    const a = ring[i]!;
+    const b = ring[(i + 1) % n]!;
+    sum += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(sum) / 2;
+}
+
+const SQMETERS_PER_SQFOOT = 0.09290304;
+
+function parseCountyFips(parcelNodeId: string): string | null {
+  const match = /^(\d{5}):/.exec(parcelNodeId.trim());
+  return match ? match[1]! : null;
 }
 
 function sampleDemNearest(
@@ -117,6 +212,42 @@ function sampleDemNearest(
   const x = Math.min(dem.width - 1, Math.max(0, xRaw));
   const y = Math.min(dem.height - 1, Math.max(0, yRaw));
   return dem.values[y * dem.width + x]!;
+}
+
+/**
+ * Buildable area is only ever a certain, non-provisional figure when the
+ * front edge is a resolved anchor (`front-edge-hint`) AND no upstream
+ * buildable-envelope atom has independently flagged the parcel provisional.
+ * Every other basis (a geometric heuristic, or a uniform-minimum fallback
+ * for an irregular ring) is a planning estimate, not a permit-ready number,
+ * and the honesty note must say so even when a numeric area IS drawn
+ * (planner HOLD-1, 2026-07-25 — a degenerate offset is a separate, harder
+ * failure already covered by `offsetDegenerateReason` below).
+ */
+function computeBuildableAreaHonestNote(
+  offset: Pick<SetbackOffsetResult, "offsetRing" | "offsetDegenerateReason" | "basis">,
+  envelopeOutcome: EnvelopeOutcomeInput | undefined,
+): string | undefined {
+  if (!offset.offsetRing) {
+    return offset.offsetDegenerateReason;
+  }
+  const envelopeProvisional = envelopeOutcome?.kind === "provisional-front-edge";
+  if (offset.basis === "front-edge-hint" && !envelopeProvisional) {
+    return undefined;
+  }
+  const basisNote =
+    offset.basis === "geometric-heuristic:shortest-edge-pair-south-most"
+      ? "front edge assigned by a geometric heuristic (shortest roughly-parallel edge pair, south-most side), not a resolved road-anchor"
+      : offset.basis === "unresolved-uniform-min"
+        ? "front edge unresolved on this ring shape; the uniform minimum of front/side/rear was applied to every edge as a conservative estimate"
+        : "front-edge basis resolved by hint, but the parcel's buildable-envelope atom independently reports a provisional front edge";
+  const envelopeNote = envelopeProvisional
+    ? ` Buildable-envelope atom outcome: provisional-front-edge (${envelopeOutcome.reason}).`
+    : "";
+  return (
+    `Buildable area is provisional pending front-edge resolution: ${basisNote}.${envelopeNote} ` +
+    "Treat this figure as a planning estimate, not a permit-ready boundary."
+  );
 }
 
 /** Rounds to a "nice" scale-bar length (1/2/5 * 10^n) at or below maxMeters. */
@@ -216,6 +347,35 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
   };
   const scaleBar = { lengthMeters: niceScaleBarLength(extentMeters * 0.5) };
 
+  const lotAreaSqFt = polygonAreaSqMeters(ringLocal) / SQMETERS_PER_SQFOOT;
+  const buildableAreaSqFt = offset.offsetRing
+    ? polygonAreaSqMeters(offset.offsetRing) / SQMETERS_PER_SQFOOT
+    : null;
+
+  const zoningDistrict = inputs.zoning && "district" in inputs.zoning ? inputs.zoning.district : undefined;
+  const zoningHonestAbsenceReason =
+    inputs.zoning && "honestAbsence" in inputs.zoning ? inputs.zoning.reason : undefined;
+
+  const floodZone: SitePlanSummaryModel["floodZone"] = inputs.floodZone ?? {
+    honestUnavailable: true,
+    reason: "No flood-zone read attempted for this export.",
+  };
+
+  const summary: SitePlanSummaryModel = {
+    parcelNodeId: inputs.parcelNodeId,
+    countyFips: parseCountyFips(inputs.parcelNodeId),
+    countyName: inputs.descriptor?.countyName,
+    address: inputs.descriptor?.address,
+    zoningDistrict,
+    zoningHonestAbsenceReason,
+    lotAreaSqFt,
+    buildableAreaSqFt,
+    buildableAreaHonestNote: computeBuildableAreaHonestNote(offset, inputs.envelopeOutcome),
+    elevationRangeMeters: { min: inputs.dem.minElevation, max: inputs.dem.maxElevation },
+    verticalDatumSummary: TERRAIN_VERTICAL_DATUM.summary,
+    floodZone,
+  };
+
   return {
     parcelNodeId: inputs.parcelNodeId,
     ringLocal,
@@ -228,10 +388,13 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     scaleBar,
     verticalDatum: TERRAIN_VERTICAL_DATUM,
     crsConvention: TERRAIN_MESH_CRS_CONVENTION,
+    summary,
     citations: {
       propertyLine: inputs.geometrySourceRef ?? "parcel-geometry-ring",
       setback: `${inputs.setback.sourceCodeAtomRef.atomDid} (${inputs.setback.sourceCodeAtomRef.role})`,
       contour: inputs.demSourceCitation ?? TERRAIN_VERTICAL_DATUM.source,
+      zoning: zoningDistrict ? "zoning-fact atom (parcel zoning polygon)" : undefined,
+      flood: "zone" in floodZone ? floodZone.sourceCitation : undefined,
     },
   };
 }

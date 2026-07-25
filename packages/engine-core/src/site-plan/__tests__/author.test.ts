@@ -1,3 +1,5 @@
+import { inflateSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
 import { InMemoryStorage } from "@hauska-engine/storage";
@@ -6,6 +8,29 @@ import type { SetbackRuleAtomInstance } from "@hauska-engine/atoms";
 import { authorParcelSitePlanExport } from "../author.js";
 import type { ParcelGeometryResolver } from "../../parcel-terrain/author.js";
 import type { TerrainArtifactStore } from "../../parcel-terrain/author.js";
+
+/** Same decode technique as `pdf/__tests__/render.test.ts` — used here to
+ * verify the buildable-envelope-atom honesty note actually reaches the
+ * rendered PDF bytes stored on the artifact, not just an in-memory model. */
+function decodeAllContentStreams(pdfBytes: Uint8Array): string {
+  const raw = Buffer.from(pdfBytes);
+  const text = raw.toString("latin1");
+  const streamRe = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let match: RegExpExecArray | null;
+  const decoded: string[] = [];
+  while ((match = streamRe.exec(text))) {
+    const startIndex = match.index + match[0].indexOf(match[1]!);
+    const endIndex = startIndex + match[1]!.length;
+    const streamBytes = raw.subarray(startIndex, endIndex);
+    try {
+      decoded.push(inflateSync(streamBytes).toString("latin1"));
+    } catch {
+      decoded.push(streamBytes.toString("latin1"));
+    }
+  }
+  const joined = decoded.join("\n");
+  return joined.replace(/<([0-9A-Fa-f]+)>/g, (_all, hex: string) => Buffer.from(hex, "hex").toString("latin1"));
+}
 
 const bbox = { westLng: -98.5, southLat: 29.4, eastLng: -98.4995, northLat: 29.4004 };
 const dem = {
@@ -101,6 +126,15 @@ describe("authorParcelSitePlanExport", () => {
       artifactStore,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
+      // Deterministic stub: the real FEMA-adapter default path (network
+      // reachability, honest-unavailable on failure) is covered on its own,
+      // isolated from network reachability, by the two tests below —
+      // this test only needs a fixed, environment-independent flood
+      // verdict so its own assertions don't depend on ambient egress.
+      fetchFloodZone: async () => ({
+        honestUnavailable: true,
+        reason: "test stub: no live FEMA NFHL call in this fixture",
+      }),
     });
 
     expect(result.setbackDegenerate).toBe(false);
@@ -109,12 +143,176 @@ describe("authorParcelSitePlanExport", () => {
     expect(result.atom.artifacts["ifc-site-plan"]).toBeTruthy();
     expect(result.atom.artifacts["dxf-site-plan"]?.byteCount).toBeGreaterThan(0);
     expect(result.atom.artifacts["ifc-site-plan"]?.vertexCount).toBeGreaterThan(0);
-    expect(artifactStore.data.size).toBe(2);
+    expect(artifactStore.data.size).toBe(3);
+
+    // Wave 2 (WDLL 5/6): PDF is additive alongside dxf/ifc-site-plan, off
+    // the same authored model — never a second geometry pipeline.
+    expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
+    expect(result.atom.artifacts["pdf-site-plan"]?.byteCount).toBeGreaterThan(0);
+    expect(result.atom.artifacts["pdf-site-plan"]?.pageCount).toBe(2);
+    expect(result.pdfPageCount).toBe(2);
+    // No zoning-fact atom in storage and no override supplied -> honest
+    // absence, never a fabricated district.
+    expect(result.zoningHonestAbsence).toBe(true);
+    expect(result.floodZoneHonestUnavailable).toBe(true);
+    expect(result.atom.artifacts["pdf-site-plan"]?.zoningHonestAbsence).toBe(true);
+    expect(result.atom.artifacts["pdf-site-plan"]?.floodZoneHonestUnavailable).toBe(true);
 
     const stored = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
     const terrainAtom = stored.find((a) => a.entityType === "parcel-terrain-model");
     expect(terrainAtom).toBeTruthy();
     expect((terrainAtom as any).artifacts["dxf-site-plan"]).toBeTruthy();
+    expect((terrainAtom as any).artifacts["pdf-site-plan"]).toBeTruthy();
+  });
+
+  it("resolves zoning district from a zoning-fact atom already in storage, and honors explicit zoning/flood overrides", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+    await storage.writePropertyAtom({
+      entityType: "zoning-fact",
+      atomDid: "san_antonio_tx/zoning-fact/48029:105129/1",
+      entityId: `${parcelNodeId}:zoning:1`,
+      jurisdictionTenant: "san_antonio_tx",
+      parcelNodeId,
+      fetchedAt: new Date().toISOString(),
+      extractedAt: new Date().toISOString(),
+      sourceAdapter: "san-antonio-tx-zoning",
+      sourceUrl: "https://gis.sanantonio.gov/zoning",
+      sourceCitation: "San Antonio zoning GIS",
+      accessPolicy: "public-free",
+      atomTier: "data",
+      status: "active",
+      versionStamp: `${parcelNodeId}:zoning-fact:1`,
+      district: "R-6",
+    } as any);
+
+    const result = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      floodZoneOverride: {
+        zone: "X",
+        inSpecialFloodHazardArea: false,
+        sourceCitation: "FEMA National Flood Hazard Layer (NFHL)",
+        asOfIso: new Date().toISOString(),
+      },
+    });
+
+    expect(result.zoningHonestAbsence).toBe(false);
+    expect(result.floodZoneHonestUnavailable).toBe(false);
+    expect((result.atom.artifacts["pdf-site-plan"] as any)?.zoningHonestAbsence).toBe(false);
+  });
+
+  it("resolves a provisional-front-edge buildable-envelope atom from storage and threads it into the PDF's buildable-area honesty note (planner HOLD-1)", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+    await storage.writePropertyAtom({
+      entityType: "buildable-envelope",
+      atomDid: "san_antonio_tx/buildable-envelope/48029:105129/1",
+      entityId: `${parcelNodeId}:envelope:1`,
+      jurisdictionTenant: "san_antonio_tx",
+      parcelNodeId,
+      fetchedAt: new Date().toISOString(),
+      extractedAt: new Date().toISOString(),
+      sourceAdapter: "property-reasoning",
+      sourceUrl: "internal:buildable-envelope",
+      sourceCitation: "Derived buildable envelope",
+      accessPolicy: "public-free",
+      atomTier: "data",
+      status: "active",
+      versionStamp: `${parcelNodeId}:buildable-envelope:1`,
+      outcome: { kind: "provisional-front-edge", reason: "front-edge-anchor atom unresolved" },
+    } as any);
+
+    const result = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      // frontEdgeIndex hint would otherwise resolve the composer's OWN
+      // basis to front-edge-hint (no note from ring geometry alone) — this
+      // isolates the buildable-envelope-atom lookup as the sole trigger.
+      frontEdgeIndex: 0,
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
+    });
+
+    expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
+    const pdfRef = result.atom.artifacts["pdf-site-plan"]!.ref;
+    const pdfBytes = artifactStore.data.get(pdfRef)!;
+    const decoded = decodeAllContentStreams(pdfBytes);
+    expect(decoded).toContain("PROVISIONAL");
+    expect(decoded).toContain("provisional-front-edge");
+    expect(decoded).toContain("front-edge-anchor atom unresolved");
+  });
+
+  it("honors an explicit envelopeOutcomeOverride test seam without requiring a stored buildable-envelope atom", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+
+    const withOverride = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      frontEdgeIndex: 0,
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
+      envelopeOutcomeOverride: { kind: "provisional-front-edge", reason: "override reason" },
+    });
+
+    expect(withOverride.atom.artifacts["pdf-site-plan"]?.byteCount).toBeGreaterThan(0);
+
+    const storage2 = new InMemoryStorage();
+    const artifactStore2 = fakeArtifactStore();
+    const withoutOverride = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage: storage2,
+      artifactStore: artifactStore2,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      frontEdgeIndex: 0,
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
+    });
+
+    // The override path renders a longer honesty-note paragraph onto the
+    // same page 2 layout, so its PDF is strictly larger than the otherwise
+    // identical export with no provisional note at all — a real, if
+    // indirect, end-to-end proof the override reaches the renderer.
+    expect(withOverride.atom.artifacts["pdf-site-plan"]!.byteCount).toBeGreaterThan(
+      withoutOverride.atom.artifacts["pdf-site-plan"]!.byteCount,
+    );
+  });
+
+  it("degrades to honest flood-zone-unavailable when the flood lookup throws, without failing the export", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+
+    const result = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      fetchFloodZone: async () => {
+        throw new Error("simulated network hazard: no egress in sandbox");
+      },
+    });
+
+    expect(result.floodZoneHonestUnavailable).toBe(true);
+    expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
   });
 
   it("fails closed rather than approximating PROPERTY_LINE when the resolver has no ring", async () => {
@@ -179,6 +377,9 @@ describe("authorParcelSitePlanExport", () => {
       artifactStore,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
+      // Deterministic stub — this test only cares about artifact merge
+      // behavior, not the flood-zone verdict; avoid a live network call.
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
     });
 
     expect(result.atom.atomDid).toBe("pterrain_existing");

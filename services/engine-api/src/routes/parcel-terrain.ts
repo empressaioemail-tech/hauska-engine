@@ -43,17 +43,19 @@ const EXTENSIONS: Record<DownloadableFormat, string> = {
   "dxf-contour": "dxf",
 };
 
-const SITE_PLAN_DOWNLOADABLE_FORMATS = ["dxf-site-plan", "ifc-site-plan"] as const;
+const SITE_PLAN_DOWNLOADABLE_FORMATS = ["dxf-site-plan", "ifc-site-plan", "pdf-site-plan"] as const;
 type SitePlanDownloadableFormat = (typeof SITE_PLAN_DOWNLOADABLE_FORMATS)[number];
 
 const SITE_PLAN_CONTENT_TYPES: Record<SitePlanDownloadableFormat, string> = {
   "dxf-site-plan": "application/dxf",
   "ifc-site-plan": "application/step",
+  "pdf-site-plan": "application/pdf",
 };
 
 const SITE_PLAN_EXTENSIONS: Record<SitePlanDownloadableFormat, string> = {
   "dxf-site-plan": "dxf",
   "ifc-site-plan": "ifc",
+  "pdf-site-plan": "pdf",
 };
 
 function isSitePlanDownloadableFormat(value: string | undefined): value is SitePlanDownloadableFormat {
@@ -76,6 +78,10 @@ const sitePlanRefreshBody = z.object({
       }),
     )
     .optional(),
+  // PDF summary-block-only descriptors (Wave 2) — caller-supplied, never
+  // fabricated by the engine. Omitted fields render as honest "not on file".
+  address: z.string().optional(),
+  countyName: z.string().optional(),
 });
 
 interface ReadableArtifactStore extends TerrainArtifactStore {
@@ -236,6 +242,10 @@ export function buildParcelTerrainRoutes(
         frontEdgeIndex: parsed.data.frontEdgeIndex,
         skirtDepthFeet: parsed.data.skirtDepthFeet,
         streetAnchors: parsed.data.streetAnchors,
+        descriptor:
+          parsed.data.address || parsed.data.countyName
+            ? { address: parsed.data.address, countyName: parsed.data.countyName }
+            : undefined,
         resolver,
         setback,
         storage,
@@ -246,10 +256,13 @@ export function buildParcelTerrainRoutes(
         artifacts: {
           "dxf-site-plan": result.atom.artifacts["dxf-site-plan"],
           "ifc-site-plan": result.atom.artifacts["ifc-site-plan"],
+          "pdf-site-plan": result.atom.artifacts["pdf-site-plan"],
         },
         setbackDegenerate: result.setbackDegenerate,
         setbackDegenerateReason: result.setbackDegenerateReason,
         streetHonestAbsence: result.streetHonestAbsence,
+        zoningHonestAbsence: result.zoningHonestAbsence,
+        floodZoneHonestUnavailable: result.floodZoneHonestUnavailable,
       }, 201);
     } catch (error) {
       return c.json({
@@ -267,6 +280,7 @@ export function buildParcelTerrainRoutes(
       artifacts: {
         "dxf-site-plan": atom.artifacts["dxf-site-plan"],
         "ifc-site-plan": atom.artifacts["ifc-site-plan"],
+        "pdf-site-plan": atom.artifacts["pdf-site-plan"],
       },
     });
   });

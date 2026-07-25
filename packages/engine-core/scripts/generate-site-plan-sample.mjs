@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { buildTerrainMeshGeometry } from "../src/parcel-terrain/mesh.js";
 import { composeSitePlanModel } from "../src/site-plan/site-model.js";
 import { emitDxfSitePlan, emitIfcSitePlan } from "../src/site-plan/emitters.js";
+import { emitPdfSitePlan } from "../src/site-plan/pdf/render.js";
 
 const PARCEL_NODE_ID = "48029:105129";
 const OUT_DIR = process.argv[2] ?? "P:/doc_repo/_inbox/2026-07-25_site_plan_samples";
@@ -100,6 +101,16 @@ async function main() {
     setback,
     geometrySourceRef: "synthetic-fixture:1127-n-pine-st-san-antonio-tx-78202-approx-rect",
     demSourceCitation: "synthetic-fixture (no live USGS 3DEP fetch; sandbox has no network egress)",
+    // Real, atom-chain verified values for this parcel (WDLL/STATUS Wave 0
+    // evidence) — only the RING and DEM are synthetic in this fixture.
+    descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
+    zoning: { district: "R-6" },
+    // Flood zone genuinely could not be read live (same network hazard as
+    // Wave 0/1) — honest-unavailable, never fabricated.
+    floodZone: {
+      honestUnavailable: true,
+      reason: "Sandbox has no outbound network egress to FEMA NFHL (see STATUS Wave 0 evidence).",
+    },
   });
   const mesh = buildTerrainMeshGeometry(dem, bbox);
 
@@ -108,10 +119,12 @@ async function main() {
   if (ifc.status !== "ok" || !ifc.ifcText) {
     throw new Error(`IFC site-plan emission failed: ${ifc.message ?? "unknown worker error"}`);
   }
+  const pdf = await emitPdfSitePlan(model);
 
   await mkdir(OUT_DIR, { recursive: true });
   await writeFile(join(OUT_DIR, `${PARCEL_NODE_ID.replace(":", "_")}_site_plan.dxf`), Buffer.from(dxf.bytes));
   await writeFile(join(OUT_DIR, `${PARCEL_NODE_ID.replace(":", "_")}_site_plan.ifc`), ifc.ifcText, "utf8");
+  await writeFile(join(OUT_DIR, `${PARCEL_NODE_ID.replace(":", "_")}_site_plan.pdf`), Buffer.from(pdf.bytes));
 
   const manifest = {
     parcelNodeId: PARCEL_NODE_ID,
@@ -122,7 +135,9 @@ async function main() {
       "Ring is an approximate ~62x125 ft rectangle near the parcel address, not a surveyed boundary. " +
       "DEM is a synthetic gentle slope in a plausible San Antonio elevation band, not a live USGS 3DEP clip. " +
       "Setback values (front=10, side=5, rear=20 ft, cited san_antonio_tx/udc/35-310.01) ARE the real, " +
-      "atom-chain-verified values for this parcel.",
+      "atom-chain-verified values for this parcel. Zoning district R-6, address, and county are also the " +
+      "real, dispatch-verified values. Flood zone could NOT be read live (same network hazard) and is " +
+      "rendered as honest-unavailable in the PDF, not fabricated.",
     setback,
     bbox,
     dxf: { entityCount: dxf.entityCount, byteCount: dxf.bytes.byteLength },
@@ -132,9 +147,11 @@ async function main() {
       annotationCount: ifc.annotationCount,
       spatialValidation: ifc.spatialValidation,
     },
+    pdf: { pageCount: pdf.pageCount, byteCount: pdf.bytes.byteLength },
     setbackDegenerate: model.setback.degenerate,
     setbackBasis: model.setback.basis,
     streetHonestAbsence: model.streets.honestAbsence,
+    summary: model.summary,
   };
   await writeFile(join(OUT_DIR, `${PARCEL_NODE_ID.replace(":", "_")}_manifest.json`), JSON.stringify(manifest, null, 2), "utf8");
 
