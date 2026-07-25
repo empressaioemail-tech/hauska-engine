@@ -64,7 +64,10 @@
     "bake-property-atom-gold-set": "tsx scripts/bake-property-atom-gold-set.mjs",
     "bake-property-atom-county": "tsx scripts/bake-property-atom-county.mjs",
     "ingest-bastrop-roads-pilot": "tsx scripts/ingest-bastrop-roads-pilot.mjs",
-    "depth-warm-bastrop-pilot": "tsx scripts/depth-warm-bastrop-pilot.mjs"
+    "ingest-bastrop-roads-overpass": "tsx scripts/ingest-bastrop-roads-overpass.mjs",
+    "depth-warm-bastrop-pilot": "tsx scripts/depth-warm-bastrop-pilot.mjs",
+    "depth-warm-bastrop-batch": "tsx scripts/depth-warm-bastrop-batch.mjs",
+    "tally-bastrop-depth": "tsx scripts/tally-bastrop-depth.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

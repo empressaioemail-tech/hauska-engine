@@ -30,6 +30,7 @@ export function parseOsmWayElement(
     osmWayId: element.id,
     displayName: name || undefined,
     osmHighwayTag: highwayTag,
+    osmTags: tags,
     classification,
     centerline,
     sourceCitation: citationParts.join(" "),
@@ -66,6 +67,9 @@ export function emitRoadNode(
         kind: "approximate-assumed-per-class",
         assumedWidthTableKey: obs.classification,
         osmHighwayTag: obs.osmHighwayTag,
+        ...(obs.osmTags?.surface
+          ? { surface: obs.osmTags.surface }
+          : {}),
         note: "v1 assumed ROW — not survey/CAD",
       },
       leftEdge,

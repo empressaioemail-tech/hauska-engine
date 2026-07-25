@@ -1,0 +1,315 @@
+#!/usr/bin/env node
+/**
+ * depth-warm-bastrop-batch.mjs — R4 batch warm→verify→promote with cost instrumentation.
+ *
+ * Depth-over-breadth: only parcels with zoning-fact district present.
+ * Honest declines on geometry/road gaps; promote only verify-pass.
+ *
+ *   PROPERTY_ATOM_PATH=1 DATABASE_URL=... TXGIO_DATABASE_URL=... \
+ *     pnpm --filter @hauska-engine/engine-core run depth-warm-bastrop-batch -- \
+ *       --limit=500 [--offset=0] [--promote] [--dry-run]
+ *
+ * Pilot cohort default (--limit=500) with extrapolation to full zoning-fact universe.
+ */
+
+import { performance } from "node:perf_hooks";
+
+import postgres from "postgres";
+import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
+
+import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
+import { labelEdgesFromRoads } from "../src/depth-warm/edgeLabeling.ts";
+import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
+import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
+import { classifyOsmHighwayTag } from "../src/road-intake/classify.ts";
+import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parcel-geometry-resolver.ts";
+
+const COUNTY_FIPS = "48021";
+const descriptor = bastropDescriptor;
+
+function parseArgs(argv) {
+  const out = { limit: 500, offset: 0, promote: false, dryRun: false, parcel: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--limit") out.limit = Number(argv[++i] || 500);
+    else if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length));
+    else if (a === "--offset") out.offset = Number(argv[++i] || 0);
+    else if (a.startsWith("--offset=")) out.offset = Number(a.slice("--offset=".length));
+    else if (a === "--parcel") out.parcel = String(argv[++i] || "").trim();
+    else if (a.startsWith("--parcel=")) out.parcel = a.slice("--parcel=".length).trim();
+    else if (a === "--promote") out.promote = true;
+    else if (a === "--dry-run") out.dryRun = true;
+  }
+  return out;
+}
+
+function normalizeDistrict(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const prefix = trimmed.split(/\s+/)[0];
+  return prefix || trimmed;
+}
+
+function roadAtomToWarmSource(body) {
+  const centerline = body.centerline?.coordinates;
+  if (!Array.isArray(centerline) || centerline.length < 2) return null;
+  const osmHighwayTag = body.row?.provenance?.osmHighwayTag ?? "unclassified";
+  const surface = body.row?.provenance?.surface;
+  const tags = surface ? { surface } : undefined;
+  const derived = classifyOsmHighwayTag(osmHighwayTag, tags);
+  const classification = body.classification;
+  if (derived !== classification) return null;
+  return {
+    osmWayId: body.osmWayId,
+    osmHighwayTag,
+    name: body.displayName,
+    classification,
+    polyline: centerline.map(([lng, lat]) => [lng, lat]),
+  };
+}
+
+function approxUsd(wallMs, atomWrites) {
+  const hours = wallMs / 3_600_000;
+  return Number((hours * 0.25 * 0.16 + atomWrites * 0.000002).toFixed(6));
+}
+
+const args = parseArgs(process.argv.slice(2));
+const dryRun = args.dryRun || !args.promote;
+
+if (!dryRun && process.env.PROPERTY_ATOM_PATH !== "1") {
+  console.error("FATAL: PROPERTY_ATOM_PATH=1 required for promote.");
+  process.exit(1);
+}
+
+const substrateUrl = resolveSubstrateDatabaseUrl();
+const txgioUrl = process.env.TXGIO_DATABASE_URL?.trim() || substrateUrl;
+if (!substrateUrl) {
+  console.error("FATAL: DATABASE_URL or SUBSTRATE_DATABASE_URL required.");
+  process.exit(1);
+}
+
+const t0 = performance.now();
+const sql = postgres(substrateUrl, { ssl: "require", max: 4, prepare: false });
+let storageHandle = null;
+if (!dryRun) {
+  storageHandle = createPgStorage({ databaseUrl: substrateUrl, maxConnections: 2 });
+}
+
+const geomResolver = new TxgioDatabaseParcelGeometryResolver({ databaseUrl: txgioUrl });
+
+const [denomRow] = await sql`
+  SELECT count(*)::int AS n
+  FROM atoms
+  WHERE entity_type = 'zoning-fact'
+    AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
+    AND NOT (body ? 'absence')
+    AND coalesce(body->>'district', '') <> ''
+`;
+
+const zoningFactDenominator = denomRow?.n ?? 0;
+
+const roadRows = await sql`
+  SELECT body
+  FROM atoms
+  WHERE entity_type = 'road-node'
+    AND body->>'countyFips' = ${COUNTY_FIPS}
+    AND coalesce(body->>'status', 'active') = 'active'
+`;
+const roads = roadRows
+  .map((r) => roadAtomToWarmSource(r.body))
+  .filter(Boolean);
+
+const parcelRows = args.parcel
+  ? await sql`
+      SELECT body->>'parcelNodeId' AS parcel_node_id,
+             body->>'district' AS district,
+             atom_did AS zoning_fact_did
+      FROM atoms
+      WHERE entity_type = 'zoning-fact'
+        AND body->>'parcelNodeId' = ${args.parcel}
+        AND NOT (body ? 'absence')
+        AND coalesce(body->>'district', '') <> ''
+      LIMIT 1
+    `
+  : await sql`
+      SELECT body->>'parcelNodeId' AS parcel_node_id,
+             body->>'district' AS district,
+             atom_did AS zoning_fact_did
+      FROM atoms
+      WHERE entity_type = 'zoning-fact'
+        AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
+        AND NOT (body ? 'absence')
+        AND coalesce(body->>'district', '') <> ''
+      ORDER BY body->>'parcelNodeId'
+      OFFSET ${args.offset}
+      LIMIT ${args.limit}
+    `;
+
+const stats = {
+  cohortSize: parcelRows.length,
+  zoningFactDenominator,
+  roadsLoaded: roads.length,
+  processed: 0,
+  promoted: 0,
+  verifyPass: 0,
+  verifyFail: 0,
+  declines: {
+    "no-geometry": 0,
+    "no-road-adjacency": 0,
+    "invalid-parcel-ring": 0,
+    "no-roads-available": 0,
+    "already-promoted": 0,
+    other: 0,
+  },
+  atomWrites: 0,
+  wallMsPerParcel: [],
+};
+
+const sampleOutcomes = [];
+
+for (const row of parcelRows) {
+  const parcelNodeId = row.parcel_node_id;
+  const district = normalizeDistrict(row.district);
+  if (!district) continue;
+
+  const parcelT0 = performance.now();
+
+  const [existing] = await sql`
+    SELECT 1 FROM atoms
+    WHERE entity_type = 'buildable-envelope'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+      AND body->>'depthWarmPromotion' = ${DEPTH_WARM_PROMOTION_MARKER}
+    LIMIT 1
+  `;
+  if (existing) {
+    stats.declines["already-promoted"]++;
+    stats.processed++;
+    continue;
+  }
+
+  const geom = await geomResolver.resolve(parcelNodeId);
+  if (!geom?.ring || geom.ring.length < 3) {
+    stats.declines["no-geometry"]++;
+    stats.processed++;
+    stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+    continue;
+  }
+
+  const labelResult = labelEdgesFromRoads({
+    parcelRing: geom.ring,
+    roads,
+  });
+  if (!labelResult.ok) {
+    const key = labelResult.decline in stats.declines ? labelResult.decline : "other";
+    stats.declines[key]++;
+    stats.processed++;
+    stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+    continue;
+  }
+
+  const result = await warmThenVerify({
+    parcelNodeId,
+    district,
+    parcelRing: geom.ring,
+    descriptor,
+    roads,
+    edgeLabels: labelResult.edgeLabels,
+    zoningFactAtomDid: row.zoning_fact_did,
+    storage: dryRun ? undefined : storageHandle?.storage,
+    promote: !dryRun,
+  });
+
+  stats.processed++;
+  stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+
+  if (result.verify.pass) {
+    stats.verifyPass++;
+    if (!dryRun && result.promoted) {
+      stats.promoted++;
+      stats.atomWrites += 2;
+    }
+    if (sampleOutcomes.length < 5) {
+      sampleOutcomes.push({
+        parcelNodeId,
+        verifyPass: true,
+        buildableAreaSqFt: result.candidate.buildableAreaSqFt,
+        insetFeet: result.candidate.insetFeetPerEdge,
+      });
+    }
+  } else {
+    stats.verifyFail++;
+    if (sampleOutcomes.length < 8) {
+      sampleOutcomes.push({
+        parcelNodeId,
+        verifyPass: false,
+        reasons: [
+          ...result.verify.gates.geometry.reasons,
+          ...result.verify.gates.roadClassification.reasons,
+          ...result.verify.gates.setbackEdgeDistance.reasons,
+        ].slice(0, 3),
+      });
+    }
+  }
+}
+
+const wallMsTotal = Math.round(performance.now() - t0);
+const sampleN = stats.wallMsPerParcel.length;
+const msPerParcel = sampleN > 0
+  ? Math.round(stats.wallMsPerParcel.reduce((a, b) => a + b, 0) / sampleN)
+  : 0;
+const usdSample = approxUsd(wallMsTotal, stats.atomWrites);
+const usdPerParcel = stats.processed > 0 ? usdSample / stats.processed : 0;
+const extrapolatedJurisdictionUsd = Number(
+  (usdPerParcel * zoningFactDenominator).toFixed(4),
+);
+const extrapolatedWallHours = (msPerParcel * zoningFactDenominator) / 3_600_000;
+
+const costJson = {
+  event: "R4-depth-cost.done",
+  countyFips: COUNTY_FIPS,
+  dryRun,
+  cohort: {
+    offset: args.offset,
+    limit: args.limit,
+    processed: stats.processed,
+    zoningFactDenominator,
+  },
+  roadsLoaded: stats.roadsLoaded,
+  outcomes: {
+    promoted: stats.promoted,
+    verifyPass: stats.verifyPass,
+    verifyFail: stats.verifyFail,
+    declines: stats.declines,
+  },
+  cost: {
+    wallMsTotal,
+    msPerParcel,
+    usdPerParcel: Number(usdPerParcel.toFixed(6)),
+    sampleProcessed: stats.processed,
+    atomWrites: stats.atomWrites,
+    usdSampleTotal: usdSample,
+    extrapolatedJurisdictionUsd,
+    extrapolatedWallHours: Number(extrapolatedWallHours.toFixed(2)),
+    costGateUsd: 200,
+    humanReviewMinutesGate: 60,
+    flaggedOverCostGate: extrapolatedJurisdictionUsd > 200,
+    note:
+      "usd = 0.25 CU × $0.16/hr wall + $0.000002/atom-write; extrapolation = usdPerParcel × zoningFactDenominator",
+  },
+  sampleOutcomes,
+  wdll9Note: {
+    parcel: "48021:33512 (714 Spring St)",
+    status: "PARTIAL",
+    detail:
+      "ROW still approximate-assumed-per-class (v1 OSM centerline + assumed width). " +
+      "Aerial alignment: parcel ring from txgio_parcel; Spring Street OSM way within ~15m of southern front edge index 5.",
+  },
+};
+
+console.log(JSON.stringify(costJson, null, 2));
+
+await sql.end({ timeout: 5 });
+if (storageHandle) await storageHandle.close();
+
+process.exit(costJson.cost.flaggedOverCostGate ? 2 : 0);

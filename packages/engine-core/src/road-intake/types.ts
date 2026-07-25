@@ -42,6 +42,7 @@ export interface OsmRoadObservation {
   osmWayId: number;
   displayName?: string;
   osmHighwayTag: string;
+  osmTags?: Record<string, string>;
   classification: RoadClassification;
   /** WGS84 [lng, lat] centerline vertices. */
   centerline: ReadonlyArray<readonly [number, number]>;
