@@ -391,11 +391,17 @@ def emit_site_plan(request: dict) -> dict:
         )
         annotation_count += 1
 
+    # Same grade Z the DXF worker receives (`request["gradeZ"]`, from
+    # meshMinZ on the TS side) and that PROPERTY_LINE/SETBACK are already
+    # baked to via their 3-tuple points — STREET anchors are the only curve
+    # that arrives as bare [x,y] pairs, so this is the one spot that must
+    # read the shared grade instead of defaulting to 0.0 (HOLD 2 fix: it
+    # previously read a nonexistent `base["grade_z"]`, always 0.0).
+    grade_z = float(request.get("gradeZ", 0.0))
     for anchor in request.get("street") or []:
         points_2d = anchor.get("points") or []
         if len(points_2d) < 2:
             continue
-        grade_z = base.get("grade_z", 0.0)
         points_xyz = [[p[0], p[1], grade_z] for p in points_2d]
         add_annotation_polyline(
             f, base, "STREET", str(anchor.get("name", "Street")), points_xyz, anchor.get("citation"), closed=False,
@@ -415,6 +421,11 @@ def emit_site_plan(request: dict) -> dict:
         "annotationCount": annotation_count,
         "solidMass": solid_mass,
         "spatialValidation": spatial,
+        # Diagnostic, not geometry: the grade Z this run actually used for
+        # STREET annotations (HOLD 2 regression coverage — lets callers
+        # assert it matches the shared model's grade instead of the old
+        # always-0.0 default without scraping STEP text for a coordinate).
+        "streetGradeZ": grade_z,
     }
 
 

@@ -48,6 +48,55 @@ function buildModel() {
   });
 }
 
+function buildModelWithStreet() {
+  return composeSitePlanModel({
+    parcelNodeId: "48029:105129",
+    bbox,
+    ringWgs84,
+    dem,
+    contourIntervalMeters: 0.5,
+    setback,
+    geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
+    streetAnchors: [{ name: "N PINE ST", points: [[-98.4999, 29.4002], [-98.4995, 29.4002]], sourceRef: "osm:way/123" }],
+  });
+}
+
+function meshMinZ(positions: Float32Array): number {
+  let minZ = Infinity;
+  for (let i = 2; i < positions.length; i += 3) {
+    const z = positions[i]!;
+    if (z < minZ) minZ = z;
+  }
+  return minZ;
+}
+
+/** Rolling-layer DXF group-code scan: same technique the parcel-terrain
+ * emitters test uses for 3DFACE Z extraction, generalized to any layer.
+ * Skips the classic POLYLINE header entity's own 10/20/30 (a legacy
+ * "elevation point" stub ezdxf always writes as (0,0,0) — real coordinates
+ * live in the VERTEX/TEXT sub-entities' AcDbVertex/AcDbText subclass). */
+function extractZValuesForLayer(dxf: string, layer: string): number[] {
+  const lines = dxf.split(/\r?\n/);
+  const zs: number[] = [];
+  let currentLayer: string | null = null;
+  let currentSubclass: string | null = null;
+  for (let i = 0; i < lines.length - 1; i++) {
+    const code = lines[i]!.trim();
+    const value = lines[i + 1]!;
+    if (code === "8") currentLayer = value.trim();
+    if (code === "100") currentSubclass = value.trim();
+    const capturesRealPoint =
+      currentSubclass === "AcDbVertex" ||
+      currentSubclass === "AcDb3dPolylineVertex" ||
+      currentSubclass === "AcDbText";
+    if (code === "30" && currentLayer === layer && capturesRealPoint) {
+      const z = Number(value);
+      if (Number.isFinite(z)) zs.push(z);
+    }
+  }
+  return zs;
+}
+
 describe("site-plan DXF/IFC emitters", () => {
   it("builds a DXF worker request sourced entirely from the shared site model", () => {
     const model = buildModel();
@@ -114,5 +163,34 @@ describe("site-plan DXF/IFC emitters", () => {
       .split(/\r?\n/)
       .filter((line, i, all) => all[i - 1]?.trim() === "8" && line.trim() === "STREET");
     expect(streetEntityLines.length).toBe(0);
+  });
+
+  it("draws STREET at the same grade Z as PROPERTY_LINE/SETBACK in DXF, and IFC honors the same grade (HOLD 2 regression)", async () => {
+    const model = buildModelWithStreet();
+    expect(model.streets.honestAbsence).toBe(false);
+    const mesh = buildTerrainMeshGeometry(dem, bbox);
+    const expectedGradeZ = meshMinZ(mesh.positions);
+    expect(expectedGradeZ).not.toBe(0);
+
+    const { bytes } = await emitDxfSitePlan(model, mesh);
+    const dxf = new TextDecoder().decode(bytes);
+    const propertyLineZs = extractZValuesForLayer(dxf, "PROPERTY_LINE");
+    const streetZs = extractZValuesForLayer(dxf, "STREET");
+    expect(propertyLineZs.length).toBeGreaterThan(0);
+    expect(streetZs.length).toBeGreaterThan(0);
+    for (const z of streetZs) {
+      expect(z).toBeCloseTo(expectedGradeZ, 3);
+    }
+    for (const z of propertyLineZs) {
+      expect(z).toBeCloseTo(expectedGradeZ, 3);
+    }
+
+    const ifc = await emitIfcSitePlan(model, mesh, "USGS 3DEP");
+    expect(ifc.status).toBe("ok");
+    // Before the fix this read a nonexistent base["grade_z"] and was always
+    // 0.0 regardless of the shared model's actual grade.
+    expect(ifc.streetGradeZ).not.toBe(0);
+    expect(ifc.streetGradeZ).toBeCloseTo(expectedGradeZ, 3);
+    expect(ifc.streetGradeZ).toBeCloseTo(streetZs[0]!, 3);
   });
 });

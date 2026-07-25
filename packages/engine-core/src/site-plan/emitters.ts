@@ -116,8 +116,13 @@ export interface IfcSitePlanResult {
   ifcText?: string;
   vertexCount?: number;
   triangleCount?: number;
+  annotationCount?: number;
   message?: string;
   spatialValidation?: Record<string, unknown>;
+  /** Diagnostic only: the grade Z the worker actually used for STREET
+   * annotations this run. Must equal the same `gradeZ` passed to the DXF
+   * worker and baked into PROPERTY_LINE/SETBACK — see HOLD 2. */
+  streetGradeZ?: number;
 }
 
 /**
@@ -144,6 +149,11 @@ export async function emitIfcSitePlan(
     verticalDatum: TERRAIN_VERTICAL_DATUM,
     provenance: { sourceCitation, hasHoles: mesh.hasHoles },
     solidMass: { skirtDepthMeters: solid.skirtDepthMeters, bottomZ: solid.bottomZ, minZ: solid.minZ },
+    // Same grade Z the DXF worker gets and PROPERTY_LINE/SETBACK are already
+    // baked to (via ring3 above) — STREET anchors arrive as 2D [x,y] pairs
+    // and need the worker to add a Z; it must be this one, not a 0.0
+    // default, or the shared-model same-source rule breaks for IFC STREET.
+    gradeZ,
     propertyLine: {
       points: ring3(model.ringLocal, gradeZ),
       citation: model.citations.propertyLine,

@@ -181,7 +181,7 @@ export async function authorParcelSitePlanExport(
     byteCount: ifcBytes.byteLength,
     vertexCount: ifc.vertexCount,
     triangleCount: ifc.triangleCount,
-    annotationCount: (ifc as { annotationCount?: number }).annotationCount,
+    annotationCount: ifc.annotationCount,
     setbackDegenerate: model.setback.degenerate,
     setbackDegenerateReason: model.setback.degenerateReason,
     streetHonestAbsence: model.streets.honestAbsence,
