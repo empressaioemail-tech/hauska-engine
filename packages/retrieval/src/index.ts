@@ -9,7 +9,7 @@
  * the same interface once pgvector + embedding pipeline are wired.
  */
 
-import { isPropertyAtomInstance, buildAtomDid } from "@hauska-engine/atoms";
+import { isPropertyAtomInstance, isRoadNodeAtomInstance, buildAtomDid } from "@hauska-engine/atoms";
 import type {
   AtomLink,
   CodeAtomEntityType,
@@ -70,6 +70,18 @@ export interface PropertyAtomChainWire {
   zoningFact: StoredAtomInstance | null;
   setbackRule: StoredAtomInstance | null;
   buildableEnvelope: StoredAtomInstance | null;
+  atoms: ReadonlyArray<{
+    did: string;
+    type: string;
+    kind: string;
+    accessPolicy: string;
+    payload: StoredAtomInstance;
+  }>;
+}
+
+export interface RoadAtomChainWire {
+  roadNodeId: string;
+  roadNode: StoredAtomInstance | null;
   atoms: ReadonlyArray<{
     did: string;
     type: string;
@@ -199,6 +211,35 @@ export class HybridRetrieval {
       buildableEnvelope,
       atoms,
     };
+  }
+
+  async getRoadAtomChain(roadNodeId: string): Promise<RoadAtomChainWire> {
+    const rows = await this.storage.listRoadAtomsByRoadNodeId(roadNodeId);
+    const resolved = await Promise.all(
+      rows.map((row) =>
+        isRoadNodeAtomInstance(row)
+          ? applyPropertyCalibrationAtRead(
+              row as unknown as import("@hauska-engine/atoms").PropertyAtomInstance,
+              this.overlay,
+            )
+          : Promise.resolve(row),
+      ),
+    );
+    const roadNode = resolved[0] ?? null;
+    const atoms = resolved.map((payload) => {
+      const did =
+        typeof payload.atomDid === "string" && payload.atomDid.startsWith("did:")
+          ? payload.atomDid
+          : buildAtomDid(payload.entityType, payload.entityId).raw;
+      return {
+        did,
+        type: payload.entityType,
+        kind: payload.entityType,
+        accessPolicy: payload.accessPolicy ?? "public-free",
+        payload,
+      };
+    });
+    return { roadNodeId, roadNode, atoms };
   }
 
   async queryJurisdiction(

@@ -46,6 +46,10 @@
     "./site-plan": {
       "types": "./src/site-plan/index.ts",
       "import": "./src/site-plan/index.ts"
+    },
+    "./road-intake": {
+      "types": "./src/road-intake/index.ts",
+      "import": "./src/road-intake/index.ts"
     }
   },
   "scripts": {
@@ -54,7 +58,8 @@
     "test": "vitest run",
     "lint": "echo 'no lint configured'",
     "bake-property-atom-gold-set": "tsx scripts/bake-property-atom-gold-set.mjs",
-    "bake-property-atom-county": "tsx scripts/bake-property-atom-county.mjs"
+    "bake-property-atom-county": "tsx scripts/bake-property-atom-county.mjs",
+    "ingest-bastrop-roads-pilot": "tsx scripts/ingest-bastrop-roads-pilot.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

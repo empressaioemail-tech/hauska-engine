@@ -14,6 +14,10 @@ export function tokenize(s: string): ReadonlyArray<string> {
 }
 
 export function buildSnippet(inst: StoredAtomInstance): string {
+  if (inst.entityType === "road-node") {
+    const road = inst as import("@hauska-engine/atoms").RoadNodeAtomInstance;
+    return `${road.entityType} ${road.roadNodeId} ${road.displayName ?? ""} ${road.sourceCitation}`;
+  }
   if (
     inst.entityType === "zoning-fact" ||
     inst.entityType === "setback-rule" ||

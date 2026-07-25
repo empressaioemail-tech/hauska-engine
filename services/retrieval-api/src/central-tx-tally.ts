@@ -34,6 +34,13 @@ export interface CountyTallyRow {
   full_chain_pct: number;
 }
 
+export interface RoadTallyRow {
+  fips: string;
+  county: string;
+  road_nodes: number;
+  named_roads: number;
+}
+
 export interface CentralTxNodeGraphTally {
   generatedAt: string;
   source: string;
@@ -45,10 +52,18 @@ export interface CentralTxNodeGraphTally {
     setback_rule: number;
     buildable_envelope: number;
     zoning_absence: number;
+    road_node: number;
     other_atoms: number;
     references_total: number;
     jurisdiction_status_rows: number;
     byType: Array<{ entity_type: string; n: number }>;
+  };
+  roadRollup: {
+    road_nodes: number;
+    named_roads: number;
+    byCounty: RoadTallyRow[];
+    /** Named probe roads for WDLL 3 grading (e.g. Bastrop Spring Street). */
+    sampleNamed: Array<{ roadNodeId: string; displayName: string | null }>;
   };
   centralTx: {
     counties: CountyTallyRow[];
@@ -165,6 +180,38 @@ export async function runCentralTxNodeGraphTally(
       ORDER BY 1
     `;
 
+    const roadPerCounty = await sql<{
+      fips: string;
+      road_nodes: number;
+      named_roads: number;
+    }[]>`
+      SELECT
+        split_part(body->>'roadNodeId', ':', 1) AS fips,
+        count(*)::int AS road_nodes,
+        count(*) FILTER (
+          WHERE coalesce(body->>'displayName', '') <> ''
+        )::int AS named_roads
+      FROM atoms
+      WHERE entity_type = 'road-node'
+        AND body->>'roadNodeId' ~ '^[0-9]{5}:road:[0-9]+$'
+      GROUP BY 1
+      ORDER BY 1
+    `;
+
+    const sampleNamed = await sql<{
+      road_node_id: string;
+      display_name: string | null;
+    }[]>`
+      SELECT
+        body->>'roadNodeId' AS road_node_id,
+        nullif(body->>'displayName', '') AS display_name
+      FROM atoms
+      WHERE entity_type = 'road-node'
+        AND coalesce(body->>'displayName', '') <> ''
+      ORDER BY updated_at DESC
+      LIMIT 10
+    `;
+
     const refsClean = await sql<{ fips: string; references: number }[]>`
       SELECT
         substring(from_atom_did from 'did:hauska:[^:]+:([0-9]{5}):') AS fips,
@@ -186,9 +233,30 @@ export async function runCentralTxNodeGraphTally(
             "setback-rule",
             "buildable-envelope",
             "zoning-absence",
+            "road-node",
           ].includes(String(r.entity_type)),
       )
       .reduce((a, r) => a + Number(r.n), 0);
+
+    const roadRows: RoadTallyRow[] = roadPerCounty.map((row) => {
+      const fips = String(row.fips);
+      return {
+        fips,
+        county: CENTRAL_TX_COUNTIES[fips] ?? "unknown",
+        road_nodes: Number(row.road_nodes),
+        named_roads: Number(row.named_roads),
+      };
+    });
+
+    const roadRollup = {
+      road_nodes: roadRows.reduce((a, r) => a + r.road_nodes, 0),
+      named_roads: roadRows.reduce((a, r) => a + r.named_roads, 0),
+      byCounty: roadRows.filter((r) => CENTRAL_TX_COUNTIES[r.fips]),
+      sampleNamed: sampleNamed.map((r) => ({
+        roadNodeId: String(r.road_node_id),
+        displayName: r.display_name,
+      })),
+    };
 
     const rows: CountyTallyRow[] = perCounty.map((row) => {
       const fips = String(row.fips);
@@ -234,6 +302,7 @@ export async function runCentralTxNodeGraphTally(
         setback_rule: typeMap["setback-rule"] ?? 0,
         buildable_envelope: typeMap["buildable-envelope"] ?? 0,
         zoning_absence: typeMap["zoning-absence"] ?? 0,
+        road_node: typeMap["road-node"] ?? 0,
         other_atoms: otherAtoms,
         references_total,
         jurisdiction_status_rows,
@@ -242,6 +311,7 @@ export async function runCentralTxNodeGraphTally(
           n: Number(r.n),
         })),
       },
+      roadRollup,
       centralTx: {
         counties: central,
         rollup: {
