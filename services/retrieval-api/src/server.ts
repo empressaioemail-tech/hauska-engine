@@ -16,6 +16,8 @@ import {
   emitHealthzSignal,
   httpStatusForHealthz,
 } from "./healthz.js";
+import { runCentralTxNodeGraphTally } from "./central-tx-tally.js";
+import { resolveSubstrateDatabaseUrl } from "./substrate-db-probe.js";
 
 function isPublicHealthPath(path: string): boolean {
   return (
@@ -161,6 +163,36 @@ export function buildApp(options: ServerOptions = {}): Hono {
   // Cloud Run's GFE reserves exact `/healthz` (no trailing slash); `/healthz/`
   // reaches the container and satisfies the observability contract.
   app.get("/healthz/", healthzHandler);
+
+  /**
+   * Live Central-TX node-graph tally (G1 / WDLL 9). Same SELECT as the Gate A
+   * offline script — coverage numbers for Command Center must come from here,
+   * never a committed static artifact.
+   */
+  app.get("/stats/central-tx-node-graph", async (c) => {
+    const databaseUrl = resolveSubstrateDatabaseUrl(substrateDatabaseUrl);
+    if (!databaseUrl) {
+      return c.json(
+        {
+          error: "substrate database not configured",
+          missing: "SUBSTRATE_DATABASE_URL|DATABASE_URL",
+        },
+        503,
+      );
+    }
+    try {
+      const tally = await runCentralTxNodeGraphTally(databaseUrl);
+      return c.json(tally);
+    } catch (err) {
+      return c.json(
+        {
+          error: "tally_failed",
+          message: err instanceof Error ? err.message : String(err),
+        },
+        502,
+      );
+    }
+  });
 
   const searchSchema = z.object({
     q: z.string().default(""),
