@@ -32,6 +32,28 @@ export interface StreetAnchorInput {
   sourceRef?: string;
 }
 
+/** Non-geometry descriptors no atom holds today (address, county name).
+ * Optional and caller-supplied only — the composer never fabricates these;
+ * the summary falls back to what IS derivable (county FIPS from the
+ * parcelNodeId) when absent. */
+export interface SitePlanDescriptorInput {
+  address?: string;
+  countyName?: string;
+}
+
+export type ZoningSummaryInput =
+  | { district: string }
+  | { honestAbsence: true; reason: string };
+
+export type FloodZoneSummaryInput =
+  | {
+      zone: string | null;
+      inSpecialFloodHazardArea: boolean;
+      sourceCitation: string;
+      asOfIso: string;
+    }
+  | { honestUnavailable: true; reason: string };
+
 export interface ComposeSitePlanModelInputs {
   parcelNodeId: string;
   bbox: BboxWgs84;
@@ -51,6 +73,15 @@ export interface ComposeSitePlanModelInputs {
   geometrySourceRef?: string;
   /** DEM/USGS 3DEP source citation, mirrors the terrain-export atom's sourceCitation. */
   demSourceCitation?: string;
+  /** PDF summary-block-only, non-geometry descriptors (Wave 2). Optional;
+   * honest fallback when absent — never fabricated. */
+  descriptor?: SitePlanDescriptorInput;
+  /** Zoning district for the summary block, or an honest-absence verdict
+   * (mirrors the zoning-fact atom's own honest-absence shape). */
+  zoning?: ZoningSummaryInput;
+  /** FEMA flood-zone read for the summary block, or an honest-unavailable
+   * verdict (e.g. no live network egress, upstream error). */
+  floodZone?: FloodZoneSummaryInput;
 }
 
 export interface ElevationLabel {
@@ -85,6 +116,32 @@ export interface SitePlanNorthModel {
   lengthMeters: number;
 }
 
+/**
+ * Non-CAD summary data (PDF sheet only — WDLL 5) computed from the SAME
+ * ring/setback/DEM inputs every other field on this model reads. DXF/IFC
+ * emitters ignore this block entirely; it exists so the PDF renders off the
+ * identical `SitePlanModel` object rather than a second derivation.
+ */
+export interface SitePlanSummaryModel {
+  parcelNodeId: string;
+  /** Parsed from the parcelNodeId (`{countyFips}:{propId}`); always available. */
+  countyFips: string | null;
+  /** Caller-supplied only — never fabricated. Undefined = not on file. */
+  countyName?: string;
+  address?: string;
+  zoningDistrict?: string;
+  zoningHonestAbsenceReason?: string;
+  lotAreaSqFt: number;
+  /** Null when the setback offset degenerated (see `buildableAreaHonestNote`). */
+  buildableAreaSqFt: number | null;
+  buildableAreaHonestNote?: string;
+  elevationRangeMeters: { min: number; max: number };
+  verticalDatumSummary: string;
+  floodZone:
+    | { zone: string | null; inSpecialFloodHazardArea: boolean; sourceCitation: string; asOfIso: string }
+    | { honestUnavailable: true; reason: string };
+}
+
 export interface SitePlanModel {
   parcelNodeId: string;
   ringLocal: LocalPoint[];
@@ -97,11 +154,33 @@ export interface SitePlanModel {
   scaleBar: { lengthMeters: number };
   verticalDatum: TerrainVerticalDatum;
   crsConvention: typeof TERRAIN_MESH_CRS_CONVENTION;
+  summary: SitePlanSummaryModel;
   citations: {
     propertyLine: string;
     setback: string;
     contour: string;
+    zoning?: string;
+    flood?: string;
   };
+}
+
+/** Shoelace polygon area in the same local-ENU metre frame as `ringLocal`. */
+function polygonAreaSqMeters(ring: LocalPoint[]): number {
+  let sum = 0;
+  const n = ring.length;
+  for (let i = 0; i < n; i++) {
+    const a = ring[i]!;
+    const b = ring[(i + 1) % n]!;
+    sum += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(sum) / 2;
+}
+
+const SQMETERS_PER_SQFOOT = 0.09290304;
+
+function parseCountyFips(parcelNodeId: string): string | null {
+  const match = /^(\d{5}):/.exec(parcelNodeId.trim());
+  return match ? match[1]! : null;
 }
 
 function sampleDemNearest(
@@ -216,6 +295,35 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
   };
   const scaleBar = { lengthMeters: niceScaleBarLength(extentMeters * 0.5) };
 
+  const lotAreaSqFt = polygonAreaSqMeters(ringLocal) / SQMETERS_PER_SQFOOT;
+  const buildableAreaSqFt = offset.offsetRing
+    ? polygonAreaSqMeters(offset.offsetRing) / SQMETERS_PER_SQFOOT
+    : null;
+
+  const zoningDistrict = inputs.zoning && "district" in inputs.zoning ? inputs.zoning.district : undefined;
+  const zoningHonestAbsenceReason =
+    inputs.zoning && "honestAbsence" in inputs.zoning ? inputs.zoning.reason : undefined;
+
+  const floodZone: SitePlanSummaryModel["floodZone"] = inputs.floodZone ?? {
+    honestUnavailable: true,
+    reason: "No flood-zone read attempted for this export.",
+  };
+
+  const summary: SitePlanSummaryModel = {
+    parcelNodeId: inputs.parcelNodeId,
+    countyFips: parseCountyFips(inputs.parcelNodeId),
+    countyName: inputs.descriptor?.countyName,
+    address: inputs.descriptor?.address,
+    zoningDistrict,
+    zoningHonestAbsenceReason,
+    lotAreaSqFt,
+    buildableAreaSqFt,
+    buildableAreaHonestNote: offset.offsetRing ? undefined : offset.offsetDegenerateReason,
+    elevationRangeMeters: { min: inputs.dem.minElevation, max: inputs.dem.maxElevation },
+    verticalDatumSummary: TERRAIN_VERTICAL_DATUM.summary,
+    floodZone,
+  };
+
   return {
     parcelNodeId: inputs.parcelNodeId,
     ringLocal,
@@ -228,10 +336,13 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     scaleBar,
     verticalDatum: TERRAIN_VERTICAL_DATUM,
     crsConvention: TERRAIN_MESH_CRS_CONVENTION,
+    summary,
     citations: {
       propertyLine: inputs.geometrySourceRef ?? "parcel-geometry-ring",
       setback: `${inputs.setback.sourceCodeAtomRef.atomDid} (${inputs.setback.sourceCodeAtomRef.role})`,
       contour: inputs.demSourceCitation ?? TERRAIN_VERTICAL_DATUM.source,
+      zoning: zoningDistrict ? "zoning-fact atom (parcel zoning polygon)" : undefined,
+      flood: "zone" in floodZone ? floodZone.sourceCitation : undefined,
     },
   };
 }

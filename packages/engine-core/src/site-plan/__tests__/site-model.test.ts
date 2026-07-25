@@ -101,6 +101,83 @@ describe("composeSitePlanModel", () => {
     ).toThrow(/boundary ring/i);
   });
 
+  it("computes lot area and buildable area (Wave 2 summary) from the SAME ring/offset points, honest fallbacks when descriptors are absent", () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+    });
+
+    // ~64x73 ft rectangle once reprojected through local-ENU -> ~4600 sq ft
+    // lot; loose bounds, not an exact rectangle assertion.
+    expect(model.summary.lotAreaSqFt).toBeGreaterThan(3500);
+    expect(model.summary.lotAreaSqFt).toBeLessThan(6000);
+    expect(model.summary.buildableAreaSqFt).not.toBeNull();
+    expect(model.summary.buildableAreaSqFt!).toBeLessThan(model.summary.lotAreaSqFt);
+
+    expect(model.summary.countyFips).toBe("48029");
+    expect(model.summary.countyName).toBeUndefined();
+    expect(model.summary.address).toBeUndefined();
+    expect(model.summary.zoningDistrict).toBeUndefined();
+    expect(model.summary.zoningHonestAbsenceReason).toBeUndefined();
+
+    expect(model.summary.elevationRangeMeters).toEqual({ min: 199.2, max: 201.2 });
+    expect(model.summary.verticalDatumSummary).toMatch(/NAVD88/);
+
+    // No floodZone input supplied -> honest-unavailable, never fabricated.
+    expect("honestUnavailable" in model.summary.floodZone).toBe(true);
+  });
+
+  it("carries caller-supplied descriptor, zoning, and flood-zone inputs through to the summary and citations", () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
+      zoning: { district: "R-6" },
+      floodZone: {
+        zone: "X",
+        inSpecialFloodHazardArea: false,
+        sourceCitation: "FEMA National Flood Hazard Layer (NFHL)",
+        asOfIso: "2026-07-25T00:00:00.000Z",
+      },
+    });
+
+    expect(model.summary.address).toBe("1127 N PINE ST, SAN ANTONIO, TX 78202");
+    expect(model.summary.countyName).toBe("Bexar County");
+    expect(model.summary.zoningDistrict).toBe("R-6");
+    expect(model.citations.zoning).toBeTruthy();
+    expect("zone" in model.summary.floodZone && model.summary.floodZone.zone).toBe("X");
+    expect(model.citations.flood).toBe("FEMA National Flood Hazard Layer (NFHL)");
+  });
+
+  it("reports an honest buildable-area note (not a fabricated area) when the setback offset degenerates", () => {
+    // front+rear far larger than the lot's short dimension (~64 ft) collapses the offset.
+    const consumingSetback = {
+      front: 100,
+      side: 100,
+      rear: 100,
+      sourceCodeAtomRef: setback.sourceCodeAtomRef,
+    };
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback: consumingSetback,
+    });
+    expect(model.setback.degenerate).toBe(true);
+    expect(model.summary.buildableAreaSqFt).toBeNull();
+    expect(model.summary.buildableAreaHonestNote).toBeTruthy();
+  });
+
   it("passes an explicit frontEdgeIndex hint through to the setback basis", () => {
     const model = composeSitePlanModel({
       parcelNodeId: "48029:105129",

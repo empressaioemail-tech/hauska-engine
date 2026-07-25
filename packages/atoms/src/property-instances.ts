@@ -125,7 +125,12 @@ export type TerrainExportFormat =
   /** Site-plan sprint (2026-07-25): closed-solid terrain mass + annotation
    * layers, additive to the thin-surface terrain formats above. */
   | "dxf-site-plan"
-  | "ifc-site-plan";
+  | "ifc-site-plan"
+  /** Site-plan sprint Wave 2: PDF sheet rendered from the SAME SitePlanModel
+   * as dxf-site-plan/ifc-site-plan (WDLL 5/6) — drawing + summary block +
+   * provenance panel + honesty line. Additive, never a second geometry
+   * source. */
+  | "pdf-site-plan";
 
 /**
  * Compatibility shape matching atom-contract PR #9. It is deliberately local
@@ -170,6 +175,10 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
     /** dxf-site-plan / ifc-site-plan only: no road-anchor atom was available. */
     streetHonestAbsence?: boolean;
     annotationCount?: number;
+    /** pdf-site-plan only: page count and honesty flags for the summary block. */
+    pageCount?: number;
+    zoningHonestAbsence?: boolean;
+    floodZoneHonestUnavailable?: boolean;
   }>>;
   coverage: {
     coverageFraction: number;

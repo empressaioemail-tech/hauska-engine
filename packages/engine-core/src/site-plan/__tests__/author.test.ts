@@ -109,12 +109,91 @@ describe("authorParcelSitePlanExport", () => {
     expect(result.atom.artifacts["ifc-site-plan"]).toBeTruthy();
     expect(result.atom.artifacts["dxf-site-plan"]?.byteCount).toBeGreaterThan(0);
     expect(result.atom.artifacts["ifc-site-plan"]?.vertexCount).toBeGreaterThan(0);
-    expect(artifactStore.data.size).toBe(2);
+    expect(artifactStore.data.size).toBe(3);
+
+    // Wave 2 (WDLL 5/6): PDF is additive alongside dxf/ifc-site-plan, off
+    // the same authored model — never a second geometry pipeline.
+    expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
+    expect(result.atom.artifacts["pdf-site-plan"]?.byteCount).toBeGreaterThan(0);
+    expect(result.atom.artifacts["pdf-site-plan"]?.pageCount).toBe(2);
+    expect(result.pdfPageCount).toBe(2);
+    // No zoning-fact atom in storage and no override supplied -> honest
+    // absence, never a fabricated district. No floodZoneOverride and no
+    // fetchFloodZone stub -> the real FEMA adapter runs and, lacking
+    // network egress in this sandbox, resolves to honest-unavailable.
+    expect(result.zoningHonestAbsence).toBe(true);
+    expect(result.floodZoneHonestUnavailable).toBe(true);
+    expect(result.atom.artifacts["pdf-site-plan"]?.zoningHonestAbsence).toBe(true);
+    expect(result.atom.artifacts["pdf-site-plan"]?.floodZoneHonestUnavailable).toBe(true);
 
     const stored = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
     const terrainAtom = stored.find((a) => a.entityType === "parcel-terrain-model");
     expect(terrainAtom).toBeTruthy();
     expect((terrainAtom as any).artifacts["dxf-site-plan"]).toBeTruthy();
+    expect((terrainAtom as any).artifacts["pdf-site-plan"]).toBeTruthy();
+  });
+
+  it("resolves zoning district from a zoning-fact atom already in storage, and honors explicit zoning/flood overrides", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+    await storage.writePropertyAtom({
+      entityType: "zoning-fact",
+      atomDid: "san_antonio_tx/zoning-fact/48029:105129/1",
+      entityId: `${parcelNodeId}:zoning:1`,
+      jurisdictionTenant: "san_antonio_tx",
+      parcelNodeId,
+      fetchedAt: new Date().toISOString(),
+      extractedAt: new Date().toISOString(),
+      sourceAdapter: "san-antonio-tx-zoning",
+      sourceUrl: "https://gis.sanantonio.gov/zoning",
+      sourceCitation: "San Antonio zoning GIS",
+      accessPolicy: "public-free",
+      atomTier: "data",
+      status: "active",
+      versionStamp: `${parcelNodeId}:zoning-fact:1`,
+      district: "R-6",
+    } as any);
+
+    const result = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      floodZoneOverride: {
+        zone: "X",
+        inSpecialFloodHazardArea: false,
+        sourceCitation: "FEMA National Flood Hazard Layer (NFHL)",
+        asOfIso: new Date().toISOString(),
+      },
+    });
+
+    expect(result.zoningHonestAbsence).toBe(false);
+    expect(result.floodZoneHonestUnavailable).toBe(false);
+    expect((result.atom.artifacts["pdf-site-plan"] as any)?.zoningHonestAbsence).toBe(false);
+  });
+
+  it("degrades to honest flood-zone-unavailable when the flood lookup throws, without failing the export", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+
+    const result = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      fetchFloodZone: async () => {
+        throw new Error("simulated network hazard: no egress in sandbox");
+      },
+    });
+
+    expect(result.floodZoneHonestUnavailable).toBe(true);
+    expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
   });
 
   it("fails closed rather than approximating PROPERTY_LINE when the resolver has no ring", async () => {
