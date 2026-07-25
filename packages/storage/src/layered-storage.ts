@@ -174,7 +174,12 @@ export class LayeredStorage implements StoragePort {
     const primaryCount = await this.primary.countAtoms();
     if (primaryCount === 0) return snapshotCount;
 
+    // Exact dedupe via listAtomDids is O(primary) and OOMs when the durable
+    // store holds millions of property atoms (G2 / F1 Phase 0 outage). Cap
+    // the walk; above the cap return a safe upper bound for /healthz.
+    const EXACT_DEDUPE_CAP = 10_000;
     if (
+      primaryCount <= EXACT_DEDUPE_CAP &&
       "listAtomDids" in this.primary &&
       typeof this.primary.listAtomDids === "function"
     ) {
@@ -191,6 +196,6 @@ export class LayeredStorage implements StoragePort {
       return snapshotCount + extras;
     }
 
-    return Math.max(snapshotCount, snapshotCount + primaryCount);
+    return snapshotCount + primaryCount;
   }
 }

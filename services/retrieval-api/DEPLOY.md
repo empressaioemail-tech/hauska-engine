@@ -11,16 +11,30 @@ catalog tools have a stable read-only endpoint (Lane E Phase E0).
 - **Region:** `us-central1` (matches the sibling services).
 - **Service name:** `hauska-retrieval-api`.
 
-## How corpus gets in
+## How corpus gets in (F1 Phase 0 / G2 — postgres-serve)
 
-The production service is read-only and the v1 catalog is small enough
-to hold in memory, so it does **not** run the live ingest pipeline on a
-cold start. It boots an `InMemoryStorage` hydrated from a committed
-snapshot artifact at `services/retrieval-api/corpus/snapshot.json`
-(`CORPUS_SNAPSHOT_PATH`).
+Production serves **Postgres only** (`SUBSTRATE_DATABASE_URL` →
+`PgStorage`). The Cloud Run boot path does **not** `JSON.parse` the
+corpus snapshot into the heap — that path OOM-crash-looped a 1Gi
+revision after Central-TX breadth bakes filled the durable store.
 
-Regenerate the snapshot by re-running every onboarded jurisdiction's
-ingest + eval:
+Property atoms are written by the bake pipeline into substrate Neon
+(`hauska_mcp`). Code-corpus atoms (ICC / jurisdiction sections) are
+loaded offline from the committed snapshot:
+
+```bash
+DATABASE_URL='postgres://.../hauska_mcp?sslmode=require' \
+  NODE_OPTIONS=--max-old-space-size=4096 \
+  node packages/storage/scripts/load-snapshot-into-pg.mjs
+```
+
+Local/dev without a substrate URL may still hydrate
+`CORPUS_SNAPSHOT_PATH` into memory; that path is gated by the G2
+resource-headroom check (`MEMORY_LIMIT_MIB`, default 1024). A projected
+heap above 70% of the limit fails the boot. `ALLOW_SNAPSHOT_OVERLAY=1`
+re-enables legacy `LayeredStorage` (explicit opt-in; still headroom-gated).
+
+Regenerate the snapshot artifact (offline, not at Cloud Run boot):
 
 ```bash
 # from repo root; --use-system-ca routes around the local TLS-MITM proxy
@@ -33,13 +47,14 @@ NODE_OPTIONS=--use-system-ca LEGACY_DATABASE_URL=<neon-url> \
 Each jurisdiction ingests in an isolated storage and is evaluated
 against its curated-query set; drifted live sources that return zero
 sections are skipped (logged for B.5 drift follow-up) rather than
-failing the build. Commit the regenerated `snapshot.json`.
+failing the build. Commit the regenerated `snapshot.json`, then reload
+into Postgres with `load-snapshot-into-pg.mjs`.
 
-## Phase 1a StoragePort overlay (Gate A / master WDLL 3.1)
+## Phase 1a StoragePort (Gate A / master WDLL 3.1) — superseded for prod boot
 
-When `SUBSTRATE_DATABASE_URL` is set at boot, retrieval-api wraps the
-snapshot in `LayeredStorage`: Postgres-first `getAtomByDid`, merged
-search, snapshot-backed `/healthz` corpus count preserved.
+Phase 1a landed `PgStorage` + `LayeredStorage`. F1 Phase 0 retires the
+snapshot half of the overlay for production: when
+`SUBSTRATE_DATABASE_URL` is set, retrieval-api serves `PgStorage` only.
 
 ### 1. Apply migration 005 (operator — substrate Neon)
 

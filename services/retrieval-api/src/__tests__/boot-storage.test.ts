@@ -26,7 +26,15 @@ describe("bootRetrievalStorage", () => {
       snapshot,
       substrateDatabaseUrl: "",
     });
+    expect(handle.mode).toBe("snapshot");
     expect(await handle.storage.countAtoms()).toBe(1);
+    await handle.close();
+  });
+
+  it("returns empty storage when neither snapshot nor substrate URL is set", async () => {
+    const handle = bootRetrievalStorage({ substrateDatabaseUrl: "" });
+    expect(handle.mode).toBe("empty");
+    expect(await handle.storage.countAtoms()).toBe(0);
     await handle.close();
   });
 });

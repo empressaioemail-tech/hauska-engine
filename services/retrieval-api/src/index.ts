@@ -14,22 +14,31 @@
  * Run's identity-aware proxy; the header check is a defense-in-depth
  * second layer.
  *
- * Corpus loading (Lane E Phase E0): when `CORPUS_SNAPSHOT_PATH` is set,
- * the service boots an `InMemoryStorage` hydrated from that committed
- * snapshot artifact. When `SUBSTRATE_DATABASE_URL` is also set, a
- * `LayeredStorage` overlay serves Postgres-first reads (Phase 1a
- * StoragePort) while preserving snapshot corpus count for /healthz.
+ * Corpus loading (F1 Phase 0 / G2): when SUBSTRATE_DATABASE_URL (or
+ * DATABASE_URL) is set, the service serves Postgres PgStorage ONLY and
+ * does NOT hydrate CORPUS_SNAPSHOT_PATH into the heap. The in-memory
+ * snapshot boot path is retired for production. Snapshot-only remains
+ * for local/dev without a substrate URL, gated by the resource-headroom
+ * check. ALLOW_SNAPSHOT_OVERLAY=1 is an explicit legacy escape hatch.
  */
 
 import { readFile } from "node:fs/promises";
 
-import { InMemoryStorage, isCorpusSnapshot } from "@hauska-engine/storage";
+import {
+  InMemoryStorage,
+  isCorpusSnapshot,
+  resolveSubstrateDatabaseUrl,
+} from "@hauska-engine/storage";
 
 import { bootRetrievalStorage } from "./boot-storage.js";
 import {
   createPgCalibrationOverlayPort,
   resolveOverlayDatabaseUrl,
 } from "./pg-calibration-overlay.js";
+import {
+  assertSnapshotHeadroom,
+  resolveMemoryLimitMib,
+} from "./resource-headroom.js";
 import { startServer, buildApp } from "./server.js";
 
 /**
@@ -57,12 +66,35 @@ const isMain =
 if (isMain) {
   const port = Number(process.env.PORT ?? 8080);
   const snapshotPath = process.env.CORPUS_SNAPSHOT_PATH;
+  const databaseUrl = resolveSubstrateDatabaseUrl();
+  const allowSnapshotOverlay = process.env.ALLOW_SNAPSHOT_OVERLAY === "1";
+  const memoryLimitMib = resolveMemoryLimitMib();
 
-  const snapshot = snapshotPath
-    ? await loadCorpusSnapshot(snapshotPath)
-    : new InMemoryStorage();
+  let snapshot: InMemoryStorage | undefined;
 
-  const boot = bootRetrievalStorage({ snapshot });
+  if (databaseUrl && !allowSnapshotOverlay) {
+    // G2: Postgres-only serve. Never JSON.parse the corpus into the heap.
+    console.log(
+      JSON.stringify({
+        level: "info",
+        service: "retrieval-api",
+        event: "corpus.snapshot_skipped",
+        reason: "postgres-serve",
+        snapshotPath: snapshotPath ?? null,
+        memoryLimitMib,
+        ts: new Date().toISOString(),
+      }),
+    );
+  } else if (snapshotPath) {
+    await assertSnapshotHeadroom(snapshotPath, memoryLimitMib);
+    snapshot = await loadCorpusSnapshot(snapshotPath);
+  }
+
+  const boot = bootRetrievalStorage({
+    snapshot,
+    substrateDatabaseUrl: databaseUrl,
+    allowSnapshotOverlay,
+  });
   const storage = boot.storage;
 
   const overlayUrl = resolveOverlayDatabaseUrl();
@@ -70,32 +102,21 @@ if (isMain) {
     ? createPgCalibrationOverlayPort({ databaseUrl: overlayUrl })
     : null;
 
-  if (snapshotPath) {
-    const jurisdictions = await storage.listJurisdictionStatus();
-    console.log(
-      JSON.stringify({
-        level: "info",
-        service: "retrieval-api",
-        event: "corpus.loaded",
-        snapshotPath,
-        layered: Boolean(process.env.SUBSTRATE_DATABASE_URL ?? process.env.DATABASE_URL),
-        calibrationOverlay: Boolean(overlayHandle),
-        jurisdictions: jurisdictions.length,
-        atomCount: await storage.countAtoms(),
-        ts: new Date().toISOString(),
-      }),
-    );
-  } else {
-    console.log(
-      JSON.stringify({
-        level: "warn",
-        service: "retrieval-api",
-        event: "corpus.empty",
-        message: "CORPUS_SNAPSHOT_PATH not set — serving empty dev-mode storage",
-        ts: new Date().toISOString(),
-      }),
-    );
-  }
+  console.log(
+    JSON.stringify({
+      level: "info",
+      service: "retrieval-api",
+      event: "corpus.loaded",
+      mode: boot.mode,
+      snapshotPath: snapshot ? snapshotPath : null,
+      layered: boot.mode === "layered",
+      calibrationOverlay: Boolean(overlayHandle),
+      jurisdictions: (await storage.listJurisdictionStatus()).length,
+      atomCount: await storage.countAtoms(),
+      memoryLimitMib,
+      ts: new Date().toISOString(),
+    }),
+  );
 
   if (!overlayHandle) {
     console.log(
@@ -127,3 +148,8 @@ if (isMain) {
 
 export { buildApp, startServer };
 export { bootRetrievalStorage } from "./boot-storage.js";
+export {
+  assertSnapshotHeadroom,
+  evaluateSnapshotHeadroom,
+  resolveMemoryLimitMib,
+} from "./resource-headroom.js";
