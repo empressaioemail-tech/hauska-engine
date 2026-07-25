@@ -121,7 +121,11 @@ export type TerrainExportFormat =
   | "ifc"
   | "dxf-3dface"
   | "dxf-contour"
-  | "landxml-tin";
+  | "landxml-tin"
+  /** Site-plan sprint (2026-07-25): closed-solid terrain mass + annotation
+   * layers, additive to the thin-surface terrain formats above. */
+  | "dxf-site-plan"
+  | "ifc-site-plan";
 
 /**
  * Compatibility shape matching atom-contract PR #9. It is deliberately local
@@ -159,6 +163,13 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
     contourPolylineCount?: number;
     deferred?: boolean;
     deferredReason?: string;
+    /** dxf-site-plan / ifc-site-plan only: setback offset ring degenerated
+     * (e.g. front+rear consumed the lot) — drawn honestly, not fabricated. */
+    setbackDegenerate?: boolean;
+    setbackDegenerateReason?: string;
+    /** dxf-site-plan / ifc-site-plan only: no road-anchor atom was available. */
+    streetHonestAbsence?: boolean;
+    annotationCount?: number;
   }>>;
   coverage: {
     coverageFraction: number;

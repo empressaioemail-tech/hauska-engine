@@ -42,6 +42,10 @@
     "./parcel-terrain": {
       "types": "./src/parcel-terrain/index.ts",
       "import": "./src/parcel-terrain/index.ts"
+    },
+    "./site-plan": {
+      "types": "./src/site-plan/index.ts",
+      "import": "./src/site-plan/index.ts"
     }
   },
   "scripts": {

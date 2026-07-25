@@ -26,8 +26,26 @@ describe("TxgioDatabaseParcelGeometryResolver", () => {
     await expect(resolver.resolve("48021:27303")).resolves.toEqual({
       bbox: { westLng: -97.3, southLat: 30.1, eastLng: -97.29, northLat: 30.11 },
       sourceRef: "txgio-parcel:48021:27303:stratmap25-landparcels_48021_2025",
+      ring: [[-97.3, 30.1], [-97.29, 30.1], [-97.29, 30.11], [-97.3, 30.1]],
     });
     expect(query).toHaveBeenCalledWith("48021", "27303");
+  });
+
+  it("omits ring (rather than fabricating one) when the geometry column has no Polygon/MultiPolygon", async () => {
+    const query = vi.fn(async () => ({
+      geometry: null,
+      westLng: -97.3,
+      southLat: 30.1,
+      eastLng: -97.29,
+      northLat: 30.11,
+      sourceVintage: "stratmap25-landparcels_48021_2025",
+    }));
+    const resolver = new TxgioDatabaseParcelGeometryResolver({
+      databaseUrl: "postgres://not-used-by-test",
+      query,
+    });
+    const resolved = await resolver.resolve("48021:27303");
+    expect(resolved?.ring).toBeUndefined();
   });
 
   it("declines malformed parcel identities", async () => {
@@ -56,6 +74,7 @@ describe("TxgioDatabaseParcelGeometryResolver", () => {
     await expect(resolver.resolve("48021:27303")).resolves.toEqual({
       bbox: { westLng: -97.31, southLat: 30.1, eastLng: -97.3, northLat: 30.11 },
       sourceRef: "arcgis-parcel:48021:27303",
+      ring: [[-97.31, 30.1], [-97.3, 30.1], [-97.3, 30.11], [-97.31, 30.1]],
     });
     expect(fetchImpl).toHaveBeenCalledOnce();
     expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("prop_id+%3D+%2727303%27");
