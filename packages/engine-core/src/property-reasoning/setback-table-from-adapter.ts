@@ -60,6 +60,7 @@ function fieldFrom(
     confidence:
       typeof prov?.confidence === "number" ? prov.confidence : fallbackConfidence,
     verification_state: mapVerification(prov?.verification_state),
+    ...(prov?.not_specified === true ? { not_specified: true } : {}),
   };
 }
 

@@ -1,0 +1,412 @@
+{
+  "$schema": "./schema.json",
+  "jurisdictionKey": "bastrop-city-tx",
+  "jurisdictionDisplayName": "City of Bastrop, TX (B3 Place Types)",
+  "note": "WDLL items 51-52. Codified from the City of Bastrop B3 Code, April 2025, Section 6.5.003(A), with P-EC defaulting to P5 per Section 2.4.006(a); accessed 2026-07-23. P-2 and P-3 use the stated 25 ft undeveloped-lot build-to minimum. For developed P-2/P-3 lots, the Code instead requires the average front-yard setback of two lots on each side, plus or minus 5 ft; that contextual first-layer calculation is not modeled. P-4/P-5 and P-EC use the conservative larger value from their stated build-to ranges. The Code supplies no scalar side or rear setbacks and expresses building height in stories, so those served numeric fields are marked not_specified in provenance. P-1 has no stated scalar build-to or first-layer setback; its 0 ft field is explicitly not_specified, not a claimed entitlement. P-CS has no scalar standard in the B3 table and PDD is controlled by project-specific concept and development plans; both remain unmapped rather than borrowing a district.",
+  "districts": [
+    {
+      "district_name": "P-1 Nature",
+      "front_ft": 0,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 100,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) P1 column is blank for Build-to-Line and First Layer Setback; no scalar front setback is stated.",
+          "confidence": 0.9,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(B) states principal-building height in stories, not feet.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) P1 column is blank for Lot Coverage.",
+          "confidence": 0.9,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) regulates lot coverage; it does not state a separate impervious-cover percentage.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "P-2 Rural",
+      "front_ft": 25,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 100,
+      "max_lot_coverage_pct": 40,
+      "max_impervious_pct": 100,
+      "citation_url": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A): P2 Build-to-Line: 25 ft*. Footnote: Only applicable to undeveloped lots in P2 & P3; all other lots shall adhere to the First Layer Setback.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(B) states principal-building height in stories, not feet.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A): P2 Lot Coverage: 40% max.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) regulates lot coverage; it does not state a separate impervious-cover percentage.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "P-3 Neighborhood",
+      "front_ft": 25,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 100,
+      "max_lot_coverage_pct": 50,
+      "max_impervious_pct": 100,
+      "citation_url": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A): P3 Build-to-Line: 25 ft*. Footnote: Only applicable to undeveloped lots in P2 & P3; all other lots shall adhere to the First Layer Setback.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(B) states principal-building height in stories, not feet.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A): P3 Lot Coverage: 50% max.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) regulates lot coverage; it does not state a separate impervious-cover percentage.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "P-4 Neighborhood Mix",
+      "front_ft": 15,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 100,
+      "max_lot_coverage_pct": 60,
+      "max_impervious_pct": 100,
+      "citation_url": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A): P4 Build-to-Line: 5 ft - 15 ft. The scalar uses the conservative 15 ft maximum of the stated range.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(B) states principal-building height in stories, not feet.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A): P4 Lot Coverage: 60% max.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) regulates lot coverage; it does not state a separate impervious-cover percentage.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "P-5 Core",
+      "front_ft": 15,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 100,
+      "max_lot_coverage_pct": 65,
+      "max_impervious_pct": 100,
+      "citation_url": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A): P5 Build-to-Line: 2 ft - 15 ft. The scalar uses the conservative 15 ft maximum of the stated range.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(B) states principal-building height in stories, not feet.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A): P5 Lot Coverage: 65% max.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) regulates lot coverage; it does not state a separate impervious-cover percentage.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "P-EC Employment Center",
+      "front_ft": 15,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 100,
+      "max_lot_coverage_pct": 65,
+      "max_impervious_pct": 100,
+      "citation_url": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 2.4.006(a): The default Development Standards for properties designated as Place Type EC are the P5 Development Standards. Section 6.5.003(A) P5 Build-to-Line: 2 ft - 15 ft; scalar uses the conservative 15 ft maximum.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) specifies lot occupation and front build-to/first-layer standards; it states no scalar side or rear setback.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(B) states principal-building height in stories, not feet.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 2.4.006(a) adopts P5 Development Standards; Section 6.5.003(A): P5 Lot Coverage: 65% max.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+          "section_number": "6.5.003(A)",
+          "quote": "Section 6.5.003(A) regulates lot coverage; it does not state a separate impervious-cover percentage.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    }
+  ]
+}

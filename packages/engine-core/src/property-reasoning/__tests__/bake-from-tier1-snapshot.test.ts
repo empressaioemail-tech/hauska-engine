@@ -87,4 +87,36 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
     expect(result.setbackPresent).toBe(false);
     expect(result.notes).toContain("setback-omitted-no-jurisdiction-key");
   });
+
+  it("Bastrop P-3 routes to bastrop-city-tx; not_specified never becomes consume-lot", () => {
+    const result = emitFromTier1Snapshot(
+      "48021:141209",
+      {
+        bakedAt: "2026-07-24T20:00:00.000Z",
+        baseFacts: { situsCity: "Bastrop" },
+        zoning: { district: "P-3", jurisdictionKey: "bastrop-tx" },
+        envelope: { status: "no-buildable-area", buildableAreaSqFt: 0 },
+      },
+      "48021",
+    );
+    expect(result.setbackPresent).toBe(true);
+    const setback = result.atoms.find((a) => a.entityType === "setback-rule") as {
+      front?: number;
+      side?: number;
+      rear?: number;
+      fieldProvenance?: {
+        side?: { notSpecified?: boolean };
+        rear?: { notSpecified?: boolean };
+      };
+    };
+    expect(setback?.front).toBe(25);
+    expect(setback?.side).toBe(0);
+    expect(setback?.rear).toBe(0);
+    expect(setback?.fieldProvenance?.side?.notSpecified).toBe(true);
+    expect(setback?.fieldProvenance?.rear?.notSpecified).toBe(true);
+    const envelope = result.atoms.find((a) => a.entityType === "buildable-envelope");
+    expect(envelope).toMatchObject({
+      outcome: { kind: "provisional-front-edge" },
+    });
+  });
 });

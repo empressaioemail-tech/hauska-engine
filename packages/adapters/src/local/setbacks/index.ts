@@ -14,6 +14,7 @@
 import grandCountyUt from "./grand-county-ut.json" with { type: "json" };
 import lemhiCountyId from "./lemhi-county-id.json" with { type: "json" };
 import bastropTx from "./bastrop-tx.json" with { type: "json" };
+import bastropCityTx from "./bastrop-city-tx.json" with { type: "json" };
 import austinTx from "./austin-tx.json" with { type: "json" };
 import sanAntonioTx from "./san-antonio-tx.json" with { type: "json" };
 import utahUnincorporated from "./utah-unincorporated.json" with { type: "json" };
@@ -46,6 +47,9 @@ const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = {
   "grand-county-ut": grandCountyUt as SetbackTable,
   "lemhi-county-id": lemhiCountyId as SetbackTable,
   "bastrop-tx": bastropTx as SetbackTable,
+  // B3 PlaceTypeClass rows (P-1..P-5, P-EC). Ported from LDT bastrop-city-tx.json
+  // — values are human-verified; do not re-transcribe.
+  "bastrop-city-tx": bastropCityTx as SetbackTable,
   "austin-tx": austinTx as SetbackTable,
   "san-antonio-tx": sanAntonioTx as SetbackTable,
   "utah-unincorporated": utahUnincorporated as SetbackTable,
@@ -65,6 +69,28 @@ function normalizeJurisdictionKey(key: string): string {
  */
 export function getSetbackTable(jurisdictionKey: string): SetbackTable | null {
   return SETBACK_TABLES[normalizeJurisdictionKey(jurisdictionKey)] ?? null;
+}
+
+/**
+ * Resolve the table for a parcel's stamped zoning code.
+ * Bastrop city GIS stamps B3 PlaceTypes (P-1..P-5, P-CS, P-EC, PDD) that live
+ * in bastrop-city-tx, not the legacy conventional bastrop-tx table.
+ */
+export function getSetbackTableForZoning(
+  jurisdictionKey: string,
+  zoningCode: string | null | undefined,
+): SetbackTable | null {
+  const normalized = normalizeJurisdictionKey(jurisdictionKey);
+  const code = (zoningCode ?? "").trim().toUpperCase();
+  if (
+    normalized === "bastrop-tx" &&
+    (/^P-[1-5](?:$|[-_\s])/.test(code) ||
+      /^P-(?:CS|EC)(?:$|[-_\s])/.test(code) ||
+      /^PDD(?:$|[-_\s])/.test(code))
+  ) {
+    return SETBACK_TABLES["bastrop-city-tx"] ?? null;
+  }
+  return SETBACK_TABLES[normalized] ?? null;
 }
 
 /**

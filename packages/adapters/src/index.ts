@@ -89,6 +89,7 @@ export {
 
 export {
   getSetbackTable,
+  getSetbackTableForZoning,
   getSetbackDistrict,
   listSetbackTables,
   SETBACK_JURISDICTION_KEYS,
