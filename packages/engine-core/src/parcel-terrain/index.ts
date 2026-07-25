@@ -16,11 +16,21 @@ export {
   emitDxf3dFace,
   emitDxfContours,
   emitIfc,
+  runDxfWorker,
+  runIfcWorker,
   type ContourPolyline2d,
   type DxfWorkerResult,
   type IfcSpatialValidation,
   type IfcWorkerResult,
 } from "./emitters.js";
+export {
+  buildTerrainSolidMass,
+  DEFAULT_SKIRT_DEPTH_FEET,
+  DEFAULT_SKIRT_DEPTH_METERS,
+  FEET_TO_METERS,
+  type BuildTerrainSolidMassOptions,
+  type SolidMassGeometry,
+} from "./solid-mass.js";
 
 
 export {

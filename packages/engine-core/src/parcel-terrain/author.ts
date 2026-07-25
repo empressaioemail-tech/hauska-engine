@@ -14,8 +14,20 @@ import { emitDxf3dFace, emitDxfContours, emitIfc } from "./emitters.js";
 import { buildTerrainMeshGeometry, emitGlb } from "./mesh.js";
 
 
+export interface ResolvedParcelGeometry {
+  bbox: BboxWgs84;
+  sourceRef: string;
+  /**
+   * Exterior boundary ring in WGS84 [lng, lat] pairs, closed or open (first
+   * point need not repeat last). Optional: bbox-only resolvers (unchanged
+   * legacy behavior) omit it, and any site-plan PROPERTY_LINE consumer must
+   * fail closed rather than approximate a ring from the bbox rectangle.
+   */
+  ring?: Array<[number, number]>;
+}
+
 export interface ParcelGeometryResolver {
-  resolve(parcelNodeId: string): Promise<{ bbox: BboxWgs84; sourceRef: string } | null>;
+  resolve(parcelNodeId: string): Promise<ResolvedParcelGeometry | null>;
 }
 
 export interface TerrainArtifactStore {

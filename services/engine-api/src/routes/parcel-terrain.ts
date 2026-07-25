@@ -10,6 +10,7 @@ import {
   type ParcelGeometryResolver,
   type TerrainArtifactStore,
 } from "@hauska-engine/engine-core/parcel-terrain";
+import { authorParcelSitePlanExport } from "@hauska-engine/engine-core/site-plan";
 import {
   GcsTerrainArtifactStore,
 } from "../terrain/gcs-artifact-store.js";
@@ -41,6 +42,41 @@ const EXTENSIONS: Record<DownloadableFormat, string> = {
   "dxf-3dface": "dxf",
   "dxf-contour": "dxf",
 };
+
+const SITE_PLAN_DOWNLOADABLE_FORMATS = ["dxf-site-plan", "ifc-site-plan"] as const;
+type SitePlanDownloadableFormat = (typeof SITE_PLAN_DOWNLOADABLE_FORMATS)[number];
+
+const SITE_PLAN_CONTENT_TYPES: Record<SitePlanDownloadableFormat, string> = {
+  "dxf-site-plan": "application/dxf",
+  "ifc-site-plan": "application/step",
+};
+
+const SITE_PLAN_EXTENSIONS: Record<SitePlanDownloadableFormat, string> = {
+  "dxf-site-plan": "dxf",
+  "ifc-site-plan": "ifc",
+};
+
+function isSitePlanDownloadableFormat(value: string | undefined): value is SitePlanDownloadableFormat {
+  return !!value && (SITE_PLAN_DOWNLOADABLE_FORMATS as readonly string[]).includes(value);
+}
+
+const sitePlanRefreshBody = z.object({
+  bboxOverride: bbox.optional(),
+  ringOverride: z.array(z.tuple([z.number(), z.number()])).optional(),
+  resolutionMeters: z.number().positive().optional(),
+  contourIntervalMeters: z.number().positive().optional(),
+  frontEdgeIndex: z.number().int().nonnegative().optional(),
+  skirtDepthFeet: z.number().positive().optional(),
+  streetAnchors: z
+    .array(
+      z.object({
+        name: z.string(),
+        points: z.array(z.tuple([z.number(), z.number()])).min(2),
+        sourceRef: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
 
 interface ReadableArtifactStore extends TerrainArtifactStore {
   get(ref: string): Promise<Uint8Array | null>;
@@ -173,5 +209,100 @@ export function buildParcelTerrainRoutes(
     );
     return c.body(Buffer.from(bytes));
   });
+
+  // Site-plan export (2026-07-25 sprint): additive to terrain-export above.
+  // Requires a setback-rule atom for the parcel already in storage — this
+  // route never invents front/side/rear setback values.
+  app.post("/:parcelNodeId/site-plan-export/refresh", async (c) => {
+    const parsed = sitePlanRefreshBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: "invalid_request", details: parsed.error.flatten() }, 400);
+    const parcelNodeId = c.req.param("parcelNodeId");
+    const setback = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
+      (candidate) => candidate.entityType === "setback-rule",
+    );
+    if (!setback || setback.entityType !== "setback-rule") {
+      return c.json({
+        error: "setback_rule_missing",
+        message: `No setback-rule atom for ${parcelNodeId}; site-plan export refuses to fabricate front/side/rear values.`,
+      }, 422);
+    }
+    try {
+      const result = await authorParcelSitePlanExport({
+        parcelNodeId,
+        bboxOverride: parsed.data.bboxOverride,
+        ringOverride: parsed.data.ringOverride,
+        resolutionMeters: parsed.data.resolutionMeters,
+        contourIntervalMeters: parsed.data.contourIntervalMeters,
+        frontEdgeIndex: parsed.data.frontEdgeIndex,
+        skirtDepthFeet: parsed.data.skirtDepthFeet,
+        streetAnchors: parsed.data.streetAnchors,
+        resolver,
+        setback,
+        storage,
+        artifactStore,
+      });
+      return c.json({
+        atom: result.atom,
+        artifacts: {
+          "dxf-site-plan": result.atom.artifacts["dxf-site-plan"],
+          "ifc-site-plan": result.atom.artifacts["ifc-site-plan"],
+        },
+        setbackDegenerate: result.setbackDegenerate,
+        setbackDegenerateReason: result.setbackDegenerateReason,
+        streetHonestAbsence: result.streetHonestAbsence,
+      }, 201);
+    } catch (error) {
+      return c.json({
+        error: "site_plan_export_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }, 422);
+    }
+  });
+  app.get("/:parcelNodeId/site-plan-export", async (c) => {
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+      .find((candidate) => candidate.entityType === "parcel-terrain-model");
+    if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
+    return c.json({
+      atom,
+      artifacts: {
+        "dxf-site-plan": atom.artifacts["dxf-site-plan"],
+        "ifc-site-plan": atom.artifacts["ifc-site-plan"],
+      },
+    });
+  });
+  app.get("/:parcelNodeId/site-plan-export/download", async (c) => {
+    const format = c.req.query("format");
+    if (!isSitePlanDownloadableFormat(format)) {
+      return c.json({
+        error: "invalid_format",
+        message: `format must be one of ${SITE_PLAN_DOWNLOADABLE_FORMATS.join(", ")}`,
+      }, 400);
+    }
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+      .find((candidate) => candidate.entityType === "parcel-terrain-model");
+    if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
+    const artifact = atom.artifacts[format];
+    if (!artifact || artifact.deferred) {
+      return c.json({
+        error: "artifact_unavailable",
+        message: artifact?.deferredReason ?? `No ${format} artifact for this parcel`,
+      }, 404);
+    }
+    const bytes = await artifactStore.get(artifact.ref);
+    if (!bytes) {
+      return c.json({
+        error: "artifact_evicted",
+        message: "Artifact bytes are no longer on this instance; call site-plan-export/refresh again",
+      }, 410);
+    }
+    const safeNodeId = c.req.param("parcelNodeId").replace(/[^a-zA-Z0-9._-]/g, "_");
+    c.header("Content-Type", SITE_PLAN_CONTENT_TYPES[format]);
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="${safeNodeId}.${format}.${SITE_PLAN_EXTENSIONS[format]}"`,
+    );
+    return c.body(Buffer.from(bytes));
+  });
+
   return app;
 }

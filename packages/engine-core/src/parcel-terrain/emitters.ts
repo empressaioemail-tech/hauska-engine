@@ -33,7 +33,7 @@ function dxfPython(): string {
   return process.env.DXF_PYTHON ?? process.env.IFC_PYTHON ?? "python3";
 }
 
-async function runDxfWorker(input: unknown): Promise<DxfWorkerResult> {
+export async function runDxfWorker(input: unknown): Promise<DxfWorkerResult> {
   const workerPath = dxfWorkerPath();
   const python = dxfPython();
   const payload = JSON.stringify(input);
@@ -174,24 +174,24 @@ export interface IfcWorkerResult {
   message?: string;
 }
 
-export async function emitIfc(
-  geometry: TerrainMeshGeometry,
-  sourceCitation: string,
-): Promise<IfcWorkerResult> {
-  const workerPath =
+function ifcWorkerPath(): string {
+  return (
     process.env.IFC_WORKER_PATH ??
-    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "artifacts", "ifc-worker", "run.py");
-  const python = process.env.IFC_PYTHON ?? "python3";
-  const input = JSON.stringify({
-    positions: Array.from(geometry.positions),
-    indices: Array.from(geometry.indices),
-    georefOrigin: geometry.georefOrigin,
-    crsConvention: geometry.crsConvention,
-    verticalDatum: TERRAIN_VERTICAL_DATUM,
-    provenance: { sourceCitation, hasHoles: geometry.hasHoles },
-  });
+    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "artifacts", "ifc-worker", "run.py")
+  );
+}
 
-  return new Promise((resolve) => {
+/**
+ * Generic IFC worker spawn, reused by terrain (`emitIfc`) and site-plan
+ * (closed-solid + annotation layers) emitters — one Python sidecar, one
+ * spawn/timeout/parse path, different request payload shapes by `kind`.
+ */
+export async function runIfcWorker(input: unknown): Promise<Record<string, unknown>> {
+  const workerPath = ifcWorkerPath();
+  const python = process.env.IFC_PYTHON ?? "python3";
+  const payload = JSON.stringify(input);
+
+  return new Promise<Record<string, unknown>>((resolve) => {
     const child = spawn(python, [workerPath], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let stdout = "";
     let stderr = "";
@@ -212,11 +212,26 @@ export async function emitIfc(
     child.on("close", () => {
       clearTimeout(timeout);
       try {
-        resolve(JSON.parse(stdout) as IfcWorkerResult);
+        resolve(JSON.parse(stdout) as Record<string, unknown>);
       } catch {
         resolve({ status: "error", message: stderr || "ifc worker returned invalid JSON" });
       }
     });
-    child.stdin.end(input);
+    child.stdin.end(payload);
   });
+}
+
+export async function emitIfc(
+  geometry: TerrainMeshGeometry,
+  sourceCitation: string,
+): Promise<IfcWorkerResult> {
+  const result = await runIfcWorker({
+    positions: Array.from(geometry.positions),
+    indices: Array.from(geometry.indices),
+    georefOrigin: geometry.georefOrigin,
+    crsConvention: geometry.crsConvention,
+    verticalDatum: TERRAIN_VERTICAL_DATUM,
+    provenance: { sourceCitation, hasHoles: geometry.hasHoles },
+  });
+  return result as unknown as IfcWorkerResult;
 }

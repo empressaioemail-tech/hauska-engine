@@ -7,6 +7,26 @@ const METERS_PER_DEGREE_LAT = 111_320;
 export const TERRAIN_MESH_CRS_CONVENTION =
   "local-enu-meters:origin-bbox-sw:equirectangular-coslat" as const;
 
+/**
+ * The one WGS84 -> local-ENU-metres projection every terrain/site-plan
+ * artifact uses (origin = bbox SW corner, equirectangular with a single
+ * cos(meanLat) correction for longitude scale). Exported so callers outside
+ * the DEM grid (e.g. a parcel boundary ring) project into the SAME frame as
+ * the mesh instead of re-deriving the constants.
+ */
+export function projectWgs84ToLocalEnu(
+  lng: number,
+  lat: number,
+  bbox: BboxWgs84,
+): { x: number; y: number } {
+  const meanLatDegrees = (bbox.southLat + bbox.northLat) / 2;
+  const cosLat = Math.cos((meanLatDegrees * Math.PI) / 180);
+  return {
+    x: (lng - bbox.westLng) * METERS_PER_DEGREE_LAT * cosLat,
+    y: (lat - bbox.southLat) * METERS_PER_DEGREE_LAT,
+  };
+}
+
 export interface TerrainMeshGeometry {
   positions: Float32Array;
   indices: Uint32Array;
@@ -15,6 +35,16 @@ export interface TerrainMeshGeometry {
   hasHoles: boolean;
   georefOrigin: { originLng: number; originLat: number; meanLatDegrees: number };
   crsConvention: typeof TERRAIN_MESH_CRS_CONVENTION;
+  /**
+   * Outer perimeter vertex ids (indices into `positions`), walked in DEM
+   * grid order (top row west->east, east column north->south, bottom row
+   * east->west, west column south->north). Consumers building a closed
+   * solid (site-plan terrain mass) extrude this loop downward. Perimeter
+   * grid cells that are nodata are skipped, not invented; if that leaves
+   * fewer than 3 vertices, boundaryLoopIndices is empty and closed-solid
+   * construction must fail closed rather than fabricate a boundary.
+   */
+  boundaryLoopIndices: number[];
 }
 
 /**
@@ -74,6 +104,24 @@ export function buildTerrainMeshGeometry(
     }
   }
   if (!indices.length) throw new Error("DEM contains no fully covered terrain cell.");
+
+  // Walk the DEM grid perimeter once (top row, right column, bottom row,
+  // left column) collecting whichever cells were actually triangulated.
+  // This traversal is clockwise as seen from above (+Z looking down), which
+  // downstream solid-mass construction relies on for outward-normal skirts.
+  const boundaryGridIndexes: number[] = [];
+  const lastRow = dem.height - 1;
+  const lastCol = dem.width - 1;
+  for (let x = 0; x <= lastCol; x++) boundaryGridIndexes.push(0 * dem.width + x);
+  for (let y = 1; y <= lastRow; y++) boundaryGridIndexes.push(y * dem.width + lastCol);
+  for (let x = lastCol - 1; x >= 0; x--) boundaryGridIndexes.push(lastRow * dem.width + x);
+  for (let y = lastRow - 1; y >= 1; y--) boundaryGridIndexes.push(y * dem.width + 0);
+  const boundaryLoopIndices: number[] = [];
+  for (const gridIndex of boundaryGridIndexes) {
+    const vertexId = ids.get(gridIndex);
+    if (vertexId !== undefined) boundaryLoopIndices.push(vertexId);
+  }
+
   return {
     positions: new Float32Array(positions),
     indices: new Uint32Array(indices),
@@ -82,6 +130,7 @@ export function buildTerrainMeshGeometry(
     hasHoles,
     georefOrigin: { originLng: bbox.westLng, originLat: bbox.southLat, meanLatDegrees },
     crsConvention: TERRAIN_MESH_CRS_CONVENTION,
+    boundaryLoopIndices: boundaryLoopIndices.length >= 3 ? boundaryLoopIndices : [],
   };
 }
 

@@ -2,7 +2,7 @@ import postgres from "postgres";
 
 import type { BboxWgs84 } from "@hauska-engine/adapters";
 
-import type { ParcelGeometryResolver } from "./author.js";
+import type { ParcelGeometryResolver, ResolvedParcelGeometry } from "./author.js";
 
 export interface ParcelGeometryRow {
   geometry: unknown;
@@ -37,6 +37,18 @@ function validBbox(row: ParcelGeometryRow): row is ParcelGeometryRow {
 }
 
 function bboxFromGeoJson(geometry: unknown): BboxWgs84 | null {
+  const values = collectGeoJsonPoints(geometry);
+  if (!values.length) return null;
+  const lngs = values.map(([lng]) => lng);
+  const lats = values.map(([, lat]) => lat);
+  const bbox = {
+    westLng: Math.min(...lngs), southLat: Math.min(...lats),
+    eastLng: Math.max(...lngs), northLat: Math.max(...lats),
+  };
+  return bbox.eastLng > bbox.westLng && bbox.northLat > bbox.southLat ? bbox : null;
+}
+
+function collectGeoJsonPoints(geometry: unknown): Array<[number, number]> {
   const coordinates = (geometry as { coordinates?: unknown })?.coordinates;
   const values: Array<[number, number]> = [];
   const visit = (value: unknown): void => {
@@ -48,14 +60,34 @@ function bboxFromGeoJson(geometry: unknown): BboxWgs84 | null {
     value.forEach(visit);
   };
   visit(coordinates);
-  if (!values.length) return null;
-  const lngs = values.map(([lng]) => lng);
-  const lats = values.map(([, lat]) => lat);
-  const bbox = {
-    westLng: Math.min(...lngs), southLat: Math.min(...lats),
-    eastLng: Math.max(...lngs), northLat: Math.max(...lats),
-  };
-  return bbox.eastLng > bbox.westLng && bbox.northLat > bbox.southLat ? bbox : null;
+  return values;
+}
+
+/**
+ * Exterior ring only (first ring of the first polygon) for Polygon /
+ * MultiPolygon GeoJSON. Returns null rather than guessing for other geometry
+ * types (e.g. Point) — a site-plan PROPERTY_LINE layer must not draw a
+ * fabricated ring.
+ */
+function exteriorRingFromGeoJson(geometry: unknown): Array<[number, number]> | null {
+  const geom = geometry as { type?: string; coordinates?: unknown } | null;
+  if (!geom || typeof geom !== "object") return null;
+  if (geom.type === "Polygon") {
+    const rings = geom.coordinates as unknown;
+    const exterior = Array.isArray(rings) ? rings[0] : null;
+    return Array.isArray(exterior) && exterior.length >= 3
+      ? (exterior as Array<[number, number]>)
+      : null;
+  }
+  if (geom.type === "MultiPolygon") {
+    const polygons = geom.coordinates as unknown;
+    const firstPolygon = Array.isArray(polygons) ? polygons[0] : null;
+    const exterior = Array.isArray(firstPolygon) ? firstPolygon[0] : null;
+    return Array.isArray(exterior) && exterior.length >= 3
+      ? (exterior as Array<[number, number]>)
+      : null;
+  }
+  return null;
 }
 
 /**
@@ -74,11 +106,12 @@ export class TxgioDatabaseParcelGeometryResolver implements ParcelGeometryResolv
     this.query = options.query ?? ((countyFips, propId) => this.queryDatabase(countyFips, propId));
   }
 
-  async resolve(parcelNodeId: string): Promise<{ bbox: BboxWgs84; sourceRef: string } | null> {
+  async resolve(parcelNodeId: string): Promise<ResolvedParcelGeometry | null> {
     const parsed = parseParcelNodeId(parcelNodeId);
     if (!parsed) return null;
     const row = await this.query(parsed.countyFips, parsed.propId);
     if (!row || !validBbox(row)) return null;
+    const ring = exteriorRingFromGeoJson(row.geometry) ?? undefined;
     return {
       bbox: {
         westLng: row.westLng,
@@ -87,6 +120,7 @@ export class TxgioDatabaseParcelGeometryResolver implements ParcelGeometryResolv
         northLat: row.northLat,
       },
       sourceRef: `txgio-parcel:${parsed.countyFips}:${parsed.propId}:${row.sourceVintage}`,
+      ring,
     };
   }
 
@@ -122,7 +156,7 @@ export class ArcGisParcelGeometryResolver implements ParcelGeometryResolver {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  async resolve(parcelNodeId: string): Promise<{ bbox: BboxWgs84; sourceRef: string } | null> {
+  async resolve(parcelNodeId: string): Promise<ResolvedParcelGeometry | null> {
     const parsed = parseParcelNodeId(parcelNodeId);
     if (!parsed) return null;
     const source = this.sources.find((candidate) => candidate.countyFips === parsed.countyFips);
@@ -137,7 +171,8 @@ export class ArcGisParcelGeometryResolver implements ParcelGeometryResolver {
     const body = await response.json() as { features?: Array<{ geometry?: unknown }> };
     const geometry = body.features?.[0]?.geometry;
     const bbox = geometry ? bboxFromGeoJson(geometry) : null;
-    return bbox ? { bbox, sourceRef: `arcgis-parcel:${parsed.countyFips}:${parsed.propId}` } : null;
+    const ring = geometry ? exteriorRingFromGeoJson(geometry) ?? undefined : undefined;
+    return bbox ? { bbox, sourceRef: `arcgis-parcel:${parsed.countyFips}:${parsed.propId}`, ring } : null;
   }
 }
 

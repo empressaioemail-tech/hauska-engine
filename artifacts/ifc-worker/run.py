@@ -151,22 +151,19 @@ def assert_complete_spatial_model(f) -> dict:
     return report
 
 
-def main():
-    request = json.load(sys.stdin)
-    positions, indices = request["positions"], request["indices"]
+def build_base_model(f, request: dict) -> dict:
+    """Project -> Site -> {geo-referenced} scaffold shared by the terrain-only
+    export and the site-plan export (closed solid + annotation layers). Every
+    kind builds on this same spatial spine so Revit Link/Import CAD never
+    sees an unreachable element."""
     georef = request.get("georefOrigin") or {}
     origin_lng = float(georef.get("originLng", 0.0))
     origin_lat = float(georef.get("originLat", 0.0))
     crs_convention = request.get("crsConvention") or "local-enu-meters:origin-bbox-sw"
     provenance = request.get("provenance") or {}
     source_citation = provenance.get("sourceCitation") or "USGS 3DEP"
-
-    points = positions_to_coord_list(positions)
-    faces = indices_to_faces(indices)
-    if any(i < 1 or i > len(points) for face in faces for i in face):
-        raise ValueError("triangle index out of range")
-
-    f = ifcopenshell.file(schema="IFC4")
+    vertical_datum = (request.get("verticalDatum") or {}).get("name") or "NAVD88"
+    vertical_kind = (request.get("verticalDatum") or {}).get("kind") or "orthometric"
 
     length_unit = f.create_entity("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
     units = f.create_entity("IfcUnitAssignment", Units=[length_unit])
@@ -197,8 +194,6 @@ def main():
         UnitsInContext=units,
     )
 
-    vertical_datum = (request.get("verticalDatum") or {}).get("name") or "NAVD88"
-    vertical_kind = (request.get("verticalDatum") or {}).get("kind") or "orthometric"
     # Target CRS + map conversion: local ENU metres with known WGS84 SW origin.
     # Eastings/Northings are metres in the engineering/map frame (origin = 0,0);
     # geographic origin is carried on IfcSite RefLongitude/RefLatitude.
@@ -252,53 +247,185 @@ def main():
         RelatedObjects=[site],
     )
 
+    return {
+        "context": context,
+        "body": body,
+        "project": project,
+        "site": site,
+        "site_placement": site_placement,
+        "source_citation": source_citation,
+        "vertical_datum": vertical_datum,
+        "vertical_kind": vertical_kind,
+    }
+
+
+def add_terrain_element(f, base: dict, positions, indices, closed: bool, name: str) -> tuple:
+    points = positions_to_coord_list(positions)
+    faces = indices_to_faces(indices)
+    if any(i < 1 or i > len(points) for face in faces for i in face):
+        raise ValueError("triangle index out of range")
+
     point_list = f.create_entity("IfcCartesianPointList3D", CoordList=points)
     face_set = f.create_entity(
         "IfcTriangulatedFaceSet",
         Coordinates=point_list,
         CoordIndex=faces,
-        Closed=False,
+        Closed=closed,
     )
     representation = f.create_entity(
         "IfcShapeRepresentation",
-        ContextOfItems=body,
+        ContextOfItems=base["body"],
         RepresentationIdentifier="Body",
         RepresentationType="Tessellation",
         Items=[face_set],
     )
     shape = f.create_entity("IfcProductDefinitionShape", Representations=[representation])
 
-    element_placement = identity_placement(f, relative_to=site_placement)
+    element_placement = identity_placement(f, relative_to=base["site_placement"])
     terrain = f.create_entity(
         "IfcGeographicElement",
         GlobalId=guid(),
-        Name="Terrain surface",
-        Description=source_citation,
+        Name=name,
+        Description=base["source_citation"],
         ObjectPlacement=element_placement,
         Representation=shape,
         PredefinedType="TERRAIN",
     )
-
     f.create_entity(
         "IfcRelContainedInSpatialStructure",
         GlobalId=guid(),
-        RelatingStructure=site,
+        RelatingStructure=base["site"],
         RelatedElements=[terrain],
     )
+    return terrain, len(points), len(faces)
+
+
+def add_annotation_polyline(f, base: dict, layer: str, name: str, points_xyz, citation, closed: bool):
+    """One IFC annotation per site-plan curve (property line, setback offset,
+    contour, street anchor). Grouped under an IfcPresentationLayerAssignment
+    per `layer` name so a BIM viewer's layer list mirrors the DXF layers, and
+    tagged with ObjectType + Description so the source-atom citation survives
+    in the IFC text (WDLL item 3/6), not just DXF."""
+    coords = [f.create_entity("IfcCartesianPoint", Coordinates=(float(p[0]), float(p[1]), float(p[2]))) for p in points_xyz]
+    if closed and coords and coords[0].Coordinates != coords[-1].Coordinates:
+        coords = coords + [coords[0]]
+    polyline = f.create_entity("IfcPolyline", Points=coords)
+    representation = f.create_entity(
+        "IfcShapeRepresentation",
+        ContextOfItems=base["body"],
+        RepresentationIdentifier="Annotation",
+        RepresentationType="Curve3D",
+        Items=[polyline],
+    )
+    shape = f.create_entity("IfcProductDefinitionShape", Representations=[representation])
+    placement = identity_placement(f, relative_to=base["site_placement"])
+    annotation = f.create_entity(
+        "IfcAnnotation",
+        GlobalId=guid(),
+        Name=name,
+        Description=str(citation) if citation else None,
+        ObjectType=layer,
+        ObjectPlacement=placement,
+        Representation=shape,
+    )
+    f.create_entity(
+        "IfcRelContainedInSpatialStructure",
+        GlobalId=guid(),
+        RelatingStructure=base["site"],
+        RelatedElements=[annotation],
+    )
+    f.create_entity(
+        "IfcPresentationLayerAssignment",
+        Name=layer,
+        AssignedItems=[representation],
+    )
+    return annotation
+
+
+def emit_terrain(request: dict) -> dict:
+    f = ifcopenshell.file(schema="IFC4")
+    base = build_base_model(f, request)
+    _terrain, vertex_count, triangle_count = add_terrain_element(
+        f, base, request["positions"], request["indices"], closed=False, name="Terrain surface",
+    )
+    spatial = assert_complete_spatial_model(f)
+    return {
+        "status": "ok",
+        "ifcText": f.wrapped_data.to_string(),
+        "vertexCount": vertex_count,
+        "triangleCount": triangle_count,
+        "spatialValidation": spatial,
+    }
+
+
+def emit_site_plan(request: dict) -> dict:
+    f = ifcopenshell.file(schema="IFC4")
+    base = build_base_model(f, request)
+    _terrain, vertex_count, triangle_count = add_terrain_element(
+        f, base, request["positions"], request["indices"], closed=True, name="Terrain surface (solid mass)",
+    )
+
+    annotation_count = 0
+    property_line = request.get("propertyLine")
+    if property_line and property_line.get("points"):
+        add_annotation_polyline(
+            f, base, "PROPERTY_LINE", "Property line", property_line["points"], property_line.get("citation"), closed=True,
+        )
+        annotation_count += 1
+
+    setback = request.get("setback")
+    if setback and setback.get("points"):
+        add_annotation_polyline(
+            f, base, "SETBACK", "Setback boundary", setback["points"], setback.get("citation"), closed=True,
+        )
+        annotation_count += 1
+
+    for contour in request.get("contours") or []:
+        points_2d = contour.get("points") or []
+        if len(points_2d) < 2:
+            continue
+        elevation = float(contour["elevation"])
+        points_xyz = [[p[0], p[1], elevation] for p in points_2d]
+        add_annotation_polyline(
+            f, base, "CONTOUR", "Contour %.2f m" % elevation, points_xyz, contour.get("citation"), closed=False,
+        )
+        annotation_count += 1
+
+    for anchor in request.get("street") or []:
+        points_2d = anchor.get("points") or []
+        if len(points_2d) < 2:
+            continue
+        grade_z = base.get("grade_z", 0.0)
+        points_xyz = [[p[0], p[1], grade_z] for p in points_2d]
+        add_annotation_polyline(
+            f, base, "STREET", str(anchor.get("name", "Street")), points_xyz, anchor.get("citation"), closed=False,
+        )
+        annotation_count += 1
+    # request.get("street") is None (not an empty list) when the site model's
+    # honestAbsence flag is set — no STREET annotation is fabricated in that
+    # case, mirroring the DXF worker's honest-absence behavior.
 
     spatial = assert_complete_spatial_model(f)
+    solid_mass = request.get("solidMass") or {}
+    return {
+        "status": "ok",
+        "ifcText": f.wrapped_data.to_string(),
+        "vertexCount": vertex_count,
+        "triangleCount": triangle_count,
+        "annotationCount": annotation_count,
+        "solidMass": solid_mass,
+        "spatialValidation": spatial,
+    }
 
-    print(
-        json.dumps(
-            {
-                "status": "ok",
-                "ifcText": f.wrapped_data.to_string(),
-                "vertexCount": len(points),
-                "triangleCount": len(faces),
-                "spatialValidation": spatial,
-            }
-        )
-    )
+
+def main():
+    request = json.load(sys.stdin)
+    kind = request.get("kind") or "terrain"
+    if kind == "site_plan":
+        result = emit_site_plan(request)
+    else:
+        result = emit_terrain(request)
+    print(json.dumps(result))
 
 
 if __name__ == "__main__":
