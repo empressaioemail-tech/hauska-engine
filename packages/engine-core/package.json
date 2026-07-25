@@ -50,6 +50,10 @@
     "./road-intake": {
       "types": "./src/road-intake/index.ts",
       "import": "./src/road-intake/index.ts"
+    },
+    "./depth-warm": {
+      "types": "./src/depth-warm/index.ts",
+      "import": "./src/depth-warm/index.ts"
     }
   },
   "scripts": {
@@ -59,7 +63,8 @@
     "lint": "echo 'no lint configured'",
     "bake-property-atom-gold-set": "tsx scripts/bake-property-atom-gold-set.mjs",
     "bake-property-atom-county": "tsx scripts/bake-property-atom-county.mjs",
-    "ingest-bastrop-roads-pilot": "tsx scripts/ingest-bastrop-roads-pilot.mjs"
+    "ingest-bastrop-roads-pilot": "tsx scripts/ingest-bastrop-roads-pilot.mjs",
+    "depth-warm-bastrop-pilot": "tsx scripts/depth-warm-bastrop-pilot.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -71,6 +76,7 @@
     "d3-contour": "^4.0.2",
     "geotiff": "^2.1.3",
     "pdf-lib": "^1.17.1",
+    "polygon-clipping": "^0.15.7",
     "postgres": "^3.4.5",
     "zod": "^3.24.1"
   },
