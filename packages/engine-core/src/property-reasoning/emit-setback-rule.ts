@@ -27,7 +27,13 @@ function rowToResolved(row: SetbackTableRowProvenance): ResolvedSetbackRow | Hon
   const rear = row.rear_ft;
   const side = row.side_ft;
   const sideCorner = row.side_corner_ft;
-  if (!front || !rear || !side || !sideCorner) {
+  // 0 is a valid sentinel (often paired with not_specified) — only miss when absent.
+  if (
+    front === undefined ||
+    rear === undefined ||
+    side === undefined ||
+    sideCorner === undefined
+  ) {
     return {
       kind: "honest-absence",
       parcelNodeId: "",
@@ -165,14 +171,23 @@ export function emitSetbackRule(
       front: {
         atomDid: row.sourceCodeAtomRef.atomDid,
         confidence: row.fieldConfidence.frontFt,
+        ...(setbackTableRow.front_ft?.not_specified === true
+          ? { notSpecified: true }
+          : {}),
       },
       side: {
         atomDid: row.sourceCodeAtomRef.atomDid,
         confidence: row.fieldConfidence.sideFt,
+        ...(setbackTableRow.side_ft?.not_specified === true
+          ? { notSpecified: true }
+          : {}),
       },
       rear: {
         atomDid: row.sourceCodeAtomRef.atomDid,
         confidence: row.fieldConfidence.rearFt,
+        ...(setbackTableRow.rear_ft?.not_specified === true
+          ? { notSpecified: true }
+          : {}),
       },
     },
     ...(row.matchBasis === "fallback"

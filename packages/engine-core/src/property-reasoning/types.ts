@@ -18,6 +18,12 @@ export interface SetbackFieldProvenance {
   value: number;
   confidence: number;
   verification_state?: "human-verified" | "transcribed" | "unverified";
+  /**
+   * True when the code is SILENT on this scalar (build-to-line / stories /
+   * blank column). Value is typically 0 as a sentinel — never treat as a
+   * real zero-foot setback.
+   */
+  not_specified?: boolean;
 }
 
 export interface SetbackTableRowProvenance {

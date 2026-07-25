@@ -13,7 +13,7 @@
  * (honest) rather than inventing buildable sqft.
  */
 
-import { getSetbackTable } from "@hauska-engine/adapters";
+import { getSetbackTableForZoning } from "@hauska-engine/adapters";
 import type { PropertyAtomInstance } from "@hauska-engine/atoms";
 
 import { emitBuildableEnvelope } from "./emit-buildable-envelope.js";
@@ -100,7 +100,13 @@ export function emitFromTier1Snapshot(
   const cityKey =
     normalizeCityKey(snap.zoning?.jurisdictionKey) ??
     normalizeCityKey(snap.envelope?.jurisdictionKey);
-  const adapterTable = cityKey ? getSetbackTable(cityKey) : null;
+  const zoningDistrict =
+    typeof snap.zoning?.district === "string" && snap.zoning.district.trim()
+      ? snap.zoning.district.trim()
+      : null;
+  const adapterTable = cityKey
+    ? getSetbackTableForZoning(cityKey, zoningDistrict)
+    : null;
   const setbackTable = setbackTableDescriptorFromAdapter(adapterTable);
   const descriptor = descriptorForCounty(
     parcelNodeId,
@@ -108,10 +114,6 @@ export function emitFromTier1Snapshot(
     countyFips,
     setbackTable,
   );
-  const zoningDistrict =
-    typeof snap.zoning?.district === "string" && snap.zoning.district.trim()
-      ? snap.zoning.district.trim()
-      : null;
   const env = snap.envelope && typeof snap.envelope === "object" ? snap.envelope : null;
   const out: EmitFromSnapshotResult = {
     atoms: [],
@@ -194,11 +196,23 @@ export function emitFromTier1Snapshot(
     return out;
   }
 
+  const silentAxes =
+    row.front_ft?.not_specified === true ||
+    row.side_ft?.not_specified === true ||
+    row.rear_ft?.not_specified === true;
+
   let outcome:
     | { kind: "no-buildable-area"; reason: string }
     | { kind: "buildable"; areaSqFt: number }
     | { kind: "provisional-front-edge"; reason: string };
-  if (env?.status === "no-buildable-area") {
+  if (silentAxes) {
+    // not_specified zeros must never become "no-buildable-area" / consume-lot.
+    outcome = {
+      kind: "provisional-front-edge",
+      reason:
+        "One or more scalar setbacks are not_specified (build-to-line governs); refuse to derive consume-lot from silent axes",
+    };
+  } else if (env?.status === "no-buildable-area") {
     outcome = {
       kind: "no-buildable-area",
       reason: "Tier-1 snapshot status no-buildable-area",
