@@ -70,7 +70,7 @@ function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font:
   if (layout.setback.offsetRing) {
     drawRing(page, layout.setback.offsetRing, SETBACK_COLOR, [4, 3]);
     for (const label of layout.setback.labels) {
-      page.drawText(`${label.role.toUpperCase()} ${label.distanceFt}'`, {
+      page.drawText(label.text, {
         x: label.mid.x + 2,
         y: label.mid.y - 8,
         size: 7,
@@ -180,7 +180,7 @@ function drawSummaryBlock(page: PDFPage, model: SitePlanModel, bold: PDFFont, fo
     ["County", countyLine],
     ["Zoning District", zoningLine],
     ["Lot Area", `${s.lotAreaSqFt.toFixed(0)} sq ft`],
-    ["Setbacks (Front/Side/Rear)", `${model.setback.front} / ${model.setback.side} / ${model.setback.rear} ft`],
+    ["Setbacks (Front/Side/Rear)", model.setback.displayLine],
     ["Buildable Area", buildableAreaLine],
     ["Flood Zone", floodLine],
     [

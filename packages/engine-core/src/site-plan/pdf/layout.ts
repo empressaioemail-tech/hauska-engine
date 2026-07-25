@@ -84,7 +84,7 @@ export interface SitePlanDrawingLayout {
   dimensions: Array<{ mid: PageXY; lengthFeet: number }>;
   setback: {
     offsetRing: PageXY[] | null;
-    labels: Array<{ mid: PageXY; role: string; distanceFt: number }>;
+    labels: Array<{ mid: PageXY; role: string; distanceFt: number; notSpecified?: boolean; text: string }>;
     degenerate: boolean;
     degenerateReason?: string;
   };
@@ -114,11 +114,19 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
     lengthFeet: segment.lengthFeet,
   }));
 
-  const setbackLabels = model.setback.segments.map((segment) => ({
-    mid: projectPoint(transform, { x: (segment.a.x + segment.b.x) / 2, y: (segment.a.y + segment.b.y) / 2 }),
-    role: segment.role,
-    distanceFt: segment.distanceFt,
-  }));
+  const setbackLabels = model.setback.segments.map((segment) => {
+    const notSpecified = !!segment.notSpecified;
+    const text = notSpecified
+      ? `${segment.role.toUpperCase()} not specified — build-to-line governs`
+      : `${segment.role.toUpperCase()} ${segment.distanceFt}'`;
+    return {
+      mid: projectPoint(transform, { x: (segment.a.x + segment.b.x) / 2, y: (segment.a.y + segment.b.y) / 2 }),
+      role: segment.role,
+      distanceFt: segment.distanceFt,
+      notSpecified: notSpecified || undefined,
+      text,
+    };
+  });
 
   const northTip: LocalPoint = {
     x: model.north.originLocal.x + model.north.directionLocal.x * model.north.lengthMeters,

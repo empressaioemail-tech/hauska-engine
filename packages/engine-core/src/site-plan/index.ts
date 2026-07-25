@@ -28,6 +28,15 @@ export {
 } from "./site-model.js";
 
 export {
+  anyNotSpecified,
+  formatSetbackEdgeLabel,
+  formatSetbackSummaryLine,
+  notSpecifiedAxesFromSetbackTable,
+  resolveNotSpecifiedAxes,
+  type NotSpecifiedAxes,
+} from "./setback-display.js";
+
+export {
   buildDxfSitePlanRequest,
   emitDxfSitePlan,
   emitIfcSitePlan,

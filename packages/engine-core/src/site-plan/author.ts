@@ -27,6 +27,10 @@ import {
   type StreetAnchorInput,
   type ZoningSummaryInput,
 } from "./site-model.js";
+import {
+  notSpecifiedAxesFromSetbackTable,
+  resolveNotSpecifiedAxes,
+} from "./setback-display.js";
 
 /**
  * Best-effort live FEMA NFHL read for the PDF summary block. Any failure
@@ -210,6 +214,28 @@ export async function authorParcelSitePlanExport(
   const envelopeOutcome: EnvelopeOutcomeInput | undefined =
     options.envelopeOutcomeOverride ?? (await resolveEnvelopeOutcome(options.parcelNodeId, options.storage));
 
+  // not_specified ≠ missing: enrich silent axes from fieldProvenance and/or
+  // the B3 table so the sheet can label them honestly without refusing export.
+  // Contract types may lag the runtime `notSpecified` flag written by emit-setback-rule.
+  const districtCode =
+    options.setback.districtCode ??
+    ("district" in zoning ? zoning.district : undefined);
+  const tableAxes = notSpecifiedAxesFromSetbackTable(
+    undefined,
+    districtCode,
+  );
+  const fieldProvenance = options.setback.fieldProvenance as
+    | {
+        front?: { notSpecified?: boolean };
+        side?: { notSpecified?: boolean };
+        rear?: { notSpecified?: boolean };
+      }
+    | undefined;
+  const notSpecified = resolveNotSpecifiedAxes({
+    fieldProvenance,
+    tableAxes,
+  });
+
   const model = composeSitePlanModel({
     parcelNodeId: options.parcelNodeId,
     bbox: resolved.bbox,
@@ -221,6 +247,7 @@ export async function authorParcelSitePlanExport(
       side: options.setback.side,
       rear: options.setback.rear,
       sourceCodeAtomRef: options.setback.sourceCodeAtomRef,
+      notSpecified,
     },
     frontEdgeIndex: options.frontEdgeIndex,
     streetAnchors: options.streetAnchors,
