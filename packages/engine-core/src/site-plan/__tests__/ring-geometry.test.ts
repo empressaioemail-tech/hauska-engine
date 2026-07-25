@@ -75,6 +75,34 @@ describe("assignSetbackRoles", () => {
       expect(a).toEqual({ role: "unassigned", distanceFt: 5 }); // min(10,5,20)
     }
   });
+
+  it("uniform-min ignores not_specified zeros so a real front setback is not collapsed", () => {
+    const pentagon = [
+      { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 12, y: 6 }, { x: 5, y: 10 }, { x: -2, y: 4 },
+    ];
+    const { basis, assignments } = assignSetbackRoles(
+      pentagon,
+      { front: 15, side: 0, rear: 0 },
+      undefined,
+      { side: true, rear: true },
+    );
+    expect(basis).toBe("unresolved-uniform-min");
+    for (const a of assignments) {
+      expect(a.distanceFt).toBe(15);
+    }
+  });
+
+  it("marks silent side/rear assignments notSpecified without inventing feet", () => {
+    const { assignments } = assignSetbackRoles(
+      rect,
+      { front: 15, side: 0, rear: 0 },
+      0,
+      { side: true, rear: true },
+    );
+    expect(assignments[0]).toMatchObject({ role: "front", distanceFt: 15 });
+    expect(assignments.some((a) => a.role === "side" && a.notSpecified && a.distanceFt === 0)).toBe(true);
+    expect(assignments.some((a) => a.role === "rear" && a.notSpecified && a.distanceFt === 0)).toBe(true);
+  });
 });
 
 describe("computeSetbackOffset", () => {

@@ -46,7 +46,47 @@ export type SetbackRole = "front" | "side" | "rear" | "unassigned";
 
 export interface SetbackAssignment {
   role: SetbackRole;
+  /** Inset feet for geometry. Silent (not_specified) axes use 0 — never invent a dimension. */
   distanceFt: number;
+  /** True when the code is silent on this axis (build-to-line governs). */
+  notSpecified?: boolean;
+}
+
+export type NotSpecifiedAxesInput = {
+  front?: boolean;
+  side?: boolean;
+  rear?: boolean;
+};
+
+function insetForRole(
+  role: SetbackRole,
+  setback: { front: number; side: number; rear: number },
+  notSpecified?: NotSpecifiedAxesInput | null,
+): SetbackAssignment {
+  if (role === "front") {
+    const silent = !!notSpecified?.front;
+    return { role, distanceFt: silent ? 0 : setback.front, notSpecified: silent || undefined };
+  }
+  if (role === "rear") {
+    const silent = !!notSpecified?.rear;
+    return { role, distanceFt: silent ? 0 : setback.rear, notSpecified: silent || undefined };
+  }
+  // side + unassigned share the side axis
+  const silent = !!notSpecified?.side;
+  return { role, distanceFt: silent ? 0 : setback.side, notSpecified: silent || undefined };
+}
+
+/** Min of specified axes only — silent 0s must not collapse a real front setback to uniform 0. */
+function uniformSpecifiedMin(
+  setback: { front: number; side: number; rear: number },
+  notSpecified?: NotSpecifiedAxesInput | null,
+): number {
+  const candidates: number[] = [];
+  if (!notSpecified?.front) candidates.push(setback.front);
+  if (!notSpecified?.side) candidates.push(setback.side);
+  if (!notSpecified?.rear) candidates.push(setback.rear);
+  if (candidates.length === 0) return 0;
+  return Math.min(...candidates);
 }
 
 export type FrontEdgeBasis =
@@ -90,6 +130,7 @@ export function assignSetbackRoles(
   ring: LocalPoint[],
   setback: { front: number; side: number; rear: number },
   frontEdgeIndex?: number,
+  notSpecified?: NotSpecifiedAxesInput | null,
 ): { basis: FrontEdgeBasis; assignments: SetbackAssignment[] } {
   const n = ring.length;
   const segments = ringSegments(ring);
@@ -97,9 +138,9 @@ export function assignSetbackRoles(
   if (frontEdgeIndex !== undefined && frontEdgeIndex >= 0 && frontEdgeIndex < n) {
     const rearIndex = n === 4 ? (frontEdgeIndex + 2) % 4 : -1;
     const assignments: SetbackAssignment[] = segments.map((_, i) => {
-      if (i === frontEdgeIndex) return { role: "front", distanceFt: setback.front };
-      if (i === rearIndex) return { role: "rear", distanceFt: setback.rear };
-      return { role: "side", distanceFt: setback.side };
+      if (i === frontEdgeIndex) return insetForRole("front", setback, notSpecified);
+      if (i === rearIndex) return insetForRole("rear", setback, notSpecified);
+      return insetForRole("side", setback, notSpecified);
     });
     return { basis: "front-edge-hint", assignments };
   }
@@ -116,15 +157,15 @@ export function assignSetbackRoles(
     const frontIndex = midY(frontRearPair[0]!) <= midY(frontRearPair[1]!) ? frontRearPair[0]! : frontRearPair[1]!;
     const rearIndex = frontRearPair.find((i) => i !== frontIndex)!;
     const assignments: SetbackAssignment[] = segments.map((_, i) => {
-      if (i === frontIndex) return { role: "front", distanceFt: setback.front };
-      if (i === rearIndex) return { role: "rear", distanceFt: setback.rear };
-      if (sidePair.includes(i)) return { role: "side", distanceFt: setback.side };
-      return { role: "unassigned", distanceFt: setback.side };
+      if (i === frontIndex) return insetForRole("front", setback, notSpecified);
+      if (i === rearIndex) return insetForRole("rear", setback, notSpecified);
+      if (sidePair.includes(i)) return insetForRole("side", setback, notSpecified);
+      return insetForRole("unassigned", setback, notSpecified);
     });
     return { basis: "geometric-heuristic:shortest-edge-pair-south-most", assignments };
   }
 
-  const uniformFt = Math.min(setback.front, setback.side, setback.rear);
+  const uniformFt = uniformSpecifiedMin(setback, notSpecified);
   return {
     basis: "unresolved-uniform-min",
     assignments: segments.map(() => ({ role: "unassigned", distanceFt: uniformFt })),
@@ -142,9 +183,10 @@ export function computeSetbackOffset(
   ring: LocalPoint[],
   setback: { front: number; side: number; rear: number },
   frontEdgeIndex?: number,
+  notSpecified?: NotSpecifiedAxesInput | null,
 ): SetbackOffsetResult {
   const n = ring.length;
-  const { basis, assignments } = assignSetbackRoles(ring, setback, frontEdgeIndex);
+  const { basis, assignments } = assignSetbackRoles(ring, setback, frontEdgeIndex, notSpecified);
   const segments = ringSegments(ring);
   const withAssignment = segments.map((segment, i) => ({ ...segment, ...assignments[i]! }));
 

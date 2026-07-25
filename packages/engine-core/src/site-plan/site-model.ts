@@ -15,6 +15,7 @@ import {
   type SetbackAssignment,
   type SetbackOffsetResult,
 } from "./ring-geometry.js";
+import { formatSetbackSummaryLine } from "./setback-display.js";
 
 const METERS_PER_FOOT = 0.3048;
 
@@ -24,6 +25,8 @@ export interface SetbackRuleInput {
   rear: number;
   sourceCodeAtomRef: { atomDid: string; role: string; entityType?: string };
   atomDid?: string;
+  /** Silent axes (code silent / build-to-line). Distinct from missing setback data. */
+  notSpecified?: { front?: boolean; side?: boolean; rear?: boolean };
 }
 
 export interface StreetAnchorInput {
@@ -110,6 +113,9 @@ export interface SitePlanSetbackModel {
   front: number;
   side: number;
   rear: number;
+  notSpecified?: { front?: boolean; side?: boolean; rear?: boolean };
+  /** Honest F/S/R summary for PDF (never prints silent axes as real 0 ft). */
+  displayLine: string;
   sourceCodeAtomRef: { atomDid: string; role: string; entityType?: string };
   basis: FrontEdgeBasis;
   segments: Array<RingSegment & SetbackAssignment>;
@@ -286,15 +292,24 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     lengthFeet: segment.lengthMeters / METERS_PER_FOOT,
   }));
 
+  const notSpecified = inputs.setback.notSpecified;
   const offset = computeSetbackOffset(
     ringLocal,
     { front: inputs.setback.front, side: inputs.setback.side, rear: inputs.setback.rear },
     inputs.frontEdgeIndex,
+    notSpecified,
   );
   const setback: SitePlanSetbackModel = {
     front: inputs.setback.front,
     side: inputs.setback.side,
     rear: inputs.setback.rear,
+    notSpecified,
+    displayLine: formatSetbackSummaryLine({
+      front: inputs.setback.front,
+      side: inputs.setback.side,
+      rear: inputs.setback.rear,
+      notSpecified,
+    }),
     sourceCodeAtomRef: inputs.setback.sourceCodeAtomRef,
     basis: offset.basis,
     segments: offset.segments,

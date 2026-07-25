@@ -3,7 +3,12 @@ import { z } from "zod";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { InMemoryStorage } from "@hauska-engine/storage";
+import {
+  createPgStorage,
+  InMemoryStorage,
+  resolveSubstrateDatabaseUrl,
+  type StoragePort,
+} from "@hauska-engine/storage";
 import {
   authorParcelTerrainExport,
   createParcelGeometryResolverFromEnv,
@@ -137,6 +142,33 @@ function artifactStoreFromEnv(env: NodeJS.ProcessEnv = process.env): ReadableArt
 
 export { artifactStoreFromEnv };
 
+/**
+ * Site-plan / terrain export must read property atoms from Postgres in
+ * production. Defaulting to InMemoryStorage made every parcel look like
+ * setback_rule_missing (false refusal) even when atoms were on file.
+ */
+export function storageFromEnv(env: NodeJS.ProcessEnv = process.env): StoragePort {
+  // Vitest / unit tests inject storage explicitly; never open a live pool from
+  // a developer shell's DATABASE_URL during buildApp() smoke tests.
+  if (env.VITEST === "true" || env.NODE_ENV === "test") {
+    return new InMemoryStorage();
+  }
+  const url = resolveSubstrateDatabaseUrl(env.SUBSTRATE_DATABASE_URL ?? env.DATABASE_URL);
+  if (!url) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        service: "engine-api",
+        event: "parcel_terrain.storage.in_memory",
+        reason: "SUBSTRATE_DATABASE_URL / DATABASE_URL unset",
+        ts: new Date().toISOString(),
+      }),
+    );
+    return new InMemoryStorage();
+  }
+  return createPgStorage({ databaseUrl: url, maxConnections: 3 }).storage;
+}
+
 function isDownloadableFormat(value: string | undefined): value is DownloadableFormat {
   return !!value && (DOWNLOADABLE_FORMATS as readonly string[]).includes(value);
 }
@@ -148,7 +180,7 @@ function isDownloadableFormat(value: string | undefined): value is DownloadableF
  */
 export function buildParcelTerrainRoutes(
   resolver: ParcelGeometryResolver = createParcelGeometryResolverFromEnv(),
-  storage = new InMemoryStorage(),
+  storage: StoragePort = storageFromEnv(),
   artifactStore: ReadableArtifactStore = artifactStoreFromEnv(),
 ): Hono {
   const app = new Hono();
@@ -217,8 +249,9 @@ export function buildParcelTerrainRoutes(
   });
 
   // Site-plan export (2026-07-25 sprint): additive to terrain-export above.
-  // Requires a setback-rule atom for the parcel already in storage — this
-  // route never invents front/side/rear setback values.
+  // Refuse ONLY when there is genuinely no setback-rule atom. Axes marked
+  // not_specified (code silent / build-to-line) are a valid export state —
+  // they must be labeled honestly on the sheet, never treated as "missing".
   app.post("/:parcelNodeId/site-plan-export/refresh", async (c) => {
     const parsed = sitePlanRefreshBody.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: "invalid_request", details: parsed.error.flatten() }, 400);

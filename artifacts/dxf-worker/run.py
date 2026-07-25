@@ -232,7 +232,16 @@ def emit_site_plan(request: dict) -> dict:
         entity_count += 1
         for seg in setback.get("segments") or []:
             mid = pt3(seg["midpoint"], grade_z)
-            label = "%s %.0f ft" % (str(seg.get("role", "setback")).upper(), float(seg["distanceFt"]))
+            # Prefer caller-supplied honest label (not_specified axes must not
+            # render as a fabricated "0 ft" dimension).
+            if seg.get("label"):
+                label = str(seg["label"])
+            elif seg.get("notSpecified"):
+                label = "%s not specified — build-to-line governs" % (
+                    str(seg.get("role", "setback")).upper(),
+                )
+            else:
+                label = "%s %.0f ft" % (str(seg.get("role", "setback")).upper(), float(seg["distanceFt"]))
             text = msp.add_text(label, dxfattribs={"layer": "SETBACK", "height": max(0.2, float(request.get("textHeight", 0.5)))})
             text.set_placement(mid)
             _tag(text, seg.get("citation"))

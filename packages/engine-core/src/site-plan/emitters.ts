@@ -31,12 +31,20 @@ export function buildDxfSitePlanRequest(model: SitePlanModel, mesh: TerrainMeshG
     lengthFeet: segment.lengthFeet,
     citation: model.citations.propertyLine,
   }));
-  const setbackSegments = model.setback.segments.map((segment) => ({
-    midpoint: [(segment.a.x + segment.b.x) / 2, (segment.a.y + segment.b.y) / 2, gradeZ],
-    role: segment.role,
-    distanceFt: segment.distanceFt,
-    citation: model.citations.setback,
-  }));
+  const setbackSegments = model.setback.segments.map((segment) => {
+    const notSpecified = !!segment.notSpecified;
+    const label = notSpecified
+      ? `${segment.role.toUpperCase()} not specified — build-to-line governs`
+      : `${segment.role.toUpperCase()} ${segment.distanceFt} ft`;
+    return {
+      midpoint: [(segment.a.x + segment.b.x) / 2, (segment.a.y + segment.b.y) / 2, gradeZ],
+      role: segment.role,
+      distanceFt: segment.distanceFt,
+      notSpecified,
+      label,
+      citation: model.citations.setback,
+    };
+  });
 
   return {
     kind: "site_plan",
