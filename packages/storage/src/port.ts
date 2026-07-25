@@ -71,7 +71,8 @@ export interface StoragePort {
   writeAtom(instance: CodeAtomInstance): Promise<{ atomDid: string; cid: string }>;
 
   /**
-   * Property reasoning atoms (zoning-fact / setback-rule / buildable-envelope).
+   * Property reasoning atoms (zoning-fact / setback-rule / buildable-envelope /
+   * parcel-terrain-model).
    * Persists jsonb body to the same `atoms` table (Phase 1b).
    */
   writePropertyAtom(

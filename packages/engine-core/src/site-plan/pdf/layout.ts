@@ -114,19 +114,32 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
     lengthFeet: segment.lengthFeet,
   }));
 
-  const setbackLabels = model.setback.segments.map((segment) => {
-    const notSpecified = !!segment.notSpecified;
-    const text = notSpecified
-      ? `${segment.role.toUpperCase()} not specified — build-to-line governs`
-      : `${segment.role.toUpperCase()} ${segment.distanceFt}'`;
-    return {
-      mid: projectPoint(transform, { x: (segment.a.x + segment.b.x) / 2, y: (segment.a.y + segment.b.y) / 2 }),
-      role: segment.role,
-      distanceFt: segment.distanceFt,
-      notSpecified: notSpecified || undefined,
-      text,
-    };
-  });
+  const silentAxes = !!(
+    model.setback.notSpecified?.front ||
+    model.setback.notSpecified?.side ||
+    model.setback.notSpecified?.rear
+  );
+  const setbackLabels = model.setback.segments
+    .map((segment, index) => {
+      const notSpecified = !!segment.notSpecified;
+      let text: string;
+      if (notSpecified) {
+        text = `${segment.role.toUpperCase()} not specified — build-to-line governs`;
+      } else if (segment.role === "unassigned" && silentAxes) {
+        text = index === 0 ? model.setback.displayLine : "";
+      } else {
+        text = `${segment.role.toUpperCase()} ${segment.distanceFt}'`;
+      }
+      if (!text) return null;
+      return {
+        mid: projectPoint(transform, { x: (segment.a.x + segment.b.x) / 2, y: (segment.a.y + segment.b.y) / 2 }),
+        role: segment.role,
+        distanceFt: segment.distanceFt,
+        notSpecified: notSpecified || undefined,
+        text,
+      };
+    })
+    .filter((label): label is NonNullable<typeof label> => label !== null);
 
   const northTip: LocalPoint = {
     x: model.north.originLocal.x + model.north.directionLocal.x * model.north.lengthMeters,
