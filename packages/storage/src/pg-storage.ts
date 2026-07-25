@@ -311,7 +311,14 @@ export class PgStorage implements StoragePort {
     const rows = await this.sql<AtomBodyRow[]>`
       SELECT body
       FROM atoms
-      WHERE entity_type IN ('zoning-fact', 'setback-rule', 'buildable-envelope')
+      WHERE entity_type IN (
+          'zoning-fact',
+          'setback-rule',
+          'buildable-envelope',
+          -- Site-plan / terrain export persists artifacts on this entity.
+          -- Omitting it made refresh succeed while GET/download always 404'd.
+          'parcel-terrain-model'
+        )
         AND body->>'parcelNodeId' = ${parcelNodeId}
         AND COALESCE(body->>'status', 'active') = 'active'
       ORDER BY entity_type ASC, updated_at DESC

@@ -3,6 +3,7 @@ import { TERRAIN_VERTICAL_DATUM } from "../parcel-terrain/elevation.js";
 import type { TerrainMeshGeometry } from "../parcel-terrain/mesh.js";
 import { buildTerrainSolidMass, type BuildTerrainSolidMassOptions } from "../parcel-terrain/solid-mass.js";
 import type { LocalPoint } from "./ring-geometry.js";
+import { anyNotSpecified } from "./setback-display.js";
 import type { SitePlanModel } from "./site-model.js";
 
 const text = new TextEncoder();
@@ -31,11 +32,19 @@ export function buildDxfSitePlanRequest(model: SitePlanModel, mesh: TerrainMeshG
     lengthFeet: segment.lengthFeet,
     citation: model.citations.propertyLine,
   }));
-  const setbackSegments = model.setback.segments.map((segment) => {
+  const silentAxes = anyNotSpecified(model.setback.notSpecified);
+  const setbackSegments = model.setback.segments.map((segment, index) => {
     const notSpecified = !!segment.notSpecified;
-    const label = notSpecified
-      ? `${segment.role.toUpperCase()} not specified — build-to-line governs`
-      : `${segment.role.toUpperCase()} ${segment.distanceFt} ft`;
+    let label: string;
+    if (notSpecified) {
+      label = `${segment.role.toUpperCase()} not specified — build-to-line governs`;
+    } else if (segment.role === "unassigned" && silentAxes) {
+      // Uniform-min geometry may inset every edge by the min specified axis;
+      // do not print "UNASSIGNED 15 ft" as if S/R were also 15. One legend line.
+      label = index === 0 ? model.setback.displayLine : "";
+    } else {
+      label = `${segment.role.toUpperCase()} ${segment.distanceFt} ft`;
+    }
     return {
       midpoint: [(segment.a.x + segment.b.x) / 2, (segment.a.y + segment.b.y) / 2, gradeZ],
       role: segment.role,
@@ -59,6 +68,8 @@ export function buildDxfSitePlanRequest(model: SitePlanModel, mesh: TerrainMeshG
     setback: {
       offsetPoints: model.setback.offsetRingLocal ? ring3(model.setback.offsetRingLocal, gradeZ) : null,
       segments: setbackSegments,
+      displayLine: model.setback.displayLine,
+      notSpecified: model.setback.notSpecified ?? null,
       degenerate: model.setback.degenerate,
       degenerateReason: model.setback.degenerateReason ?? null,
       citation: model.citations.setback,

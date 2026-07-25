@@ -233,9 +233,12 @@ def emit_site_plan(request: dict) -> dict:
         for seg in setback.get("segments") or []:
             mid = pt3(seg["midpoint"], grade_z)
             # Prefer caller-supplied honest label (not_specified axes must not
-            # render as a fabricated "0 ft" dimension).
-            if seg.get("label"):
-                label = str(seg["label"])
+            # render as a fabricated "0 ft" dimension). Empty label = skip
+            # (uniform-min rings place one displayLine on the first edge only).
+            if "label" in seg:
+                label = str(seg.get("label") or "").strip()
+                if not label:
+                    continue
             elif seg.get("notSpecified"):
                 label = "%s not specified — build-to-line governs" % (
                     str(seg.get("role", "setback")).upper(),
@@ -245,6 +248,18 @@ def emit_site_plan(request: dict) -> dict:
             text = msp.add_text(label, dxfattribs={"layer": "SETBACK", "height": max(0.2, float(request.get("textHeight", 0.5)))})
             text.set_placement(mid)
             _tag(text, seg.get("citation"))
+            entity_count += 1
+        # Sheet legend when the composer carried an honest F/S/R display line
+        # (covers not_specified disclosure even if segment labels are sparse).
+        display_line = str(setback.get("displayLine") or "").strip()
+        if display_line and offset_points:
+            origin = pt3(offset_points[0], grade_z)
+            text = msp.add_text(
+                "SETBACKS: %s" % display_line,
+                dxfattribs={"layer": "SETBACK", "height": max(0.2, float(request.get("textHeight", 0.5)))},
+            )
+            text.set_placement((origin[0], origin[1] - float(request.get("textHeight", 0.5)) * 2.0, origin[2]))
+            _tag(text, setback.get("citation"))
             entity_count += 1
     elif setback.get("degenerate"):
         origin = property_line.get("points") or [[0, 0, grade_z]]
