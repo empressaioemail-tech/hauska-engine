@@ -9,7 +9,7 @@
  * the same interface once pgvector + embedding pipeline are wired.
  */
 
-import { isPropertyAtomInstance, isRoadNodeAtomInstance, buildAtomDid } from "@hauska-engine/atoms";
+import { isPropertyAtomInstance, buildAtomDid } from "@hauska-engine/atoms";
 import type {
   AtomLink,
   CodeAtomEntityType,
@@ -213,18 +213,13 @@ export class HybridRetrieval {
     };
   }
 
+  /**
+   * Resolve road-node atoms for inspect (27c WDLL 3).
+   * Road nodes are not property atoms — skip migration-0037 calibration overlay
+   * (overlay keys on parcelNodeId; road rows have roadNodeId only).
+   */
   async getRoadAtomChain(roadNodeId: string): Promise<RoadAtomChainWire> {
-    const rows = await this.storage.listRoadAtomsByRoadNodeId(roadNodeId);
-    const resolved = await Promise.all(
-      rows.map((row) =>
-        isRoadNodeAtomInstance(row)
-          ? applyPropertyCalibrationAtRead(
-              row as unknown as import("@hauska-engine/atoms").PropertyAtomInstance,
-              this.overlay,
-            )
-          : Promise.resolve(row),
-      ),
-    );
+    const resolved = await this.storage.listRoadAtomsByRoadNodeId(roadNodeId);
     const roadNode = resolved[0] ?? null;
     const atoms = resolved.map((payload) => {
       const did =
