@@ -81,25 +81,42 @@ export async function runCentralTxNodeGraphTally(
   });
 
   try {
-    const [{ db }] = await sql`SELECT current_database() AS db`;
+    const dbRows = await sql<{ db: string }[]>`SELECT current_database() AS db`;
+    const db = dbRows[0]?.db;
+    if (!db) throw new Error("current_database() returned no row");
 
-    const byType = await sql`
+    const byType = await sql<{ entity_type: string; n: number }[]>`
       SELECT entity_type, count(*)::int AS n
       FROM atoms
       GROUP BY 1
       ORDER BY n DESC
     `;
 
-    const [{ atoms_total }] =
-      await sql`SELECT count(*)::int AS atoms_total FROM atoms`;
-    const [{ references_total }] = await sql`
+    const atomsRows = await sql<{ atoms_total: number }[]>`
+      SELECT count(*)::int AS atoms_total FROM atoms
+    `;
+    const atoms_total = atomsRows[0]?.atoms_total ?? 0;
+
+    const refsRows = await sql<{ references_total: number }[]>`
       SELECT count(*)::int AS references_total FROM atom_links
     `;
-    const [{ jurisdiction_status_rows }] = await sql`
+    const references_total = refsRows[0]?.references_total ?? 0;
+
+    const jsRows = await sql<{ jurisdiction_status_rows: number }[]>`
       SELECT count(*)::int AS jurisdiction_status_rows FROM jurisdiction_status
     `;
+    const jurisdiction_status_rows = jsRows[0]?.jurisdiction_status_rows ?? 0;
 
-    const perCounty = await sql`
+    const perCounty = await sql<{
+      fips: string;
+      nodes: number;
+      zoning_present: number;
+      zoning_honest_absent_or_empty: number;
+      zoning_slot_missing: number;
+      setback_present: number;
+      envelope_present: number;
+      full_chain_nodes: number;
+    }[]>`
       WITH property_atoms AS (
         SELECT
           split_part(entity_id, ':', 1) AS fips,
@@ -148,7 +165,7 @@ export async function runCentralTxNodeGraphTally(
       ORDER BY 1
     `;
 
-    const refsClean = await sql`
+    const refsClean = await sql<{ fips: string; references: number }[]>`
       SELECT
         substring(from_atom_did from 'did:hauska:[^:]+:([0-9]{5}):') AS fips,
         count(*)::int AS references
