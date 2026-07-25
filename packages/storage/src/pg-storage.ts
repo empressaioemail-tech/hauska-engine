@@ -14,7 +14,9 @@ import {
   type CodeAtomEntityType,
   type JurisdictionalOverlayAmendmentInstance,
   isPropertyAtomInstance,
+  isRoadNodeAtomInstance,
   type PropertyAtomInstance,
+  type RoadNodeAtomInstance,
   type StoredAtomInstance,
 } from "@hauska-engine/atoms";
 import postgres from "postgres";
@@ -64,13 +66,14 @@ interface JurisdictionStatusRow {
 function parseStoredAtom(body: unknown): StoredAtomInstance | null {
   if (typeof body !== "object" || body === null) return null;
   if (isPropertyAtomInstance(body)) return body;
+  if (isRoadNodeAtomInstance(body)) return body;
   const candidate = body as Partial<CodeAtomInstance>;
   if (!candidate.entityType || !candidate.entityId) return null;
   return body as CodeAtomInstance;
 }
 
 function resolveAccessPolicy(
-  instance: CodeAtomInstance | PropertyAtomInstance,
+  instance: CodeAtomInstance | PropertyAtomInstance | RoadNodeAtomInstance,
 ): string {
   const maybePolicy = (instance as { accessPolicy?: string }).accessPolicy;
   return maybePolicy ?? "public-free";
@@ -338,6 +341,39 @@ export class PgStorage implements StoragePort {
       }
     }
     return [...byType.values()];
+  }
+
+  async writeRoadAtom(
+    instance: RoadNodeAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }> {
+    return (await this.writeRoadAtomsBatch([instance]))[0]!;
+  }
+
+  async writeRoadAtomsBatch(
+    instances: ReadonlyArray<RoadNodeAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
+    return this.writePropertyAtomsBatch(
+      instances as unknown as ReadonlyArray<PropertyAtomInstance>,
+    );
+  }
+
+  async listRoadAtomsByRoadNodeId(
+    roadNodeId: string,
+  ): Promise<ReadonlyArray<RoadNodeAtomInstance>> {
+    const rows = await this.sql<AtomBodyRow[]>`
+      SELECT body
+      FROM atoms
+      WHERE entity_type = 'road-node'
+        AND body->>'roadNodeId' = ${roadNodeId}
+        AND COALESCE(body->>'status', 'active') = 'active'
+      ORDER BY updated_at DESC
+    `;
+    const out: RoadNodeAtomInstance[] = [];
+    for (const row of rows) {
+      const inst = parseStoredAtom(row.body);
+      if (inst && isRoadNodeAtomInstance(inst)) out.push(inst);
+    }
+    return out;
   }
 
   async writeAtoms(

@@ -11,9 +11,10 @@ import { buildAtomDid, type AtomLink } from "@hauska-engine/atoms";
 import type {
   CodeAtomInstance,
   PropertyAtomInstance,
+  RoadNodeAtomInstance,
   StoredAtomInstance,
 } from "@hauska-engine/atoms";
-import { isPropertyEntityType } from "@hauska-engine/atoms";
+import { isPropertyEntityType, isRoadNodeAtomInstance } from "@hauska-engine/atoms";
 
 import { HotCache, InProcessIpfsPin } from "./in-process-cache.js";
 import type {
@@ -89,6 +90,33 @@ export class InMemoryStorage implements StoragePort {
       }
     }
     return [...byType.values()];
+  }
+
+  async writeRoadAtom(
+    instance: RoadNodeAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }> {
+    return this.writePropertyAtom(instance as unknown as PropertyAtomInstance);
+  }
+
+  async writeRoadAtomsBatch(
+    instances: ReadonlyArray<RoadNodeAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
+    return this.writePropertyAtomsBatch(
+      instances as unknown as ReadonlyArray<PropertyAtomInstance>,
+    );
+  }
+
+  async listRoadAtomsByRoadNodeId(
+    roadNodeId: string,
+  ): Promise<ReadonlyArray<RoadNodeAtomInstance>> {
+    const out: RoadNodeAtomInstance[] = [];
+    for (const inst of this.atoms.values()) {
+      if (!isRoadNodeAtomInstance(inst)) continue;
+      if (inst.roadNodeId !== roadNodeId) continue;
+      if (inst.status && inst.status !== "active") continue;
+      out.push(inst);
+    }
+    return out;
   }
 
   async writeAtoms(

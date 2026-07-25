@@ -217,4 +217,7 @@ export function isPropertyAtomInstance(
   );
 }
 
-export type StoredAtomInstance = CodeAtomInstance | PropertyAtomInstance;
+export type StoredAtomInstance =
+  | CodeAtomInstance
+  | PropertyAtomInstance
+  | import("./road-instances.js").RoadNodeAtomInstance;

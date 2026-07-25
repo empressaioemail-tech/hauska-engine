@@ -15,6 +15,7 @@ import type {
   AtomLink,
   JurisdictionalOverlayAmendmentInstance,
   PropertyAtomInstance,
+  RoadNodeAtomInstance,
   StoredAtomInstance,
 } from "@hauska-engine/atoms";
 
@@ -94,6 +95,19 @@ export interface StoragePort {
   listPropertyAtomsByParcelNodeId(
     parcelNodeId: string,
   ): Promise<ReadonlyArray<PropertyAtomInstance>>;
+
+  /** Road spine nodes (27c WDLL 3 / R1). Same atoms table, roadNodeId linkage. */
+  writeRoadAtom(
+    instance: RoadNodeAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }>;
+
+  writeRoadAtomsBatch(
+    instances: ReadonlyArray<RoadNodeAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>>;
+
+  listRoadAtomsByRoadNodeId(
+    roadNodeId: string,
+  ): Promise<ReadonlyArray<RoadNodeAtomInstance>>;
 
   /** Batch write — atomization output. */
   writeAtoms(

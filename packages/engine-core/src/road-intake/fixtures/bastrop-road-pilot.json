@@ -1,0 +1,19 @@
+{
+  "countyFips": "48021",
+  "displayName": "Bastrop road pilot — Spring Street corridor",
+  "elements": [
+    {
+      "type": "way",
+      "id": 123456789,
+      "tags": {
+        "highway": "residential",
+        "name": "Spring Street"
+      },
+      "geometry": [
+        { "lat": 30.1102, "lon": -97.3188 },
+        { "lat": 30.1105, "lon": -97.3182 },
+        { "lat": 30.1108, "lon": -97.3176 }
+      ]
+    }
+  ]
+}

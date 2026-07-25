@@ -268,6 +268,22 @@ export function buildApp(options: ServerOptions = {}): Hono {
     return c.json(chain);
   });
 
+  app.get("/road-nodes/:roadNodeId{.+}/atom-chain", async (c) => {
+    const roadNodeId = decodeURIComponent(c.req.param("roadNodeId"));
+    if (!/^\d{5}:road:\d+$/.test(roadNodeId)) {
+      return c.json(
+        {
+          error: "invalid roadNodeId",
+          hint: "expected {county_fips}:road:{osm_way_id} e.g. 48021:road:123456789",
+          roadNodeId,
+        },
+        400,
+      );
+    }
+    const chain = await retrieval.getRoadAtomChain(roadNodeId);
+    return c.json(chain);
+  });
+
   app.get("/jurisdictions", async (c) => {
     const qualityBarOnly = c.req.query("qualityBarOnly") === "true";
     const parsedPolicies = parseAccessPolicies(c.req.query("accessPolicies"));

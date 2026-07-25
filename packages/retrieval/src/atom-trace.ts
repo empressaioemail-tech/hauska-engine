@@ -11,6 +11,7 @@ import {
   bootstrapEngineAtomRegistry,
   buildAtomDid,
   isPropertyAtomInstance,
+  isRoadNodeAtomInstance,
   type AtomInstance,
   type AtomLink,
   type CodeAtomEntityType,
@@ -36,8 +37,10 @@ export interface TraceEdge {
 }
 
 function asCodeAtom(stored: StoredAtomInstance | null): CodeAtomInstance | null {
-  if (!stored || isPropertyAtomInstance(stored)) return null;
-  return stored;
+  if (!stored || isPropertyAtomInstance(stored) || isRoadNodeAtomInstance(stored)) {
+    return null;
+  }
+  return stored as CodeAtomInstance;
 }
 
 export interface AtomTraceOutput {
@@ -116,8 +119,10 @@ export async function getAtomTrace(
   input: { atomDid: string; audience?: Scope["audience"] },
 ): Promise<AtomTraceOutput | null> {
   const stored = await storage.getAtomByDid(input.atomDid);
-  if (!stored || isPropertyAtomInstance(stored)) return null;
-  const atom = stored;
+  if (!stored || isPropertyAtomInstance(stored) || isRoadNodeAtomInstance(stored)) {
+    return null;
+  }
+  const atom = stored as CodeAtomInstance;
 
   const scope: Scope = { audience: input.audience ?? "user" };
   const contextSummary = await resolveContextSummary(atom, scope, storage);
