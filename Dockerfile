@@ -2,10 +2,12 @@
 #
 # Runs the Stream 1C HTTP service (services/retrieval-api) via tsx. No
 # tsc build step: the workspace packages ship source-direct exports
-# (`./src/*.ts`) per REPO_NOTES.md, and tsx transpiles on the fly. The
-# production service is read-only and boots from a committed corpus
-# snapshot (CORPUS_SNAPSHOT_PATH), so the image carries no live-ingest
-# or database dependency.
+# (`./src/*.ts`) per REPO_NOTES.md, and tsx transpiles on the fly.
+#
+# F1 Phase 0 / G2: production serves from Postgres (SUBSTRATE_DATABASE_URL
+# → PgStorage). The image still ships snapshot.json for offline load /
+# local-dev, but the Cloud Run boot path does NOT hydrate it into the
+# heap when a substrate URL is configured.
 FROM node:22-slim
 
 # pnpm via corepack, pinned to the workspace packageManager version.
@@ -22,7 +24,11 @@ COPY . .
 RUN pnpm install --frozen-lockfile=false
 
 ENV PORT=8080
+# Retained for local/dev snapshot-only boots. Production ignores this when
+# SUBSTRATE_DATABASE_URL is set (postgres-serve). MEMORY_LIMIT_MIB must
+# match the Cloud Run memory flag for the G2 headroom check.
 ENV CORPUS_SNAPSHOT_PATH=/app/services/retrieval-api/corpus/snapshot.json
+ENV MEMORY_LIMIT_MIB=1024
 
 EXPOSE 8080
 
