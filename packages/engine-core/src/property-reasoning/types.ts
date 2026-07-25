@@ -10,8 +10,13 @@ import type { WidthedConfidence } from "@empressaio/atom-contract/read-contract"
 import type {
   AccessPolicy,
   MatchBasis,
+  RoadClassification,
   SetbackDimensions,
 } from "@hauska-engine/atoms";
+import type { AssumedRowWidthTable } from "../road-intake/types.js";
+
+/** Edge role keyed in the road-class setback table (27c WDLL 4). */
+export type RoadEdgeRole = "front" | "side" | "rear" | "side_corner";
 
 /** Per-field provenance carried in setback table JSON (fan gift). */
 export interface SetbackFieldProvenance {
@@ -44,6 +49,25 @@ export interface SetbackTableDescriptor {
   rows: ReadonlyArray<SetbackTableRowProvenance>;
 }
 
+/** One (road-class, edge-role) cell in the jurisdiction descriptor (27c R2). */
+export interface RoadClassSetbackEntry {
+  road_class: RoadClassification;
+  edge_role: RoadEdgeRole;
+  setback_ft: SetbackFieldProvenance;
+}
+
+export interface RoadClassSetbackRowProvenance {
+  atom_did: string;
+  match_basis: MatchBasis;
+  district_code: string;
+  prefix_matched?: string;
+  entries: ReadonlyArray<RoadClassSetbackEntry>;
+}
+
+export interface RoadClassSetbackTableDescriptor {
+  rows: ReadonlyArray<RoadClassSetbackRowProvenance>;
+}
+
 export interface JurisdictionDescriptor {
   key: string;
   displayName: string;
@@ -52,6 +76,10 @@ export interface JurisdictionDescriptor {
   parcelFips: string;
   defaultAccessPolicy: AccessPolicy;
   setbackTable?: SetbackTableDescriptor;
+  /** Indexed by (road-class, edge-role); jurisdiction knowledge only. */
+  roadClassSetbackTable?: RoadClassSetbackTableDescriptor;
+  /** v1 assumed ROW width by road class (feet). */
+  assumedRowWidthFt?: AssumedRowWidthTable;
   sourceAdapter: string;
   sourceUrl: string;
 }

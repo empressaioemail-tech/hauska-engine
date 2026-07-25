@@ -5,5 +5,6 @@ export * from "./retire.js";
 export * from "./calibration-overlay.js";
 export * from "./emit-zoning-fact.js";
 export * from "./emit-setback-rule.js";
+export * from "./resolve-road-class-setback.js";
 export * from "./emit-buildable-envelope.js";
 export * from "./write-property-atom.js";
