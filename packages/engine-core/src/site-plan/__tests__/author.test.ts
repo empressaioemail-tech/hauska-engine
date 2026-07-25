@@ -101,6 +101,15 @@ describe("authorParcelSitePlanExport", () => {
       artifactStore,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
+      // Deterministic stub: the real FEMA-adapter default path (network
+      // reachability, honest-unavailable on failure) is covered on its own,
+      // isolated from network reachability, by the two tests below —
+      // this test only needs a fixed, environment-independent flood
+      // verdict so its own assertions don't depend on ambient egress.
+      fetchFloodZone: async () => ({
+        honestUnavailable: true,
+        reason: "test stub: no live FEMA NFHL call in this fixture",
+      }),
     });
 
     expect(result.setbackDegenerate).toBe(false);
@@ -118,9 +127,7 @@ describe("authorParcelSitePlanExport", () => {
     expect(result.atom.artifacts["pdf-site-plan"]?.pageCount).toBe(2);
     expect(result.pdfPageCount).toBe(2);
     // No zoning-fact atom in storage and no override supplied -> honest
-    // absence, never a fabricated district. No floodZoneOverride and no
-    // fetchFloodZone stub -> the real FEMA adapter runs and, lacking
-    // network egress in this sandbox, resolves to honest-unavailable.
+    // absence, never a fabricated district.
     expect(result.zoningHonestAbsence).toBe(true);
     expect(result.floodZoneHonestUnavailable).toBe(true);
     expect(result.atom.artifacts["pdf-site-plan"]?.zoningHonestAbsence).toBe(true);
@@ -258,6 +265,9 @@ describe("authorParcelSitePlanExport", () => {
       artifactStore,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
+      // Deterministic stub — this test only cares about artifact merge
+      // behavior, not the flood-zone verdict; avoid a live network call.
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
     });
 
     expect(result.atom.atomDid).toBe("pterrain_existing");
