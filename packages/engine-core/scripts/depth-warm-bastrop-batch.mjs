@@ -7,9 +7,10 @@
  *
  *   PROPERTY_ATOM_PATH=1 DATABASE_URL=... TXGIO_DATABASE_URL=... \
  *     pnpm --filter @hauska-engine/engine-core run depth-warm-bastrop-batch -- \
- *       --limit=500 [--offset=0] [--promote] [--dry-run] [--city-cohort]
+ *       --limit=500 [--offset=0] [--promote] [--dry-run] [--city-cohort] [--place-type-cohort]
  *
  * Pilot cohort default (--limit=500) with extrapolation to full zoning-fact universe.
+ * --place-type-cohort: only P-1..P-5 (descriptor rows); excludes PDD honest no-setback-row noise.
  */
 
 import { performance } from "node:perf_hooks";
@@ -34,8 +35,39 @@ function districtHasSetbackRow(district) {
   return !("kind" in row);
 }
 
+/** District codes with Place Type setback rows (P-1..P-5); excludes PDD / overlay honest declines. */
+function resolvablePlaceTypeDistrictCodes() {
+  const codes = new Set();
+  for (const row of descriptor.setbackTable?.rows ?? []) {
+    if (row.match_basis === "exact" || row.match_basis === "prefix") {
+      codes.add(row.district_code);
+    }
+  }
+  return [...codes].sort();
+}
+
+function isPlaceTypeDistrict(district, codes) {
+  const normalized = normalizeDistrict(district);
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
+  return codes.some(
+    (code) =>
+      lower === code.toLowerCase() ||
+      lower.startsWith(`${code.toLowerCase()}-`) ||
+      lower.startsWith(`${code.toLowerCase()} `),
+  );
+}
+
 function parseArgs(argv) {
-  const out = { limit: 500, offset: 0, promote: false, dryRun: false, parcel: null, cityCohort: false };
+  const out = {
+    limit: 500,
+    offset: 0,
+    promote: false,
+    dryRun: false,
+    parcel: null,
+    cityCohort: false,
+    placeTypeCohort: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--limit") out.limit = Number(argv[++i] || 500);
@@ -47,6 +79,7 @@ function parseArgs(argv) {
     else if (a === "--promote") out.promote = true;
     else if (a === "--dry-run") out.dryRun = true;
     else if (a === "--city-cohort") out.cityCohort = true;
+    else if (a === "--place-type-cohort") out.placeTypeCohort = true;
   }
   return out;
 }
@@ -129,6 +162,8 @@ if (args.cityCohort && !args.parcel) {
   cityParcelIds = await loadCityParcelNodeIds(txSql, cityBbox);
 }
 
+const placeTypeDistrictCodes = resolvablePlaceTypeDistrictCodes();
+
 const [denomRow] = await sql`
   SELECT count(*)::int AS n
   FROM atoms
@@ -138,7 +173,21 @@ const [denomRow] = await sql`
     AND coalesce(body->>'district', '') <> ''
 `;
 
+const [placeTypeDenomRow] = await sql`
+  SELECT count(*)::int AS n
+  FROM atoms
+  WHERE entity_type = 'zoning-fact'
+    AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
+    AND NOT (body ? 'absence')
+    AND coalesce(body->>'district', '') <> ''
+    AND split_part(body->>'district', ' ', 1) = ANY(${placeTypeDistrictCodes})
+`;
+
 const zoningFactDenominator = denomRow?.n ?? 0;
+const placeTypeZoningDenominator = placeTypeDenomRow?.n ?? 0;
+const extrapolationDenominator = args.placeTypeCohort
+  ? placeTypeZoningDenominator
+  : zoningFactDenominator;
 
 const roadRows = await sql`
   SELECT body
@@ -150,6 +199,10 @@ const roadRows = await sql`
 const roads = roadRows
   .map((r) => roadAtomToWarmSource(r.body))
   .filter(Boolean);
+
+const placeTypeSqlFilter = args.placeTypeCohort
+  ? sql`AND split_part(body->>'district', ' ', 1) = ANY(${placeTypeDistrictCodes})`
+  : sql``;
 
 const parcelRows = args.parcel
   ? await sql`
@@ -173,6 +226,7 @@ const parcelRows = args.parcel
           AND body->>'parcelNodeId' = ANY(${cityParcelIds})
           AND NOT (body ? 'absence')
           AND coalesce(body->>'district', '') <> ''
+          ${placeTypeSqlFilter}
         ORDER BY body->>'parcelNodeId'
         OFFSET ${args.offset}
         LIMIT ${args.limit}
@@ -186,6 +240,7 @@ const parcelRows = args.parcel
           AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
           AND NOT (body ? 'absence')
           AND coalesce(body->>'district', '') <> ''
+          ${placeTypeSqlFilter}
         ORDER BY body->>'parcelNodeId'
         OFFSET ${args.offset}
         LIMIT ${args.limit}
@@ -194,6 +249,8 @@ const parcelRows = args.parcel
 const stats = {
   cohortSize: parcelRows.length,
   zoningFactDenominator,
+  placeTypeZoningDenominator,
+  placeTypeDistrictCodes,
   roadsLoaded: roads.length,
   processed: 0,
   promoted: 0,
@@ -218,6 +275,12 @@ for (const row of parcelRows) {
   const parcelNodeId = row.parcel_node_id;
   const district = normalizeDistrict(row.district);
   if (!district) continue;
+
+  if (args.placeTypeCohort && !isPlaceTypeDistrict(row.district, placeTypeDistrictCodes)) {
+    stats.declines["no-setback-row"]++;
+    stats.processed++;
+    continue;
+  }
 
   if (!districtHasSetbackRow(district)) {
     stats.declines["no-setback-row"]++;
@@ -328,9 +391,9 @@ const msPerParcel = sampleN > 0
 const usdSample = approxUsd(wallMsTotal, stats.atomWrites);
 const usdPerParcel = stats.processed > 0 ? usdSample / stats.processed : 0;
 const extrapolatedJurisdictionUsd = Number(
-  (usdPerParcel * zoningFactDenominator).toFixed(4),
+  (usdPerParcel * extrapolationDenominator).toFixed(4),
 );
-const extrapolatedWallHours = (msPerParcel * zoningFactDenominator) / 3_600_000;
+const extrapolatedWallHours = (msPerParcel * extrapolationDenominator) / 3_600_000;
 
 const costJson = {
   event: "R4-depth-cost.done",
@@ -341,6 +404,10 @@ const costJson = {
     limit: args.limit,
     processed: stats.processed,
     zoningFactDenominator,
+    placeTypeZoningDenominator,
+    placeTypeDistrictCodes,
+    placeTypeCohort: args.placeTypeCohort,
+    extrapolationDenominator,
     cityCohort: args.cityCohort,
     cityParcelUniverse: cityParcelIds?.length ?? null,
     cityBbox: args.cityCohort ? cityBbox : null,
@@ -365,7 +432,7 @@ const costJson = {
     humanReviewMinutesGate: 60,
     flaggedOverCostGate: extrapolatedJurisdictionUsd > 200,
     note:
-      "usd = 0.25 CU × $0.16/hr wall + $0.000002/atom-write; extrapolation = usdPerParcel × zoningFactDenominator",
+      "usd = 0.25 CU × $0.16/hr wall + $0.000002/atom-write; extrapolation = usdPerParcel × extrapolationDenominator (place-type when --place-type-cohort)",
   },
   sampleOutcomes,
   wdll9Note: {
