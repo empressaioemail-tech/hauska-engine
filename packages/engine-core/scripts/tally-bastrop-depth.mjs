@@ -8,9 +8,20 @@
 import postgres from "postgres";
 import { resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
+import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 
 const COUNTY_FIPS = "48021";
+
+function resolvablePlaceTypeDistrictCodes(descriptor) {
+  const codes = new Set();
+  for (const row of descriptor.setbackTable?.rows ?? []) {
+    if (row.match_basis === "exact" || row.match_basis === "prefix") {
+      codes.add(row.district_code);
+    }
+  }
+  return [...codes].sort();
+}
 const url = resolveSubstrateDatabaseUrl();
 if (!url) {
   console.error("FATAL: DATABASE_URL or SUBSTRATE_DATABASE_URL required.");
@@ -18,6 +29,7 @@ if (!url) {
 }
 
 const sql = postgres(url, { ssl: "require", max: 1, prepare: false });
+const placeTypeDistrictCodes = resolvablePlaceTypeDistrictCodes(bastropDescriptor);
 
 try {
   const [roads] = await sql`
@@ -39,6 +51,16 @@ try {
       AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
   `;
 
+  const [placeTypeZoning] = await sql`
+    SELECT count(*)::int AS zoning_place_type
+    FROM atoms
+    WHERE entity_type = 'zoning-fact'
+      AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
+      AND NOT (body ? 'absence')
+      AND coalesce(body->>'district', '') <> ''
+      AND split_part(body->>'district', ' ', 1) = ANY(${placeTypeDistrictCodes})
+  `;
+
   const [envelopes] = await sql`
     SELECT
       count(*)::int AS envelopes_total,
@@ -50,9 +72,14 @@ try {
       AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
   `;
 
-  const depthRatio =
+  const depthRatioAll =
     zoning.zoning_facts_with_district > 0
       ? envelopes.depth_warm_promoted / zoning.zoning_facts_with_district
+      : null;
+
+  const depthRatioPlaceType =
+    placeTypeZoning.zoning_place_type > 0
+      ? envelopes.depth_warm_promoted / placeTypeZoning.zoning_place_type
       : null;
 
   const report = {
@@ -62,11 +89,18 @@ try {
     road_nodes: roads.road_nodes,
     zoning_facts_total: zoning.zoning_facts_total,
     zoning_facts_with_district: zoning.zoning_facts_with_district,
+    zoning_place_type: placeTypeZoning.zoning_place_type,
+    place_type_district_codes: placeTypeDistrictCodes,
     zoning_honest_absence: zoning.zoning_honest_absence,
     envelopes_total: envelopes.envelopes_total,
     depth_warm_promoted: envelopes.depth_warm_promoted,
-    depth_ratio: depthRatio,
-    depth_ratio_pct: depthRatio != null ? Number((depthRatio * 100).toFixed(4)) : null,
+    depth_ratio_all: depthRatioAll,
+    depth_ratio_all_pct: depthRatioAll != null ? Number((depthRatioAll * 100).toFixed(4)) : null,
+    depth_ratio_place_type: depthRatioPlaceType,
+    depth_ratio_place_type_pct:
+      depthRatioPlaceType != null ? Number((depthRatioPlaceType * 100).toFixed(4)) : null,
+    depth_ratio: depthRatioAll,
+    depth_ratio_pct: depthRatioAll != null ? Number((depthRatioAll * 100).toFixed(4)) : null,
     proposedSql: {
       road_nodes: `SELECT count(*) FROM atoms WHERE entity_type='road-node' AND body->>'roadNodeId' LIKE '${COUNTY_FIPS}:road:%';`,
       zoning_with_district: `SELECT count(*) FROM atoms WHERE entity_type='zoning-fact' AND body->>'parcelNodeId' LIKE '${COUNTY_FIPS}:%' AND NOT (body ? 'absence') AND coalesce(body->>'district','') <> '';`,
