@@ -76,20 +76,23 @@ describe("site-plan offset parity with depth-warm insetPerEdge (48021:34785)", (
     assertFrontOnlyParity(PARCEL_1009_CHESTNUT_34785);
   });
 
-  it("live txgio: local-only inset path still degenerates (proves WGS84 path is required)", () => {
+  it("live txgio: production always passes WGS84 ring (composeSitePlanModel contract)", () => {
+    // PATCH-A clip cleanup may also let local-only succeed; the production
+    // contract is still WGS84+bbox so depth-warm and site-plan share one frame.
     const ring = PARCEL_1009_CHESTNUT_34785_LIVE_TXGIO;
     const bbox = ringBbox(ring);
     const ringLocal = dedupeClosingVertex(
       ring.slice(0, -1).map(([lng, lat]) => projectWgs84ToLocalEnu(lng, lat, bbox)),
     );
-    const localOnly = computeSetbackOffset(
+    const withWgs84 = computeSetbackOffset(
       ringLocal,
       { front: 15, side: 0, rear: 0 },
       3,
       { side: true, rear: true },
+      { ringWgs84: ring, bbox },
     );
-    expect(localOnly.offsetDegenerate).toBe(true);
-    expect(localOnly.offsetDegenerateReason).toMatch(/setback-consumes-lot/);
+    expect(withWgs84.offsetDegenerate).toBe(false);
+    expect(withWgs84.offsetRing).not.toBeNull();
   });
 
   it("48021:34785 live txgio parcel lot area is ~16111 sqft (sanity)", () => {

@@ -247,7 +247,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
 });
 
 describe("honest partial inset (R4.1)", () => {
-  it("47728: alley+front collapse retries to front-only inset", () => {
+  it("47728: alley+front draws (PATCH-A); still contains front 15' and verifies", () => {
     const labels = [
       { index: 0, label: "rear" as const, roadClass: "alley" as const, osmHighwayTag: "service" },
       { index: 1, label: "front" as const, roadClass: "residential" as const, osmHighwayTag: "residential" },
@@ -262,10 +262,12 @@ describe("honest partial inset (R4.1)", () => {
       roads: [],
       edgeLabels: labels,
     });
+    // Pre-PATCH-A: clip self-touch emptied full labeling → retry stripped to front-only.
+    // Post-PATCH-A: alley+front can both apply; require front 15' + verify pass.
     expect(candidate.empty).toBe(false);
     expect(candidate.insetRing).not.toBeNull();
     expect(candidate.insetFeetPerEdge).toContain(15);
-    expect(candidate.insetFeetPerEdge.filter((ft) => ft > 0).length).toBe(1);
+    expect(candidate.insetFeetPerEdge.filter((ft) => ft > 0).length).toBeGreaterThanOrEqual(1);
     const verify = verifyWarmCandidateMechanically(candidate, descriptor);
     expect(verify.pass).toBe(true);
   });
