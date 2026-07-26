@@ -18,6 +18,7 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
+import { resolveSetbackTableRow } from "../src/property-reasoning/emit-setback-rule.ts";
 import { labelEdgesFromRoads, isFrontEligibleRoad } from "../src/depth-warm/edgeLabeling.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
@@ -27,6 +28,11 @@ import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parce
 
 const COUNTY_FIPS = "48021";
 const descriptor = bastropDescriptor;
+
+function districtHasSetbackRow(district) {
+  const row = resolveSetbackTableRow(descriptor.setbackTable, district);
+  return !("kind" in row);
+}
 
 function parseArgs(argv) {
   const out = { limit: 500, offset: 0, promote: false, dryRun: false, parcel: null, cityCohort: false };
@@ -199,6 +205,7 @@ const stats = {
     "invalid-parcel-ring": 0,
     "no-roads-available": 0,
     "already-promoted": 0,
+    "no-setback-row": 0,
     other: 0,
   },
   atomWrites: 0,
@@ -211,6 +218,12 @@ for (const row of parcelRows) {
   const parcelNodeId = row.parcel_node_id;
   const district = normalizeDistrict(row.district);
   if (!district) continue;
+
+  if (!districtHasSetbackRow(district)) {
+    stats.declines["no-setback-row"]++;
+    stats.processed++;
+    continue;
+  }
 
   const parcelT0 = performance.now();
 
@@ -247,17 +260,32 @@ for (const row of parcelRows) {
     continue;
   }
 
-  const result = await warmThenVerify({
-    parcelNodeId,
-    district,
-    parcelRing: geom.ring,
-    descriptor,
-    roads,
-    edgeLabels: labelResult.edgeLabels,
-    zoningFactAtomDid: row.zoning_fact_did,
-    storage: dryRun ? undefined : storageHandle?.storage,
-    promote: !dryRun,
-  });
+  let result;
+  try {
+    result = await warmThenVerify({
+      parcelNodeId,
+      district,
+      parcelRing: geom.ring,
+      descriptor,
+      roads,
+      edgeLabels: labelResult.edgeLabels,
+      zoningFactAtomDid: row.zoning_fact_did,
+      storage: dryRun ? undefined : storageHandle?.storage,
+      promote: !dryRun,
+    });
+  } catch (err) {
+    stats.declines.other++;
+    stats.processed++;
+    stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+    if (sampleOutcomes.length < 8) {
+      sampleOutcomes.push({
+        parcelNodeId,
+        verifyPass: false,
+        reasons: [String(err?.message ?? err)].slice(0, 3),
+      });
+    }
+    continue;
+  }
 
   stats.processed++;
   stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));

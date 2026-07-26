@@ -46,4 +46,19 @@ describe("resolveRoadClassSetback (27c WDLL 4)", () => {
     if ("kind" in hit) throw new Error("expected flat fallback");
     expect(hit.value).toBe(15);
   });
+
+  it("resolves gravel front at 15 ft — same as local street (B3 6.5.003 / Ch7 frontage)", () => {
+    const gravelFront = resolveRoadClassSetback(descriptor, "P-5", "gravel", "front");
+    const streetFront = resolveRoadClassSetback(
+      descriptor,
+      "P-5",
+      "residential",
+      "front",
+    );
+    if ("kind" in gravelFront || "kind" in streetFront) {
+      throw new Error("expected both setbacks");
+    }
+    expect(gravelFront.value).toBe(15);
+    expect(gravelFront.value).toBe(streetFront.value);
+  });
 });
