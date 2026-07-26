@@ -79,6 +79,37 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
     expect(verify.pass).toBe(false);
     expect(verify.gates.roadClassification.pass).toBe(false);
   });
+
+  it("service+unpaved surface passes verify as gravel (R4.2)", () => {
+    const gravelService = {
+      osmWayId: 15096758,
+      osmHighwayTag: "service",
+      surface: "unpaved",
+      classification: "gravel" as const,
+      polyline: [
+        [-97.32, 30.11],
+        [-97.319, 30.11],
+      ] as [number, number][],
+    };
+    const candidate = computeWarmCandidate({
+      parcelNodeId: PARCEL_ID,
+      district: "P-5",
+      parcelRing: PARCEL_714_SPRING_33512,
+      descriptor,
+      roads: [gravelService],
+      edgeLabels: [
+        {
+          index: 0,
+          label: "front",
+          roadClass: "gravel",
+          osmHighwayTag: "service",
+          osmSurfaceTag: "unpaved",
+        },
+      ],
+    });
+    const verify = verifyWarmCandidateMechanically(candidate, descriptor);
+    expect(verify.gates.roadClassification.pass).toBe(true);
+  });
 });
 
 describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {

@@ -65,6 +65,7 @@ function roadAtomToWarmSource(body) {
   const candidate = {
     osmWayId: body.osmWayId,
     osmHighwayTag,
+    surface,
     name: body.displayName,
     classification,
     polyline: centerline.map(([lng, lat]) => [lng, lat]),

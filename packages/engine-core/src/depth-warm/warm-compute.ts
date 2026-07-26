@@ -28,6 +28,7 @@ export interface WarmComputeInput {
     label: WarmEdgeInfo["label"];
     roadClass?: RoadClassification;
     osmHighwayTag?: string;
+    osmSurfaceTag?: string;
   }>;
   warmAgentId?: string;
   warmAt?: string;
@@ -67,7 +68,13 @@ type EdgeLabelDraft = WarmComputeInput["edgeLabels"][number];
 export function stripNonFrontRoadClass(edgeLabels: EdgeLabelDraft[]): EdgeLabelDraft[] {
   return edgeLabels.map((e) => {
     if (e.label === "front" && e.roadClass) {
-      return { index: e.index, label: e.label, roadClass: e.roadClass, osmHighwayTag: e.osmHighwayTag };
+      return {
+        index: e.index,
+        label: e.label,
+        roadClass: e.roadClass,
+        osmHighwayTag: e.osmHighwayTag,
+        osmSurfaceTag: e.osmSurfaceTag,
+      };
     }
     return { index: e.index, label: e.label };
   });
@@ -111,6 +118,7 @@ function computeWarmCandidateWithLabels(
     label: e.label,
     roadClass: e.roadClass,
     osmHighwayTag: e.osmHighwayTag,
+    osmSurfaceTag: e.osmSurfaceTag,
     insetFeet: resolveInsetFeetForEdge(
       input.descriptor,
       input.district,

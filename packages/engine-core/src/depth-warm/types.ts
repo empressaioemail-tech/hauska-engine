@@ -13,6 +13,8 @@ export type WarmEdgeRole = "front" | "side" | "rear" | "side_corner";
 export interface WarmRoadSource {
   osmWayId: number;
   osmHighwayTag: string;
+  /** OSM surface=* when present — required for service→gravel parity at verify. */
+  surface?: string;
   name?: string;
   classification: RoadClassification;
   /** Centerline vertices (lng/lat). */
@@ -25,6 +27,8 @@ export interface WarmEdgeInfo {
   roadClass?: RoadClassification;
   /** Source tag used for mechanical classification-vs-source verify. */
   osmHighwayTag?: string;
+  /** OSM surface=* paired with osmHighwayTag for service/unpaved→gravel parity. */
+  osmSurfaceTag?: string;
   insetFeet: number;
 }
 
