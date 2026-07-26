@@ -1,3 +1,10 @@
+import {
+  ensureCcwRing,
+  insetRingMeters,
+  isInsetDegenerate,
+  signedArea,
+} from "../geometry/polygon-inset.js";
+
 export interface LocalPoint {
   x: number;
   y: number;
@@ -29,17 +36,6 @@ export function ringSegments(ring: LocalPoint[]): RingSegment[] {
     segments.push({ a, b, lengthMeters: Math.hypot(b.x - a.x, b.y - a.y) });
   }
   return segments;
-}
-
-function signedArea(ring: LocalPoint[]): number {
-  let sum = 0;
-  const n = ring.length;
-  for (let i = 0; i < n; i++) {
-    const a = ring[i]!;
-    const b = ring[(i + 1) % n]!;
-    sum += a.x * b.y - b.x * a.y;
-  }
-  return sum / 2;
 }
 
 export type SetbackRole = "front" | "side" | "rear" | "unassigned";
@@ -173,11 +169,10 @@ export function assignSetbackRoles(
 }
 
 /**
- * Offsets each edge inward by its assigned distance and intersects
- * consecutive offset lines to find the new vertex — the standard
- * edge-translate-and-intersect method for simple (ideally convex) polygons.
- * Detects gross degeneracy (offset area flips sign / collapses) rather than
- * emitting a self-intersecting "buildable envelope."
+ * Offsets each edge inward by its assigned distance using the shared
+ * polygon-clipping strip-union-difference path (same as depth-warm
+ * `insetPerEdge`). Role assignment and segment metadata stay here;
+ * geometry truth lives in `geometry/polygon-inset.ts`.
  */
 export function computeSetbackOffset(
   ring: LocalPoint[],
@@ -190,55 +185,63 @@ export function computeSetbackOffset(
   const segments = ringSegments(ring);
   const withAssignment = segments.map((segment, i) => ({ ...segment, ...assignments[i]! }));
 
-  const orientation = signedArea(ring) >= 0 ? 1 : -1; // +1 = CCW, -1 = CW
-
-  // For each edge, compute the inward-offset line as a point+direction.
-  const offsetLines = withAssignment.map((seg) => {
-    const dx = seg.b.x - seg.a.x;
-    const dy = seg.b.y - seg.a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const dirX = dx / len;
-    const dirY = dy / len;
-    // Inward normal: rotate the edge direction +90 deg for a CCW ring
-    // (interior is on the left of travel), -90 deg for a CW ring.
-    const normalX = orientation >= 0 ? -dirY : dirY;
-    const normalY = orientation >= 0 ? dirX : -dirX;
-    const distanceMeters = seg.distanceFt * METERS_PER_FOOT;
+  const insetFeetPerEdge = assignments.map((a) => Math.max(0, a.distanceFt));
+  if (insetFeetPerEdge.some((ft) => !Number.isFinite(ft))) {
     return {
-      point: { x: seg.a.x + normalX * distanceMeters, y: seg.a.y + normalY * distanceMeters },
-      dirX,
-      dirY,
+      basis,
+      segments: withAssignment,
+      offsetRing: null,
+      offsetDegenerate: true,
+      offsetDegenerateReason: "non-finite setback distance",
     };
-  });
+  }
+  if (insetFeetPerEdge.length !== n) {
+    return {
+      basis,
+      segments: withAssignment,
+      offsetRing: null,
+      offsetDegenerate: true,
+      offsetDegenerateReason: "edge/setback count mismatch",
+    };
+  }
 
-  const offsetRing: LocalPoint[] = [];
-  for (let i = 0; i < n; i++) {
-    const prev = offsetLines[(i - 1 + n) % n]!;
-    const cur = offsetLines[i]!;
-    const intersection = intersectLines(prev, cur);
-    if (!intersection) {
-      return {
-        basis,
-        segments: withAssignment,
-        offsetRing: null,
-        offsetDegenerate: true,
-        offsetDegenerateReason: "parallel-adjacent-edges-no-intersection",
-      };
-    }
-    offsetRing.push(intersection);
+  const insetMetersPerEdge = insetFeetPerEdge.map((ft) => ft * METERS_PER_FOOT);
+  const { points: ccwRing, insetMetersPerEdge: ccwInset, reversed } = ensureCcwRing(
+    ring,
+    insetMetersPerEdge,
+  );
+
+  const insetXY = insetRingMeters(ccwRing, ccwInset);
+  if (!insetXY) {
+    return {
+      basis,
+      segments: withAssignment,
+      offsetRing: null,
+      offsetDegenerate: true,
+      offsetDegenerateReason:
+        "setback-consumes-lot: inward offset collapsed or inverted (no honest buildable margin to draw)",
+    };
+  }
+
+  if (isInsetDegenerate(ccwRing, insetXY.points, ccwInset)) {
+    return {
+      basis,
+      segments: withAssignment,
+      offsetRing: null,
+      offsetDegenerate: true,
+      offsetDegenerateReason:
+        "setback-consumes-lot: inward offset collapsed or inverted (no honest buildable margin to draw)",
+    };
+  }
+
+  let offsetRing: LocalPoint[] = insetXY.points;
+  if (reversed) {
+    offsetRing = offsetRing.slice().reverse();
   }
 
   const originalArea = Math.abs(signedArea(ring));
   const offsetArea = Math.abs(signedArea(offsetRing));
-  const sameOrientation = Math.sign(signedArea(ring)) === Math.sign(signedArea(offsetRing));
-  // A valid inward offset vertex can never legitimately fall outside the
-  // original ring; opposite setback lines crossing past each other (the
-  // "setback consumes the lot" case, e.g. forbidden demo parcel 48021:27303)
-  // produces exactly that. Small-area-flip alone is not a reliable enough
-  // signal (an inverted axis-aligned box can still integrate to a small
-  // positive area), so this is the primary degeneracy check.
-  const anyVertexEscapesOriginal = offsetRing.some((point) => !pointInPolygon(point, ring));
-  if (!sameOrientation || offsetArea <= 0 || offsetArea >= originalArea || anyVertexEscapesOriginal) {
+  if (offsetArea <= 0 || offsetArea >= originalArea) {
     return {
       basis,
       segments: withAssignment,
@@ -250,31 +253,4 @@ export function computeSetbackOffset(
   }
 
   return { basis, segments: withAssignment, offsetRing, offsetDegenerate: false };
-}
-
-/** Standard ray-casting point-in-polygon test (boundary counts as outside). */
-function pointInPolygon(point: LocalPoint, ring: LocalPoint[]): boolean {
-  let inside = false;
-  const n = ring.length;
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const a = ring[i]!;
-    const b = ring[j]!;
-    const intersects =
-      a.y > point.y !== b.y > point.y &&
-      point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x;
-    if (intersects) inside = !inside;
-  }
-  return inside;
-}
-
-function intersectLines(
-  l1: { point: LocalPoint; dirX: number; dirY: number },
-  l2: { point: LocalPoint; dirX: number; dirY: number },
-): LocalPoint | null {
-  const denom = l1.dirX * l2.dirY - l1.dirY * l2.dirX;
-  if (Math.abs(denom) < 1e-9) return null; // parallel
-  const dx = l2.point.x - l1.point.x;
-  const dy = l2.point.y - l1.point.y;
-  const t = (dx * l2.dirY - dy * l2.dirX) / denom;
-  return { x: l1.point.x + t * l1.dirX, y: l1.point.y + t * l1.dirY };
 }
