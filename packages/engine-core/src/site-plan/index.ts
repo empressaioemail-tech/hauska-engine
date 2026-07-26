@@ -3,6 +3,7 @@ export {
   assignSetbackRoles,
   dedupeClosingVertex,
   ringSegments,
+  type ComputeSetbackOffsetOptions,
   type FrontEdgeBasis,
   type LocalPoint,
   type RingSegment,
