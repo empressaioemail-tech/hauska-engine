@@ -298,6 +298,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     { front: inputs.setback.front, side: inputs.setback.side, rear: inputs.setback.rear },
     inputs.frontEdgeIndex,
     notSpecified,
+    { ringWgs84: inputs.ringWgs84, bbox: inputs.bbox },
   );
   const setback: SitePlanSetbackModel = {
     front: inputs.setback.front,

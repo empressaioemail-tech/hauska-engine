@@ -45,6 +45,15 @@ export const PARCEL_RECT_80x100: Ring = [
  * 1009 Chestnut St — 48021:34785 (P-5, ~98×165 ft near-rect).
  * Synthetic ring at Bastrop lat matching txgio dimensions for FIX 1 parity tests.
  */
+/** Live txgio ring for 48021:34785 (2026-07-26 planner recon). Slightly skewed vs synthetic. */
+export const PARCEL_1009_CHESTNUT_34785_LIVE_TXGIO: Ring = [
+  [-97.31530582699997, 30.110068038000065],
+  [-97.31561687599998, 30.110068166000076],
+  [-97.31562900799997, 30.110515726000074],
+  [-97.31531885299995, 30.11051941100004],
+  [-97.31530582699997, 30.110068038000065],
+];
+
 export const PARCEL_1009_CHESTNUT_34785: Ring = (() => {
   const FEET = 0.3048;
   const W = 98 * FEET;

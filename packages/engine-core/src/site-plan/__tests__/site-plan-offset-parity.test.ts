@@ -1,12 +1,15 @@
 /**
- * FIX 1 — site-plan offset must match depth-warm insetPerEdge (shared polygon-clipping).
- * Specimen: 48021:34785 (1009 Chestnut), front-only 15' on clean ~98×165 ft rect.
+ * FIX 1 / FIX 1.1 — site-plan offset must match depth-warm insetPerEdge.
+ * Primary specimen: live txgio 48021:34785 (1009 Chestnut), front-only 15'.
  */
 
 import { describe, expect, it } from "vitest";
 
 import { insetPerEdge, ringAreaSqFt } from "../../depth-warm/geometry.js";
-import { PARCEL_1009_CHESTNUT_34785 } from "../../depth-warm/fixtures/parcelRings.js";
+import {
+  PARCEL_1009_CHESTNUT_34785,
+  PARCEL_1009_CHESTNUT_34785_LIVE_TXGIO,
+} from "../../depth-warm/fixtures/parcelRings.js";
 import { projectWgs84ToLocalEnu } from "../../parcel-terrain/mesh.js";
 import { signedArea } from "../../geometry/polygon-inset.js";
 import {
@@ -33,38 +36,64 @@ function localRingAreaSqFt(ring: Array<{ x: number; y: number }>): number {
   return Math.abs(signedArea(ring)) / SQMETERS_PER_SQFOOT;
 }
 
-describe("site-plan offset parity with depth-warm insetPerEdge (48021:34785)", () => {
-  it("48021:34785 front-only 15 ft: site-plan offset area ≈ depth-warm (~13641 sqft)", () => {
-    const ring = PARCEL_1009_CHESTNUT_34785;
-    const depthWarm = insetPerEdge(ring, [0, 0, 0, 15]);
-    expect(depthWarm.empty).toBe(false);
-    expect(depthWarm.areaSqFt).toBeGreaterThan(TARGET_BUILDABLE_SQFT - AREA_TOLERANCE_SQFT);
-    expect(depthWarm.areaSqFt).toBeLessThan(TARGET_BUILDABLE_SQFT + AREA_TOLERANCE_SQFT);
+function assertFrontOnlyParity(ring: Array<[number, number]>) {
+  const depthWarm = insetPerEdge(ring, [0, 0, 0, 15]);
+  expect(depthWarm.empty).toBe(false);
+  expect(depthWarm.areaSqFt).toBeGreaterThan(TARGET_BUILDABLE_SQFT - AREA_TOLERANCE_SQFT);
+  expect(depthWarm.areaSqFt).toBeLessThan(TARGET_BUILDABLE_SQFT + AREA_TOLERANCE_SQFT);
 
+  const bbox = ringBbox(ring);
+  const ringLocal = dedupeClosingVertex(
+    ring.slice(0, -1).map(([lng, lat]) => projectWgs84ToLocalEnu(lng, lat, bbox)),
+  );
+
+  const sitePlan = computeSetbackOffset(
+    ringLocal,
+    { front: 15, side: 0, rear: 0 },
+    3,
+    { side: true, rear: true },
+    { ringWgs84: ring, bbox },
+  );
+
+  expect(sitePlan.offsetDegenerate).toBe(false);
+  expect(sitePlan.offsetRing).not.toBeNull();
+  expect(sitePlan.basis).toBe("front-edge-hint");
+
+  const sitePlanAreaSqFt = localRingAreaSqFt(sitePlan.offsetRing!);
+  expect(sitePlanAreaSqFt).toBeCloseTo(depthWarm.areaSqFt, 0);
+  expect(sitePlanAreaSqFt).toBeGreaterThan(TARGET_BUILDABLE_SQFT - AREA_TOLERANCE_SQFT);
+  expect(sitePlanAreaSqFt).toBeLessThan(TARGET_BUILDABLE_SQFT + AREA_TOLERANCE_SQFT);
+
+  return { depthWarmAreaSqFt: depthWarm.areaSqFt, sitePlanAreaSqFt };
+}
+
+describe("site-plan offset parity with depth-warm insetPerEdge (48021:34785)", () => {
+  it("live txgio ring: front-only 15 ft — both paths non-degenerate, area ≈ 13641 sqft", () => {
+    assertFrontOnlyParity(PARCEL_1009_CHESTNUT_34785_LIVE_TXGIO);
+  });
+
+  it("synthetic near-rect fixture: front-only 15 ft still matches depth-warm", () => {
+    assertFrontOnlyParity(PARCEL_1009_CHESTNUT_34785);
+  });
+
+  it("live txgio: local-only inset path still degenerates (proves WGS84 path is required)", () => {
+    const ring = PARCEL_1009_CHESTNUT_34785_LIVE_TXGIO;
     const bbox = ringBbox(ring);
     const ringLocal = dedupeClosingVertex(
       ring.slice(0, -1).map(([lng, lat]) => projectWgs84ToLocalEnu(lng, lat, bbox)),
     );
-
-    const sitePlan = computeSetbackOffset(
+    const localOnly = computeSetbackOffset(
       ringLocal,
       { front: 15, side: 0, rear: 0 },
       3,
       { side: true, rear: true },
     );
-
-    expect(sitePlan.offsetDegenerate).toBe(false);
-    expect(sitePlan.offsetRing).not.toBeNull();
-    expect(sitePlan.basis).toBe("front-edge-hint");
-
-    const sitePlanAreaSqFt = localRingAreaSqFt(sitePlan.offsetRing!);
-    expect(sitePlanAreaSqFt).toBeCloseTo(depthWarm.areaSqFt, 0);
-    expect(sitePlanAreaSqFt).toBeGreaterThan(TARGET_BUILDABLE_SQFT - AREA_TOLERANCE_SQFT);
-    expect(sitePlanAreaSqFt).toBeLessThan(TARGET_BUILDABLE_SQFT + AREA_TOLERANCE_SQFT);
+    expect(localOnly.offsetDegenerate).toBe(true);
+    expect(localOnly.offsetDegenerateReason).toMatch(/setback-consumes-lot/);
   });
 
-  it("48021:34785 parcel lot area is ~16111 sqft (sanity on fixture)", () => {
-    const lotSqFt = Math.round(ringAreaSqFt(PARCEL_1009_CHESTNUT_34785));
+  it("48021:34785 live txgio parcel lot area is ~16111 sqft (sanity)", () => {
+    const lotSqFt = Math.round(ringAreaSqFt(PARCEL_1009_CHESTNUT_34785_LIVE_TXGIO));
     expect(lotSqFt).toBeGreaterThan(16_000);
     expect(lotSqFt).toBeLessThan(16_300);
   });

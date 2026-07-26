@@ -1,9 +1,12 @@
+import { insetPerEdge } from "../depth-warm/geometry.js";
 import {
   ensureCcwRing,
   insetRingMeters,
   isInsetDegenerate,
   signedArea,
 } from "../geometry/polygon-inset.js";
+import { projectWgs84ToLocalEnu } from "../parcel-terrain/mesh.js";
+import type { BboxWgs84 } from "../site-topography/index.js";
 
 export interface LocalPoint {
   x: number;
@@ -101,6 +104,15 @@ export interface SetbackOffsetResult {
   offsetDegenerateReason?: string;
 }
 
+/** When `ringWgs84` + `bbox` are supplied, offset geometry uses depth-warm
+ * `insetPerEdge` on the WGS84 ring (centroid projection frame), then projects
+ * the result into the site-plan local-ENU frame for CAD. Role assignment still
+ * uses the local ring passed as the first argument. */
+export interface ComputeSetbackOffsetOptions {
+  ringWgs84?: Array<[number, number]>;
+  bbox?: BboxWgs84;
+}
+
 /**
  * Assigns front/side/rear to a 4-edge ring's segments. Front-edge is a
  * genuinely unresolved reasoning question in this engine today (the
@@ -174,11 +186,18 @@ export function assignSetbackRoles(
  * `insetPerEdge`). Role assignment and segment metadata stay here;
  * geometry truth lives in `geometry/polygon-inset.ts`.
  */
+function setbackConsumesLotReason(detail?: string): string {
+  const base =
+    "setback-consumes-lot: inward offset collapsed or inverted (no honest buildable margin to draw)";
+  return detail ? `${base} (${detail})` : base;
+}
+
 export function computeSetbackOffset(
   ring: LocalPoint[],
   setback: { front: number; side: number; rear: number },
   frontEdgeIndex?: number,
   notSpecified?: NotSpecifiedAxesInput | null,
+  options?: ComputeSetbackOffsetOptions,
 ): SetbackOffsetResult {
   const n = ring.length;
   const { basis, assignments } = assignSetbackRoles(ring, setback, frontEdgeIndex, notSpecified);
@@ -205,6 +224,46 @@ export function computeSetbackOffset(
     };
   }
 
+  if (options?.ringWgs84 && options.bbox) {
+    const insetResult = insetPerEdge(options.ringWgs84, insetFeetPerEdge);
+    if (insetResult.empty || !insetResult.ring) {
+      return {
+        basis,
+        segments: withAssignment,
+        offsetRing: null,
+        offsetDegenerate: true,
+        offsetDegenerateReason: setbackConsumesLotReason(insetResult.emptyReason),
+      };
+    }
+
+    const offsetRing = dedupeClosingVertex(
+      insetResult.ring.map(([lng, lat]) => projectWgs84ToLocalEnu(lng, lat, options.bbox!)),
+    );
+    if (offsetRing.length < 3) {
+      return {
+        basis,
+        segments: withAssignment,
+        offsetRing: null,
+        offsetDegenerate: true,
+        offsetDegenerateReason: setbackConsumesLotReason("projected offset ring is degenerate"),
+      };
+    }
+
+    const originalArea = Math.abs(signedArea(ring));
+    const offsetArea = Math.abs(signedArea(offsetRing));
+    if (offsetArea <= 0 || offsetArea >= originalArea) {
+      return {
+        basis,
+        segments: withAssignment,
+        offsetRing: null,
+        offsetDegenerate: true,
+        offsetDegenerateReason: setbackConsumesLotReason(),
+      };
+    }
+
+    return { basis, segments: withAssignment, offsetRing, offsetDegenerate: false };
+  }
+
   const insetMetersPerEdge = insetFeetPerEdge.map((ft) => ft * METERS_PER_FOOT);
   const { points: ccwRing, insetMetersPerEdge: ccwInset, reversed } = ensureCcwRing(
     ring,
@@ -218,8 +277,7 @@ export function computeSetbackOffset(
       segments: withAssignment,
       offsetRing: null,
       offsetDegenerate: true,
-      offsetDegenerateReason:
-        "setback-consumes-lot: inward offset collapsed or inverted (no honest buildable margin to draw)",
+      offsetDegenerateReason: setbackConsumesLotReason(),
     };
   }
 
@@ -229,8 +287,7 @@ export function computeSetbackOffset(
       segments: withAssignment,
       offsetRing: null,
       offsetDegenerate: true,
-      offsetDegenerateReason:
-        "setback-consumes-lot: inward offset collapsed or inverted (no honest buildable margin to draw)",
+      offsetDegenerateReason: setbackConsumesLotReason(),
     };
   }
 
@@ -247,8 +304,7 @@ export function computeSetbackOffset(
       segments: withAssignment,
       offsetRing: null,
       offsetDegenerate: true,
-      offsetDegenerateReason:
-        "setback-consumes-lot: inward offset collapsed or inverted (no honest buildable margin to draw)",
+      offsetDegenerateReason: setbackConsumesLotReason(),
     };
   }
 
