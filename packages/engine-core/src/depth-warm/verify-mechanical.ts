@@ -5,16 +5,13 @@
  */
 
 import { classifyOsmHighwayTag } from "../road-intake/classify.js";
-import { resolveRoadClassSetback } from "../property-reasoning/resolve-road-class-setback.js";
-import type { JurisdictionDescriptor, RoadEdgeRole } from "../property-reasoning/types.js";
+import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { geometryCorrectnessGate } from "./geometry.js";
 import type { VerifyResult, WarmCandidate } from "./types.js";
-
-function roleForLabel(label: string): RoadEdgeRole {
-  if (label === "front" || label === "rear" || label === "side") return label;
-  if (label === "side_corner") return "side_corner";
-  return "side";
-}
+import {
+  buildFlatSetbackFallback,
+  resolveInsetFeetForEdge,
+} from "./warm-compute.js";
 
 function classifyForVerify(
   osmHighwayTag: string | undefined,
@@ -62,21 +59,17 @@ export function verifySetbackEdgeDistance(
 ): { pass: boolean; reasons: string[] } {
   const reasons: string[] = [];
   const tol = 0.01;
+  const flatFallback = buildFlatSetbackFallback(descriptor, candidate.district);
   for (const edge of candidate.edges) {
-    if (!edge.roadClass) continue;
-    const expected = resolveRoadClassSetback(
+    const expectedFt = resolveInsetFeetForEdge(
       descriptor,
       candidate.district,
-      edge.roadClass,
-      roleForLabel(edge.label),
+      edge,
+      flatFallback,
     );
-    if ("kind" in expected) {
-      reasons.push(`edge ${edge.index}: expected setback lookup failed (${expected.code})`);
-      continue;
-    }
-    if (Math.abs(edge.insetFeet - expected.value) > tol) {
+    if (Math.abs(edge.insetFeet - expectedFt) > tol) {
       reasons.push(
-        `edge ${edge.index}: inset ${edge.insetFeet}ft != expected ${expected.value}ft for ${edge.roadClass}/${edge.label}`,
+        `edge ${edge.index}: inset ${edge.insetFeet}ft != expected ${expectedFt}ft for ${edge.roadClass ?? "unlabeled"}/${edge.label}`,
       );
     }
   }

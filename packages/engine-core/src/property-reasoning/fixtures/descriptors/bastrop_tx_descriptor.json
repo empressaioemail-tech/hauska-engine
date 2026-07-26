@@ -44,6 +44,118 @@
           "verification_state": "human-verified",
           "not_specified": true
         }
+      },
+      {
+        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "match_basis": "exact",
+        "district_code": "P-1",
+        "front_ft": {
+          "value": 25,
+          "confidence": 0.85,
+          "verification_state": "transcribed"
+        },
+        "rear_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        },
+        "side_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        }
+      },
+      {
+        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "match_basis": "exact",
+        "district_code": "P-2",
+        "front_ft": {
+          "value": 25,
+          "confidence": 0.85,
+          "verification_state": "transcribed"
+        },
+        "rear_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        },
+        "side_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        }
+      },
+      {
+        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "match_basis": "exact",
+        "district_code": "P-3",
+        "front_ft": {
+          "value": 15,
+          "confidence": 0.85,
+          "verification_state": "transcribed"
+        },
+        "rear_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        },
+        "side_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        }
+      },
+      {
+        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "match_basis": "exact",
+        "district_code": "P-4",
+        "front_ft": {
+          "value": 15,
+          "confidence": 0.85,
+          "verification_state": "transcribed"
+        },
+        "rear_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        },
+        "side_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "value": 0,
+          "confidence": 0.75,
+          "verification_state": "transcribed",
+          "not_specified": true
+        }
       }
     ]
   },
@@ -107,6 +219,548 @@
               "value": 0,
               "confidence": 0.8,
               "verification_state": "human-verified",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.85,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.8,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          }
+        ]
+      },
+      {
+        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "match_basis": "exact",
+        "district_code": "P-1",
+        "entries": [
+          {
+            "road_class": "residential",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 25,
+              "confidence": 0.85,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "minor_collector",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 25,
+              "confidence": 0.8,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "alley",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 5,
+              "confidence": 0.75,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "alley",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 5,
+              "confidence": 0.75,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "residential",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.8,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "residential",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.8,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 25,
+              "confidence": 0.85,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 25,
+              "confidence": 0.8,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          }
+        ]
+      },
+      {
+        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "match_basis": "exact",
+        "district_code": "P-2",
+        "entries": [
+          {
+            "road_class": "residential",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 25,
+              "confidence": 0.85,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "minor_collector",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 25,
+              "confidence": 0.8,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "alley",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 5,
+              "confidence": 0.75,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "alley",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 5,
+              "confidence": 0.75,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "residential",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.8,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "residential",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.8,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 25,
+              "confidence": 0.85,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 25,
+              "confidence": 0.8,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          }
+        ]
+      },
+      {
+        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "match_basis": "exact",
+        "district_code": "P-3",
+        "entries": [
+          {
+            "road_class": "residential",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.85,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "minor_collector",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.8,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "alley",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 5,
+              "confidence": 0.75,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "alley",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 5,
+              "confidence": 0.75,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "residential",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.8,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "residential",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.8,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.85,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.8,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          }
+        ]
+      },
+      {
+        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "match_basis": "exact",
+        "district_code": "P-4",
+        "entries": [
+          {
+            "road_class": "residential",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.85,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "minor_collector",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.8,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "alley",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 5,
+              "confidence": 0.75,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "alley",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 5,
+              "confidence": 0.75,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "residential",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.8,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "residential",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.8,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.85,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "gravel",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "front",
+            "setback_ft": {
+              "value": 15,
+              "confidence": 0.8,
+              "verification_state": "transcribed"
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "side",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
+              "not_specified": true
+            }
+          },
+          {
+            "road_class": "unclassified",
+            "edge_role": "rear",
+            "setback_ft": {
+              "value": 0,
+              "confidence": 0.75,
+              "verification_state": "transcribed",
               "not_specified": true
             }
           }

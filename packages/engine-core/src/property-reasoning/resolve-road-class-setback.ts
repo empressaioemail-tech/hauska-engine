@@ -99,17 +99,18 @@ export function resolveRoadClassSetback(
   roadClass: RoadClassification,
   edgeRole: RoadEdgeRole,
 ): SetbackFieldProvenance | HonestAbsence {
-  const rcRow = resolveRoadClassRow(descriptor.roadClassSetbackTable, district);
-  if ("kind" in rcRow) {
-    if (rcRow.code !== "road-class-setback-table-missing") {
-      return rcRow;
+  const rcTable = descriptor.roadClassSetbackTable;
+  if (rcTable && rcTable.rows.length > 0) {
+    const rcRow = resolveRoadClassRow(rcTable, district);
+    if (!("kind" in rcRow)) {
+      const hit = rcRow.entries.find(
+        (e: (typeof rcRow.entries)[number]) =>
+          e.road_class === roadClass && e.edge_role === edgeRole,
+      );
+      if (hit) return hit.setback_ft;
     }
-  } else {
-    const hit = rcRow.entries.find(
-      (e: (typeof rcRow.entries)[number]) =>
-        e.road_class === roadClass && e.edge_role === edgeRole,
-    );
-    if (hit) return hit.setback_ft;
+    // District row or (road-class, edge-role) cell missing — fall through to flat
+    // district table (same path as highway/gravel/unclassified on P-5).
   }
 
   const flat = resolveSetbackTableRow(descriptor.setbackTable, district);

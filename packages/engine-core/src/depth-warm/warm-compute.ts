@@ -39,10 +39,43 @@ function warmEdgeRoleToRoadRole(label: WarmEdgeInfo["label"]): RoadEdgeRole {
   return label;
 }
 
-function resolveInsetFeetForEdge(
+/** Shared warm + verify inset lookup (R4.3 parity). */
+export function buildFlatSetbackFallback(
   descriptor: JurisdictionDescriptor,
   district: string,
-  edge: WarmComputeInput["edgeLabels"][number],
+): { front: number; side: number; rear: number } {
+  const flatFront = resolveRoadClassSetback(
+    descriptor,
+    district,
+    "residential",
+    "front",
+  );
+  const flatSide = resolveRoadClassSetback(
+    descriptor,
+    district,
+    "residential",
+    "side",
+  );
+  const flatRear = resolveRoadClassSetback(
+    descriptor,
+    district,
+    "residential",
+    "rear",
+  );
+  return {
+    front: "kind" in flatFront ? 15 : flatFront.value,
+    side: "kind" in flatSide ? 0 : flatSide.value,
+    rear: "kind" in flatRear ? 0 : flatRear.value,
+  };
+}
+
+export function resolveInsetFeetForEdge(
+  descriptor: JurisdictionDescriptor,
+  district: string,
+  edge: {
+    label: WarmEdgeInfo["label"];
+    roadClass?: RoadClassification;
+  },
   flatFallback: { front: number; side: number; rear: number },
 ): number {
   if (edge.roadClass) {
@@ -89,29 +122,7 @@ function computeWarmCandidateWithLabels(
   const proj = projectRing(input.parcelRing);
   const edgeCount = proj?.points.length ?? openRing(input.parcelRing).length;
 
-  const flatFront = resolveRoadClassSetback(
-    input.descriptor,
-    input.district,
-    "residential",
-    "front",
-  );
-  const flatSide = resolveRoadClassSetback(
-    input.descriptor,
-    input.district,
-    "residential",
-    "side",
-  );
-  const flatRear = resolveRoadClassSetback(
-    input.descriptor,
-    input.district,
-    "residential",
-    "rear",
-  );
-  const flatFallback = {
-    front: "kind" in flatFront ? 15 : flatFront.value,
-    side: "kind" in flatSide ? 0 : flatSide.value,
-    rear: "kind" in flatRear ? 0 : flatRear.value,
-  };
+  const flatFallback = buildFlatSetbackFallback(input.descriptor, input.district);
 
   const edges: WarmEdgeInfo[] = edgeLabels.map((e) => ({
     index: e.index,

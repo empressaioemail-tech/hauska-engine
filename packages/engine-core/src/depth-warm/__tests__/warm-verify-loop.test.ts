@@ -110,6 +110,53 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
     const verify = verifyWarmCandidateMechanically(candidate, descriptor);
     expect(verify.gates.roadClassification.pass).toBe(true);
   });
+
+  it("gravel front warm+verify pass at 15ft (R4.3)", () => {
+    const ring: Ring = [
+      [-97.32, 30.11],
+      [-97.31975, 30.11],
+      [-97.31975, 30.1103],
+      [-97.32, 30.1103],
+      [-97.32, 30.11],
+    ];
+    const gravelService = {
+      osmWayId: 15096758,
+      osmHighwayTag: "service",
+      surface: "unpaved",
+      classification: "gravel" as const,
+      polyline: [
+        [-97.32, 30.11035],
+        [-97.3197, 30.11035],
+      ] as [number, number][],
+    };
+    const candidate = computeWarmCandidate({
+      parcelNodeId: "48021:104985",
+      district: "P-5",
+      parcelRing: ring,
+      descriptor,
+      roads: [gravelService],
+      edgeLabels: [
+        {
+          index: 0,
+          label: "side",
+        },
+        {
+          index: 1,
+          label: "front",
+          roadClass: "gravel",
+          osmHighwayTag: "service",
+          osmSurfaceTag: "unpaved",
+        },
+        { index: 2, label: "side" },
+        { index: 3, label: "rear" },
+      ],
+    });
+    expect(candidate.empty).toBe(false);
+    const frontEdge = candidate.edges.find((e) => e.label === "front");
+    expect(frontEdge?.insetFeet).toBe(15);
+    const verify = verifyWarmCandidateMechanically(candidate, descriptor);
+    expect(verify.pass).toBe(true);
+  });
 });
 
 describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
