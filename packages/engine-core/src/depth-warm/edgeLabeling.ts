@@ -42,6 +42,7 @@ export interface EdgeLabelDraft {
   label: WarmEdgeRole;
   roadClass?: RoadClassification;
   osmHighwayTag?: string;
+  osmSurfaceTag?: string;
 }
 
 export type LabelEdgesResult =
@@ -209,6 +210,7 @@ export function labelEdgesFromRoads(input: {
         label: "front",
         roadClass: frontHit.road.classification,
         osmHighwayTag: frontHit.road.osmHighwayTag,
+        osmSurfaceTag: frontHit.road.surface,
       });
       continue;
     }
@@ -218,6 +220,7 @@ export function labelEdgesFromRoads(input: {
         label: "rear",
         roadClass: rearHit.road.classification,
         osmHighwayTag: rearHit.road.osmHighwayTag,
+        osmSurfaceTag: rearHit.road.surface,
       });
       continue;
     }
@@ -237,6 +240,7 @@ export function labelEdgesFromRoads(input: {
         label: "side_corner",
         roadClass: hit.road.classification,
         osmHighwayTag: hit.road.osmHighwayTag,
+        osmSurfaceTag: hit.road.surface,
       });
       continue;
     }

@@ -8,7 +8,11 @@ export {
 } from "./emit-road-node.js";
 export {
   fetchOverpassRoadsInBbox,
+  fetchOverpassRoadsTiled,
+  fetchBastropRoadsForIngest,
   parseBastropBboxFromEnv,
+  resolveBastropRoadIngestBbox,
+  resolveBastropRoadIngestScope,
   BASTROP_COUNTY_BBOX,
   BASTROP_CITY_BBOX,
   OSM_OVERPASS_URL,

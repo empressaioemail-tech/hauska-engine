@@ -10,9 +10,13 @@
  *     pnpm --filter @hauska-engine/engine-core run ingest-bastrop-roads-overpass
  *
  * Env:
- *   BASTROP_ROAD_BBOX=south,west,north,east  (optional; default Bastrop County 48021)
- *   ROAD_INGEST_BATCH=100                    (write batch size)
- *   ROAD_INGEST_LIMIT=N                      (cap ways ingested; 0 = all)
+ *   BASTROP_ROAD_INGEST_SCOPE=city|county|county-tiled  (default city — full BASTROP_CITY_BBOX)
+ *   BASTROP_ROAD_BBOX=south,west,north,east             (optional override)
+ *   ROAD_INGEST_BATCH=100                               (write batch size)
+ *   ROAD_INGEST_LIMIT=N                                 (cap ways ingested; 0 = all)
+ *
+ * Win32 live Overpass TLS dead-end: fetch via scripts/fetch-bastrop-overpass-fixture.ps1
+ * then ROAD_INTAKE_FIXTURE=path/to.json pnpm ... ingest-bastrop-roads-overpass
  */
 
 import { readFileSync } from "node:fs";
@@ -31,8 +35,8 @@ import {
   parseOsmWayElement,
 } from "../src/road-intake/index.ts";
 import {
-  fetchOverpassRoadsInBbox,
-  parseBastropBboxFromEnv,
+  fetchBastropRoadsForIngest,
+  resolveBastropRoadIngestBbox,
 } from "../src/road-intake/fetch-overpass-bbox.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -64,13 +68,15 @@ async function loadElements() {
     const raw = JSON.parse(rawText);
     return { elements: raw.elements ?? [], source: "fixture", fetchMs: 0, bbox: null };
   }
-  const bbox = parseBastropBboxFromEnv();
-  const fetched = await fetchOverpassRoadsInBbox(bbox);
+  const resolved = resolveBastropRoadIngestBbox();
+  const fetched = await fetchBastropRoadsForIngest();
   return {
     elements: fetched.elements,
     source: "overpass-live",
     fetchMs: fetched.elapsedMs,
-    bbox,
+    bbox: fetched.bbox,
+    scope: fetched.scope ?? resolved.scope,
+    tilesFetched: fetched.tilesFetched ?? null,
   };
 }
 
@@ -114,6 +120,8 @@ const report = {
   countyFips: descriptor.countyFips,
   source: loaded.source,
   bbox: loaded.bbox,
+  scope: loaded.scope ?? null,
+  tilesFetched: loaded.tilesFetched ?? null,
   overpassFetchMs: loaded.fetchMs,
   waysParsed: elements.length,
   ingested: emitted.length,

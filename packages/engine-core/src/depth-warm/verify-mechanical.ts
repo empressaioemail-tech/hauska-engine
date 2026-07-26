@@ -16,6 +16,16 @@ function roleForLabel(label: string): RoadEdgeRole {
   return "side";
 }
 
+function classifyForVerify(
+  osmHighwayTag: string | undefined,
+  surface?: string,
+): ReturnType<typeof classifyOsmHighwayTag> {
+  return classifyOsmHighwayTag(
+    osmHighwayTag,
+    surface ? { surface } : undefined,
+  );
+}
+
 /**
  * Gate: road classification on each edge must match OSM highway tag re-classified.
  */
@@ -25,7 +35,7 @@ export function verifyRoadClassificationMatchesSource(
   const reasons: string[] = [];
   for (const edge of candidate.edges) {
     if (!edge.roadClass || !edge.osmHighwayTag) continue;
-    const fromTag = classifyOsmHighwayTag(edge.osmHighwayTag);
+    const fromTag = classifyForVerify(edge.osmHighwayTag, edge.osmSurfaceTag);
     if (fromTag !== edge.roadClass) {
       reasons.push(
         `edge ${edge.index}: classification ${edge.roadClass} != OSM tag ${edge.osmHighwayTag} (${fromTag})`,
@@ -33,7 +43,7 @@ export function verifyRoadClassificationMatchesSource(
     }
   }
   for (const road of candidate.roads) {
-    const fromTag = classifyOsmHighwayTag(road.osmHighwayTag);
+    const fromTag = classifyForVerify(road.osmHighwayTag, road.surface);
     if (fromTag !== road.classification) {
       reasons.push(
         `road ${road.osmWayId}: classification ${road.classification} != tag ${road.osmHighwayTag} (${fromTag})`,
