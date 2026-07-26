@@ -16,6 +16,27 @@ import type { WarmEdgeRole, WarmRoadSource } from "./types.js";
 /** Default max metres from edge midpoint to road centerline. */
 export const DEFAULT_ROAD_PROXIMITY_THRESHOLD_M = 25;
 
+/** OSM highway tags that must never win front labeling (pedestrian / non-ROW). */
+export const FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS = new Set([
+  "footway",
+  "path",
+  "steps",
+  "cycleway",
+  "pedestrian",
+  "bridleway",
+  "corridor",
+  "platform",
+  "bus_guideway",
+  "proposed",
+  "construction",
+]);
+
+export function isFrontEligibleRoad(road: WarmRoadSource): boolean {
+  const tag = road.osmHighwayTag?.trim().toLowerCase() ?? "";
+  if (!tag) return true;
+  return !FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS.has(tag);
+}
+
 export interface EdgeLabelDraft {
   index: number;
   label: WarmEdgeRole;
@@ -82,12 +103,12 @@ function isAlleyClassification(classification: RoadClassification): boolean {
   return classification === "alley";
 }
 
-function frontPriority(classification: RoadClassification): number {
-  if (classification === "highway") return 5;
-  if (classification === "major_collector") return 4;
+function frontStreetPreference(classification: RoadClassification): number {
+  if (classification === "residential") return 5;
+  if (classification === "unclassified") return 4;
   if (classification === "minor_collector") return 3;
-  if (classification === "residential") return 2;
-  if (classification === "unclassified") return 1;
+  if (classification === "major_collector") return 2;
+  if (classification === "highway") return 1;
   return 0;
 }
 
@@ -138,7 +159,9 @@ export function labelEdgesFromRoads(input: {
   }
 
   const nonAlleyHits = [...bestByEdge.values()].filter(
-    (h) => !isAlleyClassification(h.road.classification),
+    (h) =>
+      !isAlleyClassification(h.road.classification) &&
+      isFrontEligibleRoad(h.road),
   );
   const alleyHits = [...bestByEdge.values()].filter((h) =>
     isAlleyClassification(h.road.classification),
@@ -148,8 +171,8 @@ export function labelEdgesFromRoads(input: {
   if (nonAlleyHits.length > 0) {
     nonAlleyHits.sort((a, b) => {
       const dp = a.distanceM - b.distanceM;
-      if (Math.abs(dp) > 0.5) return dp;
-      return frontPriority(b.road.classification) - frontPriority(a.road.classification);
+      if (Math.abs(dp) > 2) return dp;
+      return frontStreetPreference(b.road.classification) - frontStreetPreference(a.road.classification);
     });
     frontHit = nonAlleyHits[0]!;
   }
