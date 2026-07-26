@@ -7,7 +7,7 @@
  *
  *   PROPERTY_ATOM_PATH=1 DATABASE_URL=... TXGIO_DATABASE_URL=... \
  *     pnpm --filter @hauska-engine/engine-core run depth-warm-bastrop-batch -- \
- *       --limit=500 [--offset=0] [--promote] [--dry-run]
+ *       --limit=500 [--offset=0] [--promote] [--dry-run] [--city-cohort]
  *
  * Pilot cohort default (--limit=500) with extrapolation to full zoning-fact universe.
  */
@@ -18,17 +18,18 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
-import { labelEdgesFromRoads } from "../src/depth-warm/edgeLabeling.ts";
+import { labelEdgesFromRoads, isFrontEligibleRoad } from "../src/depth-warm/edgeLabeling.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 import { classifyOsmHighwayTag } from "../src/road-intake/classify.ts";
+import { BASTROP_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
 import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parcel-geometry-resolver.ts";
 
 const COUNTY_FIPS = "48021";
 const descriptor = bastropDescriptor;
 
 function parseArgs(argv) {
-  const out = { limit: 500, offset: 0, promote: false, dryRun: false, parcel: null };
+  const out = { limit: 500, offset: 0, promote: false, dryRun: false, parcel: null, cityCohort: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--limit") out.limit = Number(argv[++i] || 500);
@@ -39,6 +40,7 @@ function parseArgs(argv) {
     else if (a.startsWith("--parcel=")) out.parcel = a.slice("--parcel=".length).trim();
     else if (a === "--promote") out.promote = true;
     else if (a === "--dry-run") out.dryRun = true;
+    else if (a === "--city-cohort") out.cityCohort = true;
   }
   return out;
 }
@@ -60,13 +62,28 @@ function roadAtomToWarmSource(body) {
   const derived = classifyOsmHighwayTag(osmHighwayTag, tags);
   const classification = body.classification;
   if (derived !== classification) return null;
-  return {
+  const candidate = {
     osmWayId: body.osmWayId,
     osmHighwayTag,
     name: body.displayName,
     classification,
     polyline: centerline.map(([lng, lat]) => [lng, lat]),
   };
+  if (!isFrontEligibleRoad(candidate)) return null;
+  return candidate;
+}
+
+async function loadCityParcelNodeIds(txSql, bbox) {
+  const rows = await txSql`
+    SELECT prop_id
+    FROM txgio_parcel
+    WHERE county_fips = ${COUNTY_FIPS}
+      AND (south_lat + north_lat) / 2.0 >= ${bbox.south}
+      AND (south_lat + north_lat) / 2.0 <= ${bbox.north}
+      AND (west_lng + east_lng) / 2.0 >= ${bbox.west}
+      AND (west_lng + east_lng) / 2.0 <= ${bbox.east}
+  `;
+  return rows.map((r) => `${COUNTY_FIPS}:${r.prop_id}`);
 }
 
 function approxUsd(wallMs, atomWrites) {
@@ -97,6 +114,13 @@ if (!dryRun) {
 }
 
 const geomResolver = new TxgioDatabaseParcelGeometryResolver({ databaseUrl: txgioUrl });
+const txSql = postgres(txgioUrl, { ssl: "require", max: 2, prepare: false });
+
+const cityBbox = BASTROP_CITY_BBOX;
+let cityParcelIds = null;
+if (args.cityCohort && !args.parcel) {
+  cityParcelIds = await loadCityParcelNodeIds(txSql, cityBbox);
+}
 
 const [denomRow] = await sql`
   SELECT count(*)::int AS n
@@ -132,19 +156,33 @@ const parcelRows = args.parcel
         AND coalesce(body->>'district', '') <> ''
       LIMIT 1
     `
-  : await sql`
-      SELECT body->>'parcelNodeId' AS parcel_node_id,
-             body->>'district' AS district,
-             atom_did AS zoning_fact_did
-      FROM atoms
-      WHERE entity_type = 'zoning-fact'
-        AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
-        AND NOT (body ? 'absence')
-        AND coalesce(body->>'district', '') <> ''
-      ORDER BY body->>'parcelNodeId'
-      OFFSET ${args.offset}
-      LIMIT ${args.limit}
-    `;
+  : cityParcelIds
+    ? await sql`
+        SELECT body->>'parcelNodeId' AS parcel_node_id,
+               body->>'district' AS district,
+               atom_did AS zoning_fact_did
+        FROM atoms
+        WHERE entity_type = 'zoning-fact'
+          AND body->>'parcelNodeId' = ANY(${cityParcelIds})
+          AND NOT (body ? 'absence')
+          AND coalesce(body->>'district', '') <> ''
+        ORDER BY body->>'parcelNodeId'
+        OFFSET ${args.offset}
+        LIMIT ${args.limit}
+      `
+    : await sql`
+        SELECT body->>'parcelNodeId' AS parcel_node_id,
+               body->>'district' AS district,
+               atom_did AS zoning_fact_did
+        FROM atoms
+        WHERE entity_type = 'zoning-fact'
+          AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
+          AND NOT (body ? 'absence')
+          AND coalesce(body->>'district', '') <> ''
+        ORDER BY body->>'parcelNodeId'
+        OFFSET ${args.offset}
+        LIMIT ${args.limit}
+      `;
 
 const stats = {
   cohortSize: parcelRows.length,
@@ -274,6 +312,9 @@ const costJson = {
     limit: args.limit,
     processed: stats.processed,
     zoningFactDenominator,
+    cityCohort: args.cityCohort,
+    cityParcelUniverse: cityParcelIds?.length ?? null,
+    cityBbox: args.cityCohort ? cityBbox : null,
   },
   roadsLoaded: stats.roadsLoaded,
   outcomes: {
@@ -310,6 +351,7 @@ const costJson = {
 console.log(JSON.stringify(costJson, null, 2));
 
 await sql.end({ timeout: 5 });
+await txSql.end({ timeout: 5 });
 if (storageHandle) await storageHandle.close();
 
 process.exit(costJson.cost.flaggedOverCostGate ? 2 : 0);

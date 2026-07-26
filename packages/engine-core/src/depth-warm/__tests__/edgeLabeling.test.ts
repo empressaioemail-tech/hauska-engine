@@ -5,8 +5,8 @@
 import { describe, expect, it } from "vitest";
 
 import { edgeLabels714SpringHonest } from "../fixtures/edgeLabels714Spring.js";
-import { PARCEL_714_SPRING_33512 } from "../fixtures/parcelRings.js";
-import { labelEdgesFromRoads } from "../edgeLabeling.js";
+import { PARCEL_714_SPRING_33512, PARCEL_BASTROP_47728 } from "../fixtures/parcelRings.js";
+import { labelEdgesFromRoads, isFrontEligibleRoad } from "../edgeLabeling.js";
 
 const SPRING_ROAD = {
   osmWayId: 123456789,
@@ -71,5 +71,38 @@ describe("labelEdgesFromRoads (R4)", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.decline).toBe("no-road-adjacency");
+  });
+
+  it("never labels footway as front (R4.1)", () => {
+    const footway = {
+      osmWayId: 888,
+      osmHighwayTag: "footway",
+      name: "Sidewalk",
+      classification: "unclassified" as const,
+      polyline: [
+        [-97.3185, 30.11065],
+        [-97.31855, 30.1110],
+      ] as [number, number][],
+    };
+    const street = {
+      osmWayId: 777,
+      osmHighwayTag: "residential",
+      name: "Chestnut St",
+      classification: "residential" as const,
+      polyline: [
+        [-97.3187, 30.11065],
+        [-97.31845, 30.11065],
+      ] as [number, number][],
+    };
+    expect(isFrontEligibleRoad(footway)).toBe(false);
+    const result = labelEdgesFromRoads({
+      parcelRing: PARCEL_BASTROP_47728,
+      roads: [footway, street],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const front = result.edgeLabels.find((e) => e.label === "front");
+    expect(front?.roadClass).toBe("residential");
+    expect(front?.osmHighwayTag).toBe("residential");
   });
 });

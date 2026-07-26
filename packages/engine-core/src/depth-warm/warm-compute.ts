@@ -58,10 +58,25 @@ function resolveInsetFeetForEdge(
   return flatFallback.side;
 }
 
+type EdgeLabelDraft = WarmComputeInput["edgeLabels"][number];
+
 /**
- * Warm-compute envelope geometry + per-edge setbacks from road-class table.
+ * Honest partial inset (R3.1 / R4.1): when full road-class labeling collapses the
+ * lot, keep only the front edge's roadClass — never fabricate not_specified axes.
  */
-export function computeWarmCandidate(input: WarmComputeInput): WarmCandidate {
+export function stripNonFrontRoadClass(edgeLabels: EdgeLabelDraft[]): EdgeLabelDraft[] {
+  return edgeLabels.map((e) => {
+    if (e.label === "front" && e.roadClass) {
+      return { index: e.index, label: e.label, roadClass: e.roadClass, osmHighwayTag: e.osmHighwayTag };
+    }
+    return { index: e.index, label: e.label };
+  });
+}
+
+function computeWarmCandidateWithLabels(
+  input: WarmComputeInput,
+  edgeLabels: EdgeLabelDraft[],
+): WarmCandidate {
   const warmAt = input.warmAt ?? new Date().toISOString();
   const warmAgentId = input.warmAgentId ?? "depth-warm-agent-v1";
   const proj = projectRing(input.parcelRing);
@@ -91,7 +106,7 @@ export function computeWarmCandidate(input: WarmComputeInput): WarmCandidate {
     rear: "kind" in flatRear ? 0 : flatRear.value,
   };
 
-  const edges: WarmEdgeInfo[] = input.edgeLabels.map((e) => ({
+  const edges: WarmEdgeInfo[] = edgeLabels.map((e) => ({
     index: e.index,
     label: e.label,
     roadClass: e.roadClass,
@@ -126,6 +141,30 @@ export function computeWarmCandidate(input: WarmComputeInput): WarmCandidate {
     warmAt,
     warmAgentId,
   };
+}
+
+/**
+ * Warm-compute envelope geometry + per-edge setbacks from road-class table.
+ * Retries with honest partial inset when full labeling leaves no buildable area.
+ */
+export function computeWarmCandidate(input: WarmComputeInput): WarmCandidate {
+  const full = computeWarmCandidateWithLabels(input, input.edgeLabels);
+  if (!full.empty && full.insetRing) {
+    return full;
+  }
+  const partialLabels = stripNonFrontRoadClass(input.edgeLabels);
+  const changed = partialLabels.some((p) => {
+    const orig = input.edgeLabels.find((e) => e.index === p.index);
+    return p.roadClass !== orig?.roadClass || p.osmHighwayTag !== orig?.osmHighwayTag;
+  });
+  if (!changed) {
+    return full;
+  }
+  const partial = computeWarmCandidateWithLabels(input, partialLabels);
+  if (!partial.empty && partial.insetRing) {
+    return partial;
+  }
+  return full;
 }
 
 /** Inject a known-bad warm result (parcel ring passed off as inset) for verify RED demo. */

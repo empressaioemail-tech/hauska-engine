@@ -21,6 +21,14 @@ export const BASTROP_COUNTY_BBOX = {
   east: -96.9097,
 } as const;
 
+/** Bastrop city limits + near-ETJ core — depth-warm city cohort (R4.1). */
+export const BASTROP_CITY_BBOX = {
+  south: 30.04,
+  west: -97.38,
+  north: 30.16,
+  east: -97.25,
+} as const;
+
 export interface OverpassBbox {
   south: number;
   west: number;

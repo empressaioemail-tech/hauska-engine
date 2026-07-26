@@ -9,6 +9,7 @@ import type { JurisdictionDescriptor } from "../../property-reasoning/types.js";
 import type { Ring } from "../geometry.js";
 import {
   PARCEL_714_SPRING_33512,
+  PARCEL_BASTROP_47728,
 } from "../fixtures/parcelRings.js";
 import { edgeLabels714SpringHonest } from "../fixtures/edgeLabels714Spring.js";
 import { emitDepthWarmPromotion } from "../promote.js";
@@ -162,6 +163,31 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
     expect(rearEdge?.insetFeet).toBe(5);
     expect(frontEdge!.insetFeet).not.toBe(rearEdge!.insetFeet);
 
+    const verify = verifyWarmCandidateMechanically(candidate, descriptor);
+    expect(verify.pass).toBe(true);
+  });
+});
+
+describe("honest partial inset (R4.1)", () => {
+  it("47728: alley+front collapse retries to front-only inset", () => {
+    const labels = [
+      { index: 0, label: "rear" as const, roadClass: "alley" as const, osmHighwayTag: "service" },
+      { index: 1, label: "front" as const, roadClass: "residential" as const, osmHighwayTag: "residential" },
+      { index: 2, label: "side" as const },
+      { index: 3, label: "side" as const },
+    ];
+    const candidate = computeWarmCandidate({
+      parcelNodeId: "48021:47728",
+      district: "P-5",
+      parcelRing: PARCEL_BASTROP_47728,
+      descriptor,
+      roads: [],
+      edgeLabels: labels,
+    });
+    expect(candidate.empty).toBe(false);
+    expect(candidate.insetRing).not.toBeNull();
+    expect(candidate.insetFeetPerEdge).toContain(15);
+    expect(candidate.insetFeetPerEdge.filter((ft) => ft > 0).length).toBe(1);
     const verify = verifyWarmCandidateMechanically(candidate, descriptor);
     expect(verify.pass).toBe(true);
   });
