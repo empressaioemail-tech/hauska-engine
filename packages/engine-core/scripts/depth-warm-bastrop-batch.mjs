@@ -20,7 +20,7 @@ import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/sto
 
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
 import { resolveSetbackTableRow } from "../src/property-reasoning/emit-setback-rule.ts";
-import { labelEdgesFromRoads, isFrontEligibleRoad } from "../src/depth-warm/edgeLabeling.ts";
+import { labelEdgesFromRoads } from "../src/depth-warm/edgeLabeling.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 import { classifyOsmHighwayTag } from "../src/road-intake/classify.ts";
@@ -101,7 +101,7 @@ function roadAtomToWarmSource(body) {
   const derived = classifyOsmHighwayTag(osmHighwayTag, tags);
   const classification = body.classification;
   if (derived !== classification) return null;
-  const candidate = {
+  return {
     osmWayId: body.osmWayId,
     osmHighwayTag,
     surface,
@@ -109,8 +109,6 @@ function roadAtomToWarmSource(body) {
     classification,
     polyline: centerline.map(([lng, lat]) => [lng, lat]),
   };
-  if (!isFrontEligibleRoad(candidate)) return null;
-  return candidate;
 }
 
 async function loadCityParcelNodeIds(txSql, bbox) {

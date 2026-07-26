@@ -150,7 +150,7 @@ export function labelEdgesFromRoads(input: {
     return { ok: false, decline: "no-road-adjacency" };
   }
 
-  // Best hit per edge (closest road).
+  // Best hit per edge (closest road) — used for side/rear roadClass attachment.
   const bestByEdge = new Map<number, EdgeRoadHit>();
   for (const hit of hits) {
     const prior = bestByEdge.get(hit.edgeIndex);
@@ -159,23 +159,33 @@ export function labelEdgesFromRoads(input: {
     }
   }
 
-  const nonAlleyHits = [...bestByEdge.values()].filter(
-    (h) =>
-      !isAlleyClassification(h.road.classification) &&
-      isFrontEligibleRoad(h.road),
-  );
+  // Front competition: closest front-eligible non-alley hit per edge only.
+  // Ineligible ways (footway/path) must not occupy this slot or shadow collectors.
+  const bestEligibleNonAlleyByEdge = new Map<number, EdgeRoadHit>();
+  for (const hit of hits) {
+    if (isAlleyClassification(hit.road.classification)) continue;
+    if (!isFrontEligibleRoad(hit.road)) continue;
+    const prior = bestEligibleNonAlleyByEdge.get(hit.edgeIndex);
+    if (!prior || hit.distanceM < prior.distanceM) {
+      bestEligibleNonAlleyByEdge.set(hit.edgeIndex, hit);
+    }
+  }
+
+  const frontCandidates = [...bestEligibleNonAlleyByEdge.values()];
   const alleyHits = [...bestByEdge.values()].filter((h) =>
     isAlleyClassification(h.road.classification),
   );
 
   let frontHit: EdgeRoadHit | null = null;
-  if (nonAlleyHits.length > 0) {
-    nonAlleyHits.sort((a, b) => {
-      const dp = a.distanceM - b.distanceM;
-      if (Math.abs(dp) > 2) return dp;
-      return frontStreetPreference(b.road.classification) - frontStreetPreference(a.road.classification);
+  if (frontCandidates.length > 0) {
+    frontCandidates.sort((a, b) => {
+      const pref =
+        frontStreetPreference(b.road.classification) -
+        frontStreetPreference(a.road.classification);
+      if (pref !== 0) return pref;
+      return a.distanceM - b.distanceM;
     });
-    frontHit = nonAlleyHits[0]!;
+    frontHit = frontCandidates[0]!;
   }
 
   let rearHit: EdgeRoadHit | null = null;
