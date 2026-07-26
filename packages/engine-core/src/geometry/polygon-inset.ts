@@ -147,7 +147,134 @@ export function insetRingMeters(
   }
 
   if (!best) return null;
-  return { points: best };
+  // polygon-clipping difference can retain the original edge as a zero-width
+  // spike (self-touch) while the interior area is correct — clean before the
+  // degeneracy guard sees the ring (PATCH-A). Guard stays strict on leftovers.
+  return { points: cleanClipRingArtifacts(best) };
+}
+
+/**
+ * Drop clip-artifact spikes: consecutive near-duplicates, collinear middles,
+ * U-turn vertices (out-and-back along the same edge), and vertices that lie on
+ * a non-adjacent edge when removing them preserves area (≥99%).
+ * Does NOT weaken ringHasSelfTouch — genuinely load-bearing self-touches remain
+ * for the guard to reject.
+ */
+export function cleanClipRingArtifacts(
+  points: PlanarPoint[],
+  options?: { touchTolM?: number; minAreaKeepRatio?: number },
+): PlanarPoint[] {
+  const touchTol = options?.touchTolM ?? 0.08;
+  const minKeep = options?.minAreaKeepRatio ?? 0.99;
+  let pts = dedupeConsecutivePoints(points, 1e-9);
+  pts = removeCollinearPoints(pts, 1e-7);
+  if (pts.length < 3) return pts;
+
+  const targetArea = Math.abs(signedArea(pts));
+  if (targetArea <= 1e-12) return pts;
+
+  let changed = true;
+  let guard = 0;
+  while (changed && pts.length > 3 && guard++ < 64) {
+    changed = false;
+    const n = pts.length;
+    for (let v = 0; v < n; v++) {
+      const prev = pts[(v + n - 1) % n]!;
+      const cur = pts[v]!;
+      const nextPt = pts[(v + 1) % n]!;
+      const uTurn = isNearUTurn(prev, cur, nextPt);
+      const touches = vertexTouchesNonAdjacentEdge(pts, v, touchTol);
+      if (!uTurn && !touches) continue;
+
+      const next = pts.filter((_, i) => i !== v);
+      if (next.length < 3) continue;
+      const nextArea = Math.abs(signedArea(next));
+      // Clip spikes: area must stay ~same (within 1%). Reject removals that
+      // carve real area (load-bearing self-touch / real notches).
+      if (nextArea < targetArea * minKeep) continue;
+      if (nextArea > targetArea * (2 - minKeep)) continue;
+      if (ringSelfIntersects(next)) continue;
+      pts = next;
+      changed = true;
+      break;
+    }
+    if (!changed && !ringHasSelfTouch(pts, touchTol)) break;
+  }
+
+  pts = dedupeConsecutivePoints(pts, 1e-9);
+  pts = removeCollinearPoints(pts, 1e-7);
+  return pts;
+}
+
+/** True when path a→b→c nearly reverses (clip out-and-back spike). */
+function isNearUTurn(
+  a: PlanarPoint,
+  b: PlanarPoint,
+  c: PlanarPoint,
+  cosTol = -0.85,
+): boolean {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const bcx = c.x - b.x;
+  const bcy = c.y - b.y;
+  const lab = Math.hypot(abx, aby);
+  const lbc = Math.hypot(bcx, bcy);
+  if (lab < 1e-9 || lbc < 1e-9) return true;
+  const cos = (abx * bcx + aby * bcy) / (lab * lbc);
+  return cos < cosTol;
+}
+
+function dedupeConsecutivePoints(
+  points: PlanarPoint[],
+  tol: number,
+): PlanarPoint[] {
+  if (points.length === 0) return [];
+  const out: PlanarPoint[] = [{ x: points[0]!.x, y: points[0]!.y }];
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i]!;
+    const prev = out[out.length - 1]!;
+    if (Math.hypot(p.x - prev.x, p.y - prev.y) > tol) {
+      out.push({ x: p.x, y: p.y });
+    }
+  }
+  if (
+    out.length > 2 &&
+    Math.hypot(out[0]!.x - out[out.length - 1]!.x, out[0]!.y - out[out.length - 1]!.y) <=
+      tol
+  ) {
+    out.pop();
+  }
+  return out;
+}
+
+function removeCollinearPoints(points: PlanarPoint[], tol: number): PlanarPoint[] {
+  const n = points.length;
+  if (n < 3) return points.map((p) => ({ x: p.x, y: p.y }));
+  const out: PlanarPoint[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = points[(i + n - 1) % n]!;
+    const b = points[i]!;
+    const c = points[(i + 1) % n]!;
+    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (Math.abs(cross) > tol) {
+      out.push({ x: b.x, y: b.y });
+    }
+  }
+  return out.length >= 3 ? out : points.map((p) => ({ x: p.x, y: p.y }));
+}
+
+function vertexTouchesNonAdjacentEdge(
+  points: PlanarPoint[],
+  v: number,
+  tol: number,
+): boolean {
+  const n = points.length;
+  const p = points[v]!;
+  for (let e = 0; e < n; e++) {
+    if (e === v || (e + 1) % n === v || e === (v + 1) % n) continue;
+    if (pointOnSegment(p, points[e]!, points[(e + 1) % n]!, tol)) return true;
+  }
+  return false;
 }
 
 function pointOnSegment(p: PlanarPoint, a: PlanarPoint, b: PlanarPoint, tol: number): boolean {
@@ -214,16 +341,13 @@ export function ringSelfIntersects(points: PlanarPoint[]): boolean {
   return false;
 }
 
-export function ringHasSelfTouch(points: PlanarPoint[]): boolean {
+export function ringHasSelfTouch(
+  points: PlanarPoint[],
+  touchTolM = 0.08,
+): boolean {
   const n = points.length;
   for (let v = 0; v < n; v++) {
-    const p = points[v]!;
-    for (let e = 0; e < n; e++) {
-      if (e === v || (e + 1) % n === v || e === (v + 1) % n) continue;
-      const a = points[e]!;
-      const b = points[(e + 1) % n]!;
-      if (pointOnSegment(p, a, b, 0.08)) return true;
-    }
+    if (vertexTouchesNonAdjacentEdge(points, v, touchTolM)) return true;
   }
   return false;
 }
