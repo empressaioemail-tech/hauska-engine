@@ -43,7 +43,7 @@ export interface FetchOverpassRoadsResult {
   elapsedMs: number;
   query: string;
   tilesFetched?: number;
-  scope?: BastropRoadIngestScope;
+  scope?: BastropRoadIngestScope | "custom";
 }
 
 function buildBboxQuery(bbox: OverpassBbox): string {
@@ -207,7 +207,12 @@ export async function fetchOverpassRoadsTiled(
 export async function fetchBastropRoadsForIngest(
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: typeof fetch = fetch,
-): Promise<FetchOverpassRoadsResult & { bbox: OverpassBbox; scope: BastropRoadIngestScope | "custom" }> {
+): Promise<
+  FetchOverpassRoadsResult & {
+    bbox: OverpassBbox;
+    scope: BastropRoadIngestScope | "custom";
+  }
+> {
   const { bbox, scope } = resolveBastropRoadIngestBbox(env);
   if (scope === "county-tiled") {
     const tiled = await fetchOverpassRoadsTiled(bbox, { fetchImpl });
