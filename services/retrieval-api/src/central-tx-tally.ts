@@ -19,6 +19,29 @@ export const CENTRAL_TX_COUNTIES: Record<string, string> = {
   "48491": "Williamson",
 };
 
+/** Same marker as engine-core depth-warm promote (27c R3+). */
+export const DEPTH_WARM_PROMOTION_MARKER = "depth-warm-promoted-v1" as const;
+
+/**
+ * B3 Place Type district codes (P-1..P-5) used for depth_ratio_place_type.
+ * Other central-TX counties may have zero rows — honest 0, not invented.
+ */
+export const PLACE_TYPE_DISTRICT_CODES = [
+  "P-1",
+  "P-2",
+  "P-3",
+  "P-4",
+  "P-5",
+] as const;
+
+export function depthRatioPlaceTypePct(
+  depthWarm: number,
+  zoningPlaceType: number,
+): number {
+  if (zoningPlaceType <= 0) return 0;
+  return Number(((100 * depthWarm) / zoningPlaceType).toFixed(2));
+}
+
 export interface CountyTallyRow {
   fips: string;
   county: string;
@@ -30,6 +53,12 @@ export interface CountyTallyRow {
   envelope_present: number;
   full_chain_nodes: number;
   references: number;
+  /** buildable-envelope rows with depthWarmPromotion marker (27c depth). */
+  depth_warm_promoted: number;
+  /** zoning-fact with district prefix in PLACE_TYPE_DISTRICT_CODES. */
+  zoning_place_type: number;
+  /** depth_warm_promoted / zoning_place_type × 100 (0 when denominator 0). */
+  depth_ratio_place_type: number;
   zoning_present_pct: number;
   full_chain_pct: number;
 }
@@ -76,6 +105,9 @@ export interface CentralTxNodeGraphTally {
       envelope_present: number;
       full_chain_nodes: number;
       references: number;
+      depth_warm_promoted: number;
+      zoning_place_type: number;
+      depth_ratio_place_type: number;
       zoning_present_pct: number;
       full_chain_pct: number;
     };
@@ -180,6 +212,38 @@ export async function runCentralTxNodeGraphTally(
       ORDER BY 1
     `;
 
+    const depthPerCounty = await sql<{
+      fips: string;
+      depth_warm_promoted: number;
+    }[]>`
+      SELECT
+        split_part(body->>'parcelNodeId', ':', 1) AS fips,
+        count(*)::int AS depth_warm_promoted
+      FROM atoms
+      WHERE entity_type = 'buildable-envelope'
+        AND body->>'parcelNodeId' ~ '^[0-9]{5}:'
+        AND body->>'depthWarmPromotion' = ${DEPTH_WARM_PROMOTION_MARKER}
+      GROUP BY 1
+      ORDER BY 1
+    `;
+
+    const placeTypePerCounty = await sql<{
+      fips: string;
+      zoning_place_type: number;
+    }[]>`
+      SELECT
+        split_part(body->>'parcelNodeId', ':', 1) AS fips,
+        count(*)::int AS zoning_place_type
+      FROM atoms
+      WHERE entity_type = 'zoning-fact'
+        AND body->>'parcelNodeId' ~ '^[0-9]{5}:'
+        AND NOT (body ? 'absence')
+        AND coalesce(body->>'district', '') <> ''
+        AND split_part(body->>'district', ' ', 1) = ANY(${[...PLACE_TYPE_DISTRICT_CODES]})
+      GROUP BY 1
+      ORDER BY 1
+    `;
+
     const roadPerCounty = await sql<{
       fips: string;
       road_nodes: number;
@@ -258,6 +322,16 @@ export async function runCentralTxNodeGraphTally(
       })),
     };
 
+    const depthByFips = Object.fromEntries(
+      depthPerCounty.map((r) => [String(r.fips), Number(r.depth_warm_promoted)]),
+    );
+    const placeTypeByFips = Object.fromEntries(
+      placeTypePerCounty.map((r) => [
+        String(r.fips),
+        Number(r.zoning_place_type),
+      ]),
+    );
+
     const rows: CountyTallyRow[] = perCounty.map((row) => {
       const fips = String(row.fips);
       const refs =
@@ -266,6 +340,8 @@ export async function runCentralTxNodeGraphTally(
       const nodes = Number(row.nodes);
       const zoning_present = Number(row.zoning_present);
       const full_chain_nodes = Number(row.full_chain_nodes);
+      const depth_warm_promoted = depthByFips[fips] ?? 0;
+      const zoning_place_type = placeTypeByFips[fips] ?? 0;
       return {
         fips,
         county: name,
@@ -277,6 +353,12 @@ export async function runCentralTxNodeGraphTally(
         envelope_present: Number(row.envelope_present),
         full_chain_nodes,
         references: Number(refs),
+        depth_warm_promoted,
+        zoning_place_type,
+        depth_ratio_place_type: depthRatioPlaceTypePct(
+          depth_warm_promoted,
+          zoning_place_type,
+        ),
         zoning_present_pct:
           nodes > 0 ? Number(((100 * zoning_present) / nodes).toFixed(2)) : 0,
         full_chain_pct:
@@ -323,6 +405,12 @@ export async function runCentralTxNodeGraphTally(
           envelope_present: sum("envelope_present"),
           full_chain_nodes: sum("full_chain_nodes"),
           references: sum("references"),
+          depth_warm_promoted: sum("depth_warm_promoted"),
+          zoning_place_type: sum("zoning_place_type"),
+          depth_ratio_place_type: depthRatioPlaceTypePct(
+            sum("depth_warm_promoted"),
+            sum("zoning_place_type"),
+          ),
           zoning_present_pct:
             sum("nodes") > 0
               ? Number(((100 * sum("zoning_present")) / sum("nodes")).toFixed(2))
