@@ -58,7 +58,11 @@ export function computeDrawingTransform(model: SitePlanModel, box: DrawingBox): 
   };
   const points: LocalPoint[] = [...model.ringLocal, model.north.originLocal, northTip];
   if (model.setback.offsetRingLocal) points.push(...model.setback.offsetRingLocal);
-  for (const anchor of model.streets.anchors) points.push(...anchor.pointsLocal);
+  for (const anchor of model.streets.anchors) {
+    points.push(...anchor.pointsLocal);
+    if (anchor.leftEdgeLocal) points.push(...anchor.leftEdgeLocal);
+    if (anchor.rightEdgeLocal) points.push(...anchor.rightEdgeLocal);
+  }
 
   // Modest outward pad so dimension tags / north arrow have room without
   // letting DEM-bbox contours dominate the fit (pre-B2 failure mode).
@@ -109,7 +113,14 @@ export interface SitePlanDrawingLayout {
   streets: {
     honestAbsence: boolean;
     reason?: string;
-    anchors: Array<{ name: string; points: PageXY[] }>;
+    anchors: Array<{
+      name: string;
+      points: PageXY[];
+      leftEdge?: PageXY[];
+      rightEdge?: PageXY[];
+      rowProvenanceKind?: string;
+      assumedWidthFt?: number;
+    }>;
   };
   north: { origin: PageXY; tip: PageXY };
   scaleBar: { start: PageXY; end: PageXY; lengthMeters: number };
@@ -284,6 +295,14 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
       anchors: model.streets.anchors.map((anchor) => ({
         name: anchor.name,
         points: projectRing(transform, anchor.pointsLocal),
+        leftEdge: anchor.leftEdgeLocal
+          ? projectRing(transform, anchor.leftEdgeLocal)
+          : undefined,
+        rightEdge: anchor.rightEdgeLocal
+          ? projectRing(transform, anchor.rightEdgeLocal)
+          : undefined,
+        rowProvenanceKind: anchor.rowProvenanceKind,
+        assumedWidthFt: anchor.assumedWidthFt,
       })),
     },
     north: { origin: projectPoint(transform, model.north.originLocal), tip: projectPoint(transform, northTip) },

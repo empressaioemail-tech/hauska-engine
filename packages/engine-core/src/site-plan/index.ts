@@ -22,11 +22,27 @@ export {
   type SitePlanModel,
   type SitePlanNorthModel,
   type SitePlanSetbackModel,
+  type SitePlanStreetAnchorModel,
   type SitePlanStreetModel,
   type SitePlanSummaryModel,
   type StreetAnchorInput,
   type ZoningSummaryInput,
 } from "./site-model.js";
+
+export {
+  streetAnchorFromRoadNode,
+  streetAnchorsFromRoadNodes,
+  type RoadNodeStreetSource,
+} from "./road-street-anchors.js";
+
+export {
+  expandRingBbox,
+  filterRoadsAttachingByProximity,
+  resolveAttachingRoadNodes,
+  roadIdsFromBoundaryEdges,
+  type ParcelBboxWgs84,
+  type ResolveAttachingRoadNodesResult,
+} from "./resolve-attaching-roads.js";
 
 export {
   anyNotSpecified,

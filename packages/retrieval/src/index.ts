@@ -21,6 +21,7 @@ import {
   applyStoredAtomCalibrationAtRead,
   type CalibrationOverlayPort,
 } from "@hauska-engine/engine-core/property-reasoning";
+import { resolveAttachingRoadNodes } from "@hauska-engine/engine-core/site-plan";
 import type {
   AccessPolicy,
   AtomSearchResult,
@@ -76,6 +77,12 @@ export interface PropertyAtomChainWire {
   zoningFact: StoredAtomInstance | null;
   setbackRule: StoredAtomInstance | null;
   buildableEnvelope: StoredAtomInstance | null;
+  /**
+   * Road-node atoms attaching to this parcel (Track B1). Empty when none attach.
+   * Resolved from boundary-edge facingRoad (and proximity when a ring is supplied
+   * via getAttachingRoads). Never fabricated.
+   */
+  attachingRoads: ReadonlyArray<StoredAtomInstance>;
   atoms: ReadonlyArray<{
     did: string;
     type: string;
@@ -210,12 +217,46 @@ export class HybridRetrieval {
         payload,
       };
     });
+    // Track B1: attaching road-nodes for STREET/map render (boundary-edge path;
+    // empty ring skips proximity — callers with a ring use getAttachingRoads).
+    const attaching = await resolveAttachingRoadNodes({
+      parcelNodeId,
+      ringWgs84: [],
+      storage: this.storage,
+    });
     return {
       parcelNodeId,
       zoningFact,
       setbackRule,
       buildableEnvelope,
+      attachingRoads: attaching.roads,
       atoms,
+    };
+  }
+
+  /**
+   * Resolve attaching road-nodes for a parcel (Track B1). Optional ring enables
+   * proximity fallback when boundary-edge facingRoad refs are absent.
+   */
+  async getAttachingRoads(
+    parcelNodeId: string,
+    ringWgs84: ReadonlyArray<readonly [number, number]> = [],
+  ): Promise<{
+    parcelNodeId: string;
+    attachingRoads: ReadonlyArray<StoredAtomInstance>;
+    source: "boundary-edge" | "proximity" | "none";
+    reason?: string;
+  }> {
+    const attaching = await resolveAttachingRoadNodes({
+      parcelNodeId,
+      ringWgs84,
+      storage: this.storage,
+    });
+    return {
+      parcelNodeId,
+      attachingRoads: attaching.roads,
+      source: attaching.source,
+      reason: attaching.reason,
     };
   }
 
