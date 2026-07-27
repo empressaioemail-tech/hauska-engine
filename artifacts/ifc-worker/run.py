@@ -402,9 +402,28 @@ def emit_site_plan(request: dict) -> dict:
         points_2d = anchor.get("points") or []
         if len(points_2d) < 2:
             continue
+        row_prov = anchor.get("rowProvenanceKind") or ""
+        for edge_key in ("leftEdge", "rightEdge"):
+            edge_pts = anchor.get(edge_key) or []
+            if len(edge_pts) < 2:
+                continue
+            edge_xyz = [[p[0], p[1], grade_z] for p in edge_pts]
+            add_annotation_polyline(
+                f,
+                base,
+                "STREET",
+                "%s %s" % (anchor.get("name", "Street"), edge_key),
+                edge_xyz,
+                "%s %s" % (row_prov or "row", edge_key),
+                closed=False,
+            )
+            annotation_count += 1
         points_xyz = [[p[0], p[1], grade_z] for p in points_2d]
+        label = str(anchor.get("name", "Street"))
+        if row_prov:
+            label = "%s [%s]" % (label, row_prov)
         add_annotation_polyline(
-            f, base, "STREET", str(anchor.get("name", "Street")), points_xyz, anchor.get("citation"), closed=False,
+            f, base, "STREET", label, points_xyz, anchor.get("citation"), closed=False,
         )
         annotation_count += 1
     # request.get("street") is None (not an empty list) when the site model's

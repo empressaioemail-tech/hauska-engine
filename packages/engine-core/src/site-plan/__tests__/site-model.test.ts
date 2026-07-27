@@ -65,7 +65,7 @@ describe("composeSitePlanModel", () => {
 
     expect(model.streets.honestAbsence).toBe(true);
     expect(model.streets.anchors).toHaveLength(0);
-    expect(model.streets.reason).toMatch(/no road-anchor atom/i);
+    expect(model.streets.reason).toMatch(/no road-node attaches/i);
 
     expect(model.north.directionLocal).toEqual({ x: 0, y: 1 });
     expect(model.scaleBar.lengthMeters).toBeGreaterThan(0);

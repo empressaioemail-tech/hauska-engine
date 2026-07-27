@@ -379,6 +379,38 @@ export class PgStorage implements StoragePort {
     return out;
   }
 
+  async listRoadAtomsNearBbox(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+  ): Promise<ReadonlyArray<RoadNodeAtomInstance>> {
+    // jsonb centerline intersection — no PostGIS required on substrate Neon.
+    const rows = await this.sql<AtomBodyRow[]>`
+      SELECT body
+      FROM atoms
+      WHERE entity_type = 'road-node'
+        AND body->>'countyFips' = ${countyFips}
+        AND COALESCE(body->>'status', 'active') = 'active'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(body->'centerline'->'coordinates') AS pt
+          WHERE (pt->>0)::float8 BETWEEN ${bbox.westLng} AND ${bbox.eastLng}
+            AND (pt->>1)::float8 BETWEEN ${bbox.southLat} AND ${bbox.northLat}
+        )
+      ORDER BY updated_at DESC
+    `;
+    const out: RoadNodeAtomInstance[] = [];
+    for (const row of rows) {
+      const inst = parseStoredAtom(row.body);
+      if (inst && isRoadNodeAtomInstance(inst)) out.push(inst);
+    }
+    return out;
+  }
+
   async writeBoundaryEdgeAtom(
     instance: BoundaryEdgeAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {

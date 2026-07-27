@@ -95,10 +95,27 @@ function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font:
     });
   } else {
     for (const anchor of layout.streets.anchors) {
+      // ROW edges first (thinner) so centerline draws on top (B1).
+      if (anchor.leftEdge && anchor.leftEdge.length >= 2) {
+        drawPolyline(page, anchor.leftEdge, STREET_COLOR, 0.75);
+      }
+      if (anchor.rightEdge && anchor.rightEdge.length >= 2) {
+        drawPolyline(page, anchor.rightEdge, STREET_COLOR, 0.75);
+      }
       drawPolyline(page, anchor.points, STREET_COLOR, 1.75);
       const label = anchor.points[Math.floor(anchor.points.length / 2)];
       if (label) {
-        page.drawText(anchor.name, { x: label.x + 2, y: label.y + 4, size: 8, font: bold, color: STREET_COLOR });
+        const provenance =
+          anchor.rowProvenanceKind != null
+            ? ` (${anchor.rowProvenanceKind})`
+            : "";
+        page.drawText(`${anchor.name}${provenance}`, {
+          x: label.x + 2,
+          y: label.y + 4,
+          size: 8,
+          font: bold,
+          color: STREET_COLOR,
+        });
       }
     }
   }
