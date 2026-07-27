@@ -95,6 +95,20 @@ export interface ParcelZoningObservation {
   extractedAt: string;
   /** Optional overlay key override; defaults to parcelNodeId zoning atom id. */
   calibrationAtomId?: string;
+  /**
+   * Optional reasoning-chain override. Defaults to `{ reasoningKind: "observed" }`.
+   * COMPLETE-BASTROP A1 may attach a TRANSFORM step documenting the breadth
+   * bake (bake is not the district origin).
+   */
+  reasoningChain?: {
+    reasoningKind: "observed";
+    transformSteps?: ReadonlyArray<{
+      kind: "TRANSFORM";
+      adapter: string;
+      sourceUrl?: string;
+      note?: string;
+    }>;
+  };
 }
 
 export interface HonestAbsence {

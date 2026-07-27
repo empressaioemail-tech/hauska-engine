@@ -28,6 +28,14 @@ import type {
   SetbackTableRowProvenance,
 } from "./types.js";
 
+export type Tier1ZoningProvenance = {
+  sourceUrl?: string | null;
+  codeField?: string | null;
+  cityKey?: string | null;
+  layerName?: string | null;
+  stampedAt?: string | null;
+};
+
 export type Tier1SnapshotPayload = {
   bakedAt?: string;
   baseFacts?: { situsCity?: string | null };
@@ -35,7 +43,12 @@ export type Tier1SnapshotPayload = {
     district?: string | null;
     /** PIP-stamped cityKey (hyphen or underscore form). */
     jurisdictionKey?: string | null;
+    /** GIS origin — required when district is present (COMPLETE-BASTROP A1). */
+    provenance?: Tier1ZoningProvenance | null;
   };
+  provenance?: {
+    zoningSource?: string | null;
+  } | null;
   envelope?: {
     status?: string | null;
     buildableAreaSqFt?: number | null;
@@ -90,6 +103,68 @@ function findRowForResolved(
   );
 }
 
+/**
+ * M0 (COMPLETE-BASTROP A1 / S-01): district FACT without GIS provenance is a
+ * hard fail — never emit a zoning-fact that only cites the breadth bake.
+ */
+export function assertZoningProvenancePresent(
+  zoningDistrict: string,
+  snap: Tier1SnapshotPayload,
+): string {
+  const fromZoning = snap.zoning?.provenance?.sourceUrl?.trim() ?? "";
+  const fromTop = snap.provenance?.zoningSource?.trim() ?? "";
+  const sourceUrl = fromZoning || fromTop;
+  if (!sourceUrl) {
+    throw new Error(
+      `zoning-provenance-required: district=${zoningDistrict} but zoning.provenance.sourceUrl ` +
+        `(and provenance.zoningSource) empty — refuse breadth bake that would cite only the intermediate`,
+    );
+  }
+  return sourceUrl;
+}
+
+function zoningCitationFromProvenance(
+  parcelNodeId: string,
+  district: string,
+  snap: Tier1SnapshotPayload,
+  sourceUrl: string,
+): {
+  sourceAdapter: string;
+  sourceUrl: string;
+  sourceCitation: string;
+  cityKey: string | null;
+} {
+  const prov = snap.zoning?.provenance ?? {};
+  const cityKey =
+    normalizeCityKey(prov.cityKey) ??
+    normalizeCityKey(snap.zoning?.jurisdictionKey) ??
+    normalizeCityKey(snap.envelope?.jurisdictionKey);
+  const codeField =
+    typeof prov.codeField === "string" && prov.codeField.trim()
+      ? prov.codeField.trim()
+      : "zoning-code";
+  const layerName =
+    typeof prov.layerName === "string" && prov.layerName.trim()
+      ? prov.layerName.trim()
+      : "zoning-layer";
+  const stampedAt =
+    typeof prov.stampedAt === "string" && prov.stampedAt.trim()
+      ? prov.stampedAt.trim()
+      : snap.bakedAt ?? "unknown-vintage";
+  const adapterCity = cityKey ?? "unknown-city";
+  return {
+    sourceAdapter: `txgio-zoning-stamp:${adapterCity}`,
+    sourceUrl,
+    sourceCitation:
+      `GIS ${layerName} field ${codeField}` +
+      (cityKey ? ` cityKey=${cityKey}` : "") +
+      ` vintage=${stampedAt}` +
+      ` district=${district} parcel=${parcelNodeId}` +
+      ` (PIP stamp; breadth bake is TRANSFORM only)`,
+    cityKey,
+  };
+}
+
 export function emitFromTier1Snapshot(
   parcelNodeId: string,
   snap: Tier1SnapshotPayload,
@@ -138,12 +213,39 @@ export function emitFromTier1Snapshot(
     return out;
   }
 
-  const z = emitZoningFact(descriptor, {
+  // M0: district present ⇒ GIS provenance required (fail closed).
+  const gisSourceUrl = assertZoningProvenancePresent(zoningDistrict, snap);
+  const gisCite = zoningCitationFromProvenance(
+    parcelNodeId,
+    zoningDistrict,
+    snap,
+    gisSourceUrl,
+  );
+  const zoningDescriptor: JurisdictionDescriptor = {
+    ...descriptor,
+    sourceAdapter: gisCite.sourceAdapter,
+    sourceUrl: gisCite.sourceUrl,
+  };
+
+  const z = emitZoningFact(zoningDescriptor, {
     parcelNodeId,
     districtCode: zoningDistrict,
     matchBasis: "exact",
-    sourceCitation: `Breadth bake zoning from cortex tier1 snapshot (${parcelNodeId})`,
+    sourceCitation: gisCite.sourceCitation,
     extractedAt,
+    // Bake remains a TRANSFORM step — not the source (A1 / S-01).
+    reasoningChain: {
+      reasoningKind: "observed",
+      transformSteps: [
+        {
+          kind: "TRANSFORM",
+          adapter: "cortex-tier1-snapshot-breadth-bake",
+          sourceUrl:
+            "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot",
+          note: "Breadth bake projected GIS stamp from cortex tier1 snapshot; not the district origin",
+        },
+      ],
+    },
   });
   out.atoms.push(z);
   out.notes.push("zoning");
