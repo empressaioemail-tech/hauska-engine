@@ -6,17 +6,18 @@
 import { openRing, projectRing, type Ring } from "../depth-warm/geometry.js";
 import { pointInOrOnPolygon, signedArea } from "../geometry/polygon-inset.js";
 import type { ParcelAdjacencyIndex, ParcelIndexEntry } from "./types.js";
+import { ADJACENCY_PROBE_DISTANCE_M, ADJACENCY_CELL_DEG } from "./types.js";
 
-export const ADJACENCY_PROBE_DISTANCE_M = 3;
-export const ADJACENCY_CELL_SIZE_M = 1000;
-export const ADJACENCY_BBOX_PAD_M = 50;
-/** ~1 km in degrees at Bastrop lat (PRE-2 locked). */
-export const ADJACENCY_CELL_DEG = 0.01;
+export { ADJACENCY_PROBE_DISTANCE_M, ADJACENCY_CELL_SIZE_M, ADJACENCY_BBOX_PAD_M, ADJACENCY_CELL_DEG } from "./types.js";
 const BBOX_PAD_DEG = 0.00008;
 
 type IndexedParcel = ParcelIndexEntry & {
   edgeProj: { x: number; y: number }[];
   pipPoints: { x: number; y: number }[];
+  originLng: number;
+  originLat: number;
+  mPerDegLng: number;
+  mPerDegLat: number;
   ccw: boolean;
 };
 
@@ -108,12 +109,18 @@ function neighborForEdge(
 
 export function exteriorRingFromGeoJson(geometry: unknown): Ring | null {
   if (!geometry || typeof geometry !== "object") return null;
-  const g = geometry as { type?: string; coordinates?: unknown };
+  const g = geometry as {
+    type?: string;
+    coordinates?: number[][][] | number[][][][];
+  };
   if (g.type === "Polygon" && Array.isArray(g.coordinates?.[0])) {
-    return (g.coordinates[0] as number[][]).map((c) => [c[0]!, c[1]!] as [number, number]);
+    return g.coordinates[0].map((c) => [c[0]!, c[1]!] as [number, number]);
   }
-  if (g.type === "MultiPolygon" && Array.isArray(g.coordinates?.[0]?.[0])) {
-    return (g.coordinates[0][0] as number[][]).map((c) => [c[0]!, c[1]!] as [number, number]);
+  if (g.type === "MultiPolygon") {
+    const mp = g.coordinates as number[][][][] | undefined;
+    const ring = mp?.[0]?.[0];
+    if (!Array.isArray(ring)) return null;
+    return ring.map((c) => [c[0]!, c[1]!] as [number, number]);
   }
   return null;
 }

@@ -24,7 +24,8 @@ import {
 } from "../property-reasoning/confidence.js";
 import { resolveRoadClassSetback } from "../property-reasoning/resolve-road-class-setback.js";
 import type { JurisdictionDescriptor, RoadEdgeRole } from "../property-reasoning/types.js";
-import { getParcelEdgeNeighbors, type ParcelAdjacencyIndex } from "./adjacency-grid.js";
+import { getParcelEdgeNeighbors } from "./adjacency-grid.js";
+import type { ParcelAdjacencyIndex } from "./types.js";
 import { computeParcelInteriorFacts } from "./interior.js";
 
 export interface RoadAtomBody {

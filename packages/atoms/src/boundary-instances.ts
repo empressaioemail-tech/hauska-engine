@@ -88,7 +88,7 @@ export interface EngineBoundaryPersistence {
   status: PropertyAtomStatus;
   versionStamp?: string;
   retiredAt?: string;
-  supersedesEntityId?: string;
+  supersedesEntityId?: string | null;
 }
 
 export type BoundaryEdgeAtomInstance = ContractBoundaryEdgeAtomInstance &

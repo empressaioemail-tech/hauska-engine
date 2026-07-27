@@ -1,5 +1,9 @@
 export * from "./types.js";
-export * from "./adjacency-grid.js";
+export {
+  buildParcelAdjacencyIndex,
+  getParcelEdgeNeighbors,
+  exteriorRingFromGeoJson,
+} from "./adjacency-grid.js";
 export * from "./interior.js";
 export * from "./compute.js";
 export * from "./read.js";
