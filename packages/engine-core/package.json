@@ -76,6 +76,7 @@
     "depth-warm-bastrop-pilot": "tsx scripts/depth-warm-bastrop-pilot.mjs",
     "depth-warm-bastrop-batch": "tsx scripts/depth-warm-bastrop-batch.mjs",
     "boundary-primitive-bastrop": "tsx scripts/boundary-primitive-bastrop.mjs",
+    "backfill-property-line-tags-bastrop": "tsx scripts/backfill-property-line-tags-bastrop.mjs",
     "tally-bastrop-depth": "tsx scripts/tally-bastrop-depth.mjs",
     "ingest-caldwell-roads-cad": "tsx scripts/ingest-caldwell-roads-cad.mjs",
     "ingest-caldwell-roads-overpass": "tsx scripts/ingest-caldwell-roads-overpass.mjs",
@@ -87,7 +88,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "@empressaio/atom-contract": "^1.11.0",
+    "@empressaio/atom-contract": "^1.9.0",
     "@gltf-transform/core": "^4.2.1",
     "@hauska-engine/adapters": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",
