@@ -389,6 +389,9 @@ importers:
       '@empressaio/atom-contract':
         specifier: ^1.9.0
         version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
+      '@hauska-engine/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
       '@hauska-engine/atom-contract-pin':
         specifier: workspace:*
         version: link:../../packages/atom-contract-pin
