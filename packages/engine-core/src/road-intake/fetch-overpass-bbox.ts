@@ -274,17 +274,32 @@ export function resolveCaldwellRoadIngestBbox(
 export async function fetchCaldwellRoadsForIngest(
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: typeof fetch = fetch,
-): Promise<
-  FetchOverpassRoadsResult & {
-    bbox: OverpassBbox;
-    scope: CaldwellRoadIngestScope | "custom";
-  }
-> {
+): Promise<{
+  elements: ParsedOsmElement[];
+  elapsedMs: number;
+  query: string;
+  tilesFetched?: number;
+  bbox: OverpassBbox;
+  scope: CaldwellRoadIngestScope | "custom";
+}> {
   const { bbox, scope } = resolveCaldwellRoadIngestBbox(env);
   if (scope === "county-tiled") {
     const tiled = await fetchOverpassRoadsTiled(bbox, { fetchImpl });
-    return { ...tiled, bbox, scope };
+    return {
+      elements: tiled.elements,
+      elapsedMs: tiled.elapsedMs,
+      query: tiled.query,
+      tilesFetched: tiled.tilesFetched,
+      bbox,
+      scope,
+    };
   }
   const single = await fetchOverpassRoadsInBbox(bbox, fetchImpl);
-  return { ...single, bbox, scope };
+  return {
+    elements: single.elements,
+    elapsedMs: single.elapsedMs,
+    query: single.query,
+    bbox,
+    scope,
+  };
 }
