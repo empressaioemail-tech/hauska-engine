@@ -67,6 +67,7 @@ export type MapLayerSlotStatus =
   | "ok"
   | "pending"
   | "no-coverage"
+  | "dead-expected"
   | "failed";
 
 /** Geometry + attribution surfaced to map renderers (not raw data sale). */

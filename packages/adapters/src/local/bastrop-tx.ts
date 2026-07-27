@@ -1,26 +1,21 @@
 /**
- * Bastrop, TX local adapters — re-keyed from SmartCity OS for the DA
- * tenant context per locked decision #2 ("re-key the SmartCity OS
- * Bastrop adapters for the DA tenant context — do not import from the
- * SmartCity OS package; copy/adapt so DA owns the source").
+ * Bastrop, TX local adapters (COMPLETE-BASTROP C2 / S-06 / H3).
  *
- * Bastrop County GIS publishes parcels and zoning through the county's
- * ArcGIS server. Flood data comes from the Bastrop County floodplain
- * map service (separate FeatureServer). Three adapters this sprint:
+ * CODE LINEAGE ONLY: this module was historically copied from a
+ * SmartCity OS pilot package so DA owned the source. SmartCity is NOT
+ * a live data provider for these adapters and must not be read as one.
  *
- *   - `bastrop-tx:parcels`
- *   - `bastrop-tx:zoning`
- *   - `bastrop-tx:floodplain`
+ * Live county GIS on `maps.co.bastrop.tx.us` today:
+ *   - `bastrop-tx:parcels`     — Cadastral_BP parcels (live)
+ *   - `bastrop-tx:floodplain`  — FEMA flood hazard areas (live)
+ *   - `bastrop-tx:zoning`      — DEAD-EXPECTED. County LandUse/Zoning
+ *     retired with gis.bastropcountytx.gov; no county zoning replacement.
+ *     Live city Place Type districts come from AGOL
+ *     `zoning-agol:bastrop-city-tx` /
+ *     Zoning_Place_Type/FeatureServer/0 (PlaceTypeClass), stamped via
+ *     txgio + Tier-1 bake — NOT this adapter.
  *
- * Roads intentionally NOT included here. Decision (DA-PI-4 / V1-5,
- * 2026-05-02): stay with the OSM-direct path. Bastrop's road network in
- * the SmartCity OS pilot was sourced via OSM directly (the city's GIS
- * roads layer was not in active use); the Edwards Aquifer Contributing
- * zone (state tier) plus floodplain (this layer) cover the regulatory
- * inputs the briefing engine needs first. Adding a Bastrop roads
- * adapter is net-new maintenance burden for a jurisdiction whose road
- * data is already adequately served by OSM — revisit only if OSM proves
- * insufficient under real architect use.
+ * Roads stay OSM-direct (DA-PI-4 / V1-5, 2026-05-02).
  */
 
 import { arcgisPointQuery } from "../arcgis";
@@ -63,18 +58,14 @@ const BASTROP_ENDPOINTS = {
  * Site Context tab renders the same amber stale badge on local-tier
  * rows that Task #222 added on the federal tier.
  *
- * Same rationale as the other counties: parcels and zoning stay on a
- * tight 6-month window because a council-driven amendment can change
- * the answer overnight. Floodplain is a county republish of FEMA
- * NFHL inputs and follows the FEMA cadence more closely, so it
- * matches the FEMA NFHL window (12 months).
+ * Freshness windows (parcels live; zoning threshold retained only for
+ * registry symmetry — the zoning adapter is dead-expected and never
+ * returns a snapshotDate from a live feed):
  *
  *   - `parcels` (6mo): appraisal-district updates as recordings clear.
- *   - `zoning` (6mo): commissioners court can amend a district at any
- *     meeting; 6 months keeps the badge responsive.
- *   - `floodplain` (12mo): county republish derives from FEMA NFHL,
- *     which follows a multi-year LOMR cycle. 12 months mirrors the
- *     federal FEMA NFHL window.
+ *   - `zoning` (6mo): unused while dead-expected; city Place Type
+ *     freshness is owned by the AGOL stamp path, not this adapter.
+ *   - `floodplain` (12mo): county republish derives from FEMA NFHL.
  */
 export const BASTROP_PARCELS_FRESHNESS_THRESHOLD_MONTHS = 6;
 export const BASTROP_ZONING_FRESHNESS_THRESHOLD_MONTHS = 6;
@@ -129,22 +120,20 @@ export const bastropZoningAdapter: Adapter = {
   tier: "local",
   sourceKind: "local-adapter",
   layerKind: "bastrop-tx-zoning",
-  provider: "Bastrop County, TX GIS",
+  // Honest label: this adapter is NOT a live county zoning GIS feed.
+  provider:
+    "dead-expected (county LandUse/Zoning retired; use zoning-agol:bastrop-city-tx)",
   jurisdictionGate: { local: "bastrop-tx" },
   appliesTo: bastropApplies,
   async run(): Promise<AdapterResult> {
-    // Dead upstream: the county's LandUse/Zoning MapServer went away
-    // with the `gis.bastropcountytx.gov` host decommission (DNS
-    // ENOTFOUND), and the replacement catalog on
-    // `maps.co.bastrop.tx.us` publishes no county zoning service
-    // (enumerated 2026-07-13; the closest layer,
-    // Planning/PlannedDevelopment, covers PD districts only — not a
-    // zoning substitute). Emit a deterministic no-coverage verdict
-    // instead of a DNS network-error so the UI renders the neutral
-    // pill and the briefing can attribute the gap to a named source.
+    // DEAD-EXPECTED (COMPLETE-BASTROP C2 / S-06): county LandUse/Zoning
+    // retired with gis.bastropcountytx.gov; maps.co.bastrop.tx.us has no
+    // county zoning replacement (enumerated 2026-07-13). Live city Place
+    // Type districts are sourced from AGOL zoning-agol:bastrop-city-tx
+    // (Zoning_Place_Type / PlaceTypeClass), not this adapter.
     throw new AdapterRunError(
-      "no-coverage",
-      "Bastrop County no longer publishes a zoning GIS service — the legacy LandUse/Zoning layer was retired with the gis.bastropcountytx.gov host, and maps.co.bastrop.tx.us has no zoning replacement.",
+      "dead-expected",
+      "bastrop-tx:zoning is dead-expected — county LandUse/Zoning retired; replacement is zoning-agol:bastrop-city-tx (AGOL Zoning_Place_Type / PlaceTypeClass).",
     );
   },
 };

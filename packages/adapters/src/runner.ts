@@ -201,8 +201,12 @@ async function runOne(
     // both translate to a `no-coverage` status on the wire so the UI
     // can render a single neutral pill instead of a misleading
     // "failed" badge.
-    const status: "no-coverage" | "failed" =
-      error.code === "no-coverage" ? "no-coverage" : "failed";
+    const status: "no-coverage" | "dead-expected" | "failed" =
+      error.code === "no-coverage"
+        ? "no-coverage"
+        : error.code === "dead-expected"
+          ? "dead-expected"
+          : "failed";
     return {
       adapterKey: adapter.adapterKey,
       tier: adapter.tier,

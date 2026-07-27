@@ -19,7 +19,7 @@ const ctx: AdapterContext = {
 };
 
 describe("Bastrop County, TX adapters", () => {
-  it("emits parcel + floodplain rows for an in-floodplain parcel (zoning is no-coverage — no county zoning service)", async () => {
+  it("emits parcel + floodplain rows; zoning is dead-expected (county GIS retired; AGOL replacement named)", async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/Cadastral_BP/Bastrop_County_Parcels/")) {
@@ -42,14 +42,14 @@ describe("Bastrop County, TX adapters", () => {
 
     const byKey = Object.fromEntries(outcomes.map((o) => [o.adapterKey, o]));
     expect(byKey["bastrop-tx:parcels"].status).toBe("ok");
-    // Bastrop County retired its zoning GIS with the
-    // gis.bastropcountytx.gov host; the maps.co.bastrop.tx.us catalog
-    // has no zoning replacement, so the adapter emits a deterministic
-    // no-coverage verdict without any fetch.
-    expect(byKey["bastrop-tx:zoning"].status).toBe("no-coverage");
+    // COMPLETE-BASTROP C2: dead-expected, not silent no-coverage / failed.
+    expect(byKey["bastrop-tx:zoning"].status).toBe("dead-expected");
+    expect(byKey["bastrop-tx:zoning"].error?.code).toBe("dead-expected");
     expect(byKey["bastrop-tx:zoning"].error?.message).toMatch(
-      /no longer publishes a zoning GIS service/i,
+      /zoning-agol:bastrop-city-tx/i,
     );
+    expect(bastropZoningAdapter.provider).toMatch(/dead-expected/i);
+    expect(bastropZoningAdapter.provider).not.toMatch(/^Bastrop County, TX GIS$/);
     expect(byKey["bastrop-tx:floodplain"].status).toBe("ok");
     expect(
       (byKey["bastrop-tx:floodplain"].result?.payload as { inMappedFloodplain: boolean })

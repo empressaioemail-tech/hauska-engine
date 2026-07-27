@@ -139,9 +139,15 @@ export interface AdapterResult {
 
 /** Failure verdict — adapter ran but the upstream said no / errored. */
 export interface AdapterError {
-  /** Stable error code; `no-coverage` is the deterministic "this adapter doesn't apply" verdict. */
+  /**
+   * Stable error code.
+   * - `no-coverage` — this adapter doesn't apply to the parcel (neutral).
+   * - `dead-expected` — adapter is intentionally retired; replacement is
+   *   named in the message (COMPLETE-BASTROP C2 / S-06). Not a silent zero.
+   */
   code:
     | "no-coverage"
+    | "dead-expected"
     | "network-error"
     | "upstream-error"
     | "parse-error"
@@ -203,7 +209,7 @@ export interface AdapterRunOutcome {
   adapterKey: string;
   tier: AdapterTier;
   layerKind: string;
-  status: "ok" | "no-coverage" | "failed";
+  status: "ok" | "no-coverage" | "dead-expected" | "failed";
   result?: AdapterResult;
   error?: AdapterError;
   /** True when this outcome's `result` was replayed from the cache. */

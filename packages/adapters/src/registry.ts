@@ -156,6 +156,9 @@ export const STATE_ADAPTERS: ReadonlyArray<Adapter> = [
 ];
 
 export const LOCAL_ADAPTERS: ReadonlyArray<Adapter> = [
+  // Bastrop local: parcels + floodplain live; bastrop-tx:zoning is
+  // dead-expected (COMPLETE-BASTROP C2 / S-06) — runner status enum
+  // includes `dead-expected`; replacement is zoning-agol:bastrop-city-tx.
   grandCountyParcelsAdapter,
   grandCountyZoningAdapter,
   grandCountyRoadsAdapter,

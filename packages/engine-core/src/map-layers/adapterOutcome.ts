@@ -17,7 +17,7 @@ export interface MapLayerAdapterResult {
 export interface MapLayerAdapterOutcome {
   adapterKey: string;
   layerKind: string;
-  status: "ok" | "no-coverage" | "failed";
+  status: "ok" | "no-coverage" | "dead-expected" | "failed";
   result?: MapLayerAdapterResult;
   error?: { code: string; message: string };
 }
