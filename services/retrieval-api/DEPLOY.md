@@ -242,3 +242,28 @@ Wire the substrate Neon URL at deploy time when the Postgres-backed storage back
 ```
 
 Each `/healthz` call emits one structured Cloud Logging line (`hauska_health=true`, `check: healthz`, `service: hauska-retrieval-api`) for the cc-agent-C health-watch hub.
+
+## Spine health board (`GET /health/spine`)
+
+COMPLETE-BASTROP B1 (S-03): source+engine liveness probes for the Bastrop pack. Process `/health` and `/healthz` are unchanged; spine health is additive.
+
+- **`GET /health`** — still `{status, service, startedAt}` plus `links.spineHealth` / `links.spineHealthRun`.
+- **`GET /health/spine`** — latest persisted `spine_health_probe` summary (`pack`, `alertCount`, `probes[]` with `firing|degraded|dead|dead-expected`).
+- **`GET|POST /health/spine/run`** — run the Bastrop pack now (ArcGIS / Overpass / txgio / tier1 / boundary / depth-warm / setback / atom-chain) and persist rows.
+
+Apply migration once on substrate Neon:
+
+```bash
+DATABASE_URL='postgres://.../hauska_mcp?sslmode=require' \
+  pnpm --filter @hauska-engine/retrieval-api run apply-spine-health-migration
+```
+
+Offline pack run (needs substrate + cortex overlay URL for txgio / place_layer_snapshots):
+
+```bash
+DATABASE_URL='postgres://.../hauska_mcp?sslmode=require' \
+CORTEX_DATABASE_URL='postgres://.../neondb?sslmode=require' \
+  pnpm --filter @hauska-engine/retrieval-api run run-bastrop-spine-health
+```
+
+Alert rule: current zero/error with baseline>0 → `status=dead` + `alert=true` (never silent). `bastrop-tx:zoning` is `dead-expected` (no alert); replacement is `zoning-agol:bastrop-city-tx`.

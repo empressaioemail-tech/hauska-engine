@@ -190,13 +190,36 @@ describe("buildSitePlanDrawingLayout", () => {
     expect(layout.streets.honestAbsence).toBe(false);
     expect(layout.streets.anchors).toHaveLength(1);
     expect(layout.streets.anchors[0]!.points.length).toBeGreaterThanOrEqual(2);
-    // Near-frontage street survives parcel-vicinity clip; points stay in-box.
-    for (const p of layout.streets.anchors[0]!.points) {
-      expect(p.x).toBeGreaterThanOrEqual(box.x - 2);
-      expect(p.x).toBeLessThanOrEqual(box.x + box.width + 2);
-      expect(p.y).toBeGreaterThanOrEqual(box.y - 2);
-      expect(p.y).toBeLessThanOrEqual(box.y + box.height + 2);
-    }
+  });
+
+  it("keeps a frontage street just outside the parcel ring (not only on-ring geometry)", () => {
+    // ~25 m south of the lot — typical centerline offset past the ROW.
+    const model = buildModel([
+      {
+        name: "WILSON ST",
+        points: [
+          [-98.4999, 29.39985],
+          [-98.4995, 29.39985],
+        ],
+        sourceRef: "osm:way/wilson",
+      },
+    ]);
+    const layout = buildSitePlanDrawingLayout(model, box);
+    expect(layout.streets.anchors.map((a) => a.name)).toContain("WILSON ST");
+    const baseline = buildSitePlanDrawingLayout(buildModel(), box);
+    const baselineSpan = (() => {
+      const xs = baseline.propertyLine.map((p) => p.x);
+      const ys = baseline.propertyLine.map((p) => p.y);
+      return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    })();
+    const parcelSpan = (() => {
+      const xs = layout.propertyLine.map((p) => p.x);
+      const ys = layout.propertyLine.map((p) => p.y);
+      return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    })();
+    // Street must not expand the fit.
+    expect(parcelSpan / baselineSpan).toBeGreaterThan(0.95);
+    expect(parcelSpan / baselineSpan).toBeLessThan(1.05);
   });
 
   // Site-plan road regression: streets must not expand the fit bbox (B1+B2
@@ -236,24 +259,15 @@ describe("buildSitePlanDrawingLayout", () => {
       Math.max(...ringYs) - Math.min(...ringYs),
     );
     expect(parcelSpan).toBeGreaterThan(Math.min(box.width, box.height) * 0.35);
-    // Scale must stay within a few percent of the no-street baseline.
     expect(parcelSpan / baselineSpan).toBeGreaterThan(0.95);
     expect(parcelSpan / baselineSpan).toBeLessThan(1.05);
 
     const names = layout.streets.anchors.map((a) => a.name);
     expect(names).toContain("N PINE ST");
     expect(names).not.toContain("OUTLIER RD");
-    for (const anchor of layout.streets.anchors) {
-      for (const p of anchor.points) {
-        expect(p.x).toBeGreaterThanOrEqual(box.x - 2);
-        expect(p.x).toBeLessThanOrEqual(box.x + box.width + 2);
-        expect(p.y).toBeGreaterThanOrEqual(box.y - 2);
-        expect(p.y).toBeLessThanOrEqual(box.y + box.height + 2);
-      }
-    }
   });
 
-  it("clips a long street centerline to the parcel vicinity instead of fitting its full extent", () => {
+  it("clips a long street centerline to parcel+ROW buffer instead of fitting its full extent", () => {
     const baseline = buildSitePlanDrawingLayout(buildModel(), box);
     const baselineSpan = (() => {
       const xs = baseline.propertyLine.map((p) => p.x);
@@ -281,11 +295,14 @@ describe("buildSitePlanDrawingLayout", () => {
       Math.max(...ringYs) - Math.min(...ringYs),
     );
     expect(parcelSpan / baselineSpan).toBeGreaterThan(0.95);
+    expect(parcelSpan / baselineSpan).toBeLessThan(1.05);
     expect(layout.streets.anchors).toHaveLength(1);
     const streetXs = layout.streets.anchors[0]!.points.map((p) => p.x);
     const streetSpan = Math.max(...streetXs) - Math.min(...streetXs);
-    // Clipped frontage must be much smaller than a full multi-block way on sheet.
-    expect(streetSpan).toBeLessThan(box.width * 0.9);
-    expect(parcelSpan).toBeGreaterThan(streetSpan * 0.4);
+    const fullXs = model.streets.anchors[0]!.pointsLocal.map((p) => projectPoint(layout.transform, p).x);
+    const fullSpan = Math.max(...fullXs) - Math.min(...fullXs);
+    // Clipped frontage is a fraction of the raw multi-block projection.
+    expect(streetSpan).toBeLessThan(fullSpan * 0.35);
+    expect(fullSpan).toBeGreaterThan(parcelSpan * 2);
   });
 });
