@@ -1,9 +1,18 @@
 import type { LocalPoint } from "../ring-geometry.js";
 import type { PageXY } from "./layout.js";
+import {
+  formatGisBearing as formatGisBearingShared,
+  formatPropertyLineTag as formatPropertyLineTagShared,
+  PROPERTY_LINE_TAGS_HONESTY as PROPERTY_LINE_TAGS_HONESTY_SHARED,
+} from "../../geometry/gis-property-line-tags.js";
 
 /**
  * PDF annotation craft helpers — placement only. Geometry still comes from the
  * shared SitePlanModel; nothing here re-derives rings, offsets, or contours.
+ *
+ * GIS bearing / property-line-tag text lives in geometry/gis-property-line-tags
+ * (shared with boundary-edge atoms) — re-exported here so PDF callers keep
+ * the same import path without inventing a second formula.
  */
 
 const METERS_PER_FOOT = 0.3048;
@@ -23,57 +32,20 @@ export interface PlacedLabel {
   box: LabelBox;
 }
 
-/** Quadrant bearing from local-ENU segment ( +Y = north, +X = east ). GIS-approx. */
-export function formatGisBearing(dxMeters: number, dyMeters: number): string {
-  if (!(Math.abs(dxMeters) > 1e-9 || Math.abs(dyMeters) > 1e-9)) {
-    return "N 0°00' E";
-  }
-  // Azimuth from north toward east, degrees [0, 360).
-  let az = (Math.atan2(dxMeters, dyMeters) * 180) / Math.PI;
-  if (az < 0) az += 360;
+/** @see geometry/gis-property-line-tags — shared with boundary-edge atoms. */
+export const formatGisBearing = formatGisBearingShared;
 
-  const pad2 = (n: number) => n.toString().padStart(2, "0");
-  // Quadrant bearings: due-east = N 90° E; due-west = N 90° W.
-  if (az <= 90) {
-    const d = Math.floor(az);
-    const m = Math.round((az - d) * 60) % 60;
-    return `N ${d}°${pad2(m)}' E`;
-  }
-  if (az < 180) {
-    const fromS = 180 - az;
-    const d = Math.floor(fromS);
-    const m = Math.round((fromS - d) * 60) % 60;
-    return `S ${d}°${pad2(m)}' E`;
-  }
-  if (az < 270) {
-    const fromS = az - 180;
-    const d = Math.floor(fromS);
-    const m = Math.round((fromS - d) * 60) % 60;
-    return `S ${d}°${pad2(m)}' W`;
-  }
-  const fromN = 360 - az;
-  const d = Math.floor(fromN);
-  const m = Math.round((fromN - d) * 60) % 60;
-  return `N ${d}°${pad2(m)}' W`;
-}
-
-/**
- * Property-line tag from a GIS ring segment. Always GIS-approximate —
- * callers must surface the honesty note; never present as survey-grade.
- */
+/** @see geometry/gis-property-line-tags — shared with boundary-edge atoms. */
 export function formatPropertyLineTag(segment: {
   a: LocalPoint;
   b: LocalPoint;
   lengthFeet: number;
 }): string {
-  const dx = segment.b.x - segment.a.x;
-  const dy = segment.b.y - segment.a.y;
-  const bearing = formatGisBearing(dx, dy);
-  return `${bearing}  ${segment.lengthFeet.toFixed(1)}'`;
+  return formatPropertyLineTagShared(segment);
 }
 
-export const PROPERTY_LINE_TAGS_HONESTY =
-  "Property-line tags: GIS-approximate from county parcel ring — not a boundary survey.";
+/** @see geometry/gis-property-line-tags */
+export const PROPERTY_LINE_TAGS_HONESTY = PROPERTY_LINE_TAGS_HONESTY_SHARED;
 
 /** Outward unit normal for edge a→b given a CCW ring (interior to the left). */
 export function outwardNormal(a: LocalPoint, b: LocalPoint, ringCcw: boolean): LocalPoint {

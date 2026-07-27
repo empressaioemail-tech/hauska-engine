@@ -24,6 +24,7 @@ import {
 } from "../property-reasoning/confidence.js";
 import { resolveRoadClassSetback } from "../property-reasoning/resolve-road-class-setback.js";
 import type { JurisdictionDescriptor, RoadEdgeRole } from "../property-reasoning/types.js";
+import { computePropertyLineTagsFromLocalEnuEndpoints } from "../geometry/gis-property-line-tags.js";
 import { getParcelEdgeNeighbors } from "./adjacency-grid.js";
 import type { ParcelAdjacencyIndex } from "./types.js";
 import { computeParcelInteriorFacts } from "./interior.js";
@@ -199,6 +200,11 @@ export function computeBoundaryEdgeAtoms(
       }
     }
 
+    const propertyLineTags = computePropertyLineTagsFromLocalEnuEndpoints(
+      edgeInterior.edgeEndpoints[0],
+      edgeInterior.edgeEndpoints[1],
+    );
+
     const instance: BoundaryEdgeAtomInstance = {
       entityType: "property-boundary-edge",
       atomDid,
@@ -219,6 +225,7 @@ export function computeBoundaryEdgeAtoms(
         inwardNormal: edgeInterior.inwardNormal,
         edgeEndpoints: edgeInterior.edgeEndpoints,
       },
+      propertyLineTags,
       effectiveDate: input.effectiveDate,
       status: "active",
       supersedesEntityId: null,

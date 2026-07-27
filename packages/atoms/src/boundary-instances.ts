@@ -43,7 +43,25 @@ export interface BoundaryInteriorFrame {
   ringCcw: boolean;
   centroidInside: boolean;
   inwardNormal: { x: number; y: number };
+  /**
+   * Local-ENU metres from depth-warm `projectRing` (centroid origin, +X east,
+   * +Y north) — NOT raw WGS84 lng/lat. Used for GIS property-line-tags.
+   */
   edgeEndpoints: [[number, number], [number, number]];
+}
+
+/**
+ * GIS-approximate bearing + distance on a boundary edge (never survey-grade).
+ * Honesty string must stay machine-checkable (WDLL anti-fabrication).
+ */
+export interface BoundaryPropertyLineTags {
+  bearing: string;
+  distanceFeet: number;
+  provenance: {
+    kind: "gis-approximate";
+    honesty: string;
+    source: string;
+  };
 }
 
 export interface ContractBoundaryEdgeAtomInstance {
@@ -60,6 +78,8 @@ export interface ContractBoundaryEdgeAtomInstance {
   facingRoad: BoundaryFacingRoad | null;
   setback: BoundaryResolvedSetback | BoundarySetbackAbsence;
   interior: BoundaryInteriorFrame;
+  /** GIS-approx from ring endpoints; optional until backfill lands. */
+  propertyLineTags?: BoundaryPropertyLineTags;
   effectiveDate: string;
   status: "active" | "retired";
   supersedesEntityId: string | null;

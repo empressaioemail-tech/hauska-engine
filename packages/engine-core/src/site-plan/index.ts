@@ -95,6 +95,15 @@ export {
 } from "./pdf/annotation-placement.js";
 
 export {
+  PROPERTY_LINE_TAGS_ATOM_HONESTY,
+  PROPERTY_LINE_TAGS_PROVENANCE_KIND,
+  PROPERTY_LINE_TAGS_SOURCE,
+  computePropertyLineTagsFromLocalEnuEndpoints,
+  propertyLineTagsHonestyIsGisApproximate,
+  type PropertyLineTags,
+} from "../geometry/gis-property-line-tags.js";
+
+export {
   buildProvenancePanelEntries,
   SITE_PLAN_HONESTY_LINE,
   type ProvenancePanelEntry,
