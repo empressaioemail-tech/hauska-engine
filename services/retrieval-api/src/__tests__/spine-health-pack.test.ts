@@ -54,7 +54,7 @@ describe("spine-health pack probes (mocked)", () => {
   });
 
   it("QA4: overpass 504 + county roadway → degraded-covered, alert=false", async () => {
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       if (url.includes("overpass")) {
         return new Response("gateway timeout", { status: 504 });
@@ -91,7 +91,7 @@ describe("spine-health pack probes (mocked)", () => {
   });
 
   it("QA4: overpass 504 + NO fallback → dead + alert=true", async () => {
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       if (url.includes("overpass")) {
         return new Response("gateway timeout", { status: 504 });
