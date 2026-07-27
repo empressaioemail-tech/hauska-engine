@@ -46,10 +46,12 @@ function projectRing(transform: PdfTransform, ring: LocalPoint[]): PageXY[] {
 }
 
 /**
- * Parcel-primary fit (Track B2 design pass): scale so PROPERTY_LINE + SETBACK
- * + STREET + north/scale dominate the sheet. Contours are decluttered (clipped
- * to a parcel buffer) rather than allowed to shrink the parcel into spaghetti.
- * Model geometry is unchanged — CAD emitters still see full DEM contours.
+ * Parcel-primary fit (Track B2 / site-plan road regression): scale so
+ * PROPERTY_LINE + SETBACK + north/scale dominate the sheet. Streets and
+ * contours are clipped to a parcel buffer for PDF craft — they never expand
+ * the drawing extent (long OSM ways / bad attaching nodes used to shrink the
+ * parcel to a dot). Model geometry is unchanged; CAD emitters still see full
+ * DEM contours and full street centerlines.
  */
 export function computeDrawingTransform(model: SitePlanModel, box: DrawingBox): PdfTransform {
   const northTip: LocalPoint = {
@@ -58,14 +60,9 @@ export function computeDrawingTransform(model: SitePlanModel, box: DrawingBox): 
   };
   const points: LocalPoint[] = [...model.ringLocal, model.north.originLocal, northTip];
   if (model.setback.offsetRingLocal) points.push(...model.setback.offsetRingLocal);
-  for (const anchor of model.streets.anchors) {
-    points.push(...anchor.pointsLocal);
-    if (anchor.leftEdgeLocal) points.push(...anchor.leftEdgeLocal);
-    if (anchor.rightEdgeLocal) points.push(...anchor.rightEdgeLocal);
-  }
 
   // Modest outward pad so dimension tags / north arrow have room without
-  // letting DEM-bbox contours dominate the fit (pre-B2 failure mode).
+  // letting DEM-bbox contours or street centerlines dominate the fit.
   const xs0 = points.map((p) => p.x);
   const ys0 = points.map((p) => p.y);
   const spanHint = Math.max(Math.max(...xs0) - Math.min(...xs0), Math.max(...ys0) - Math.min(...ys0), 1);
@@ -126,6 +123,83 @@ export interface SitePlanDrawingLayout {
   scaleBar: { start: PageXY; end: PageXY; lengthMeters: number };
 }
 
+function parcelVicinityClipBox(model: SitePlanModel): {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+} {
+  const xs = model.ringLocal.map((p) => p.x);
+  const ys = model.ringLocal.map((p) => p.y);
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1);
+  // Same pad band as parcel-primary fit (~15–18%): context geometry stays
+  // inside the sheet without expanding the transform.
+  return expandRingAabb(model.ringLocal, span * 0.15);
+}
+
+function longestClippedPart(parts: Array<Array<[number, number]>>): Array<[number, number]> | null {
+  let best: Array<[number, number]> | null = null;
+  let bestLen = 0;
+  for (const part of parts) {
+    if (part.length < 2) continue;
+    let len = 0;
+    for (let i = 0; i < part.length - 1; i++) {
+      const a = part[i]!;
+      const b = part[i + 1]!;
+      len += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    }
+    if (len > bestLen) {
+      bestLen = len;
+      best = part;
+    }
+  }
+  return best;
+}
+
+function projectClippedLocalPolyline(
+  transform: PdfTransform,
+  points: LocalPoint[] | undefined,
+  clipBox: { minX: number; maxX: number; minY: number; maxY: number },
+): PageXY[] | undefined {
+  if (!points || points.length < 2) return undefined;
+  const tuples: Array<[number, number]> = points.map((p) => [p.x, p.y]);
+  const longest = longestClippedPart(clipPolylineToAabb(tuples, clipBox));
+  if (!longest) return undefined;
+  return longest.map(([x, y]) => projectPoint(transform, { x, y }));
+}
+
+/**
+ * Streets are context clipped to the parcel frame — never fit drivers.
+ * Distant / bad attaching nodes clip to nothing and drop from the sheet;
+ * long OSM ways keep only the frontage-near segment.
+ */
+function declutterStreets(
+  model: SitePlanModel,
+  transform: PdfTransform,
+): SitePlanDrawingLayout["streets"] {
+  const clipBox = parcelVicinityClipBox(model);
+  const anchors: SitePlanDrawingLayout["streets"]["anchors"] = [];
+  for (const anchor of model.streets.anchors) {
+    const points = projectClippedLocalPolyline(transform, anchor.pointsLocal, clipBox);
+    if (!points || points.length < 2) continue;
+    const leftEdge = projectClippedLocalPolyline(transform, anchor.leftEdgeLocal, clipBox);
+    const rightEdge = projectClippedLocalPolyline(transform, anchor.rightEdgeLocal, clipBox);
+    anchors.push({
+      name: anchor.name,
+      points,
+      leftEdge,
+      rightEdge,
+      rowProvenanceKind: anchor.rowProvenanceKind,
+      assumedWidthFt: anchor.assumedWidthFt,
+    });
+  }
+  return {
+    honestAbsence: model.streets.honestAbsence,
+    reason: model.streets.reason,
+    anchors,
+  };
+}
+
 function declutterContours(
   model: SitePlanModel,
   transform: PdfTransform,
@@ -133,14 +207,9 @@ function declutterContours(
   contours: Array<{ elevation: number; points: PageXY[] }>;
   elevationLabels: SitePlanDrawingLayout["elevationLabels"];
 } {
-  const span = (() => {
-    const xs = model.ringLocal.map((p) => p.x);
-    const ys = model.ringLocal.map((p) => p.y);
-    return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1);
-  })();
   // Clip to the same pad band the parcel-primary fit uses (~18%), so decluttered
   // contours stay inside the drawing box rather than spilling past the sheet.
-  const clipBox = expandRingAabb(model.ringLocal, span * 0.15);
+  const clipBox = parcelVicinityClipBox(model);
 
   const contours: Array<{ elevation: number; points: PageXY[] }> = [];
   const contourLabelCandidates: Array<{ point: PageXY; elevationMeters: number; role: "contour" }> = [];
@@ -274,6 +343,7 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
   };
 
   const decluttered = declutterContours(model, transform);
+  const streets = declutterStreets(model, transform);
 
   return {
     transform,
@@ -289,22 +359,7 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
     },
     contours: decluttered.contours,
     elevationLabels: decluttered.elevationLabels,
-    streets: {
-      honestAbsence: model.streets.honestAbsence,
-      reason: model.streets.reason,
-      anchors: model.streets.anchors.map((anchor) => ({
-        name: anchor.name,
-        points: projectRing(transform, anchor.pointsLocal),
-        leftEdge: anchor.leftEdgeLocal
-          ? projectRing(transform, anchor.leftEdgeLocal)
-          : undefined,
-        rightEdge: anchor.rightEdgeLocal
-          ? projectRing(transform, anchor.rightEdgeLocal)
-          : undefined,
-        rowProvenanceKind: anchor.rowProvenanceKind,
-        assumedWidthFt: anchor.assumedWidthFt,
-      })),
-    },
+    streets,
     north: { origin: projectPoint(transform, model.north.originLocal), tip: projectPoint(transform, northTip) },
     scaleBar: {
       start: projectPoint(transform, scaleBarStart),

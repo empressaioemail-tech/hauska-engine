@@ -104,12 +104,15 @@ function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font:
       }
       drawPolyline(page, anchor.points, STREET_COLOR, 1.75);
       const label = anchor.points[Math.floor(anchor.points.length / 2)];
-      if (label) {
+      const name = (anchor.name ?? "").trim();
+      // Skip blank names (bad OSM attach) — provenance-only labels pile on
+      // setback/bearing craft and were part of the 33890 overlap mess.
+      if (label && name) {
         const provenance =
           anchor.rowProvenanceKind != null
             ? ` (${anchor.rowProvenanceKind})`
             : "";
-        page.drawText(`${anchor.name}${provenance}`, {
+        page.drawText(`${name}${provenance}`, {
           x: label.x + 2,
           y: label.y + 4,
           size: 8,
