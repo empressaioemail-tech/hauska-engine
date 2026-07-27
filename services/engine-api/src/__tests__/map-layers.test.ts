@@ -107,7 +107,12 @@ describe("engine-api map-layers capability", () => {
     };
     expect(payload.tenantScope).toBe("tenant-map-1");
     expect(payload.parcelKey).toBe("austin-demo-1");
-    expect(payload.layers.length).toBe(7);
+    // parcel-polygon, flood-zone, floodway, dem, topography, topography-1ft,
+    // hydrology-flow, opportunity-zone-tract, zoning
+    expect(payload.layers.length).toBe(9);
+    expect(payload.layers.map((l) => l.layerKey)).toEqual(
+      expect.arrayContaining(["topography-1ft", "hydrology-flow"]),
+    );
 
     for (const slot of payload.layers) {
       expect(slot.envelope).not.toBeNull();
