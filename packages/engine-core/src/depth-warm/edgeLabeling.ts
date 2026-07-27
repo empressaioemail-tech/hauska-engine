@@ -32,9 +32,25 @@ export const FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS = new Set([
 ]);
 
 export function isFrontEligibleRoad(road: WarmRoadSource): boolean {
+  if (road.provenanceKind === "county-surveyed-2016") {
+    return road.classification !== "alley";
+  }
   const tag = road.osmHighwayTag?.trim().toLowerCase() ?? "";
-  if (!tag) return true;
+  if (!tag || tag === "county-surveyed") return true;
   return !FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS.has(tag);
+}
+
+function isCountySurveyed(road: WarmRoadSource): boolean {
+  return road.provenanceKind === "county-surveyed-2016";
+}
+
+function preferRoadHit(current: EdgeRoadHit | undefined, candidate: EdgeRoadHit): EdgeRoadHit {
+  if (!current) return candidate;
+  const currentCounty = isCountySurveyed(current.road);
+  const candidateCounty = isCountySurveyed(candidate.road);
+  if (candidateCounty && !currentCounty) return candidate;
+  if (currentCounty && !candidateCounty) return current;
+  return candidate.distanceM < current.distanceM ? candidate : current;
 }
 
 export interface EdgeLabelDraft {
@@ -43,6 +59,7 @@ export interface EdgeLabelDraft {
   roadClass?: RoadClassification;
   osmHighwayTag?: string;
   osmSurfaceTag?: string;
+  roadProvenanceKind?: import("./types.js").WarmRoadProvenanceKind;
 }
 
 export type LabelEdgesResult =
@@ -150,25 +167,18 @@ export function labelEdgesFromRoads(input: {
     return { ok: false, decline: "no-road-adjacency" };
   }
 
-  // Best hit per edge (closest road) — used for side/rear roadClass attachment.
   const bestByEdge = new Map<number, EdgeRoadHit>();
   for (const hit of hits) {
     const prior = bestByEdge.get(hit.edgeIndex);
-    if (!prior || hit.distanceM < prior.distanceM) {
-      bestByEdge.set(hit.edgeIndex, hit);
-    }
+    bestByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
   }
 
-  // Front competition: closest front-eligible non-alley hit per edge only.
-  // Ineligible ways (footway/path) must not occupy this slot or shadow collectors.
   const bestEligibleNonAlleyByEdge = new Map<number, EdgeRoadHit>();
   for (const hit of hits) {
     if (isAlleyClassification(hit.road.classification)) continue;
     if (!isFrontEligibleRoad(hit.road)) continue;
     const prior = bestEligibleNonAlleyByEdge.get(hit.edgeIndex);
-    if (!prior || hit.distanceM < prior.distanceM) {
-      bestEligibleNonAlleyByEdge.set(hit.edgeIndex, hit);
-    }
+    bestEligibleNonAlleyByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
   }
 
   const frontCandidates = [...bestEligibleNonAlleyByEdge.values()];
@@ -221,6 +231,7 @@ export function labelEdgesFromRoads(input: {
         roadClass: frontHit.road.classification,
         osmHighwayTag: frontHit.road.osmHighwayTag,
         osmSurfaceTag: frontHit.road.surface,
+        roadProvenanceKind: frontHit.road.provenanceKind ?? "osm-fallback",
       });
       continue;
     }
@@ -231,6 +242,7 @@ export function labelEdgesFromRoads(input: {
         roadClass: rearHit.road.classification,
         osmHighwayTag: rearHit.road.osmHighwayTag,
         osmSurfaceTag: rearHit.road.surface,
+        roadProvenanceKind: rearHit.road.provenanceKind ?? "osm-fallback",
       });
       continue;
     }
@@ -251,6 +263,7 @@ export function labelEdgesFromRoads(input: {
         roadClass: hit.road.classification,
         osmHighwayTag: hit.road.osmHighwayTag,
         osmSurfaceTag: hit.road.surface,
+        roadProvenanceKind: hit.road.provenanceKind ?? "osm-fallback",
       });
       continue;
     }

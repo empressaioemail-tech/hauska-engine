@@ -9,16 +9,18 @@ import type { GeometryCorrectnessResult, Ring } from "./geometry.js";
 
 export type WarmEdgeRole = "front" | "side" | "rear" | "side_corner";
 
-/** OSM-sourced road input attached during warm compute. */
+export type WarmRoadProvenanceKind = "county-surveyed-2016" | "osm-fallback";
+
+/** Road input attached during warm compute — OSM fallback or county-surveyed. */
 export interface WarmRoadSource {
   osmWayId: number;
   osmHighwayTag: string;
-  /** OSM surface=* when present — required for service→gravel parity at verify. */
   surface?: string;
   name?: string;
   classification: RoadClassification;
-  /** Centerline vertices (lng/lat). */
   polyline: Ring;
+  provenanceKind?: WarmRoadProvenanceKind;
+  countySegmentObjectId?: number;
 }
 
 export interface WarmEdgeInfo {
@@ -29,6 +31,7 @@ export interface WarmEdgeInfo {
   osmHighwayTag?: string;
   /** OSM surface=* paired with osmHighwayTag for service/unpaved→gravel parity. */
   osmSurfaceTag?: string;
+  roadProvenanceKind?: WarmRoadProvenanceKind;
   insetFeet: number;
 }
 

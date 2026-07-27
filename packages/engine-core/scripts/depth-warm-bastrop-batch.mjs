@@ -23,7 +23,7 @@ import { resolveSetbackTableRow } from "../src/property-reasoning/emit-setback-r
 import { labelEdgesFromRoads } from "../src/depth-warm/edgeLabeling.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
-import { classifyOsmHighwayTag } from "../src/road-intake/classify.ts";
+import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import { BASTROP_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
 import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parcel-geometry-resolver.ts";
 
@@ -90,25 +90,6 @@ function normalizeDistrict(raw) {
   if (!trimmed) return null;
   const prefix = trimmed.split(/\s+/)[0];
   return prefix || trimmed;
-}
-
-function roadAtomToWarmSource(body) {
-  const centerline = body.centerline?.coordinates;
-  if (!Array.isArray(centerline) || centerline.length < 2) return null;
-  const osmHighwayTag = body.row?.provenance?.osmHighwayTag ?? "unclassified";
-  const surface = body.row?.provenance?.surface;
-  const tags = surface ? { surface } : undefined;
-  const derived = classifyOsmHighwayTag(osmHighwayTag, tags);
-  const classification = body.classification;
-  if (derived !== classification) return null;
-  return {
-    osmWayId: body.osmWayId,
-    osmHighwayTag,
-    surface,
-    name: body.displayName,
-    classification,
-    polyline: centerline.map(([lng, lat]) => [lng, lat]),
-  };
 }
 
 async function loadCityParcelNodeIds(txSql, bbox) {

@@ -36,12 +36,26 @@ export interface RoadCenterline {
   coordinates: ReadonlyArray<GeoCoord>;
 }
 
-export interface RowProvenance {
+export interface ApproximateRowProvenance {
   kind: "approximate-assumed-per-class";
   assumedWidthTableKey: string;
   osmHighwayTag: string;
+  surface?: string;
   note?: string;
 }
+
+export interface CountySurveyedRowProvenance {
+  kind: "county-surveyed-2016";
+  countySegmentObjectId: number;
+  countyClass: string;
+  countySurface: string;
+  countyRdclsTyp?: string;
+  surfaceWidthFt?: number;
+  rowNotes?: string;
+  note?: string;
+}
+
+export type RowProvenance = ApproximateRowProvenance | CountySurveyedRowProvenance;
 
 export interface RoadRow {
   assumedWidthFt: number;

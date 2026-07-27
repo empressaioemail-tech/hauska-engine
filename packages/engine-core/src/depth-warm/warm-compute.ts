@@ -29,6 +29,7 @@ export interface WarmComputeInput {
     roadClass?: RoadClassification;
     osmHighwayTag?: string;
     osmSurfaceTag?: string;
+    roadProvenanceKind?: WarmEdgeInfo["roadProvenanceKind"];
   }>;
   warmAgentId?: string;
   warmAt?: string;
@@ -107,6 +108,7 @@ export function stripNonFrontRoadClass(edgeLabels: EdgeLabelDraft[]): EdgeLabelD
         roadClass: e.roadClass,
         osmHighwayTag: e.osmHighwayTag,
         osmSurfaceTag: e.osmSurfaceTag,
+        roadProvenanceKind: e.roadProvenanceKind,
       };
     }
     return { index: e.index, label: e.label };
@@ -130,6 +132,7 @@ function computeWarmCandidateWithLabels(
     roadClass: e.roadClass,
     osmHighwayTag: e.osmHighwayTag,
     osmSurfaceTag: e.osmSurfaceTag,
+    roadProvenanceKind: e.roadProvenanceKind,
     insetFeet: resolveInsetFeetForEdge(
       input.descriptor,
       input.district,
