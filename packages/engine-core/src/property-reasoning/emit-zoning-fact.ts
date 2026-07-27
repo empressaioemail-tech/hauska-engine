@@ -70,6 +70,11 @@ export function emitZoningFact(
   }
 
   const asserted = widthedFromMatchBasis(parcelObs.matchBasis);
+  // Contract observed chain is `{ reasoningKind: "observed" }`; A1 may attach
+  // transformSteps documenting the breadth bake (JSON-persisted; not schema-stripped here).
+  const reasoningChain = (parcelObs.reasoningChain ?? {
+    reasoningKind: "observed" as const,
+  }) as ZoningFactAtomInstance["reasoningChain"];
   const instance: ZoningFactAtomInstance = {
     entityType: "zoning-fact",
     atomDid,
@@ -89,7 +94,7 @@ export function emitZoningFact(
     districtLabel: parcelObs.districtLabel,
     matchBasis: parcelObs.matchBasis,
     prefixMatched: parcelObs.prefixMatched,
-    reasoningChain: { reasoningKind: "observed" },
+    reasoningChain,
     readContract: buildPropertyReadContract({
       asserted,
       consequence: propertyNotApplicableConsequence(

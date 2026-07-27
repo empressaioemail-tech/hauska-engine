@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import { emitFromTier1Snapshot } from "../bake-from-tier1-snapshot.js";
 
+/** Minimal GIS provenance so district-present fixtures pass A1 M0 guard. */
+function gisProv(opts: {
+  sourceUrl: string;
+  codeField: string;
+  cityKey: string;
+  layerName?: string;
+}) {
+  return {
+    sourceUrl: opts.sourceUrl,
+    codeField: opts.codeField,
+    cityKey: opts.cityKey,
+    layerName: opts.layerName ?? "Zoning",
+    stampedAt: "2026-07-24T20:00:00.000Z",
+  };
+}
+
 describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
   it("emits setback-RULE + envelope DERIVED for austin-tx SF-3", () => {
     const result = emitFromTier1Snapshot(
@@ -9,7 +25,15 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
       {
         bakedAt: "2026-07-24T20:00:00.000Z",
         baseFacts: { situsCity: "Austin" },
-        zoning: { district: "SF-3", jurisdictionKey: "austin-tx" },
+        zoning: {
+          district: "SF-3",
+          jurisdictionKey: "austin-tx",
+          provenance: gisProv({
+            sourceUrl: "https://example.test/austin-zoning",
+            codeField: "ZONING_Z",
+            cityKey: "austin-tx",
+          }),
+        },
         envelope: { status: "declined", declineReason: "atom_path_pending" } as {
           status: string;
         },
@@ -48,7 +72,15 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
       "48029:TEST-SA-R6",
       {
         bakedAt: "2026-07-24T20:00:00.000Z",
-        zoning: { district: "R-6", jurisdictionKey: "san_antonio_tx" },
+        zoning: {
+          district: "R-6",
+          jurisdictionKey: "san_antonio_tx",
+          provenance: gisProv({
+            sourceUrl: "https://example.test/sa-zoning",
+            codeField: "Base",
+            cityKey: "san-antonio-tx",
+          }),
+        },
       },
       "48029",
     );
@@ -65,7 +97,15 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
       "48187:TEST-SEGUIN",
       {
         bakedAt: "2026-07-24T20:00:00.000Z",
-        zoning: { district: "R-1", jurisdictionKey: "seguin-tx" },
+        zoning: {
+          district: "R-1",
+          jurisdictionKey: "seguin-tx",
+          provenance: gisProv({
+            sourceUrl: "https://example.test/seguin-zoning",
+            codeField: "ZONE",
+            cityKey: "seguin-tx",
+          }),
+        },
       },
       "48187",
     );
@@ -79,7 +119,14 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
       "48453:TEST-NO-KEY",
       {
         bakedAt: "2026-07-24T20:00:00.000Z",
-        zoning: { district: "SF-3" },
+        zoning: {
+          district: "SF-3",
+          provenance: gisProv({
+            sourceUrl: "https://example.test/travis-unknown",
+            codeField: "ZONING_Z",
+            cityKey: "austin-tx",
+          }),
+        },
       },
       "48453",
     );
@@ -94,7 +141,17 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
       {
         bakedAt: "2026-07-24T20:00:00.000Z",
         baseFacts: { situsCity: "Bastrop" },
-        zoning: { district: "P-3", jurisdictionKey: "bastrop-tx" },
+        zoning: {
+          district: "P-3",
+          jurisdictionKey: "bastrop-tx",
+          provenance: gisProv({
+            sourceUrl:
+              "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoning_Place_Type/FeatureServer/0",
+            codeField: "PlaceTypeClass",
+            cityKey: "bastrop-city-tx",
+            layerName: "Zoning_Place_Type",
+          }),
+        },
         envelope: { status: "no-buildable-area", buildableAreaSqFt: 0 },
       },
       "48021",
@@ -118,5 +175,11 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
     expect(envelope).toMatchObject({
       outcome: { kind: "provisional-front-edge" },
     });
+    const zoning = result.atoms.find((a) => a.entityType === "zoning-fact") as {
+      sourceAdapter?: string;
+      sourceUrl?: string;
+    };
+    expect(zoning?.sourceAdapter).toBe("txgio-zoning-stamp:bastrop-city-tx");
+    expect(zoning?.sourceUrl).toContain("Zoning_Place_Type");
   });
 });

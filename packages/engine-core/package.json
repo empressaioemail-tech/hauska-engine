@@ -84,7 +84,8 @@
     "fetch-caldwell-cad-roads-fixture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-caldwell-cad-roads-fixture.ps1",
     "depth-warm-caldwell-batch": "tsx scripts/depth-warm-caldwell-batch.mjs",
     "boundary-primitive-caldwell": "tsx scripts/boundary-primitive-caldwell.mjs",
-    "tally-caldwell-depth": "tsx scripts/tally-caldwell-depth.mjs"
+    "tally-caldwell-depth": "tsx scripts/tally-caldwell-depth.mjs",
+    "backfill-bastrop-zoning-fact-provenance": "tsx scripts/backfill-bastrop-zoning-fact-provenance.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
