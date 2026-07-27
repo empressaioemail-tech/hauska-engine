@@ -27,7 +27,8 @@ export function buildProvenancePanelEntries(model: SitePlanModel): ProvenancePan
       layer: "PROPERTY_LINE / DIMENSION",
       source: model.citations.propertyLine,
       asOf: "current parcel-geometry snapshot",
-      confidence: "asserted (county GIS parcel polygon, not a survey)",
+      confidence:
+        "asserted (county GIS parcel polygon — bearing/distance tags are GIS-approximate, not a boundary survey)",
     },
     {
       layer: "SETBACK",

@@ -62,6 +62,14 @@ export {
 } from "./pdf/layout.js";
 
 export {
+  PROPERTY_LINE_TAGS_HONESTY,
+  clipPolylineToAabb,
+  formatGisBearing,
+  formatPropertyLineTag,
+  placeNonCollidingEdgeLabels,
+} from "./pdf/annotation-placement.js";
+
+export {
   buildProvenancePanelEntries,
   SITE_PLAN_HONESTY_LINE,
   type ProvenancePanelEntry,

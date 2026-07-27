@@ -108,6 +108,17 @@ describe("emitPdfSitePlan", () => {
     expect(decoded).toContain("48029:105129");
   });
 
+  it("draws GIS-approximate property-line tags (bearing+distance) with honesty, never survey-grade", async () => {
+    const model = buildModel();
+    const { bytes } = await emitPdfSitePlan(model);
+    const decoded = decodeAllContentStreams(bytes);
+    expect(decoded).toContain("GIS-approximate");
+    expect(decoded).toContain("not a boundary survey");
+    expect(decoded.toLowerCase()).toContain("not survey-grade");
+    // At least one quadrant bearing tag from the ring.
+    expect(decoded).toMatch(/[NS] \d+°\d{2}' [EW]/);
+  });
+
   it("renders honest zoning-absence and flood-unavailable text when those inputs are omitted", async () => {
     const model = composeSitePlanModel({
       parcelNodeId: "48029:105129",
