@@ -95,9 +95,31 @@ export function insetRingMeters(
   ccwRing: PlanarPoint[],
   insetMetersPerEdge: number[],
 ): { points: PlanarPoint[] } | null {
+  const n = ccwRing.length;
+  const normals: PlanarPoint[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = ccwRing[i]!;
+    const b = ccwRing[(i + 1) % n]!;
+    const nrm = inwardNormal(a, b);
+    if (!nrm) return null;
+    normals.push(nrm);
+  }
+  return insetRingMetersWithNormals(ccwRing, insetMetersPerEdge, normals);
+}
+
+/**
+ * Variable-distance inset using STORED inward normals per edge (S2-U3).
+ * Does not re-derive orientation from ring winding at offset time.
+ */
+export function insetRingMetersWithNormals(
+  ccwRing: PlanarPoint[],
+  insetMetersPerEdge: number[],
+  inwardNormalsPerEdge: PlanarPoint[],
+): { points: PlanarPoint[] } | null {
   const pts = ccwRing;
   const n = pts.length;
   if (n < 3 || insetMetersPerEdge.length !== n) return null;
+  if (inwardNormalsPerEdge.length !== n) return null;
 
   for (const d of insetMetersPerEdge) {
     if (!Number.isFinite(d) || d < 0) return null;
@@ -109,9 +131,12 @@ export function insetRingMeters(
   for (let i = 0; i < n; i++) {
     const a = pts[i]!;
     const b = pts[(i + 1) % n]!;
-    const nrm = inwardNormal(a, b);
-    if (!nrm) continue;
-    const strip = setbackStrip(a, b, nrm, insetMetersPerEdge[i]!);
+    const nrm = inwardNormalsPerEdge[i]!;
+    if (!Number.isFinite(nrm.x) || !Number.isFinite(nrm.y)) return null;
+    const len = Math.hypot(nrm.x, nrm.y);
+    if (len < 1e-12) continue;
+    const unit = { x: nrm.x / len, y: nrm.y / len };
+    const strip = setbackStrip(a, b, unit, insetMetersPerEdge[i]!);
     if (!strip) continue;
     try {
       forbidden = forbidden ? polygonClipping.union(forbidden, strip) : [strip];
@@ -361,6 +386,7 @@ export function perEdgeOffsetPlausible(
   orig: PlanarPoint[],
   inset: PlanarPoint[],
   insetMetersPerEdge: number[],
+  inwardNormalsPerEdge?: PlanarPoint[],
 ): boolean {
   const n = orig.length;
   for (let i = 0; i < n; i++) {
@@ -371,7 +397,13 @@ export function perEdgeOffsetPlausible(
     const edgeLen = Math.hypot(b.x - a.x, b.y - a.y);
     if (edgeLen < 1e-6) return false;
     if (d >= edgeLen * 0.95) continue;
-    const nrm = inwardNormal(a, b);
+    const stored = inwardNormalsPerEdge?.[i];
+    const nrm = stored
+      ? (() => {
+          const len = Math.hypot(stored.x, stored.y);
+          return len < 1e-12 ? null : { x: stored.x / len, y: stored.y / len };
+        })()
+      : inwardNormal(a, b);
     if (!nrm) return false;
     const mid = midpoint(a, b);
     const justInsideBuildable = {
@@ -403,6 +435,7 @@ export function isInsetDegenerate(
   orig: PlanarPoint[],
   inset: PlanarPoint[],
   insetMetersPerEdge: number[],
+  inwardNormalsPerEdge?: PlanarPoint[],
 ): boolean {
   const insetArea = signedArea(inset);
   if (insetArea <= 0) return true;
@@ -412,6 +445,8 @@ export function isInsetDegenerate(
   for (const p of inset) {
     if (!pointInOrOnPolygon(p, orig)) return true;
   }
-  if (!perEdgeOffsetPlausible(orig, inset, insetMetersPerEdge)) return true;
+  if (!perEdgeOffsetPlausible(orig, inset, insetMetersPerEdge, inwardNormalsPerEdge)) {
+    return true;
+  }
   return false;
 }

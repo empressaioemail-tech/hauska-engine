@@ -5,3 +5,4 @@ export * from "./compute.js";
 export * from "./read.js";
 export * from "./persist.js";
 export * from "./load-parcel-index.js";
+export * from "./consume.js";

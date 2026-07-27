@@ -13,6 +13,8 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
+import { resolveSetbackTableRow } from "../src/property-reasoning/emit-setback-rule.ts";
+import { BASTROP_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
 import {
   computeBoundaryEdgeAtoms,
   loadParcelAdjacencyIndexFromNeon,
@@ -23,12 +25,41 @@ import {
 const COUNTY_FIPS = "48021";
 const descriptor = bastropDescriptor;
 
+function districtHasSetbackRow(district) {
+  const row = resolveSetbackTableRow(descriptor.setbackTable, district);
+  return !("kind" in row);
+}
+
+function resolvablePlaceTypeDistrictCodes() {
+  const codes = new Set();
+  for (const row of descriptor.setbackTable?.rows ?? []) {
+    if (row.match_basis === "exact" || row.match_basis === "prefix") {
+      codes.add(row.district_code);
+    }
+  }
+  return [...codes].sort();
+}
+
+function isPlaceTypeDistrict(district, codes) {
+  const normalized = district?.trim().split(/\s+/)[0] ?? "";
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
+  return codes.some(
+    (code) =>
+      lower === code.toLowerCase() ||
+      lower.startsWith(`${code.toLowerCase()}-`) ||
+      lower.startsWith(`${code.toLowerCase()} `),
+  );
+}
+
 function parseArgs(argv) {
   const out = {
     limit: 500,
     offset: 0,
     parcel: null,
     dryRun: false,
+    placeTypeCohort: false,
+    cityCohort: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -39,6 +70,8 @@ function parseArgs(argv) {
     else if (a === "--parcel") out.parcel = String(argv[++i] || "").trim();
     else if (a.startsWith("--parcel=")) out.parcel = a.slice("--parcel=".length).trim();
     else if (a === "--dry-run") out.dryRun = true;
+    else if (a === "--place-type-cohort") out.placeTypeCohort = true;
+    else if (a === "--city-cohort") out.cityCohort = true;
   }
   return out;
 }
@@ -89,6 +122,31 @@ const roadRows = await sql`
 `;
 const roads = roadRows.map((r) => roadAtomBodyToWarmSource(r.body)).filter(Boolean);
 
+const placeTypeDistrictCodes = resolvablePlaceTypeDistrictCodes();
+const cityBbox = BASTROP_CITY_BBOX;
+
+async function loadCityParcelNodeIds(txSql, bbox) {
+  const rows = await txSql`
+    SELECT prop_id
+    FROM txgio_parcel
+    WHERE county_fips = ${COUNTY_FIPS}
+      AND (south_lat + north_lat) / 2.0 >= ${bbox.south}
+      AND (south_lat + north_lat) / 2.0 <= ${bbox.north}
+      AND (west_lng + east_lng) / 2.0 >= ${bbox.west}
+      AND (west_lng + east_lng) / 2.0 <= ${bbox.east}
+  `;
+  return rows.map((r) => `${COUNTY_FIPS}:${r.prop_id}`);
+}
+
+let cityParcelIds = null;
+if (args.cityCohort && !args.parcel) {
+  cityParcelIds = await loadCityParcelNodeIds(txSql, cityBbox);
+}
+
+const placeTypeSqlFilter = args.placeTypeCohort
+  ? sql`AND split_part(body->>'district', ' ', 1) = ANY(${placeTypeDistrictCodes})`
+  : sql``;
+
 const parcelRows = args.parcel
   ? await sql`
       SELECT body->>'parcelNodeId' AS parcel_node_id,
@@ -100,18 +158,33 @@ const parcelRows = args.parcel
         AND coalesce(body->>'district', '') <> ''
       LIMIT 1
     `
-  : await sql`
-      SELECT body->>'parcelNodeId' AS parcel_node_id,
-             body->>'district' AS district
-      FROM atoms
-      WHERE entity_type = 'zoning-fact'
-        AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
-        AND NOT (body ? 'absence')
-        AND coalesce(body->>'district', '') <> ''
-      ORDER BY body->>'parcelNodeId'
-      OFFSET ${args.offset}
-      LIMIT ${args.limit}
-    `;
+  : cityParcelIds
+    ? await sql`
+        SELECT body->>'parcelNodeId' AS parcel_node_id,
+               body->>'district' AS district
+        FROM atoms
+        WHERE entity_type = 'zoning-fact'
+          AND body->>'parcelNodeId' = ANY(${cityParcelIds})
+          AND NOT (body ? 'absence')
+          AND coalesce(body->>'district', '') <> ''
+          ${placeTypeSqlFilter}
+        ORDER BY body->>'parcelNodeId'
+        OFFSET ${args.offset}
+        LIMIT ${args.limit}
+      `
+    : await sql`
+        SELECT body->>'parcelNodeId' AS parcel_node_id,
+               body->>'district' AS district
+        FROM atoms
+        WHERE entity_type = 'zoning-fact'
+          AND body->>'parcelNodeId' LIKE ${COUNTY_FIPS + ":%"}
+          AND NOT (body ? 'absence')
+          AND coalesce(body->>'district', '') <> ''
+          ${placeTypeSqlFilter}
+        ORDER BY body->>'parcelNodeId'
+        OFFSET ${args.offset}
+        LIMIT ${args.limit}
+      `;
 
 const extractedAt = new Date().toISOString();
 const effectiveDate = extractedAt.slice(0, 10);
@@ -121,6 +194,12 @@ let parcelsProcessed = 0;
 for (const row of parcelRows) {
   const parcelNodeId = String(row.parcel_node_id);
   const district = String(row.district);
+  if (args.placeTypeCohort && !isPlaceTypeDistrict(district, placeTypeDistrictCodes)) {
+    continue;
+  }
+  if (!districtHasSetbackRow(district.trim().split(/\s+/)[0] ?? district)) {
+    continue;
+  }
   const entry = adjacencyIndex.entries.get(parcelNodeId);
   if (!entry) continue;
 
@@ -153,6 +232,8 @@ const wallMs = performance.now() - t0;
 console.log(
   JSON.stringify({
     dryRun,
+    placeTypeCohort: args.placeTypeCohort,
+    cityCohort: args.cityCohort,
     cohortSize: parcelRows.length,
     parcelsProcessed,
     edgesWritten,
