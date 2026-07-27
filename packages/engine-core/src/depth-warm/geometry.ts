@@ -18,6 +18,7 @@
 
 import {
   insetRingMeters,
+  insetRingMetersWithNormals,
   isInsetDegenerate,
   perEdgeOffsetPlausible,
   pointInOrOnPolygon,
@@ -173,6 +174,7 @@ export function geometryCorrectnessGate(
   parcelRing: Ring,
   insetRing: Ring | null,
   insetFeetPerEdge: number[],
+  storedInwardNormals?: Array<{ x: number; y: number }>,
 ): GeometryCorrectnessResult {
   const reasons: string[] = [];
   if (!insetRing) {
@@ -202,7 +204,7 @@ export function geometryCorrectnessGate(
       break;
     }
   }
-  if (!perEdgeOffsetPlausible(orig, inset, insetMeters)) {
+  if (!perEdgeOffsetPlausible(orig, inset, insetMeters, storedInwardNormals)) {
     reasons.push("per-edge offset distance implausible");
   }
   if (Math.abs(signedArea(inset)) < Math.abs(signedArea(orig)) * 0.0025) {
@@ -217,6 +219,124 @@ export interface InsetResult {
   parcelAreaSqFt: number;
   empty: boolean;
   emptyReason?: string;
+}
+
+export interface StoredEdgeInsetInput {
+  edgeIndex: number;
+  insetFeet: number;
+  inwardNormal: { x: number; y: number };
+}
+
+/**
+ * Produce buildable envelope using STORED inward normals from the boundary
+ * primitive (S2-U3). Orientation-invariant — does not re-derive inward at offset time.
+ */
+export function insetPerEdgeFromPrimitive(
+  ring: Ring,
+  storedEdges: ReadonlyArray<StoredEdgeInsetInput>,
+): InsetResult {
+  const proj = projectRing(ring);
+  if (!proj) {
+    return {
+      ring: null,
+      areaSqFt: 0,
+      parcelAreaSqFt: 0,
+      empty: true,
+      emptyReason: "parcel geometry is not a valid polygon",
+    };
+  }
+  const parcelAreaSqFt =
+    ringAreaM2(proj.points) * FEET_PER_METER * FEET_PER_METER;
+
+  const n = proj.points.length;
+  const insetFeetPerEdge = Array.from({ length: n }, () => 0);
+  const inwardNormals = Array.from({ length: n }, () => ({ x: 0, y: 0 }));
+
+  for (const edge of storedEdges) {
+    if (edge.edgeIndex < 0 || edge.edgeIndex >= n) {
+      return {
+        ring: null,
+        areaSqFt: 0,
+        parcelAreaSqFt,
+        empty: true,
+        emptyReason: `stored edge index ${edge.edgeIndex} out of range (n=${n})`,
+      };
+    }
+    insetFeetPerEdge[edge.edgeIndex] = edge.insetFeet;
+    inwardNormals[edge.edgeIndex] = {
+      x: edge.inwardNormal.x,
+      y: edge.inwardNormal.y,
+    };
+  }
+
+  if (insetFeetPerEdge.some((ft) => !Number.isFinite(ft))) {
+    return {
+      ring: null,
+      areaSqFt: 0,
+      parcelAreaSqFt,
+      empty: true,
+      emptyReason: "non-finite setback distance",
+    };
+  }
+
+  const insetMeters = insetFeetPerEdge.map((ft) =>
+    feetToMeters(Math.max(0, ft)),
+  );
+  const insetXY = insetRingMetersWithNormals(
+    proj.points,
+    insetMeters,
+    inwardNormals,
+  );
+  if (!insetXY) {
+    return {
+      ring: null,
+      areaSqFt: 0,
+      parcelAreaSqFt,
+      empty: true,
+      emptyReason:
+        "setbacks leave no buildable area (offset lines did not close)",
+    };
+  }
+
+  if (
+    isInsetDegenerate(proj.points, insetXY.points, insetMeters, inwardNormals)
+  ) {
+    return {
+      ring: null,
+      areaSqFt: 0,
+      parcelAreaSqFt,
+      empty: true,
+      emptyReason: "setbacks exceed the lot — no buildable area remains",
+    };
+  }
+
+  const insetArea =
+    ringAreaM2(insetXY.points) * FEET_PER_METER * FEET_PER_METER;
+  const closed: Ring = insetXY.points.map((p) => unproject(p, proj));
+  closed.push([closed[0]![0], closed[0]![1]]);
+
+  const fullGate = geometryCorrectnessGate(
+    ring,
+    closed,
+    insetFeetPerEdge,
+    inwardNormals,
+  );
+  if (!fullGate.pass) {
+    return {
+      ring: null,
+      areaSqFt: 0,
+      parcelAreaSqFt,
+      empty: true,
+      emptyReason: `geometry failed correctness gate (${fullGate.reasons.join("; ")})`,
+    };
+  }
+
+  return {
+    ring: closed,
+    areaSqFt: insetArea,
+    parcelAreaSqFt,
+    empty: false,
+  };
 }
 
 /**

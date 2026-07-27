@@ -21,6 +21,10 @@ import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/sto
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
 import { resolveSetbackTableRow } from "../src/property-reasoning/emit-setback-rule.ts";
 import { labelEdgesFromRoads } from "../src/depth-warm/edgeLabeling.ts";
+import {
+  readBoundaryEdgesForParcel,
+  BoundaryPrimitiveMissingError,
+} from "../src/boundary-primitive/read.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
@@ -242,6 +246,7 @@ const stats = {
     "no-roads-available": 0,
     "already-promoted": 0,
     "no-setback-row": 0,
+    "no-boundary-primitive": 0,
     other: 0,
   },
   atomWrites: 0,
@@ -294,7 +299,21 @@ for (const row of parcelRows) {
     parcelRing: geom.ring,
     roads,
   });
-  if (!labelResult.ok) {
+
+  /** @type {import('@hauska-engine/atoms').BoundaryEdgeAtomInstance[] | null} */
+  let boundaryEdges = null;
+  if (!dryRun && storageHandle?.storage) {
+    try {
+      boundaryEdges = await readBoundaryEdgesForParcel(
+        storageHandle.storage,
+        parcelNodeId,
+      );
+    } catch (err) {
+      if (!(err instanceof BoundaryPrimitiveMissingError)) throw err;
+    }
+  }
+
+  if (!boundaryEdges?.length && !labelResult.ok) {
     const key = labelResult.decline in stats.declines ? labelResult.decline : "other";
     stats.declines[key]++;
     stats.processed++;
@@ -310,7 +329,8 @@ for (const row of parcelRows) {
       parcelRing: geom.ring,
       descriptor,
       roads,
-      edgeLabels: labelResult.edgeLabels,
+      edgeLabels: labelResult.ok ? labelResult.edgeLabels : [],
+      boundaryEdges: boundaryEdges ?? undefined,
       zoningFactAtomDid: row.zoning_fact_did,
       storage: dryRun ? undefined : storageHandle?.storage,
       promote: !dryRun,

@@ -3,8 +3,10 @@
  * Depth-over-breadth — caller supplies parcel ring + district + edge labeling inputs.
  */
 
+import type { BoundaryEdgeAtomInstance } from "@hauska-engine/atoms";
 import type { RoadClassification } from "@hauska-engine/atoms";
 
+import { computeWarmCandidateFromBoundary } from "../boundary-primitive/consume.js";
 import { resolveRoadClassSetback } from "../property-reasoning/resolve-road-class-setback.js";
 import type { JurisdictionDescriptor, RoadEdgeRole } from "../property-reasoning/types.js";
 import {
@@ -31,6 +33,8 @@ export interface WarmComputeInput {
     osmSurfaceTag?: string;
     roadProvenanceKind?: WarmEdgeInfo["roadProvenanceKind"];
   }>;
+  /** When present, offset consumes stored boundary primitive (S2-U3). */
+  boundaryEdges?: ReadonlyArray<BoundaryEdgeAtomInstance>;
   warmAgentId?: string;
   warmAt?: string;
 }
@@ -168,8 +172,20 @@ function computeWarmCandidateWithLabels(
 /**
  * Warm-compute envelope geometry + per-edge setbacks from road-class table.
  * Retries with honest partial inset when full labeling leaves no buildable area.
+ * When boundaryEdges are supplied, consumes stored primitive (no proxy re-derive).
  */
 export function computeWarmCandidate(input: WarmComputeInput): WarmCandidate {
+  if (input.boundaryEdges && input.boundaryEdges.length > 0) {
+    return computeWarmCandidateFromBoundary({
+      parcelNodeId: input.parcelNodeId,
+      district: input.district,
+      parcelRing: input.parcelRing,
+      boundaryEdges: input.boundaryEdges,
+      roads: input.roads,
+      warmAgentId: input.warmAgentId,
+      warmAt: input.warmAt,
+    });
+  }
   const full = computeWarmCandidateWithLabels(input, input.edgeLabels);
   if (!full.empty && full.insetRing) {
     return full;

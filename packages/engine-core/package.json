@@ -54,6 +54,10 @@
     "./depth-warm": {
       "types": "./src/depth-warm/index.ts",
       "import": "./src/depth-warm/index.ts"
+    },
+    "./boundary-primitive": {
+      "types": "./src/boundary-primitive/index.ts",
+      "import": "./src/boundary-primitive/index.ts"
     }
   },
   "scripts": {
@@ -69,6 +73,7 @@
     "fetch-bastrop-overpass-fixture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-bastrop-overpass-fixture.ps1",
     "depth-warm-bastrop-pilot": "tsx scripts/depth-warm-bastrop-pilot.mjs",
     "depth-warm-bastrop-batch": "tsx scripts/depth-warm-bastrop-batch.mjs",
+    "boundary-primitive-bastrop": "tsx scripts/boundary-primitive-bastrop.mjs",
     "tally-bastrop-depth": "tsx scripts/tally-bastrop-depth.mjs"
   },
   "dependencies": {

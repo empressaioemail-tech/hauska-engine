@@ -220,4 +220,5 @@ export function isPropertyAtomInstance(
 export type StoredAtomInstance =
   | CodeAtomInstance
   | PropertyAtomInstance
-  | import("./road-instances.js").RoadNodeAtomInstance;
+  | import("./road-instances.js").RoadNodeAtomInstance
+  | import("./boundary-instances.js").BoundaryEdgeAtomInstance;
