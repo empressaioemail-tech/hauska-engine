@@ -1,7 +1,7 @@
 /**
  * Engine-side workspace atom instances for Brokerage V1.
  *
- * Shapes mirror `@hauska/atom-contract/workspace` payloads plus the
+ * Shapes mirror `@empressaio/atom-contract/workspace` payloads plus the
  * engine `BaseAtomInstance` provenance envelope (content hash, source
  * adapter, jurisdiction tenant). The contract `did` is canonical;
  * `entityId` is the DID local segment for registry lookup.
@@ -16,8 +16,8 @@ import type {
   UserRef,
   WorkspaceAttachmentKind,
   WorkspaceShareConsentFlags,
-} from "@hauska/atom-contract/workspace";
-import type { WidthedConfidence } from "@hauska/atom-contract/read-contract";
+} from "@empressaio/atom-contract/workspace";
+import type { WidthedConfidence } from "@empressaio/atom-contract/read-contract";
 
 import type { BaseAtomInstance } from "./instances.js";
 

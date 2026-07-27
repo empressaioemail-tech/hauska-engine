@@ -47,8 +47,9 @@ const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = {
   "grand-county-ut": grandCountyUt as SetbackTable,
   "lemhi-county-id": lemhiCountyId as SetbackTable,
   "bastrop-tx": bastropTx as SetbackTable,
-  // B3 PlaceTypeClass rows (P-1..P-5, P-EC). Ported from LDT bastrop-city-tx.json
-  // — values are human-verified; do not re-transcribe.
+  // B3 PlaceTypeClass rows (P-1..P-5, P-EC). Byte-identical to LDT
+  // bastrop-city-tx.json (C1 hash-lock). Values are human-verified; do not
+  // re-transcribe without B3 citation.
   "bastrop-city-tx": bastropCityTx as SetbackTable,
   "austin-tx": austinTx as SetbackTable,
   "san-antonio-tx": sanAntonioTx as SetbackTable,

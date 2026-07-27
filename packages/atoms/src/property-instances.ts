@@ -1,19 +1,22 @@
 /**
  * Property reasoning atom instances (Gate C / Phase 1c).
  *
- * Contract shapes come from `@empressaio/atom-contract/property` (1.9.0+).
- * Engine persistence fields (`entityId`, `contentHash`, `status`, …) layer on
- * top so StoragePort + MCP `AtomInstanceBase` stay compatible. Do not invent
- * a parallel SourceAttribution type — obligations reuse actor-record +
- * ObligationAtomInstance from the contract.
+ * Contract shapes come from `@empressaio/atom-contract/property` (>=1.10.0;
+ * package pin 1.11.0). Engine persistence fields (`entityId`, `contentHash`,
+ * `status`, …) layer on top so StoragePort + MCP `AtomInstanceBase` stay
+ * compatible. Do not invent a parallel SourceAttribution type — obligations
+ * reuse actor-record + ObligationAtomInstance from the contract.
  */
 
 import type {
   BuildableEnvelopeAtomInstance as ContractBuildableEnvelopeAtomInstance,
+  ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
   SetbackMatchBasis,
   SetbackRuleAtomInstance as ContractSetbackRuleAtomInstance,
+  TerrainExportFormat as ContractTerrainExportFormat,
   ZoningFactAtomInstance as ContractZoningFactAtomInstance,
 } from "@empressaio/atom-contract/property";
+import type { ReasoningReadContract } from "@empressaio/atom-contract/read-contract";
 
 import type { CodeAtomInstance } from "./instances.js";
 
@@ -26,6 +29,8 @@ export type {
   ZoningFactAtomInstance as ContractZoningFactAtomInstance,
   SetbackRuleAtomInstance as ContractSetbackRuleAtomInstance,
   BuildableEnvelopeAtomInstance as ContractBuildableEnvelopeAtomInstance,
+  ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
+  TerrainExportFormat as ContractTerrainExportFormat,
 } from "@empressaio/atom-contract/property";
 
 export {
@@ -35,16 +40,19 @@ export {
   PROPERTY_ATOM_TIER,
   PROPERTY_DEFAULT_ACCESS_POLICY,
   BUILDABLE_ENVELOPE_DERIVATION_METHOD,
+  PARCEL_TERRAIN_DERIVATION_METHOD,
+  TERRAIN_DEFAULT_ACCESS_POLICY,
+  TERRAIN_EXPORT_FORMATS,
   createZoningFact,
   createSetbackRule,
   createBuildableEnvelope,
+  createParcelTerrainModel,
 } from "@empressaio/atom-contract/property";
 
 export type PropertyEntityType =
   | "zoning-fact"
   | "setback-rule"
   | "buildable-envelope"
-  // Vendored from @empressaio/atom-contract PR #9 until 1.10.0 is published.
   | "parcel-terrain-model";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
@@ -116,12 +124,12 @@ export type BuildableEnvelopeAtomInstance = ContractBuildableEnvelopeAtomInstanc
     outcome?: EnvelopeHonestOutcome;
   };
 
+/**
+ * Contract terrain formats (1.10+) plus engine site-plan formats not yet in
+ * the published `TERRAIN_EXPORT_FORMATS` enum.
+ */
 export type TerrainExportFormat =
-  | "glb"
-  | "ifc"
-  | "dxf-3dface"
-  | "dxf-contour"
-  | "landxml-tin"
+  | ContractTerrainExportFormat
   /** Site-plan sprint (2026-07-25): closed-solid terrain mass + annotation
    * layers, additive to the thin-surface terrain formats above. */
   | "dxf-site-plan"
@@ -133,9 +141,10 @@ export type TerrainExportFormat =
   | "pdf-site-plan";
 
 /**
- * Compatibility shape matching atom-contract PR #9. It is deliberately local
- * while the package remains pinned to ^1.9.0; remove this alias when 1.10.0
- * is published and the contract export is available.
+ * Engine overlay on published `@empressaio/atom-contract/property`
+ * ParcelTerrainModelAtomInstance (>=1.10.0). Adds StoragePort persistence and
+ * site-plan artifact fields. Prefer `createParcelTerrainModel` for contract-
+ * shaped construction; this type is the persisted engine shape.
  */
 export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistence {
   entityType: "parcel-terrain-model";
@@ -145,10 +154,7 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
   atomTier: "data";
   extractedAt: string;
   sourceCitation: string;
-  // The contract's read-contract type is vendored with the 1.10.0 lift.
-  // Keep `any` at this compatibility seam so existing overlay reads retain
-  // their exact WidthedConfidence shape until the package export is present.
-  readContract?: any;
+  readContract?: ReasoningReadContract;
   reasoningChain: {
     reasoningKind: "derived";
     derivationMethod: "parcel-terrain-mesh-ifc-v1";
@@ -158,28 +164,33 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
       citationLabel: "usgs-3dep-dem";
     }>;
   };
-  artifacts: Partial<Record<TerrainExportFormat, {
-    format: TerrainExportFormat;
-    ref: string;
-    byteCount?: number;
-    vertexCount?: number;
-    triangleCount?: number;
-    contourIntervalMeters?: number;
-    contourPolylineCount?: number;
-    deferred?: boolean;
-    deferredReason?: string;
-    /** dxf-site-plan / ifc-site-plan only: setback offset ring degenerated
-     * (e.g. front+rear consumed the lot) — drawn honestly, not fabricated. */
-    setbackDegenerate?: boolean;
-    setbackDegenerateReason?: string;
-    /** dxf-site-plan / ifc-site-plan only: no road-anchor atom was available. */
-    streetHonestAbsence?: boolean;
-    annotationCount?: number;
-    /** pdf-site-plan only: page count and honesty flags for the summary block. */
-    pageCount?: number;
-    zoningHonestAbsence?: boolean;
-    floodZoneHonestUnavailable?: boolean;
-  }>>;
+  artifacts: Partial<
+    Record<
+      TerrainExportFormat,
+      {
+        format: TerrainExportFormat;
+        ref: string;
+        byteCount?: number;
+        vertexCount?: number;
+        triangleCount?: number;
+        contourIntervalMeters?: number;
+        contourPolylineCount?: number;
+        deferred?: boolean;
+        deferredReason?: string;
+        /** dxf-site-plan / ifc-site-plan only: setback offset ring degenerated
+         * (e.g. front+rear consumed the lot) — drawn honestly, not fabricated. */
+        setbackDegenerate?: boolean;
+        setbackDegenerateReason?: string;
+        /** dxf-site-plan / ifc-site-plan only: no road-anchor atom was available. */
+        streetHonestAbsence?: boolean;
+        annotationCount?: number;
+        /** pdf-site-plan only: page count and honesty flags for the summary block. */
+        pageCount?: number;
+        zoningHonestAbsence?: boolean;
+        floodZoneHonestUnavailable?: boolean;
+      }
+    >
+  >;
   coverage: {
     coverageFraction: number;
     nodataCount: number;
@@ -188,7 +199,15 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
     resolutionMetersActual: number | null;
     touchesNodata: boolean;
   };
-  confidence: { value: number; kind: "asserted"; provenance: string; n: number; intervalWidth: number };
+  confidence:
+    | ContractParcelTerrainModelAtomInstance["confidence"]
+    | {
+        value: number;
+        kind: "asserted";
+        provenance: string;
+        n: number;
+        intervalWidth: number;
+      };
 }
 
 export type PropertyAtomInstance =
