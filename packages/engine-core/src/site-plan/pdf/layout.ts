@@ -137,6 +137,20 @@ function parcelVicinityClipBox(model: SitePlanModel): {
   return expandRingAabb(model.ringLocal, span * 0.15);
 }
 
+function streetContextClipBox(model: SitePlanModel): {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+} {
+  const xs = model.ringLocal.map((p) => p.x);
+  const ys = model.ringLocal.map((p) => p.y);
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1);
+  // Frontage centerlines sit outside the parcel ring (ROW). Clip to a local
+  // buffer wide enough for that context; never the full multi-block OSM way.
+  return expandRingAabb(model.ringLocal, Math.max(span * 0.5, 40));
+}
+
 function longestClippedPart(parts: Array<Array<[number, number]>>): Array<[number, number]> | null {
   let best: Array<[number, number]> | null = null;
   let bestLen = 0;
@@ -156,34 +170,35 @@ function longestClippedPart(parts: Array<Array<[number, number]>>): Array<[numbe
   return best;
 }
 
-function projectClippedLocalPolyline(
+function projectStreetPolylineClipped(
   transform: PdfTransform,
   points: LocalPoint[] | undefined,
-  clipBox: { minX: number; maxX: number; minY: number; maxY: number },
+  localClip: { minX: number; maxX: number; minY: number; maxY: number },
 ): PageXY[] | undefined {
   if (!points || points.length < 2) return undefined;
-  const tuples: Array<[number, number]> = points.map((p) => [p.x, p.y]);
-  const longest = longestClippedPart(clipPolylineToAabb(tuples, clipBox));
-  if (!longest) return undefined;
-  return longest.map(([x, y]) => projectPoint(transform, { x, y }));
+  const localTuples: Array<[number, number]> = points.map((p) => [p.x, p.y]);
+  const localLongest = longestClippedPart(clipPolylineToAabb(localTuples, localClip));
+  if (!localLongest) return undefined;
+  return localLongest.map(([x, y]) => projectPoint(transform, { x, y }));
 }
 
 /**
- * Streets are context clipped to the parcel frame — never fit drivers.
- * Distant / bad attaching nodes clip to nothing and drop from the sheet;
- * long OSM ways keep only the frontage-near segment.
+ * Streets are context clipped to a parcel+ROW local buffer — never fit drivers.
+ * Frontage centerlines (outside the ring, inside ~40 m) survive; distant bad
+ * attaches and multi-block OSM tails clip away. Soft page overflow into the
+ * sheet margin is preferred over erasing the fronting road.
  */
 function declutterStreets(
   model: SitePlanModel,
   transform: PdfTransform,
 ): SitePlanDrawingLayout["streets"] {
-  const clipBox = parcelVicinityClipBox(model);
+  const localClip = streetContextClipBox(model);
   const anchors: SitePlanDrawingLayout["streets"]["anchors"] = [];
   for (const anchor of model.streets.anchors) {
-    const points = projectClippedLocalPolyline(transform, anchor.pointsLocal, clipBox);
+    const points = projectStreetPolylineClipped(transform, anchor.pointsLocal, localClip);
     if (!points || points.length < 2) continue;
-    const leftEdge = projectClippedLocalPolyline(transform, anchor.leftEdgeLocal, clipBox);
-    const rightEdge = projectClippedLocalPolyline(transform, anchor.rightEdgeLocal, clipBox);
+    const leftEdge = projectStreetPolylineClipped(transform, anchor.leftEdgeLocal, localClip);
+    const rightEdge = projectStreetPolylineClipped(transform, anchor.rightEdgeLocal, localClip);
     anchors.push({
       name: anchor.name,
       points,
