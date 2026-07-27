@@ -47,3 +47,9 @@ packages/engine-core/src/road-intake/fixtures/bastrop-county-roadway-full.json
 # Local secret scratch (never commit connection strings)
 .dburl.tmp
 *.dburl.tmp
+
+# RECIPE-PROOF Caldwell bulk fixtures (local ingest only; too large for git)
+packages/engine-core/src/road-intake/fixtures/caldwell-cad-road-centerlines.json
+packages/engine-core/src/road-intake/fixtures/caldwell-overpass-lockhart-city-bbox.json
+packages/engine-core/caldwell-warm-*.json
+packages/engine-core/caldwell-warm-*.txt
