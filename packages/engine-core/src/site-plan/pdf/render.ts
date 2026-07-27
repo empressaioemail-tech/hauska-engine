@@ -227,12 +227,15 @@ function drawSummaryBlock(page: PDFPage, model: SitePlanModel, bold: PDFFont, fo
   page.drawText("SUMMARY", { x: MARGIN, y, size: 13, font: bold, color: BLACK });
   y -= 20;
 
-  // B3: shared vocabulary with PE map card / inspect — never print a bare
+  // B3: shared vocabulary with PE map card / inspect - never print a bare
   // "setback-consumes-lot" when the warm envelope (or drawable offset) has area.
-  const buildableAreaLine = s.buildablePdfLabel;  const floodLine = "zone" in s.floodZone
+  // ASCII hyphens only in drawn strings: Helvetica/WinAnsi drops U+2014 em-dashes
+  // and can omit the whole token (broke the "unavailable" honesty probe).
+  const buildableAreaLine = s.buildablePdfLabel;
+  const floodLine = "zone" in s.floodZone
     ? `${s.floodZone.zone ?? "outside mapped SFHA"} (${s.floodZone.inSpecialFloodHazardArea ? "in" : "not in"} special flood hazard area)`
-    : `unavailable — ${s.floodZone.reason}`;
-  const zoningLine = s.zoningDistrict ?? `unavailable — ${s.zoningHonestAbsenceReason ?? "no zoning-fact atom on file"}`;
+    : `unavailable - ${s.floodZone.reason}`;
+  const zoningLine = s.zoningDistrict ?? `unavailable - ${s.zoningHonestAbsenceReason ?? "no zoning-fact atom on file"}`;
   const countyLine = s.countyName ?? `FIPS ${s.countyFips ?? "unknown"} (county name not on file)`;
   const addressLine = s.address ?? "not on file";
 
