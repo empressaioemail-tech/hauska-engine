@@ -189,11 +189,103 @@ describe("buildSitePlanDrawingLayout", () => {
     const layout = buildSitePlanDrawingLayout(model, box);
     expect(layout.streets.honestAbsence).toBe(false);
     expect(layout.streets.anchors).toHaveLength(1);
-    expect(layout.streets.anchors[0]!.points).toHaveLength(2);
-    const expected = model.streets.anchors[0]!.pointsLocal.map((p) => projectPoint(layout.transform, p));
-    for (let i = 0; i < expected.length; i++) {
-      expect(layout.streets.anchors[0]!.points[i]!.x).toBeCloseTo(expected[i]!.x, 6);
-      expect(layout.streets.anchors[0]!.points[i]!.y).toBeCloseTo(expected[i]!.y, 6);
+    expect(layout.streets.anchors[0]!.points.length).toBeGreaterThanOrEqual(2);
+    // Near-frontage street survives parcel-vicinity clip; points stay in-box.
+    for (const p of layout.streets.anchors[0]!.points) {
+      expect(p.x).toBeGreaterThanOrEqual(box.x - 2);
+      expect(p.x).toBeLessThanOrEqual(box.x + box.width + 2);
+      expect(p.y).toBeGreaterThanOrEqual(box.y - 2);
+      expect(p.y).toBeLessThanOrEqual(box.y + box.height + 2);
     }
+  });
+
+  // Site-plan road regression: streets must not expand the fit bbox (B1+B2
+  // combined failure on 48021:33890 — distant attaching road + long OSM way).
+  it("does not let a distant street shrink the parcel; outlier clips off the sheet", () => {
+    const baseline = buildSitePlanDrawingLayout(buildModel(), box);
+    const baselineSpan = (() => {
+      const xs = baseline.propertyLine.map((p) => p.x);
+      const ys = baseline.propertyLine.map((p) => p.y);
+      return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    })();
+
+    // ~1.5 km north of the fixture parcel — mirrors bad attach 48021:road:15094293.
+    const model = buildModel([
+      {
+        name: "OUTLIER RD",
+        points: [
+          [-98.4997, 29.414],
+          [-98.4995, 29.415],
+        ],
+        sourceRef: "osm:way/outlier",
+      },
+      {
+        name: "N PINE ST",
+        points: [
+          [-98.4999, 29.4002],
+          [-98.4995, 29.4002],
+        ],
+        sourceRef: "osm:way/123",
+      },
+    ]);
+    const layout = buildSitePlanDrawingLayout(model, box);
+    const ringXs = layout.propertyLine.map((p) => p.x);
+    const ringYs = layout.propertyLine.map((p) => p.y);
+    const parcelSpan = Math.max(
+      Math.max(...ringXs) - Math.min(...ringXs),
+      Math.max(...ringYs) - Math.min(...ringYs),
+    );
+    expect(parcelSpan).toBeGreaterThan(Math.min(box.width, box.height) * 0.35);
+    // Scale must stay within a few percent of the no-street baseline.
+    expect(parcelSpan / baselineSpan).toBeGreaterThan(0.95);
+    expect(parcelSpan / baselineSpan).toBeLessThan(1.05);
+
+    const names = layout.streets.anchors.map((a) => a.name);
+    expect(names).toContain("N PINE ST");
+    expect(names).not.toContain("OUTLIER RD");
+    for (const anchor of layout.streets.anchors) {
+      for (const p of anchor.points) {
+        expect(p.x).toBeGreaterThanOrEqual(box.x - 2);
+        expect(p.x).toBeLessThanOrEqual(box.x + box.width + 2);
+        expect(p.y).toBeGreaterThanOrEqual(box.y - 2);
+        expect(p.y).toBeLessThanOrEqual(box.y + box.height + 2);
+      }
+    }
+  });
+
+  it("clips a long street centerline to the parcel vicinity instead of fitting its full extent", () => {
+    const baseline = buildSitePlanDrawingLayout(buildModel(), box);
+    const baselineSpan = (() => {
+      const xs = baseline.propertyLine.map((p) => p.x);
+      const ys = baseline.propertyLine.map((p) => p.y);
+      return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    })();
+
+    // Long E–W way that only grazes the parcel (Chestnut-style OSM centerline).
+    const model = buildModel([
+      {
+        name: "CHESTNUT ST",
+        points: [
+          [-98.505, 29.4002],
+          [-98.4997, 29.4002],
+          [-98.494, 29.4002],
+        ],
+        sourceRef: "osm:way/long",
+      },
+    ]);
+    const layout = buildSitePlanDrawingLayout(model, box);
+    const ringXs = layout.propertyLine.map((p) => p.x);
+    const ringYs = layout.propertyLine.map((p) => p.y);
+    const parcelSpan = Math.max(
+      Math.max(...ringXs) - Math.min(...ringXs),
+      Math.max(...ringYs) - Math.min(...ringYs),
+    );
+    expect(parcelSpan / baselineSpan).toBeGreaterThan(0.95);
+    expect(layout.streets.anchors).toHaveLength(1);
+    const streetXs = layout.streets.anchors[0]!.points.map((p) => p.x);
+    const streetSpan = Math.max(...streetXs) - Math.min(...streetXs);
+    // Clipped frontage must be much smaller than a full multi-block way on sheet.
+    expect(streetSpan).toBeLessThan(box.width * 0.9);
+    expect(parcelSpan).toBeGreaterThan(streetSpan * 0.4);
   });
 });
