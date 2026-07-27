@@ -29,6 +29,26 @@ export const BASTROP_CITY_BBOX = {
   east: -97.25,
 } as const;
 
+/** Caldwell County, TX (48055) — approximate public county extent. */
+export const CALDWELL_COUNTY_BBOX = {
+  south: 29.62,
+  west: -97.9,
+  north: 30.12,
+  east: -97.55,
+} as const;
+
+/**
+ * City of Lockhart limits from Caldwell CAD City_Limits layer (outSR=4326,
+ * RECIPE-PROOF 2026-07-27 recon).
+ */
+export const LOCKHART_CITY_BBOX = {
+  south: 29.83787,
+  west: -97.72866,
+  north: 29.9244,
+  east: -97.62483,
+} as const;
+
+
 export type BastropRoadIngestScope = "city" | "county" | "county-tiled";
 
 export interface OverpassBbox {
@@ -214,6 +234,53 @@ export async function fetchBastropRoadsForIngest(
   }
 > {
   const { bbox, scope } = resolveBastropRoadIngestBbox(env);
+  if (scope === "county-tiled") {
+    const tiled = await fetchOverpassRoadsTiled(bbox, { fetchImpl });
+    return { ...tiled, bbox, scope };
+  }
+  const single = await fetchOverpassRoadsInBbox(bbox, fetchImpl);
+  return { ...single, bbox, scope };
+}
+
+export type CaldwellRoadIngestScope = "lockhart-city" | "county" | "county-tiled";
+
+/** Default Lockhart city OSM ingest for Caldwell depth-warm (city streets sparse in CAD). */
+export function resolveCaldwellRoadIngestBbox(
+  env: NodeJS.ProcessEnv = process.env,
+): { bbox: OverpassBbox; scope: CaldwellRoadIngestScope | "custom" } {
+  const raw = env.CALDWELL_ROAD_BBOX?.trim();
+  if (raw) {
+    const parts = raw.split(",").map((s) => Number(s.trim()));
+    if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
+      throw new Error(
+        "CALDWELL_ROAD_BBOX must be south,west,north,east (four comma-separated numbers)",
+      );
+    }
+    return {
+      bbox: { south: parts[0]!, west: parts[1]!, north: parts[2]!, east: parts[3]! },
+      scope: "custom",
+    };
+  }
+  const scopeRaw = env.CALDWELL_ROAD_INGEST_SCOPE?.trim().toLowerCase();
+  if (scopeRaw === "county") {
+    return { bbox: { ...CALDWELL_COUNTY_BBOX }, scope: "county" };
+  }
+  if (scopeRaw === "county-tiled") {
+    return { bbox: { ...CALDWELL_COUNTY_BBOX }, scope: "county-tiled" };
+  }
+  return { bbox: { ...LOCKHART_CITY_BBOX }, scope: "lockhart-city" };
+}
+
+export async function fetchCaldwellRoadsForIngest(
+  env: NodeJS.ProcessEnv = process.env,
+  fetchImpl: typeof fetch = fetch,
+): Promise<
+  FetchOverpassRoadsResult & {
+    bbox: OverpassBbox;
+    scope: CaldwellRoadIngestScope | "custom";
+  }
+> {
+  const { bbox, scope } = resolveCaldwellRoadIngestBbox(env);
   if (scope === "county-tiled") {
     const tiled = await fetchOverpassRoadsTiled(bbox, { fetchImpl });
     return { ...tiled, bbox, scope };

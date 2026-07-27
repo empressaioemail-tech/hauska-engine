@@ -1,0 +1,64 @@
+﻿{
+  "event": "AUTHORITATIVE-ROAD-SOURCE-RECON",
+  "countyFips": "48055",
+  "auditedAt": "2026-07-27T13:00:00.000Z",
+  "sources": [
+    {
+      "name": "Caldwell_CAD_Road_Centerlines",
+      "url": "https://services.arcgis.com/rVxY74DxxIDrDbc0/arcgis/rest/services/Caldwell_CAD_Parcel_Map/FeatureServer/6",
+      "featureCount": 3290,
+      "fieldsPresent": ["SURFACE", "CLASS", "ROADTYPE", "ROADNAME"],
+      "surfaceDefined": 2278,
+      "surfaceEmptyOrSentinel": 1012,
+      "classDefined": 3287,
+      "streetCountyClass": 1673,
+      "cityishStreetNonCounty": 55,
+      "verdict": "SCHEMA_AND_DATA_POPULATED for county roads; city streets sparse in CLASS — promote authoritative only when SURFACE defined"
+    },
+    {
+      "name": "Caldwell_County_Road_Plan_2024",
+      "url": "https://services.arcgis.com/rVxY74DxxIDrDbc0/arcgis/rest/services/Caldwell_CAD_Parcel_Map/FeatureServer/45",
+      "featureCount": 88,
+      "verdict": "planning sketch — not a centerline source for labeling"
+    },
+    {
+      "name": "Lockhart city GIS",
+      "urlsTried": [
+        "https://gis.lockhart-tx.org/server/rest/services",
+        "https://maps.lockhart-tx.org/arcgis/rest/services"
+      ],
+      "verdict": "UNREACHABLE (DNS fail) — treat as absent; OSM best-available for Lockhart city grid"
+    },
+    {
+      "name": "Luling/Martindale city street layers",
+      "verdict": "no separate city street FeatureServer found in Caldwell CAD org; zoning layers 49-51 present but not roads"
+    },
+    {
+      "name": "OSM Overpass Lockhart city bbox",
+      "bbox": {
+        "south": 29.83787,
+        "west": -97.72866,
+        "north": 29.9244,
+        "east": -97.62483
+      },
+      "waysFetched": 1887,
+      "role": "osm-best-available for Lockhart city streets (CAD city-street population sparse)"
+    }
+  ],
+  "populationCeiling": {
+    "cadCenterlinesTotal": 3290,
+    "cadAuthoritativeIfSurfaceDefined": 2278,
+    "cadUndefinedSurface": 1012,
+    "osmLockhartCity": 1887
+  },
+  "liveIngest": {
+    "cadEmitted": 3284,
+    "cadAuthoritative": 2273,
+    "cadUndefined": 1011,
+    "osmEmitted": 1887,
+    "roadNodesTotal": 5171,
+    "note": "undefined CAD excluded from warm labeling pool (roadAtomToWarmSource returns null)"
+  },
+  "sameSplitAsBastrop": true,
+  "newDecision": "UNREACHABLE-CITY-GIS: DNS-fail city endpoints are absent sources; do not invent authoritative; fall to OSM and record recon miss"
+}

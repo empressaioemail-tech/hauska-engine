@@ -27,6 +27,10 @@ export {
   resolveBastropRoadIngestScope,
   BASTROP_COUNTY_BBOX,
   BASTROP_CITY_BBOX,
+  CALDWELL_COUNTY_BBOX,
+  LOCKHART_CITY_BBOX,
+  resolveCaldwellRoadIngestBbox,
+  fetchCaldwellRoadsForIngest,
   OSM_OVERPASS_URL,
 } from "./fetch-overpass-bbox.js";
 export {
@@ -37,3 +41,21 @@ export {
   fetchBastropCountyRoadwayFeatures,
   BASTROP_COUNTY_ROADWAY_URL,
 } from "./fetch-bastrop-county-roadway.js";
+
+export {
+  classifyCaldwellCadAttributes,
+  caldwellCadIsAuthoritative,
+  isDefinedCaldwellSurface,
+  caldwellCadSyntheticWayId,
+  CALDWELL_CAD_ROAD_ID_OFFSET,
+} from "./classify-caldwell-cad.js";
+export {
+  emitCaldwellCadRoadNode,
+  parseCaldwellCadRoadFeature,
+  caldwellCadRoadIntakeDescriptor,
+  caldwellOsmRoadIntakeDescriptor,
+} from "./emit-caldwell-cad-road-node.js";
+export {
+  fetchCaldwellCadRoadFeatures,
+  CALDWELL_CAD_ROAD_CENTERLINES_URL,
+} from "./fetch-caldwell-cad-roads.js";
