@@ -128,6 +128,7 @@ export class InMemoryStorage implements StoragePort {
       eastLng: number;
       northLat: number;
     },
+    opts?: { limit?: number },
   ): Promise<ReadonlyArray<RoadNodeAtomInstance>> {
     const out: RoadNodeAtomInstance[] = [];
     for (const inst of this.atoms.values()) {
@@ -146,7 +147,16 @@ export class InMemoryStorage implements StoragePort {
       });
       if (hits) out.push(inst);
     }
-    return out;
+    out.sort(
+      (a, b) =>
+        (b.centerline?.coordinates?.length ?? 0) -
+        (a.centerline?.coordinates?.length ?? 0),
+    );
+    const limit =
+      typeof opts?.limit === "number" && Number.isFinite(opts.limit)
+        ? Math.max(1, Math.min(Math.floor(opts.limit), 2000))
+        : 500;
+    return out.slice(0, limit);
   }
 
   async writeBoundaryEdgeAtom(

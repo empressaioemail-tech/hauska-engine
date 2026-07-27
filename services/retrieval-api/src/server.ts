@@ -312,6 +312,70 @@ export function buildApp(options: ServerOptions = {}): Hono {
     return c.json(result);
   });
 
+  /**
+   * Viewport road layer (Track B1-map reopen). Unstrands listRoadAtomsNearBbox
+   * over HTTP — PE map draws the road NETWORK in view, not one attaching road.
+   * Registered before /road-nodes/:id/atom-chain so "near-bbox" is not captured.
+   */
+  app.get("/road-nodes/near-bbox", async (c) => {
+    const countyFips = (c.req.query("countyFips") ?? "").trim();
+    if (!/^\d{5}$/.test(countyFips)) {
+      return c.json(
+        {
+          error: "invalid countyFips",
+          hint: "expected 5-digit FIPS e.g. 48021",
+        },
+        400,
+      );
+    }
+    const westLng = Number(c.req.query("westLng"));
+    const southLat = Number(c.req.query("southLat"));
+    const eastLng = Number(c.req.query("eastLng"));
+    const northLat = Number(c.req.query("northLat"));
+    if (
+      ![westLng, southLat, eastLng, northLat].every((n) => Number.isFinite(n)) ||
+      westLng >= eastLng ||
+      southLat >= northLat
+    ) {
+      return c.json(
+        {
+          error: "invalid bbox",
+          hint: "westLng,southLat,eastLng,northLat required; west<east and south<north",
+        },
+        400,
+      );
+    }
+    // Guard runaway payloads (whole-county bbox).
+    const spanLng = eastLng - westLng;
+    const spanLat = northLat - southLat;
+    if (spanLng > 0.5 || spanLat > 0.5) {
+      return c.json(
+        {
+          error: "bbox too large",
+          hint: "max span 0.5 deg lng/lat — zoom in for the road layer",
+        },
+        400,
+      );
+    }
+    const limitRaw = c.req.query("limit");
+    const limit =
+      limitRaw !== undefined && limitRaw !== ""
+        ? Number(limitRaw)
+        : undefined;
+    if (limit !== undefined && (!Number.isFinite(limit) || limit < 1)) {
+      return c.json({ error: "invalid limit" }, 400);
+    }
+    const result = await retrieval.listRoadNodesNearBbox({
+      countyFips,
+      westLng,
+      southLat,
+      eastLng,
+      northLat,
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    return c.json(result);
+  });
+
   app.get("/road-nodes/:roadNodeId{.+}/atom-chain", async (c) => {
     const roadNodeId = decodeURIComponent(c.req.param("roadNodeId"));
     if (!/^\d{5}:road:\d+$/.test(roadNodeId)) {

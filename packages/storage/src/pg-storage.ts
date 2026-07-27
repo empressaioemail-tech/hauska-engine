@@ -387,8 +387,14 @@ export class PgStorage implements StoragePort {
       eastLng: number;
       northLat: number;
     },
+    opts?: { limit?: number },
   ): Promise<ReadonlyArray<RoadNodeAtomInstance>> {
     // jsonb centerline intersection — no PostGIS required on substrate Neon.
+    // Prefer longer centerlines so the map fills with real streets, not stubs.
+    const limit =
+      typeof opts?.limit === "number" && Number.isFinite(opts.limit)
+        ? Math.max(1, Math.min(Math.floor(opts.limit), 2000))
+        : 500;
     const rows = await this.sql<AtomBodyRow[]>`
       SELECT body
       FROM atoms
@@ -401,7 +407,9 @@ export class PgStorage implements StoragePort {
           WHERE (pt->>0)::float8 BETWEEN ${bbox.westLng} AND ${bbox.eastLng}
             AND (pt->>1)::float8 BETWEEN ${bbox.southLat} AND ${bbox.northLat}
         )
-      ORDER BY updated_at DESC
+      ORDER BY jsonb_array_length(COALESCE(body->'centerline'->'coordinates', '[]'::jsonb)) DESC,
+               updated_at DESC
+      LIMIT ${limit}
     `;
     const out: RoadNodeAtomInstance[] = [];
     for (const row of rows) {
