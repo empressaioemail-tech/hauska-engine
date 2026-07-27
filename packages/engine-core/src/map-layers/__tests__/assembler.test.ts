@@ -119,11 +119,16 @@ describe("assembleMapLayers", () => {
       },
     );
 
-    expect(resolveWave3Slot).toHaveBeenCalledTimes(4);
+    expect(resolveWave3Slot).toHaveBeenCalledTimes(6);
     const wave3 = payload.layers.filter((l) =>
-      ["dem", "floodway", "opportunity-zone-tract", "topography"].includes(
-        l.layerKey,
-      ),
+      [
+        "dem",
+        "floodway",
+        "opportunity-zone-tract",
+        "topography",
+        "topography-1ft",
+        "hydrology-flow",
+      ].includes(l.layerKey),
     );
     expect(wave3.every((s) => s.status === "ok")).toBe(true);
   });

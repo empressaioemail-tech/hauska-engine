@@ -40,6 +40,14 @@ export const MAP_LAYER_SPECS: readonly MapLayerSpec[] = [
     wave3: true,
   },
   {
+    layerKey: "topography-1ft",
+    wave3: true,
+  },
+  {
+    layerKey: "hydrology-flow",
+    wave3: true,
+  },
+  {
     layerKey: "opportunity-zone-tract",
     wave3: true,
   },

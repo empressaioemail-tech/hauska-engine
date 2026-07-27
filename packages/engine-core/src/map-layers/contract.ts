@@ -12,6 +12,12 @@ export const MAP_LAYER_KEYS = [
   "floodway",
   "dem",
   "topography",
+  // Authoritative 1-ft LiDAR contours (Bastrop) with honest 3DEP fallback.
+  // Distinct from `topography` (always 3DEP-derived 1m contours) so the map can
+  // label the true interval/source per bbox and never mislabel 3DEP as 1-ft.
+  "topography-1ft",
+  // Live D8 flow channels for a viewport bbox (bbox -> GeoJSON LineStrings).
+  "hydrology-flow",
   "opportunity-zone-tract",
   "zoning",
 ] as const;
