@@ -15,7 +15,11 @@ import {
   type SetbackAssignment,
   type SetbackOffsetResult,
 } from "./ring-geometry.js";
-import { formatSetbackSummaryLine } from "./setback-display.js";
+import { anyNotSpecified, formatSetbackSummaryLine } from "./setback-display.js";
+import {
+  mapBuildableDisplay,
+  type BuildableDisplayKind,
+} from "./buildable-display-vocab.js";
 
 const METERS_PER_FOOT = 0.3048;
 
@@ -157,6 +161,15 @@ export interface SitePlanSummaryModel {
   /** Null when the setback offset degenerated (see `buildableAreaHonestNote`). */
   buildableAreaSqFt: number | null;
   buildableAreaHonestNote?: string;
+  /**
+   * Shared B3 customer vocabulary (same mapper as PE map card / inspect).
+   * Prefer warm envelope area when present so PDF cannot say "consumes lot"
+   * while the map shows a buildable figure for the same inputs.
+   */
+  buildableDisplayKind: BuildableDisplayKind;
+  buildableAgreementToken: string;
+  /** PDF SUMMARY "Buildable Area" value — always from the shared mapper. */
+  buildablePdfLabel: string;
   elevationRangeMeters: { min: number; max: number };
   verticalDatumSummary: string;
   floodZone:
@@ -377,6 +390,41 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     reason: "No flood-zone read attempted for this export.",
   };
 
+  const warmKind = inputs.envelopeOutcome?.kind;
+  const warmAreaSqFt =
+    warmKind === "buildable" && typeof inputs.envelopeOutcome?.areaSqFt === "number"
+      ? inputs.envelopeOutcome.areaSqFt
+      : null;
+  const honestNote = computeBuildableAreaHonestNote(offset, inputs.envelopeOutcome);
+  const buildableVocab = mapBuildableDisplay({
+    envelopeStatus:
+      buildableAreaSqFt != null || warmAreaSqFt != null
+        ? "ok"
+        : warmKind === "no-buildable-area" || offset.offsetDegenerate
+          ? "no-buildable-area"
+          : "ok",
+    notSpecifiedAxes: anyNotSpecified(notSpecified),
+    buildableAreaSqFt,
+    provisional:
+      warmKind === "provisional-front-edge" ||
+      (honestNote != null && buildableAreaSqFt != null),
+    warmEnvelopeKind: warmKind,
+    warmEnvelopeAreaSqFt: warmAreaSqFt,
+    offsetDegenerate: offset.offsetDegenerate,
+    offsetDegenerateReason: offset.offsetDegenerateReason,
+  });
+
+  const buildablePdfLabel =
+    buildableVocab.kind === "provisional" && honestNote
+      ? `${
+          warmAreaSqFt != null
+            ? `${Math.round(warmAreaSqFt).toLocaleString("en-US")} sq ft`
+            : buildableAreaSqFt != null
+              ? `${Math.round(buildableAreaSqFt).toLocaleString("en-US")} sq ft`
+              : "buildable area"
+        } (PROVISIONAL — ${honestNote})`
+      : buildableVocab.pdfLabel;
+
   const summary: SitePlanSummaryModel = {
     parcelNodeId: inputs.parcelNodeId,
     countyFips: parseCountyFips(inputs.parcelNodeId),
@@ -386,7 +434,10 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     zoningHonestAbsenceReason,
     lotAreaSqFt,
     buildableAreaSqFt,
-    buildableAreaHonestNote: computeBuildableAreaHonestNote(offset, inputs.envelopeOutcome),
+    buildableAreaHonestNote: honestNote,
+    buildableDisplayKind: buildableVocab.kind,
+    buildableAgreementToken: buildableVocab.agreementToken,
+    buildablePdfLabel,
     elevationRangeMeters: { min: inputs.dem.minElevation, max: inputs.dem.maxElevation },
     verticalDatumSummary: TERRAIN_VERTICAL_DATUM.summary,
     floodZone,

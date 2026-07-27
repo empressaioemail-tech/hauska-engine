@@ -33,9 +33,14 @@ export function buildProvenancePanelEntries(model: SitePlanModel): ProvenancePan
       layer: "SETBACK",
       source: model.citations.setback,
       asOf: "current zoning-code snapshot",
-      confidence: model.setback.degenerate
-        ? `asserted — degenerate: ${model.setback.degenerateReason ?? "setback consumes lot"}`
-        : `asserted (front/side/rear basis: ${model.setback.basis})`,
+      confidence:
+        model.summary.buildableDisplayKind === "declined-consume"
+          ? `asserted — degenerate: ${model.setback.degenerateReason ?? "setbacks consume lot"}`
+          : model.setback.degenerate &&
+              (model.summary.buildableDisplayKind === "buildable-with-area" ||
+                model.summary.buildableDisplayKind === "provisional")
+            ? `asserted (warm/shared buildable vocab ${model.summary.buildableAgreementToken}; local offset degenerate — summary prefers warm area)`
+            : `asserted (front/side/rear basis: ${model.setback.basis})`,
     },
     {
       layer: "CONTOUR / ELEVATION_LABEL",
