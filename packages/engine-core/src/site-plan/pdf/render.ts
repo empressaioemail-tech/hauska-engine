@@ -1,12 +1,15 @@
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb, type RGB } from "pdf-lib";
 
 import type { SitePlanModel } from "../site-model.js";
+import { feetFromMeters, type PlacedLabel } from "./annotation-placement.js";
 import { buildSitePlanDrawingLayout, type DrawingBox, type PageXY, type SitePlanDrawingLayout } from "./layout.js";
 import { buildProvenancePanelEntries, SITE_PLAN_HONESTY_LINE } from "./provenance.js";
 
 const PAGE_WIDTH = 612; // US Letter, PDF points (72/in)
 const PAGE_HEIGHT = 792;
 const MARGIN = 36;
+const NEATLINE_INSET = 8;
+const TITLE_BLOCK_HEIGHT = 58;
 
 const BLACK = rgb(0, 0, 0);
 const PROPERTY_COLOR = rgb(0.05, 0.05, 0.05);
@@ -16,30 +19,152 @@ const CONTOUR_COLOR = rgb(0.72, 0.62, 0.48);
 const STREET_COLOR = rgb(0.1, 0.35, 0.75);
 const GRAY = rgb(0.35, 0.35, 0.35);
 const MUTED = rgb(0.5, 0.5, 0.5);
+const LEADER_COLOR = rgb(0.45, 0.45, 0.45);
 
 export interface PdfSitePlanResult {
   bytes: Uint8Array;
   pageCount: number;
 }
 
-function drawTitleBlock(page: PDFPage, model: SitePlanModel, bold: PDFFont, font: PDFFont): void {
-  const top = PAGE_HEIGHT - MARGIN;
-  page.drawText("SITE PLAN", { x: MARGIN, y: top - 14, size: 16, font: bold, color: BLACK });
-  page.drawText(`Parcel ${model.parcelNodeId}`, { x: MARGIN, y: top - 32, size: 11, font, color: BLACK });
-  if (model.summary.address) {
-    page.drawText(model.summary.address, { x: MARGIN, y: top - 46, size: 10, font, color: GRAY });
+function fieldOrNotOnFile(value: string | null | undefined): string {
+  const t = (value ?? "").trim();
+  return t.length > 0 ? t : "not on file";
+}
+
+function drawNeatline(page: PDFPage): void {
+  const x = MARGIN - NEATLINE_INSET;
+  const y = MARGIN - NEATLINE_INSET;
+  const w = PAGE_WIDTH - 2 * (MARGIN - NEATLINE_INSET);
+  const h = PAGE_HEIGHT - 2 * (MARGIN - NEATLINE_INSET);
+  page.drawRectangle({
+    x,
+    y,
+    width: w,
+    height: h,
+    borderColor: BLACK,
+    borderWidth: 1.25,
+    color: undefined,
+  });
+  page.drawRectangle({
+    x: x + 3,
+    y: y + 3,
+    width: w - 6,
+    height: h - 6,
+    borderColor: GRAY,
+    borderWidth: 0.4,
+    color: undefined,
+  });
+}
+
+function drawLegendSwatch(
+  page: PDFPage,
+  x: number,
+  y: number,
+  color: RGB,
+  style: "solid" | "dash" | "fill" | "thin",
+): void {
+  const w = 14;
+  const h = 6;
+  if (style === "fill") {
+    page.drawRectangle({ x, y, width: w, height: h, color, borderWidth: 0 });
+    return;
   }
-  // Layer legend (right side of title band) — hierarchy cue for the sheet.
-  const legendX = PAGE_WIDTH - MARGIN - 210;
-  page.drawText("PROPERTY", { x: legendX, y: top - 14, size: 7, font: bold, color: PROPERTY_COLOR });
-  page.drawText("ENVELOPE / SETBACK", { x: legendX + 55, y: top - 14, size: 7, font: bold, color: SETBACK_COLOR });
-  page.drawText("CONTOUR", { x: legendX + 155, y: top - 14, size: 7, font, color: CONTOUR_COLOR });
+  if (style === "dash") {
+    page.drawLine({
+      start: { x, y: y + h / 2 },
+      end: { x: x + w, y: y + h / 2 },
+      thickness: 1.2,
+      color,
+      dashArray: [3, 2],
+    });
+    return;
+  }
   page.drawLine({
-    start: { x: MARGIN, y: top - 54 },
-    end: { x: PAGE_WIDTH - MARGIN, y: top - 54 },
-    thickness: 0.75,
+    start: { x, y: y + h / 2 },
+    end: { x: x + w, y: y + h / 2 },
+    thickness: style === "thin" ? 0.6 : 1.75,
+    color,
+  });
+}
+
+function drawTitleBlock(
+  page: PDFPage,
+  model: SitePlanModel,
+  bold: PDFFont,
+  font: PDFFont,
+  pageScalePtsPerMeter: number | null,
+): void {
+  const top = PAGE_HEIGHT - MARGIN;
+  const blockTop = top;
+  const blockBottom = top - TITLE_BLOCK_HEIGHT;
+  const blockLeft = MARGIN;
+  const blockRight = PAGE_WIDTH - MARGIN;
+
+  page.drawRectangle({
+    x: blockLeft,
+    y: blockBottom,
+    width: blockRight - blockLeft,
+    height: TITLE_BLOCK_HEIGHT,
+    borderColor: BLACK,
+    borderWidth: 0.9,
+    color: undefined,
+  });
+
+  page.drawText("SITE PLAN", { x: blockLeft + 8, y: blockTop - 14, size: 14, font: bold, color: BLACK });
+  page.drawText(`Parcel ${fieldOrNotOnFile(model.parcelNodeId)}`, {
+    x: blockLeft + 8,
+    y: blockTop - 28,
+    size: 9,
+    font,
+    color: BLACK,
+  });
+  page.drawText(fieldOrNotOnFile(model.summary.address), {
+    x: blockLeft + 8,
+    y: blockTop - 40,
+    size: 8,
+    font,
     color: GRAY,
   });
+
+  // Sheet meta — missing fields render "not on file"; never invent survey dates/scales.
+  // Scale is derived from the drawing transform (pts/metre → ft per printed inch).
+  const metaX = blockLeft + 220;
+  const scaleRatio =
+    pageScalePtsPerMeter != null && pageScalePtsPerMeter > 0
+      ? `1" = ${feetFromMeters(72 / pageScalePtsPerMeter).toFixed(0)} ft`
+      : "not on file";
+  const sheetId = model.parcelNodeId?.trim()
+    ? `SP-${model.parcelNodeId.replace(/:/g, "-")}`
+    : "not on file";
+  const metaRows: Array<[string, string]> = [
+    ["Scale", scaleRatio],
+    ["Date", "not on file"],
+    ["Sheet", sheetId],
+  ];
+  let metaY = blockTop - 14;
+  for (const [k, v] of metaRows) {
+    page.drawText(`${k}:`, { x: metaX, y: metaY, size: 7, font: bold, color: BLACK });
+    page.drawText(v, { x: metaX + 32, y: metaY, size: 7, font, color: GRAY });
+    metaY -= 11;
+  }
+
+  // Legend with color swatches (right side of title band).
+  const legendX = PAGE_WIDTH - MARGIN - 168;
+  const legendItems: Array<{ label: string; color: RGB; style: "solid" | "dash" | "fill" | "thin" }> = [
+    { label: "PROPERTY", color: PROPERTY_COLOR, style: "solid" },
+    { label: "ENVELOPE", color: ENVELOPE_FILL, style: "fill" },
+    { label: "SETBACK", color: SETBACK_COLOR, style: "dash" },
+    { label: "CONTOUR", color: CONTOUR_COLOR, style: "thin" },
+    { label: "STREET", color: STREET_COLOR, style: "solid" },
+  ];
+  let ly = blockTop - 12;
+  page.drawText("LEGEND", { x: legendX, y: ly, size: 7, font: bold, color: BLACK });
+  ly -= 11;
+  for (const item of legendItems) {
+    drawLegendSwatch(page, legendX, ly - 1, item.color, item.style);
+    page.drawText(item.label, { x: legendX + 18, y: ly, size: 6.5, font, color: GRAY });
+    ly -= 9;
+  }
 }
 
 function drawRing(
@@ -76,6 +201,103 @@ function drawPolyline(page: PDFPage, points: Array<{ x: number; y: number }>, co
   }
 }
 
+function drawPlacedLabel(
+  page: PDFPage,
+  label: PlacedLabel,
+  font: PDFFont,
+  color: RGB,
+): void {
+  if (label.leader) {
+    page.drawLine({
+      start: label.leader.from,
+      end: label.leader.to,
+      thickness: 0.4,
+      color: LEADER_COLOR,
+    });
+  }
+  page.drawText(label.text, {
+    x: label.drawAt.x,
+    y: label.drawAt.y,
+    size: label.fontSize,
+    font,
+    color,
+  });
+}
+
+/** North arrow with triangular arrowhead + N label. */
+function drawNorthArrow(page: PDFPage, layout: SitePlanDrawingLayout, bold: PDFFont): void {
+  const { origin, tip } = layout.north;
+  const dx = tip.x - origin.x;
+  const dy = tip.y - origin.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;
+  const py = ux;
+  const headLen = Math.min(10, len * 0.35);
+  const headWidth = headLen * 0.55;
+  const base = { x: tip.x - ux * headLen, y: tip.y - uy * headLen };
+  const left = { x: base.x + px * headWidth, y: base.y + py * headWidth };
+  const right = { x: base.x - px * headWidth, y: base.y - py * headWidth };
+
+  page.drawLine({ start: origin, end: tip, thickness: 1.5, color: BLACK });
+  // Filled arrowhead via SVG path.
+  const path = `M ${tip.x.toFixed(2)} ${tip.y.toFixed(2)} L ${left.x.toFixed(2)} ${left.y.toFixed(2)} L ${right.x.toFixed(2)} ${right.y.toFixed(2)} Z`;
+  page.drawSvgPath(path, { color: BLACK, borderWidth: 0 });
+  page.drawText("N", {
+    x: tip.x + ux * 4 + 1,
+    y: tip.y + uy * 4 - 2,
+    size: 10,
+    font: bold,
+    color: BLACK,
+  });
+}
+
+/** Graphic scale bar with end ticks, mid tick, 0 / mid / max labels, FEET. */
+function drawScaleBar(page: PDFPage, layout: SitePlanDrawingLayout, font: PDFFont, bold: PDFFont): void {
+  const { start, end, lengthMeters } = layout.scaleBar;
+  const lengthFeet = feetFromMeters(lengthMeters);
+  const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  const tick = 5;
+
+  page.drawLine({ start, end, thickness: 1.5, color: BLACK });
+  // End + mid ticks.
+  for (const p of [start, mid, end]) {
+    page.drawLine({
+      start: { x: p.x, y: p.y - tick / 2 },
+      end: { x: p.x, y: p.y + tick / 2 },
+      thickness: 1,
+      color: BLACK,
+    });
+  }
+
+  const zero = "0";
+  const midLabel = `${(lengthFeet / 2).toFixed(0)}`;
+  const maxLabel = `${lengthFeet.toFixed(0)}`;
+  page.drawText(zero, { x: start.x - 2, y: start.y + tick + 1, size: 6, font, color: BLACK });
+  page.drawText(midLabel, {
+    x: mid.x - font.widthOfTextAtSize(midLabel, 6) / 2,
+    y: mid.y + tick + 1,
+    size: 6,
+    font,
+    color: BLACK,
+  });
+  page.drawText(maxLabel, {
+    x: end.x - font.widthOfTextAtSize(maxLabel, 6) / 2,
+    y: end.y + tick + 1,
+    size: 6,
+    font,
+    color: BLACK,
+  });
+  page.drawText("FEET", {
+    x: mid.x - font.widthOfTextAtSize("FEET", 6.5) / 2,
+    y: start.y - tick - 8,
+    size: 6.5,
+    font: bold,
+    color: BLACK,
+  });
+}
+
 function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font: PDFFont, bold: PDFFont): void {
   // Draw order = visual hierarchy: contours behind, property + envelope dominate.
 
@@ -95,7 +317,6 @@ function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font:
     });
   } else {
     for (const anchor of layout.streets.anchors) {
-      // ROW edges first (thinner) so centerline draws on top.
       if (anchor.leftEdge && anchor.leftEdge.length >= 2) {
         drawPolyline(page, anchor.leftEdge, STREET_COLOR, 0.75);
       }
@@ -103,22 +324,8 @@ function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font:
         drawPolyline(page, anchor.rightEdge, STREET_COLOR, 0.75);
       }
       drawPolyline(page, anchor.points, STREET_COLOR, 1.75);
-      const label = anchor.points[Math.floor(anchor.points.length / 2)];
-      const name = (anchor.name ?? "").trim();
-      // Skip blank names (bad OSM attach) — provenance-only labels pile on
-      // setback/bearing craft and were part of the 33890 overlap mess.
-      if (label && name) {
-        const provenance =
-          anchor.rowProvenanceKind != null
-            ? ` (${anchor.rowProvenanceKind})`
-            : "";
-        page.drawText(`${name}${provenance}`, {
-          x: label.x + 2,
-          y: label.y + 4,
-          size: 8,
-          font: bold,
-          color: STREET_COLOR,
-        });
+      if (anchor.label) {
+        drawPlacedLabel(page, anchor.label, bold, STREET_COLOR);
       }
     }
   }
@@ -139,57 +346,34 @@ function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font:
     drawRing(page, layout.setback.offsetRing, SETBACK_COLOR, 1.35, [5, 3]);
   } else {
     page.drawText(
-      `SETBACK: no buildable envelope drawn — ${layout.setback.degenerateReason ?? "offset degenerate"}`,
+      `SETBACK: no buildable envelope drawn - ${layout.setback.degenerateReason ?? "offset degenerate"}`,
       { x: MARGIN, y: MARGIN + 16, size: 8, font, color: SETBACK_COLOR },
     );
   }
 
   // 6) Property-line tags (bearing + distance, GIS-approximate, non-colliding)
   for (const tag of layout.propertyLineTags) {
-    page.drawText(tag.text, {
-      x: tag.drawAt.x,
-      y: tag.drawAt.y,
-      size: 7,
-      font,
-      color: GRAY,
-    });
+    drawPlacedLabel(page, tag, font, GRAY);
   }
 
   // 7) Setback role labels (inward, non-colliding)
   for (const label of layout.setback.labels) {
-    page.drawText(label.text, {
-      x: label.drawAt.x,
-      y: label.drawAt.y,
-      size: 7,
-      font: bold,
-      color: SETBACK_COLOR,
-    });
+    drawPlacedLabel(page, label, bold, SETBACK_COLOR);
   }
 
-  // 8) Sparse elevation labels
+  // 8) Sparse elevation labels (collision-placed)
   for (const label of layout.elevationLabels) {
-    if (label.role === "contour") {
-      page.drawText(label.elevationMeters.toFixed(1), {
-        x: label.point.x + 1,
-        y: label.point.y + 1,
-        size: 5.5,
-        font,
-        color: MUTED,
-      });
-    }
+    drawPlacedLabel(page, label, font, MUTED);
   }
 
-  // 9) NORTH arrow + SCALE bar
-  page.drawLine({ start: layout.north.origin, end: layout.north.tip, thickness: 1.5, color: BLACK });
-  page.drawText("N", { x: layout.north.tip.x + 2, y: layout.north.tip.y, size: 10, font: bold, color: BLACK });
-  page.drawLine({ start: layout.scaleBar.start, end: layout.scaleBar.end, thickness: 1.5, color: BLACK });
-  page.drawText(`${layout.scaleBar.lengthMeters.toFixed(0)} m`, {
-    x: layout.scaleBar.start.x,
-    y: layout.scaleBar.start.y + 4,
-    size: 7,
-    font,
-    color: BLACK,
-  });
+  // 8b) Optional lot-area callout
+  if (layout.lotAreaCallout) {
+    drawPlacedLabel(page, layout.lotAreaCallout, bold, BLACK);
+  }
+
+  // 9) NORTH arrow + SCALE bar (craft)
+  drawNorthArrow(page, layout, bold);
+  drawScaleBar(page, layout, font, bold);
 
   // 10) GIS property-line honesty (page 1 — reinforced again on page 2)
   page.drawText(layout.propertyLineTagsHonesty, {
@@ -295,7 +479,7 @@ function drawProvenancePanel(page: PDFPage, model: SitePlanModel, bold: PDFFont,
 function drawHonestyLine(page: PDFPage, bold: PDFFont, font: PDFFont, y: number): void {
   page.drawText(SITE_PLAN_HONESTY_LINE, { x: MARGIN, y: Math.max(y, MARGIN + 14), size: 9, font: bold, color: BLACK });
   page.drawText(
-    "Property-line bearing/distance tags are GIS-approximate from the county parcel ring — not survey-grade.",
+    "Property-line bearing/distance tags are GIS-approximate from the county parcel ring - not survey-grade.",
     { x: MARGIN, y: Math.max(y - 12, MARGIN), size: 7, font, color: MUTED },
   );
 }
@@ -311,17 +495,21 @@ export async function emitPdfSitePlan(model: SitePlanModel): Promise<PdfSitePlan
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 
   const page1 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  drawTitleBlock(page1, model, bold, font);
+  drawNeatline(page1);
   const drawingBox: DrawingBox = {
     x: MARGIN,
     y: MARGIN + 40,
     width: PAGE_WIDTH - MARGIN * 2,
-    height: PAGE_HEIGHT - MARGIN * 2 - 86,
+    height: PAGE_HEIGHT - MARGIN * 2 - TITLE_BLOCK_HEIGHT - 40,
   };
-  const layout = buildSitePlanDrawingLayout(model, drawingBox);
+  const layout = buildSitePlanDrawingLayout(model, drawingBox, {
+    measureText: (text, size) => font.widthOfTextAtSize(text, size),
+  });
+  drawTitleBlock(page1, model, bold, font, layout.transform.scale);
   drawSitePlanDrawing(page1, layout, font, bold);
 
   const page2 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  drawNeatline(page2);
   const afterSummaryY = drawSummaryBlock(page2, model, bold, font);
   const afterProvenanceY = drawProvenancePanel(page2, model, bold, font, afterSummaryY);
   drawHonestyLine(page2, bold, font, afterProvenanceY - 10);

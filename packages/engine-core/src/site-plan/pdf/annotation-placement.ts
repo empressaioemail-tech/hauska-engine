@@ -27,10 +27,15 @@ export interface LabelBox {
 export interface PlacedLabel {
   text: string;
   anchor: PageXY;
-  /** Top-left-ish draw origin for pdf-lib drawText. */
+  /** Bottom-left-ish draw origin for pdf-lib drawText. */
   drawAt: PageXY;
   box: LabelBox;
+  fontSize: number;
+  /** When the label was nudged off the edge midpoint, connect with a leader. */
+  leader?: { from: PageXY; to: PageXY };
 }
+
+export type MeasureTextFn = (text: string, fontSize: number) => number;
 
 /** @see geometry/gis-property-line-tags — shared with boundary-edge atoms. */
 export const formatGisBearing = formatGisBearingShared;
@@ -59,12 +64,40 @@ export function outwardNormal(a: LocalPoint, b: LocalPoint, ringCcw: boolean): L
   return { x: -inward.x, y: -inward.y };
 }
 
+/**
+ * Fallback width estimate when no pdf-lib font is available (tests only).
+ * Production placement must pass `font.widthOfTextAtSize` via measureText.
+ */
 export function estimateTextWidth(text: string, fontSize: number): number {
-  // Helvetica approx: ~0.5em average glyph width — good enough for collision boxes.
   return text.length * fontSize * 0.52;
 }
 
-function boxesOverlap(a: LabelBox, b: LabelBox, pad = 2): boolean {
+/**
+ * Scale-aware annotation font size. Dense / low-scale sheets get smaller type
+ * so labels fit; zoomed parcel-primary sheets can use a slightly larger size.
+ */
+export function craftLabelFontSize(
+  pageScale: number,
+  kind: "edge" | "setback" | "street" | "contour" | "callout" = "edge",
+): number {
+  // pageScale = page points per local-ENU metre (parcel-primary fit ≈ 8–45).
+  const edge =
+    pageScale >= 28 ? 7.5 : pageScale >= 18 ? 6.5 : pageScale >= 11 ? 5.5 : 4.75;
+  switch (kind) {
+    case "setback":
+      return Math.max(4.5, edge - 0.25);
+    case "street":
+      return Math.max(5, edge);
+    case "contour":
+      return Math.max(4, edge - 1.5);
+    case "callout":
+      return Math.max(5.5, Math.min(8, edge + 0.5));
+    default:
+      return edge;
+  }
+}
+
+export function boxesOverlap(a: LabelBox, b: LabelBox, pad = 2): boolean {
   return !(
     a.x + a.width + pad < b.x ||
     b.x + b.width + pad < a.x ||
@@ -73,10 +106,40 @@ function boxesOverlap(a: LabelBox, b: LabelBox, pad = 2): boolean {
   );
 }
 
+function boxHitsOccupied(box: LabelBox, occupied: readonly PlacedLabel[]): boolean {
+  return occupied.some((p) => boxesOverlap(box, p.box));
+}
+
+function buildBox(
+  drawAt: PageXY,
+  width: number,
+  height: number,
+): LabelBox {
+  return { x: drawAt.x, y: drawAt.y, width, height };
+}
+
+export interface PlaceLabelsOptions {
+  ringCcw: boolean;
+  /** Local-ENU metres of outward offset before projection. */
+  outwardMeters: number;
+  pageScale: number;
+  /** Prefer pdf-lib `font.widthOfTextAtSize`. */
+  measureText: MeasureTextFn;
+  /**
+   * Shared collision set across tag / setback / street / contour passes.
+   * Newly accepted labels are appended; callers must pass the same array.
+   */
+  occupied: PlacedLabel[];
+  /** Nudge iterations before shrink / leader / drop. Default 12. */
+  maxNudgeIterations?: number;
+  /** Minimum font size before drop. Default 4. */
+  minFontSize?: number;
+}
+
 /**
- * Place labels at outward offsets from edge midpoints, then greedily nudge
- * colliding boxes further outward (and slightly along-edge) until clear or
- * max iterations. Pure craft — does not change model geometry.
+ * Place edge labels at outward offsets from midpoints. Never silently overlaps:
+ * nudge → shrink → leader → drop. Dropped labels are omitted from the return
+ * (and never added to `occupied`).
  */
 export function placeNonCollidingEdgeLabels(
   items: Array<{
@@ -87,47 +150,231 @@ export function placeNonCollidingEdgeLabels(
     fontSize: number;
   }>,
   project: (p: LocalPoint) => PageXY,
-  options: {
-    ringCcw: boolean;
-    /** Local-ENU metres of outward offset before projection. */
-    outwardMeters: number;
-    pageScale: number;
-  },
+  options: PlaceLabelsOptions,
 ): PlacedLabel[] {
-  const { ringCcw, outwardMeters, pageScale } = options;
-  const placed: PlacedLabel[] = [];
+  const {
+    ringCcw,
+    outwardMeters,
+    pageScale,
+    measureText,
+    occupied,
+    maxNudgeIterations = 12,
+    minFontSize = 4,
+  } = options;
+  const newlyPlaced: PlacedLabel[] = [];
 
   for (const item of items) {
+    if (!item.text) continue;
     const n = outwardNormal(item.a, item.b, ringCcw);
-    let offsetM = outwardMeters;
-    let alongM = 0;
-    const fontSize = item.fontSize;
-    const width = estimateTextWidth(item.text, fontSize);
-    const height = fontSize + 1;
-
-    let drawAt: PageXY = { x: 0, y: 0 };
-    let box: LabelBox = { x: 0, y: 0, width, height };
-    let anchor: PageXY = { x: 0, y: 0 };
-
-    for (let iter = 0; iter < 12; iter++) {
-      const local: LocalPoint = {
-        x: item.midLocal.x + n.x * offsetM + (-n.y) * alongM,
-        y: item.midLocal.y + n.y * offsetM + n.x * alongM,
-      };
-      anchor = project(local);
-      // Center text on the outward anchor.
-      drawAt = { x: anchor.x - width / 2, y: anchor.y - height / 3 };
-      box = { x: drawAt.x, y: drawAt.y, width, height };
-      const hit = placed.some((p) => boxesOverlap(box, p.box));
-      if (!hit) break;
-      offsetM += Math.max(0.6, 4 / pageScale);
-      alongM += (iter % 2 === 0 ? 1 : -1) * Math.max(0.4, 3 / pageScale);
+    const edgeMid = project(item.midLocal);
+    const result = tryPlaceEdgeLabel(item, n, edgeMid, project, {
+      outwardMeters,
+      pageScale,
+      measureText,
+      occupied,
+      maxNudgeIterations,
+      minFontSize,
+    });
+    if (result) {
+      occupied.push(result);
+      newlyPlaced.push(result);
     }
-
-    placed.push({ text: item.text, anchor, drawAt, box });
   }
 
-  return placed;
+  return newlyPlaced;
+}
+
+function tryPlaceEdgeLabel(
+  item: {
+    midLocal: LocalPoint;
+    a: LocalPoint;
+    b: LocalPoint;
+    text: string;
+    fontSize: number;
+  },
+  n: LocalPoint,
+  edgeMid: PageXY,
+  project: (p: LocalPoint) => PageXY,
+  opts: {
+    outwardMeters: number;
+    pageScale: number;
+    measureText: MeasureTextFn;
+    occupied: readonly PlacedLabel[];
+    maxNudgeIterations: number;
+    minFontSize: number;
+  },
+): PlacedLabel | null {
+  const sizes: number[] = [];
+  for (let s = item.fontSize; s >= opts.minFontSize - 1e-6; s -= 0.75) {
+    sizes.push(Math.round(s * 100) / 100);
+  }
+  if (sizes.length === 0) sizes.push(opts.minFontSize);
+
+  // Pass 1: nudge at full/shrinking sizes without requiring a leader.
+  for (const fontSize of sizes) {
+    const placed = nudgeEdgeLabel(item, n, edgeMid, project, fontSize, opts, false);
+    if (placed) return placed;
+  }
+
+  // Pass 2: leader allowed — place further out and connect to the edge midpoint.
+  for (const fontSize of sizes) {
+    const placed = nudgeEdgeLabel(item, n, edgeMid, project, fontSize, opts, true);
+    if (placed) return placed;
+  }
+
+  // Drop — never silent-overlap.
+  return null;
+}
+
+function nudgeEdgeLabel(
+  item: {
+    midLocal: LocalPoint;
+    text: string;
+  },
+  n: LocalPoint,
+  edgeMid: PageXY,
+  project: (p: LocalPoint) => PageXY,
+  fontSize: number,
+  opts: {
+    outwardMeters: number;
+    pageScale: number;
+    measureText: MeasureTextFn;
+    occupied: readonly PlacedLabel[];
+    maxNudgeIterations: number;
+  },
+  allowLeader: boolean,
+): PlacedLabel | null {
+  let offsetM = opts.outwardMeters;
+  let alongM = 0;
+  const width = opts.measureText(item.text, fontSize);
+  const height = fontSize + 1;
+  const leaderThresholdM = opts.outwardMeters * 1.35;
+
+  for (let iter = 0; iter < opts.maxNudgeIterations; iter++) {
+    const local: LocalPoint = {
+      x: item.midLocal.x + n.x * offsetM + -n.y * alongM,
+      y: item.midLocal.y + n.y * offsetM + n.x * alongM,
+    };
+    const anchor = project(local);
+    const drawAt = { x: anchor.x - width / 2, y: anchor.y - height / 3 };
+    const box = buildBox(drawAt, width, height);
+    const needsLeader = offsetM > leaderThresholdM || Math.abs(alongM) > opts.outwardMeters * 0.8;
+    if (needsLeader && !allowLeader) {
+      offsetM += Math.max(0.6, 4 / opts.pageScale);
+      alongM += (iter % 2 === 0 ? 1 : -1) * Math.max(0.4, 3 / opts.pageScale);
+      continue;
+    }
+    if (!boxHitsOccupied(box, opts.occupied)) {
+      const leader = needsLeader || allowLeader
+        ? {
+            from: edgeMid,
+            to: { x: drawAt.x + width / 2, y: drawAt.y + height / 3 },
+          }
+        : undefined;
+      // Only attach leader when we actually left the near-edge band.
+      const useLeader = leader && (needsLeader || allowLeader) && offsetM > leaderThresholdM * 0.9;
+      return {
+        text: item.text,
+        anchor,
+        drawAt,
+        box,
+        fontSize,
+        leader: useLeader ? leader : undefined,
+      };
+    }
+    offsetM += Math.max(0.6, 4 / opts.pageScale);
+    alongM += (iter % 2 === 0 ? 1 : -1) * Math.max(0.4, 3 / opts.pageScale);
+  }
+  return null;
+}
+
+export interface PlacePointLabelItem {
+  /** Preferred page-space anchor (e.g. street midpoint, contour mid). */
+  point: PageXY;
+  text: string;
+  fontSize: number;
+}
+
+/**
+ * Place free (non-edge) labels — street names, contour elevations, lot-area
+ * callouts — into the shared collision set. Nudge → shrink → drop; never
+ * silent-overlap.
+ */
+export function placeNonCollidingPointLabels(
+  items: PlacePointLabelItem[],
+  options: {
+    measureText: MeasureTextFn;
+    occupied: PlacedLabel[];
+    pageScale: number;
+    maxNudgeIterations?: number;
+    minFontSize?: number;
+  },
+): PlacedLabel[] {
+  const {
+    measureText,
+    occupied,
+    pageScale,
+    maxNudgeIterations = 12,
+    minFontSize = 4,
+  } = options;
+  const newlyPlaced: PlacedLabel[] = [];
+  const step = Math.max(3, 6 / Math.max(pageScale, 0.01));
+
+  for (const item of items) {
+    if (!item.text) continue;
+    const sizes: number[] = [];
+    for (let s = item.fontSize; s >= minFontSize - 1e-6; s -= 0.75) {
+      sizes.push(Math.round(s * 100) / 100);
+    }
+    if (sizes.length === 0) sizes.push(minFontSize);
+
+    let accepted: PlacedLabel | null = null;
+    for (const fontSize of sizes) {
+      const width = measureText(item.text, fontSize);
+      const height = fontSize + 1;
+      // Spiral offsets in page points.
+      const offsets: Array<[number, number]> = [[0, 0]];
+      for (let iter = 1; iter < maxNudgeIterations; iter++) {
+        const r = step * iter;
+        offsets.push(
+          [r, 0],
+          [-r, 0],
+          [0, r],
+          [0, -r],
+          [r * 0.7, r * 0.7],
+          [-r * 0.7, r * 0.7],
+          [r * 0.7, -r * 0.7],
+          [-r * 0.7, -r * 0.7],
+        );
+      }
+      for (const [dx, dy] of offsets) {
+        const anchor = { x: item.point.x + dx, y: item.point.y + dy };
+        const drawAt = { x: anchor.x - width / 2, y: anchor.y - height / 3 };
+        const box = buildBox(drawAt, width, height);
+        if (!boxHitsOccupied(box, occupied)) {
+          const far = Math.hypot(dx, dy) > step * 1.5;
+          accepted = {
+            text: item.text,
+            anchor,
+            drawAt,
+            box,
+            fontSize,
+            leader: far
+              ? { from: item.point, to: { x: drawAt.x + width / 2, y: drawAt.y + height / 3 } }
+              : undefined,
+          };
+          break;
+        }
+      }
+      if (accepted) break;
+    }
+    if (accepted) {
+      occupied.push(accepted);
+      newlyPlaced.push(accepted);
+    }
+  }
+
+  return newlyPlaced;
 }
 
 /** Clip a polyline to an axis-aligned box in local-ENU metres (Liang-Barsky). */
@@ -229,4 +476,21 @@ export function expandRingAabb(
 
 export function feetFromMeters(meters: number): number {
   return meters / METERS_PER_FOOT;
+}
+
+/** Centroid of a local-ENU ring (for optional lot-area callout). */
+export function ringCentroidLocal(ring: LocalPoint[]): LocalPoint {
+  if (ring.length === 0) return { x: 0, y: 0 };
+  let sx = 0;
+  let sy = 0;
+  const n = ring.length > 1 &&
+    ring[0]!.x === ring[ring.length - 1]!.x &&
+    ring[0]!.y === ring[ring.length - 1]!.y
+    ? ring.length - 1
+    : ring.length;
+  for (let i = 0; i < n; i++) {
+    sx += ring[i]!.x;
+    sy += ring[i]!.y;
+  }
+  return { x: sx / Math.max(n, 1), y: sy / Math.max(n, 1) };
 }

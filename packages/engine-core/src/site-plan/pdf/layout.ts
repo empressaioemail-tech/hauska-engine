@@ -3,10 +3,15 @@ import type { SitePlanModel } from "../site-model.js";
 import {
   PROPERTY_LINE_TAGS_HONESTY,
   clipPolylineToAabb,
+  craftLabelFontSize,
   expandRingAabb,
+  estimateTextWidth,
   formatPropertyLineTag,
   placeNonCollidingEdgeLabels,
+  placeNonCollidingPointLabels,
+  ringCentroidLocal,
   ringSignedAreaLocal,
+  type MeasureTextFn,
   type PlacedLabel,
 } from "./annotation-placement.js";
 
@@ -106,7 +111,8 @@ export interface SitePlanDrawingLayout {
   };
   /** Contours clipped to parcel vicinity for PDF readability (same model source). */
   contours: Array<{ elevation: number; points: PageXY[] }>;
-  elevationLabels: Array<{ point: PageXY; elevationMeters: number; role: "corner" | "contour" }>;
+  /** Elevation labels routed through the shared collision set. */
+  elevationLabels: PlacedLabel[];
   streets: {
     honestAbsence: boolean;
     reason?: string;
@@ -117,10 +123,16 @@ export interface SitePlanDrawingLayout {
       rightEdge?: PageXY[];
       rowProvenanceKind?: string;
       assumedWidthFt?: number;
+      /** Collision-placed street name (omitted when dropped). */
+      label?: PlacedLabel;
     }>;
   };
   north: { origin: PageXY; tip: PageXY };
   scaleBar: { start: PageXY; end: PageXY; lengthMeters: number };
+  /** Optional on-drawing lot-area callout (collision-placed; may be dropped). */
+  lotAreaCallout: PlacedLabel | null;
+  /** All labels that occupy collision space (tags + setbacks + streets + contours + callout). */
+  allPlacedLabels: PlacedLabel[];
 }
 
 function parcelVicinityClipBox(model: SitePlanModel): {
@@ -170,16 +182,25 @@ function longestClippedPart(parts: Array<Array<[number, number]>>): Array<[numbe
   return best;
 }
 
+function projectClippedLocalPolyline(
+  transform: PdfTransform,
+  points: LocalPoint[] | undefined,
+  clipBox: { minX: number; maxX: number; minY: number; maxY: number },
+): PageXY[] | undefined {
+  if (!points || points.length < 2) return undefined;
+  const tuples: Array<[number, number]> = points.map((p) => [p.x, p.y]);
+  const longest = longestClippedPart(clipPolylineToAabb(tuples, clipBox));
+  if (!longest) return undefined;
+  return longest.map(([x, y]) => projectPoint(transform, { x, y }));
+}
+
+/** Street polylines use the wider ROW context clip (not the tight contour pad). */
 function projectStreetPolylineClipped(
   transform: PdfTransform,
   points: LocalPoint[] | undefined,
   localClip: { minX: number; maxX: number; minY: number; maxY: number },
 ): PageXY[] | undefined {
-  if (!points || points.length < 2) return undefined;
-  const localTuples: Array<[number, number]> = points.map((p) => [p.x, p.y]);
-  const localLongest = longestClippedPart(clipPolylineToAabb(localTuples, localClip));
-  if (!localLongest) return undefined;
-  return localLongest.map(([x, y]) => projectPoint(transform, { x, y }));
+  return projectClippedLocalPolyline(transform, points, localClip);
 }
 
 /**
@@ -191,14 +212,26 @@ function projectStreetPolylineClipped(
 function declutterStreets(
   model: SitePlanModel,
   transform: PdfTransform,
-): SitePlanDrawingLayout["streets"] {
+): {
+  honestAbsence: boolean;
+  reason?: string;
+  anchors: Array<
+    SitePlanDrawingLayout["streets"]["anchors"][number] & { _labelPoint?: PageXY; _labelText?: string }
+  >;
+} {
   const localClip = streetContextClipBox(model);
-  const anchors: SitePlanDrawingLayout["streets"]["anchors"] = [];
+  const anchors: Array<
+    SitePlanDrawingLayout["streets"]["anchors"][number] & { _labelPoint?: PageXY; _labelText?: string }
+  > = [];
   for (const anchor of model.streets.anchors) {
     const points = projectStreetPolylineClipped(transform, anchor.pointsLocal, localClip);
     if (!points || points.length < 2) continue;
     const leftEdge = projectStreetPolylineClipped(transform, anchor.leftEdgeLocal, localClip);
     const rightEdge = projectStreetPolylineClipped(transform, anchor.rightEdgeLocal, localClip);
+    const name = (anchor.name ?? "").trim();
+    const mid = points[Math.floor(points.length / 2)];
+    const provenance =
+      anchor.rowProvenanceKind != null ? ` (${anchor.rowProvenanceKind})` : "";
     anchors.push({
       name: anchor.name,
       points,
@@ -206,6 +239,8 @@ function declutterStreets(
       rightEdge,
       rowProvenanceKind: anchor.rowProvenanceKind,
       assumedWidthFt: anchor.assumedWidthFt,
+      _labelPoint: mid && name ? mid : undefined,
+      _labelText: mid && name ? `${name}${provenance}` : undefined,
     });
   }
   return {
@@ -220,7 +255,7 @@ function declutterContours(
   transform: PdfTransform,
 ): {
   contours: Array<{ elevation: number; points: PageXY[] }>;
-  elevationLabels: SitePlanDrawingLayout["elevationLabels"];
+  elevationCandidates: Array<{ point: PageXY; elevationMeters: number; role: "corner" | "contour" }>;
 } {
   // Clip to the same pad band the parcel-primary fit uses (~18%), so decluttered
   // contours stay inside the drawing box rather than spilling past the sheet.
@@ -270,8 +305,18 @@ function declutterContours(
 
   return {
     contours,
-    elevationLabels: [...cornerLabels, ...sparseContourLabels],
+    elevationCandidates: [...cornerLabels, ...sparseContourLabels],
   };
+}
+
+export interface BuildLayoutOptions {
+  /**
+   * Prefer pdf-lib `font.widthOfTextAtSize`. Defaults to Helvetica-ish estimate
+   * for pure unit tests; production emit must pass measured widths.
+   */
+  measureText?: MeasureTextFn;
+  /** When true (default), place an on-drawing lot-area callout if it clears. */
+  includeLotAreaCallout?: boolean;
 }
 
 /**
@@ -281,25 +326,46 @@ function declutterContours(
  * the model (WDLL dispatch item 6: "if you can assert drawing coords match
  * model ... do so").
  */
-export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox): SitePlanDrawingLayout {
+export function buildSitePlanDrawingLayout(
+  model: SitePlanModel,
+  box: DrawingBox,
+  options: BuildLayoutOptions = {},
+): SitePlanDrawingLayout {
+  const measureText = options.measureText ?? estimateTextWidth;
+  const includeLotAreaCallout = options.includeLotAreaCallout !== false;
   const transform = computeDrawingTransform(model, box);
   const ringCcw = ringSignedAreaLocal(model.ringLocal) > 0;
+  const occupied: PlacedLabel[] = [];
+
+  const edgeFont = craftLabelFontSize(transform.scale, "edge");
+  const setbackFont = craftLabelFontSize(transform.scale, "setback");
+  const streetFont = craftLabelFontSize(transform.scale, "street");
+  const contourFont = craftLabelFontSize(transform.scale, "contour");
+  const calloutFont = craftLabelFontSize(transform.scale, "callout");
 
   const dimensions = model.propertySegments.map((segment) => ({
     mid: projectPoint(transform, { x: (segment.a.x + segment.b.x) / 2, y: (segment.a.y + segment.b.y) / 2 }),
     lengthFeet: segment.lengthFeet,
   }));
 
+  // Single shared occupied[] across all label passes — tags, setbacks, streets,
+  // contours, and lot-area callout collide with each other (QA2 craft).
   const propertyLineTags = placeNonCollidingEdgeLabels(
     model.propertySegments.map((segment) => ({
       midLocal: { x: (segment.a.x + segment.b.x) / 2, y: (segment.a.y + segment.b.y) / 2 },
       a: segment.a,
       b: segment.b,
       text: formatPropertyLineTag(segment),
-      fontSize: 7,
+      fontSize: edgeFont,
     })),
     (p) => projectPoint(transform, p),
-    { ringCcw, outwardMeters: Math.max(1.2, (1 / transform.scale) * 10), pageScale: transform.scale },
+    {
+      ringCcw,
+      outwardMeters: Math.max(1.2, (1 / transform.scale) * 10),
+      pageScale: transform.scale,
+      measureText,
+      occupied,
+    },
   );
 
   const silentAxes = !!(
@@ -312,7 +378,7 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
       const notSpecified = !!segment.notSpecified;
       let text: string;
       if (notSpecified) {
-        text = `${segment.role.toUpperCase()} not specified — build-to-line governs`;
+        text = `${segment.role.toUpperCase()} not specified - build-to-line governs`;
       } else if (segment.role === "unassigned" && silentAxes) {
         text = index === 0 ? model.setback.displayLine : "";
       } else {
@@ -324,7 +390,7 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
         a: segment.a,
         b: segment.b,
         text,
-        fontSize: 7,
+        fontSize: setbackFont,
       };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null);
@@ -338,6 +404,8 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
       ringCcw: !ringCcw,
       outwardMeters: Math.max(0.8, (1 / transform.scale) * 8),
       pageScale: transform.scale,
+      measureText,
+      occupied,
     },
   );
 
@@ -358,7 +426,49 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
   };
 
   const decluttered = declutterContours(model, transform);
-  const streets = declutterStreets(model, transform);
+  const streetsRaw = declutterStreets(model, transform);
+
+  // Street labels through the same collision set (never bypass). Place
+  // one-at-a-time so a drop does not shift labels onto the wrong anchor.
+  const streetAnchors = streetsRaw.anchors.map((a) => {
+    const { _labelPoint: labelPoint, _labelText: labelText, ...rest } = a;
+    if (!labelPoint || !labelText) return rest;
+    const placed = placeNonCollidingPointLabels(
+      [{ point: labelPoint, text: labelText, fontSize: streetFont }],
+      { measureText, occupied, pageScale: transform.scale },
+    );
+    return placed[0] ? { ...rest, label: placed[0] } : rest;
+  });
+
+  // Contour / corner elevation labels through collision (contour role only drawn).
+  const elevationItems = decluttered.elevationCandidates
+    .filter((l) => l.role === "contour")
+    .map((l) => ({
+      point: l.point,
+      text: l.elevationMeters.toFixed(1),
+      fontSize: contourFont,
+    }));
+  const elevationLabels = placeNonCollidingPointLabels(elevationItems, {
+    measureText,
+    occupied,
+    pageScale: transform.scale,
+  });
+
+  let lotAreaCallout: PlacedLabel | null = null;
+  if (includeLotAreaCallout && Number.isFinite(model.summary.lotAreaSqFt)) {
+    const centroid = ringCentroidLocal(model.ringLocal);
+    const placed = placeNonCollidingPointLabels(
+      [
+        {
+          point: projectPoint(transform, centroid),
+          text: `${model.summary.lotAreaSqFt.toFixed(0)} sq ft`,
+          fontSize: calloutFont,
+        },
+      ],
+      { measureText, occupied, pageScale: transform.scale },
+    );
+    lotAreaCallout = placed[0] ?? null;
+  }
 
   return {
     transform,
@@ -373,13 +483,19 @@ export function buildSitePlanDrawingLayout(model: SitePlanModel, box: DrawingBox
       degenerateReason: model.setback.degenerateReason,
     },
     contours: decluttered.contours,
-    elevationLabels: decluttered.elevationLabels,
-    streets,
+    elevationLabels,
+    streets: {
+      honestAbsence: streetsRaw.honestAbsence,
+      reason: streetsRaw.reason,
+      anchors: streetAnchors,
+    },
     north: { origin: projectPoint(transform, model.north.originLocal), tip: projectPoint(transform, northTip) },
     scaleBar: {
       start: projectPoint(transform, scaleBarStart),
       end: projectPoint(transform, scaleBarEnd),
       lengthMeters: model.scaleBar.lengthMeters,
     },
+    lotAreaCallout,
+    allPlacedLabels: [...occupied],
   };
 }
