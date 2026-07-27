@@ -268,6 +268,26 @@ export function buildApp(options: ServerOptions = {}): Hono {
     return c.json(chain);
   });
 
+  /**
+   * CC-A U1 / WDLL 6 — serve stranded boundary-edge graph from StoragePort.
+   * Phase 0 live 404 on /boundary-edges; this is the fix.
+   */
+  app.get("/property-nodes/:parcelNodeId{.+}/boundary-edges", async (c) => {
+    const parcelNodeId = decodeURIComponent(c.req.param("parcelNodeId"));
+    if (!/^\d{5}:[A-Za-z0-9._-]+$/.test(parcelNodeId) || parcelNodeId.includes(":boundary:")) {
+      return c.json(
+        {
+          error: "invalid parcelNodeId",
+          hint: "expected {county_fips}:{prop_id} e.g. 48021:28286",
+          parcelNodeId,
+        },
+        400,
+      );
+    }
+    const body = await retrieval.listBoundaryEdgesByParcelNodeId(parcelNodeId);
+    return c.json(body);
+  });
+
   app.get("/road-nodes/:roadNodeId{.+}/atom-chain", async (c) => {
     const roadNodeId = decodeURIComponent(c.req.param("roadNodeId"));
     if (!/^\d{5}:road:\d+$/.test(roadNodeId)) {
@@ -282,6 +302,39 @@ export function buildApp(options: ServerOptions = {}): Hono {
     }
     const chain = await retrieval.getRoadAtomChain(roadNodeId);
     return c.json(chain);
+  });
+
+  /**
+   * CC-A U1 / WDLL 1+2+6 — Control-Tower-shaped node detail for parcel /
+   * road / property-boundary-edge. Walkable edges_out / edges_in.
+   */
+  app.get("/nodes/:nodeId{.+}", async (c) => {
+    const nodeId = decodeURIComponent(c.req.param("nodeId"));
+    const detail = await retrieval.getPropertyNodeDetail(nodeId);
+    if (!detail.available && detail.reason?.startsWith("invalid node id")) {
+      return c.json(detail, 400);
+    }
+    if (!detail.available) {
+      return c.json(detail, 404);
+    }
+    return c.json(detail);
+  });
+
+  app.get("/boundary-edges/:boundaryEdgeId{.+}", async (c) => {
+    const boundaryEdgeId = decodeURIComponent(c.req.param("boundaryEdgeId"));
+    if (!/^\d{5}:[A-Za-z0-9._-]+:boundary:\d+$/.test(boundaryEdgeId)) {
+      return c.json(
+        {
+          error: "invalid boundaryEdgeId",
+          hint: "expected {fips}:{propId}:boundary:{edgeIndex} e.g. 48021:28286:boundary:1",
+          boundaryEdgeId,
+        },
+        400,
+      );
+    }
+    const detail = await retrieval.getPropertyNodeDetail(boundaryEdgeId);
+    if (!detail.available) return c.json(detail, 404);
+    return c.json(detail);
   });
 
   app.get("/jurisdictions", async (c) => {
