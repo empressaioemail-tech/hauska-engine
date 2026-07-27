@@ -4,6 +4,7 @@
  */
 
 import type { ParsedOsmElement } from "./types.js";
+import type { OverpassFetchOutcome } from "./honest-fallback.js";
 
 export const OSM_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 
@@ -12,6 +13,12 @@ export const OVERPASS_USER_AGENT =
 
 /** Overpass server-side timeout (seconds). */
 export const OVERPASS_QL_TIMEOUT_SEC = 180;
+
+/** Bounded retry on transient Overpass failures (QA4 — 504 / gateway blips). */
+export const OVERPASS_MAX_ATTEMPTS = 3;
+export const OVERPASS_RETRY_BASE_MS = 500;
+export const OVERPASS_RETRY_MAX_MS = 2_000;
+export const OVERPASS_TRANSIENT_HTTP = new Set([408, 429, 502, 503, 504]);
 
 /** Bastrop County, TX (48021) — public county extent for road bulk ingest. */
 export const BASTROP_COUNTY_BBOX = {
@@ -64,6 +71,16 @@ export interface FetchOverpassRoadsResult {
   query: string;
   tilesFetched?: number;
   scope?: BastropRoadIngestScope | "custom";
+  /** Attempts consumed (1 = first try succeeded). */
+  attempts?: number;
+}
+
+export interface FetchOverpassOptions {
+  fetchImpl?: typeof fetch;
+  maxAttempts?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  sleepImpl?: (ms: number) => Promise<void>;
 }
 
 function buildBboxQuery(bbox: OverpassBbox): string {
@@ -123,33 +140,123 @@ function filterWayElements(elements: ParsedOsmElement[] | undefined): ParsedOsmE
   );
 }
 
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(
+  attemptIndex: number,
+  baseDelayMs: number,
+  maxDelayMs: number,
+): number {
+  const exp = Math.min(maxDelayMs, baseDelayMs * 2 ** attemptIndex);
+  const jitter = Math.floor(Math.random() * Math.min(100, baseDelayMs));
+  return exp + jitter;
+}
+
 /**
  * POST an Overpass interpreter query for all highway ways in a bbox.
+ * Bounded retry/backoff on transient HTTP (504/502/503/408/429) — QA4.
  * Returns parsed way elements with geometry (out body geom).
  */
 export async function fetchOverpassRoadsInBbox(
   bbox: OverpassBbox,
   fetchImpl: typeof fetch = fetch,
+  options: Omit<FetchOverpassOptions, "fetchImpl"> = {},
 ): Promise<FetchOverpassRoadsResult> {
+  const outcome = await fetchOverpassRoadsInBboxOutcome(bbox, {
+    ...options,
+    fetchImpl,
+  });
+  if (!outcome.ok) {
+    throw new Error(outcome.error);
+  }
+  return {
+    elements: outcome.elements,
+    elapsedMs: outcome.elapsedMs,
+    query: outcome.query ?? buildBboxQuery(bbox),
+    attempts: outcome.attempts,
+  };
+}
+
+/**
+ * Same as {@link fetchOverpassRoadsInBbox} but returns an outcome object
+ * instead of throwing — used by honest-fallback orchestration (QA4).
+ */
+export async function fetchOverpassRoadsInBboxOutcome(
+  bbox: OverpassBbox,
+  options: FetchOverpassOptions = {},
+): Promise<OverpassFetchOutcome & { query?: string }> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const maxAttempts = Math.max(1, options.maxAttempts ?? OVERPASS_MAX_ATTEMPTS);
+  const baseDelayMs = options.baseDelayMs ?? OVERPASS_RETRY_BASE_MS;
+  const maxDelayMs = options.maxDelayMs ?? OVERPASS_RETRY_MAX_MS;
+  const sleepImpl = options.sleepImpl ?? defaultSleep;
   const query = buildBboxQuery(bbox);
   const t0 = performance.now();
-  const response = await fetchImpl(OSM_OVERPASS_URL, {
-    method: "POST",
-    body: query,
-    headers: {
-      "Content-Type": "text/plain",
-      "User-Agent": OVERPASS_USER_AGENT,
-      Accept: "application/json, */*;q=0.1",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Overpass HTTP ${response.status}: ${response.statusText}`);
+  let lastError = "Overpass request failed";
+  let lastStatus: number | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetchImpl(OSM_OVERPASS_URL, {
+        method: "POST",
+        body: query,
+        headers: {
+          "Content-Type": "text/plain",
+          "User-Agent": OVERPASS_USER_AGENT,
+          Accept: "application/json, */*;q=0.1",
+        },
+      });
+      if (!response.ok) {
+        lastStatus = response.status;
+        lastError = `Overpass HTTP ${response.status}: ${response.statusText || "error"}`;
+        const retryable = OVERPASS_TRANSIENT_HTTP.has(response.status);
+        if (retryable && attempt < maxAttempts) {
+          await sleepImpl(retryDelayMs(attempt - 1, baseDelayMs, maxDelayMs));
+          continue;
+        }
+        return {
+          ok: false,
+          error: `${lastError} after ${attempt} attempt${attempt === 1 ? "" : "s"}`,
+          attempts: attempt,
+          statusCode: response.status,
+          elapsedMs: Math.round(performance.now() - t0),
+          query,
+        };
+      }
+      const body = (await response.json()) as { elements?: ParsedOsmElement[] };
+      return {
+        ok: true,
+        elements: filterWayElements(body.elements),
+        attempts: attempt,
+        elapsedMs: Math.round(performance.now() - t0),
+        query,
+      };
+    } catch (err) {
+      lastError =
+        err instanceof Error ? err.message : `Overpass fetch failed: ${String(err)}`;
+      if (attempt < maxAttempts) {
+        await sleepImpl(retryDelayMs(attempt - 1, baseDelayMs, maxDelayMs));
+        continue;
+      }
+      return {
+        ok: false,
+        error: `${lastError} after ${attempt} attempt${attempt === 1 ? "" : "s"}`,
+        attempts: attempt,
+        statusCode: lastStatus,
+        elapsedMs: Math.round(performance.now() - t0),
+        query,
+      };
+    }
   }
-  const body = (await response.json()) as { elements?: ParsedOsmElement[] };
-  const elapsedMs = Math.round(performance.now() - t0);
+
   return {
-    elements: filterWayElements(body.elements),
-    elapsedMs,
+    ok: false,
+    error: `${lastError} after ${maxAttempts} attempts`,
+    attempts: maxAttempts,
+    statusCode: lastStatus,
+    elapsedMs: Math.round(performance.now() - t0),
     query,
   };
 }
@@ -223,14 +330,20 @@ export async function fetchOverpassRoadsTiled(
 /**
  * Fetch roads for resolved Bastrop ingest scope.
  * `county-tiled` uses a 3×3 grid over BASTROP_COUNTY_BBOX.
+ *
+ * QA4: when scope is `county` (single county query that often 504s), fail over
+ * to the preferred city-scope bbox after bounded retries — never silently
+ * return zero as if the county has no roads.
  */
 export async function fetchBastropRoadsForIngest(
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: typeof fetch = fetch,
+  options: Omit<FetchOverpassOptions, "fetchImpl"> = {},
 ): Promise<
   FetchOverpassRoadsResult & {
     bbox: OverpassBbox;
     scope: BastropRoadIngestScope | "custom";
+    preferredCityFallback?: boolean;
   }
 > {
   const { bbox, scope } = resolveBastropRoadIngestBbox(env);
@@ -238,8 +351,122 @@ export async function fetchBastropRoadsForIngest(
     const tiled = await fetchOverpassRoadsTiled(bbox, { fetchImpl });
     return { ...tiled, bbox, scope };
   }
-  const single = await fetchOverpassRoadsInBbox(bbox, fetchImpl);
-  return { ...single, bbox, scope };
+
+  const outcome = await fetchOverpassRoadsInBboxOutcome(bbox, {
+    ...options,
+    fetchImpl,
+  });
+  if (outcome.ok) {
+    return {
+      elements: outcome.elements,
+      elapsedMs: outcome.elapsedMs,
+      query: outcome.query ?? buildBboxQuery(bbox),
+      attempts: outcome.attempts,
+      bbox,
+      scope,
+    };
+  }
+
+  // Prefer city-scope over a county single-query that 504s (QA4 / LESSON).
+  if (scope === "county") {
+    const cityOutcome = await fetchOverpassRoadsInBboxOutcome(
+      { ...BASTROP_CITY_BBOX },
+      { ...options, fetchImpl },
+    );
+    if (cityOutcome.ok) {
+      return {
+        elements: cityOutcome.elements,
+        elapsedMs: cityOutcome.elapsedMs,
+        query: cityOutcome.query ?? buildBboxQuery(BASTROP_CITY_BBOX),
+        attempts: cityOutcome.attempts,
+        bbox: { ...BASTROP_CITY_BBOX },
+        scope: "city",
+        preferredCityFallback: true,
+      };
+    }
+    throw new Error(
+      `${outcome.error}; city-scope fallback also failed: ${cityOutcome.error}`,
+    );
+  }
+
+  throw new Error(outcome.error);
+}
+
+/**
+ * Outcome-shaped Bastrop overpass fetch for honest-fallback orchestration.
+ * Does not throw on 504 — caller resolves coverage via resolveHonestRoadCoverage.
+ */
+export async function fetchBastropOverpassOutcome(
+  env: NodeJS.ProcessEnv = process.env,
+  options: FetchOverpassOptions = {},
+): Promise<
+  OverpassFetchOutcome & {
+    bbox: OverpassBbox;
+    scope: BastropRoadIngestScope | "custom";
+    query?: string;
+    preferredCityFallback?: boolean;
+  }
+> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const { bbox, scope } = resolveBastropRoadIngestBbox(env);
+
+  if (scope === "county-tiled") {
+    try {
+      const tiled = await fetchOverpassRoadsTiled(bbox, { fetchImpl });
+      return {
+        ok: true,
+        elements: tiled.elements,
+        attempts: 1,
+        elapsedMs: tiled.elapsedMs,
+        query: tiled.query,
+        bbox,
+        scope,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        attempts: 1,
+        elapsedMs: 0,
+        bbox,
+        scope,
+      };
+    }
+  }
+
+  const outcome = await fetchOverpassRoadsInBboxOutcome(bbox, {
+    ...options,
+    fetchImpl,
+  });
+  if (outcome.ok) {
+    return { ...outcome, bbox, scope };
+  }
+
+  if (scope === "county") {
+    const cityOutcome = await fetchOverpassRoadsInBboxOutcome(
+      { ...BASTROP_CITY_BBOX },
+      { ...options, fetchImpl },
+    );
+    if (cityOutcome.ok) {
+      return {
+        ...cityOutcome,
+        bbox: { ...BASTROP_CITY_BBOX },
+        scope: "city",
+        preferredCityFallback: true,
+      };
+    }
+    return {
+      ok: false,
+      error: `${outcome.error}; city-scope fallback also failed: ${cityOutcome.error}`,
+      attempts: outcome.attempts + cityOutcome.attempts,
+      statusCode: cityOutcome.statusCode ?? outcome.statusCode,
+      elapsedMs: outcome.elapsedMs + cityOutcome.elapsedMs,
+      bbox,
+      scope,
+    };
+  }
+
+  return { ...outcome, bbox, scope };
 }
 
 export type CaldwellRoadIngestScope = "lockhart-city" | "county" | "county-tiled";

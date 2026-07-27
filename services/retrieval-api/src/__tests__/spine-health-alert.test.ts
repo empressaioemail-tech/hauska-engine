@@ -55,4 +55,26 @@ describe("spine-health deriveProbeStatus (M0 alert path)", () => {
     expect(result.status).toBe("firing");
     expect(result.alert).toBe(false);
   });
+
+  it("QA4: errored + fallbackCovered → degraded-covered, no alert", () => {
+    const result = deriveProbeStatus({
+      baseline: SEED_BASELINES["osm-overpass"],
+      current: null,
+      errored: true,
+      fallbackCovered: true,
+    });
+    expect(result.status).toBe("degraded-covered");
+    expect(result.alert).toBe(false);
+  });
+
+  it("QA4: errored without fallback → dead + alert", () => {
+    const result = deriveProbeStatus({
+      baseline: SEED_BASELINES["osm-overpass"],
+      current: null,
+      errored: true,
+      fallbackCovered: false,
+    });
+    expect(result.status).toBe("dead");
+    expect(result.alert).toBe(true);
+  });
 });

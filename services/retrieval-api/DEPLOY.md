@@ -248,7 +248,7 @@ Each `/healthz` call emits one structured Cloud Logging line (`hauska_health=tru
 COMPLETE-BASTROP B1 (S-03): source+engine liveness probes for the Bastrop pack. Process `/health` and `/healthz` are unchanged; spine health is additive.
 
 - **`GET /health`** — still `{status, service, startedAt}` plus `links.spineHealth` / `links.spineHealthRun`.
-- **`GET /health/spine`** — latest persisted `spine_health_probe` summary (`pack`, `alertCount`, `probes[]` with `firing|degraded|dead|dead-expected`).
+- **`GET /health/spine`** — latest persisted `spine_health_probe` summary (`pack`, `alertCount`, `probes[]` with `firing|degraded|degraded-covered|dead|dead-expected`).
 - **`GET|POST /health/spine/run`** — run the Bastrop pack now (ArcGIS / Overpass / txgio / tier1 / boundary / depth-warm / setback / atom-chain) and persist rows.
 
 Apply migration once on substrate Neon:

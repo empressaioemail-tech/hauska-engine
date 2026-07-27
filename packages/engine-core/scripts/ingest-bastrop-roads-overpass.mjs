@@ -34,10 +34,7 @@ import {
   emitRoadNode,
   parseOsmWayElement,
 } from "../src/road-intake/index.ts";
-import {
-  fetchBastropRoadsForIngest,
-  resolveBastropRoadIngestBbox,
-} from "../src/road-intake/fetch-overpass-bbox.ts";
+import { resolveBastropRoadIngestBbox } from "../src/road-intake/fetch-overpass-bbox.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_FIXTURE = join(HERE, "../src/road-intake/fixtures/bastrop-road-pilot.json");
@@ -69,14 +66,63 @@ async function loadElements() {
     return { elements: raw.elements ?? [], source: "fixture", fetchMs: 0, bbox: null };
   }
   const resolved = resolveBastropRoadIngestBbox();
-  const fetched = await fetchBastropRoadsForIngest();
+  // QA4: outcome-shaped fetch — never silent-zero on overpass 504.
+  const { resolveBastropRoadsHonest } = await import(
+    "../src/road-intake/resolve-bastrop-roads-honest.ts"
+  );
+  const honest = await resolveBastropRoadsHonest({
+    env: process.env,
+    // Prefer short backoff in scripts; still bounded retries.
+    maxAttempts: 3,
+    baseDelayMs: 500,
+  });
+  if (honest.coverage.kind === "degraded-no-source") {
+    console.error(
+      JSON.stringify(
+        {
+          event: "R4-road-ingest.degraded-no-source",
+          message: honest.coverage.message,
+          overpassError: honest.coverage.overpassError,
+          attempts: honest.coverage.attempts,
+          fallback: honest.fallback,
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(2);
+  }
+  if (honest.coverage.kind === "degraded-covered") {
+    console.error(
+      JSON.stringify(
+        {
+          event: "R4-road-ingest.degraded-covered",
+          message: honest.coverage.message,
+          overpassError: honest.coverage.overpassError,
+          fallbackActive: honest.coverage.fallbackActive,
+          fallbackRoadCount: honest.coverage.fallbackRoadCount,
+          hint: "OSM ways unavailable; use ingest-bastrop-roads-county-roadway / county-surveyed",
+        },
+        null,
+        2,
+      ),
+    );
+    // Honest stop: do not pretend OSM ingest succeeded with zero roads.
+    process.exit(3);
+  }
+  if (!honest.overpass.ok) {
+    console.error("FATAL: unexpected overpass outcome after honest resolve");
+    process.exit(1);
+  }
   return {
-    elements: fetched.elements,
+    elements: honest.overpass.elements,
     source: "overpass-live",
-    fetchMs: fetched.elapsedMs,
-    bbox: fetched.bbox,
-    scope: fetched.scope ?? resolved.scope,
-    tilesFetched: fetched.tilesFetched ?? null,
+    fetchMs: honest.overpass.elapsedMs,
+    bbox: honest.overpass.bbox ?? resolved.bbox,
+    scope: honest.overpass.scope ?? resolved.scope,
+    tilesFetched: null,
+    attempts: honest.overpass.attempts,
+    coverageKind: honest.coverage.kind,
   };
 }
 

@@ -4,7 +4,12 @@
 
 export type ProbeKind = "source" | "engine";
 
-export type ProbeStatus = "firing" | "degraded" | "dead" | "dead-expected";
+export type ProbeStatus =
+  | "firing"
+  | "degraded"
+  | "degraded-covered"
+  | "dead"
+  | "dead-expected";
 
 export interface ProbeResult {
   probeId: string;
@@ -32,6 +37,12 @@ export interface DeriveStatusInput {
   expectedDead?: boolean;
   /** Probe threw or upstream returned an error envelope. */
   errored?: boolean;
+  /**
+   * QA4: upstream errored BUT a named fallback still covers the bbox
+   * (e.g. osm-overpass 504 while county-roadway fires). Status is
+   * degraded-covered with alert=false — not a bare red outage.
+   */
+  fallbackCovered?: boolean;
   /** Historical baseline (>0 means zero/error must alert). */
   baseline: number | null;
   /** Observed numeric signal (feature count, row count, key count, …). */
