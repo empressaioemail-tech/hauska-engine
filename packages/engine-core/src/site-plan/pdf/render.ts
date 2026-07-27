@@ -1,7 +1,7 @@
-import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb, type RGB } from "pdf-lib";
 
 import type { SitePlanModel } from "../site-model.js";
-import { buildSitePlanDrawingLayout, type DrawingBox, type SitePlanDrawingLayout } from "./layout.js";
+import { buildSitePlanDrawingLayout, type DrawingBox, type PageXY, type SitePlanDrawingLayout } from "./layout.js";
 import { buildProvenancePanelEntries, SITE_PLAN_HONESTY_LINE } from "./provenance.js";
 
 const PAGE_WIDTH = 612; // US Letter, PDF points (72/in)
@@ -9,10 +9,13 @@ const PAGE_HEIGHT = 792;
 const MARGIN = 36;
 
 const BLACK = rgb(0, 0, 0);
+const PROPERTY_COLOR = rgb(0.05, 0.05, 0.05);
+const ENVELOPE_FILL = rgb(0.96, 0.9, 0.78);
 const SETBACK_COLOR = rgb(0.72, 0.35, 0.05);
-const CONTOUR_COLOR = rgb(0.55, 0.4, 0.25);
+const CONTOUR_COLOR = rgb(0.72, 0.62, 0.48);
 const STREET_COLOR = rgb(0.1, 0.35, 0.75);
 const GRAY = rgb(0.35, 0.35, 0.35);
+const MUTED = rgb(0.5, 0.5, 0.5);
 
 export interface PdfSitePlanResult {
   bytes: Uint8Array;
@@ -26,6 +29,11 @@ function drawTitleBlock(page: PDFPage, model: SitePlanModel, bold: PDFFont, font
   if (model.summary.address) {
     page.drawText(model.summary.address, { x: MARGIN, y: top - 46, size: 10, font, color: GRAY });
   }
+  // Layer legend (right side of title band) — hierarchy cue for the sheet.
+  const legendX = PAGE_WIDTH - MARGIN - 210;
+  page.drawText("PROPERTY", { x: legendX, y: top - 14, size: 7, font: bold, color: PROPERTY_COLOR });
+  page.drawText("ENVELOPE / SETBACK", { x: legendX + 55, y: top - 14, size: 7, font: bold, color: SETBACK_COLOR });
+  page.drawText("CONTOUR", { x: legendX + 155, y: top - 14, size: 7, font, color: CONTOUR_COLOR });
   page.drawLine({
     start: { x: MARGIN, y: top - 54 },
     end: { x: PAGE_WIDTH - MARGIN, y: top - 54 },
@@ -34,14 +42,32 @@ function drawTitleBlock(page: PDFPage, model: SitePlanModel, bold: PDFFont, font
   });
 }
 
-function drawRing(page: PDFPage, ring: Array<{ x: number; y: number }>, color = BLACK, dashArray?: number[]): void {
+function drawRing(
+  page: PDFPage,
+  ring: Array<{ x: number; y: number }>,
+  color: RGB = BLACK,
+  thickness = 1.25,
+  dashArray?: number[],
+): void {
   const n = ring.length;
   if (n < 2) return;
   for (let i = 0; i < n; i++) {
     const a = ring[i]!;
     const b = ring[(i + 1) % n]!;
-    page.drawLine({ start: a, end: b, thickness: dashArray ? 1 : 1.25, color, dashArray });
+    page.drawLine({ start: a, end: b, thickness, color, dashArray });
   }
+}
+
+function drawFilledRing(page: PDFPage, ring: PageXY[], fill: RGB): void {
+  if (ring.length < 3) return;
+  const first = ring[0]!;
+  let path = `M ${first.x.toFixed(2)} ${first.y.toFixed(2)}`;
+  for (let i = 1; i < ring.length; i++) {
+    const p = ring[i]!;
+    path += ` L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+  }
+  path += " Z";
+  page.drawSvgPath(path, { color: fill, borderWidth: 0 });
 }
 
 function drawPolyline(page: PDFPage, points: Array<{ x: number; y: number }>, color = BLACK, thickness = 0.75): void {
@@ -50,82 +76,108 @@ function drawPolyline(page: PDFPage, points: Array<{ x: number; y: number }>, co
   }
 }
 
-function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font: PDFFont): void {
-  // PROPERTY_LINE + corner markers
-  drawRing(page, layout.propertyLine, BLACK);
-  for (const corner of layout.propertyLine) {
-    page.drawCircle({ x: corner.x, y: corner.y, size: 1.75, color: BLACK });
-  }
-  // DIMENSION
-  for (const dim of layout.dimensions) {
-    page.drawText(`${dim.lengthFeet.toFixed(1)}'`, {
-      x: dim.mid.x + 2,
-      y: dim.mid.y + 2,
-      size: 7,
-      font,
-      color: GRAY,
-    });
-  }
-  // SETBACK (offset ring, dashed, labeled F/S/R)
-  if (layout.setback.offsetRing) {
-    drawRing(page, layout.setback.offsetRing, SETBACK_COLOR, [4, 3]);
-    for (const label of layout.setback.labels) {
-      page.drawText(label.text, {
-        x: label.mid.x + 2,
-        y: label.mid.y - 8,
-        size: 7,
-        font,
-        color: SETBACK_COLOR,
-      });
-    }
-  } else {
-    page.drawText(
-      `SETBACK: no buildable envelope drawn — ${layout.setback.degenerateReason ?? "offset degenerate"}`,
-      { x: MARGIN, y: MARGIN + 4, size: 8, font, color: SETBACK_COLOR },
-    );
-  }
-  // CONTOUR + ELEVATION_LABEL
+function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font: PDFFont, bold: PDFFont): void {
+  // Draw order = visual hierarchy: contours behind, property + envelope dominate.
+
+  // 1) CONTOUR (decluttered / clipped) — light, behind
   for (const contour of layout.contours) {
-    drawPolyline(page, contour.points, CONTOUR_COLOR, 0.5);
+    drawPolyline(page, contour.points, CONTOUR_COLOR, 0.4);
   }
-  for (const label of layout.elevationLabels) {
-    page.drawText(label.elevationMeters.toFixed(1), {
-      x: label.point.x + 2,
-      y: label.point.y + 2,
-      size: 6,
-      font,
-      color: CONTOUR_COLOR,
-    });
-  }
-  // STREET (or honest absence note)
+
+  // 2) STREET
   if (layout.streets.honestAbsence) {
     page.drawText(`STREET: ${layout.streets.reason ?? "no road-anchor data available"}`, {
       x: MARGIN,
-      y: MARGIN + 16,
-      size: 8,
+      y: MARGIN + 28,
+      size: 7,
       font,
       color: STREET_COLOR,
     });
   } else {
     for (const anchor of layout.streets.anchors) {
-      drawPolyline(page, anchor.points, STREET_COLOR, 1.5);
+      drawPolyline(page, anchor.points, STREET_COLOR, 1.75);
       const label = anchor.points[Math.floor(anchor.points.length / 2)];
       if (label) {
-        page.drawText(anchor.name, { x: label.x + 2, y: label.y + 4, size: 8, font, color: STREET_COLOR });
+        page.drawText(anchor.name, { x: label.x + 2, y: label.y + 4, size: 8, font: bold, color: STREET_COLOR });
       }
     }
   }
-  // NORTH arrow + label
-  page.drawLine({ start: layout.north.origin, end: layout.north.tip, thickness: 1.25, color: BLACK });
-  page.drawText("N", { x: layout.north.tip.x + 2, y: layout.north.tip.y, size: 9, font, color: BLACK });
-  // SCALE bar + label
-  page.drawLine({ start: layout.scaleBar.start, end: layout.scaleBar.end, thickness: 1.25, color: BLACK });
+
+  // 3) Buildable envelope fill (same offset ring as CAD SETBACK)
+  if (layout.setback.offsetRing) {
+    drawFilledRing(page, layout.setback.offsetRing, ENVELOPE_FILL);
+  }
+
+  // 4) PROPERTY_LINE + corners (dominant)
+  drawRing(page, layout.propertyLine, PROPERTY_COLOR, 2);
+  for (const corner of layout.propertyLine) {
+    page.drawCircle({ x: corner.x, y: corner.y, size: 2.1, color: PROPERTY_COLOR });
+  }
+
+  // 5) SETBACK offset ring (dashed)
+  if (layout.setback.offsetRing) {
+    drawRing(page, layout.setback.offsetRing, SETBACK_COLOR, 1.35, [5, 3]);
+  } else {
+    page.drawText(
+      `SETBACK: no buildable envelope drawn — ${layout.setback.degenerateReason ?? "offset degenerate"}`,
+      { x: MARGIN, y: MARGIN + 16, size: 8, font, color: SETBACK_COLOR },
+    );
+  }
+
+  // 6) Property-line tags (bearing + distance, GIS-approximate, non-colliding)
+  for (const tag of layout.propertyLineTags) {
+    page.drawText(tag.text, {
+      x: tag.drawAt.x,
+      y: tag.drawAt.y,
+      size: 7,
+      font,
+      color: GRAY,
+    });
+  }
+
+  // 7) Setback role labels (inward, non-colliding)
+  for (const label of layout.setback.labels) {
+    page.drawText(label.text, {
+      x: label.drawAt.x,
+      y: label.drawAt.y,
+      size: 7,
+      font: bold,
+      color: SETBACK_COLOR,
+    });
+  }
+
+  // 8) Sparse elevation labels
+  for (const label of layout.elevationLabels) {
+    if (label.role === "contour") {
+      page.drawText(label.elevationMeters.toFixed(1), {
+        x: label.point.x + 1,
+        y: label.point.y + 1,
+        size: 5.5,
+        font,
+        color: MUTED,
+      });
+    }
+  }
+
+  // 9) NORTH arrow + SCALE bar
+  page.drawLine({ start: layout.north.origin, end: layout.north.tip, thickness: 1.5, color: BLACK });
+  page.drawText("N", { x: layout.north.tip.x + 2, y: layout.north.tip.y, size: 10, font: bold, color: BLACK });
+  page.drawLine({ start: layout.scaleBar.start, end: layout.scaleBar.end, thickness: 1.5, color: BLACK });
   page.drawText(`${layout.scaleBar.lengthMeters.toFixed(0)} m`, {
     x: layout.scaleBar.start.x,
     y: layout.scaleBar.start.y + 4,
     size: 7,
     font,
     color: BLACK,
+  });
+
+  // 10) GIS property-line honesty (page 1 — reinforced again on page 2)
+  page.drawText(layout.propertyLineTagsHonesty, {
+    x: MARGIN,
+    y: MARGIN + 4,
+    size: 7,
+    font,
+    color: MUTED,
   });
 }
 
@@ -217,8 +269,12 @@ function drawProvenancePanel(page: PDFPage, model: SitePlanModel, bold: PDFFont,
   return y;
 }
 
-function drawHonestyLine(page: PDFPage, bold: PDFFont, y: number): void {
-  page.drawText(SITE_PLAN_HONESTY_LINE, { x: MARGIN, y: Math.max(y, MARGIN), size: 9, font: bold, color: BLACK });
+function drawHonestyLine(page: PDFPage, bold: PDFFont, font: PDFFont, y: number): void {
+  page.drawText(SITE_PLAN_HONESTY_LINE, { x: MARGIN, y: Math.max(y, MARGIN + 14), size: 9, font: bold, color: BLACK });
+  page.drawText(
+    "Property-line bearing/distance tags are GIS-approximate from the county parcel ring — not survey-grade.",
+    { x: MARGIN, y: Math.max(y - 12, MARGIN), size: 7, font, color: MUTED },
+  );
 }
 
 /**
@@ -235,17 +291,17 @@ export async function emitPdfSitePlan(model: SitePlanModel): Promise<PdfSitePlan
   drawTitleBlock(page1, model, bold, font);
   const drawingBox: DrawingBox = {
     x: MARGIN,
-    y: MARGIN + 24,
+    y: MARGIN + 40,
     width: PAGE_WIDTH - MARGIN * 2,
-    height: PAGE_HEIGHT - MARGIN * 2 - 70,
+    height: PAGE_HEIGHT - MARGIN * 2 - 86,
   };
   const layout = buildSitePlanDrawingLayout(model, drawingBox);
-  drawSitePlanDrawing(page1, layout, font);
+  drawSitePlanDrawing(page1, layout, font, bold);
 
   const page2 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   const afterSummaryY = drawSummaryBlock(page2, model, bold, font);
   const afterProvenanceY = drawProvenancePanel(page2, model, bold, font, afterSummaryY);
-  drawHonestyLine(page2, bold, afterProvenanceY - 10);
+  drawHonestyLine(page2, bold, font, afterProvenanceY - 10);
 
   const bytes = await doc.save({ useObjectStreams: false });
   return { bytes, pageCount: doc.getPageCount() };
