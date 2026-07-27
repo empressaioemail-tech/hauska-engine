@@ -219,6 +219,59 @@ describe("buildSitePlanDrawingLayout", () => {
     expect(layout.propertyLineTags.length + layout.setback.labels.length).toBeLessThanOrEqual(labels.length);
   });
 
+  // Template-match sheet clamp: a street name on a road that only grazes the
+  // parcel edge used to spiral off the printable sheet (x > page width). With
+  // an explicit sheetBounds, every placed label box must stay inside it — an
+  // unplaceable label is DROPPED, never drawn off-page.
+  it("SHEET-CLAMP: no placed label box leaves the sheetBounds; off-sheet candidates drop", async () => {
+    const { PDFDocument, StandardFonts } = await import("pdf-lib");
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const measureText = (text: string, size: number) => font.widthOfTextAtSize(text, size);
+
+    // Dense lot with a long grazing frontage road whose name would otherwise
+    // be pushed off the right edge by the collision spiral.
+    const denseRing: Array<[number, number]> = [
+      [-98.49978, 29.40012],
+      [-98.49974, 29.40012],
+      [-98.49970, 29.40012],
+      [-98.49970, 29.40016],
+      [-98.49970, 29.40020],
+      [-98.49974, 29.40020],
+      [-98.49978, 29.40020],
+      [-98.49978, 29.40016],
+      [-98.49978, 29.40012],
+    ];
+    const model = composeSitePlanModel({
+      parcelNodeId: "clamp:qa",
+      bbox,
+      ringWgs84: denseRing,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      geometrySourceRef: "clamp-fixture",
+      streetAnchors: [
+        {
+          name: "A VERY LONG FRONTAGE STREET NAME THAT WANTS TO RUN OFF",
+          points: [
+            [-98.49990, 29.40010],
+            [-98.49958, 29.40010],
+          ],
+          sourceRef: "osm:way/graze",
+        },
+      ],
+    });
+
+    const sheetBounds = { minX: box.x, minY: box.y, maxX: box.x + box.width, maxY: box.y + box.height };
+    const layout = buildSitePlanDrawingLayout(model, box, { measureText, sheetBounds });
+    for (const label of layout.allPlacedLabels) {
+      expect(label.box.x, `left edge of "${label.text}"`).toBeGreaterThanOrEqual(sheetBounds.minX - 1e-6);
+      expect(label.box.y, `bottom of "${label.text}"`).toBeGreaterThanOrEqual(sheetBounds.minY - 1e-6);
+      expect(label.box.x + label.box.width, `right edge of "${label.text}"`).toBeLessThanOrEqual(sheetBounds.maxX + 1e-6);
+      expect(label.box.y + label.box.height, `top of "${label.text}"`).toBeLessThanOrEqual(sheetBounds.maxY + 1e-6);
+    }
+  });
+
   it("reflects street honest-absence in the layout with no fabricated anchors", () => {
     const model = buildModel();
     const layout = buildSitePlanDrawingLayout(model, box);

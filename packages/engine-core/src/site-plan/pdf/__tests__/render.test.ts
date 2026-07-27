@@ -133,17 +133,38 @@ describe("emitPdfSitePlan", () => {
     expect(decoded).toContain("unavailable");
   });
 
-  it("draws craft sheet chrome: FEET scale bar, LEGEND, Date not on file, no silent survey date", async () => {
+  // Template-match chrome (rebuilt 2026-07-27 to the Industry gold reference).
+  // The header eyebrow, right-aligned stat cluster, legend with an honest
+  // empty street layer, scale bar with a feet unit, and a scale-ratio /
+  // sheet-id / generated stamp line all read back from the sheet.
+  it("draws template sheet chrome: address, sub-line, legend w/ honest empty street, scale-ratio + sheet-id + stamp", async () => {
+    const model = buildModel();
+    const { bytes, fontNote } = await emitPdfSitePlan(model);
+    const decoded = decodeAllContentStreams(bytes);
+    // Header: the address is the largest string on the sheet (uppercased).
+    expect(decoded).toContain("1127 N PINE ST");
+    // Sub-line carries city + parcel.
+    expect(decoded).toContain("Parcel 48029:105129");
+    // Legend rows (contiguous, non-tracked) incl. the honest empty street layer.
+    expect(decoded).toContain("Property line");
+    expect(decoded).toContain("Setback / buildable envelope");
+    expect(decoded).toContain("no road node attaches");
+    // Scale bar carries a feet unit; scale-ratio + sheet-id + stamp line present.
+    expect(decoded).toContain(" ft");
+    expect(decoded).toContain('1" = ');
+    expect(decoded).toContain("SP-48029-105129");
+    expect(decoded).toContain("generated ");
+    // Font substitution is surfaced honestly to callers.
+    expect(fontNote).toContain("Helvetica");
+  });
+
+  it("centers a BUILDABLE ENVELOPE callout with the buildable sq ft + percent-of-lot qualifier", async () => {
     const model = buildModel();
     const { bytes } = await emitPdfSitePlan(model);
     const decoded = decodeAllContentStreams(bytes);
-    expect(decoded).toContain("FEET");
-    expect(decoded).toContain("LEGEND");
-    expect(decoded).toContain("PROPERTY");
-    expect(decoded).toContain("Date:");
-    expect(decoded).toContain("not on file");
-    expect(decoded).toContain("Scale:");
-    expect(decoded).toContain("Sheet:");
+    expect(decoded).toContain("BUILDABLE ENVELOPE");
+    // "{sqft} sq ft · {pct}% of lot" qualifier.
+    expect(decoded).toMatch(/% of lot/);
   });
 
   // Planner HOLD-1 (2026-07-25): buildModel() above uses the default 4-edge

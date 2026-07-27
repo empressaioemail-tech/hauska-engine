@@ -1,29 +1,59 @@
-import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb, type RGB } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, StandardFonts, type RGB } from "pdf-lib";
 
 import type { SitePlanModel } from "../site-model.js";
 import { feetFromMeters, type PlacedLabel } from "./annotation-placement.js";
 import { buildSitePlanDrawingLayout, type DrawingBox, type PageXY, type SitePlanDrawingLayout } from "./layout.js";
 import { buildProvenancePanelEntries, SITE_PLAN_HONESTY_LINE } from "./provenance.js";
+import { PROPERTY_LINE_TAGS_HONESTY } from "../../geometry/gis-property-line-tags.js";
+import { STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js";
 
-const PAGE_WIDTH = 612; // US Letter, PDF points (72/in)
+/**
+ * Site-plan PDF renderer, rebuilt 2026-07-27 to match the operator's
+ * professional "Industry" template (gold reference card 2a/2b). This is a
+ * design port into the existing pdf-lib engine — geometry, collision
+ * placement, honest-absence language, and the shared bearing formula are
+ * unchanged; the header, drawing chrome, legend, scale bar, and summary page
+ * were rebuilt to the template's caliber.
+ *
+ * FONT: the template calls for Barlow (body) + Barlow Condensed (headings).
+ * This build environment has no network egress and no @pdf-lib/fontkit, so
+ * the TTFs could not be vendored. Falls back to Helvetica / Helvetica-Bold,
+ * matching the template's sizing, weight, colour, and (emulated) letter
+ * spacing as closely as Helvetica allows. See FONT_SUBSTITUTION_NOTE.
+ */
+export const FONT_SUBSTITUTION_NOTE =
+  "Barlow / Barlow Condensed unavailable in this build (no network, no fontkit); " +
+  "rendered with Helvetica at template sizing/weight/tracking/colour.";
+
+// US Letter, PDF points (72/in). Template sheet is 816x1056 px @96dpi.
+const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
-const MARGIN = 36;
-const NEATLINE_INSET = 8;
-const TITLE_BLOCK_HEIGHT = 58;
+// Template page margins 48 / 46 / 36 px @96dpi -> points.
+const MARGIN_TOP = pt(48);
+const MARGIN_X = pt(46);
+const MARGIN_BOTTOM = pt(36);
 
-const BLACK = rgb(0, 0, 0);
-const PROPERTY_COLOR = rgb(0.05, 0.05, 0.05);
-const ENVELOPE_FILL = rgb(0.96, 0.9, 0.78);
-const SETBACK_COLOR = rgb(0.72, 0.35, 0.05);
-const CONTOUR_COLOR = rgb(0.72, 0.62, 0.48);
-const STREET_COLOR = rgb(0.1, 0.35, 0.75);
-const GRAY = rgb(0.35, 0.35, 0.35);
-const MUTED = rgb(0.5, 0.5, 0.5);
-const LEADER_COLOR = rgb(0.45, 0.45, 0.45);
+// Token colour aliases (drawing roles).
+const INK = TOKENS.text;
+const PROPERTY_COLOR = TOKENS.text; // heaviest stroke, full ink
+const ENVELOPE_FILL = TOKENS.accent100;
+const SETBACK_DASH_COLOR = TOKENS.accent500;
+const SETBACK_LABEL_COLOR = TOKENS.accent700;
+const CONTOUR_COLOR = TOKENS.neutral300;
+const CONTOUR_LABEL_COLOR = TOKENS.neutral500;
+const STREET_COLOR = TOKENS.accent700;
+const DIM_TAG_COLOR = TOKENS.neutral700;
+const MUTED = TOKENS.neutral600;
+const SUPPRESSED = TOKENS.neutral500;
+const ACCENT = TOKENS.accent;
+const ACCENT_TYPE = TOKENS.accent700;
+const LEADER_COLOR = TOKENS.neutral500;
 
 export interface PdfSitePlanResult {
   bytes: Uint8Array;
   pageCount: number;
+  /** Names the font actually used (Barlow when embedded, else the fallback). */
+  fontNote: string;
 }
 
 function fieldOrNotOnFile(value: string | null | undefined): string {
@@ -31,149 +61,147 @@ function fieldOrNotOnFile(value: string | null | undefined): string {
   return t.length > 0 ? t : "not on file";
 }
 
-function drawNeatline(page: PDFPage): void {
-  const x = MARGIN - NEATLINE_INSET;
-  const y = MARGIN - NEATLINE_INSET;
-  const w = PAGE_WIDTH - 2 * (MARGIN - NEATLINE_INSET);
-  const h = PAGE_HEIGHT - 2 * (MARGIN - NEATLINE_INSET);
-  page.drawRectangle({
-    x,
+// ─────────────────────────────────────────────────────────────────────────
+// Tracked (letter-spaced) text — the template's eyebrows / stat labels / group
+// headings carry 0.14–0.22em tracking. pdf-lib 1.17 has no characterSpacing
+// option, so tracked runs are drawn glyph-by-glyph with an em-based advance.
+// ─────────────────────────────────────────────────────────────────────────
+function trackedWidth(font: PDFFont, text: string, size: number, trackingEm: number): number {
+  const extra = trackingEm * size * Math.max(0, text.length - 1);
+  return font.widthOfTextAtSize(text, size) + extra;
+}
+
+function drawTrackedText(
+  page: PDFPage,
+  text: string,
+  opts: { x: number; y: number; size: number; font: PDFFont; color: RGB; trackingEm: number },
+): number {
+  let cursor = opts.x;
+  const advance = opts.trackingEm * opts.size;
+  for (const ch of text) {
+    page.drawText(ch, { x: cursor, y: opts.y, size: opts.size, font: opts.font, color: opts.color });
+    cursor += opts.font.widthOfTextAtSize(ch, opts.size) + advance;
+  }
+  return cursor - advance; // right edge (drop trailing advance)
+}
+
+/** Full-width 1px full-ink rule that closes the header (template rule 2). */
+function drawHairlineRule(page: PDFPage, x: number, y: number, width: number, color: RGB = INK, thickness: number = STROKE.hairlineRule): void {
+  page.drawLine({ start: { x, y }, end: { x: x + width, y }, thickness, color });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PAGE 1 HEADER — gold reference 2a: eyebrow / big condensed address / sub-line
+// on the left; right-aligned LOT / BUILDABLE / ZONING stat cluster; a full
+// ink rule closes it. No frame, no title strip, no boxed block.
+// Returns the y of the closing rule (drawing box starts below it).
+// ─────────────────────────────────────────────────────────────────────────
+function drawPage1Header(page: PDFPage, model: SitePlanModel, bold: PDFFont, font: PDFFont): number {
+  const s = model.summary;
+  const left = MARGIN_X;
+  const right = PAGE_WIDTH - MARGIN_X;
+  let y = PAGE_HEIGHT - MARGIN_TOP;
+
+  // Eyebrow — accent, uppercase, 0.22em tracking.
+  drawTrackedText(page, "SITE PLAN · SHEET 1 OF 2", {
+    x: left,
     y,
-    width: w,
-    height: h,
-    borderColor: BLACK,
-    borderWidth: 1.25,
-    color: undefined,
+    size: TYPE.eyebrow,
+    font: bold,
+    color: ACCENT,
+    trackingEm: TRACKING.eyebrow,
   });
-  page.drawRectangle({
-    x: x + 3,
-    y: y + 3,
-    width: w - 6,
-    height: h - 6,
-    borderColor: GRAY,
-    borderWidth: 0.4,
-    color: undefined,
-  });
-}
+  y -= pt(30) + pt(4);
 
-function drawLegendSwatch(
-  page: PDFPage,
-  x: number,
-  y: number,
-  color: RGB,
-  style: "solid" | "dash" | "fill" | "thin",
-): void {
-  const w = 14;
-  const h = 6;
-  if (style === "fill") {
-    page.drawRectangle({ x, y, width: w, height: h, color, borderWidth: 0 });
-    return;
-  }
-  if (style === "dash") {
-    page.drawLine({
-      start: { x, y: y + h / 2 },
-      end: { x: x + w, y: y + h / 2 },
-      thickness: 1.2,
-      color,
-      dashArray: [3, 2],
+  // Address — largest string on the sheet, condensed-bold uppercase. Street
+  // portion only (city goes in the sub-line, per the template) so it isn't
+  // doubled.
+  const address = streetOnly(s.address).toUpperCase();
+  page.drawText(address, { x: left, y, size: TYPE.address, font: bold, color: INK });
+  y -= pt(13) + pt(4);
+
+  // Sub-line — city · parcel · county.
+  const county = s.countyName ?? (s.countyFips ? `FIPS ${s.countyFips}` : "county not on file");
+  const subParts = [cityFromAddress(s.address), `Parcel ${s.parcelNodeId}`, county].filter((p): p is string => !!p);
+  page.drawText(subParts.join("  ·  "), { x: left, y, size: TYPE.subline, font, color: TOKENS.neutral700 });
+
+  // Right-aligned stat cluster (LOT / BUILDABLE / ZONING).
+  const statTop = PAGE_HEIGHT - MARGIN_TOP - pt(6);
+  const stats: Array<{ label: string; value: string; accent?: boolean }> = [
+    { label: "LOT", value: `${formatSqFt(s.lotAreaSqFt)} SF` },
+    { label: "BUILDABLE", value: buildableStat(s), accent: true },
+    { label: "ZONING", value: (s.zoningDistrict ?? "n/a").toUpperCase() },
+  ];
+  // Lay columns right-to-left so the cluster hugs the right margin.
+  const colGap = pt(30);
+  const colWidths = stats.map((st) => {
+    const lw = trackedWidth(font, st.label, TYPE.statLabel, TRACKING.statLabel);
+    const vw = bold.widthOfTextAtSize(st.value, TYPE.statValue);
+    return Math.max(lw, vw);
+  });
+  let cx = right;
+  for (let i = stats.length - 1; i >= 0; i--) {
+    const st = stats[i]!;
+    const w = colWidths[i]!;
+    const colLeft = cx - w;
+    // Label (small, tracked, neutral-600).
+    drawTrackedText(page, st.label, {
+      x: colLeft,
+      y: statTop,
+      size: TYPE.statLabel,
+      font,
+      color: TOKENS.neutral600,
+      trackingEm: TRACKING.statLabel,
     });
-    return;
+    // Value (condensed-bold; buildable in accent-700).
+    page.drawText(st.value, {
+      x: colLeft,
+      y: statTop - pt(22),
+      size: TYPE.statValue,
+      font: bold,
+      color: st.accent ? ACCENT_TYPE : INK,
+    });
+    cx = colLeft - colGap;
   }
-  page.drawLine({
-    start: { x, y: y + h / 2 },
-    end: { x: x + w, y: y + h / 2 },
-    thickness: style === "thin" ? 0.6 : 1.75,
-    color,
-  });
+
+  // Closing full-ink rule.
+  const ruleY = Math.min(y, statTop - pt(22)) - pt(10);
+  drawHairlineRule(page, left, ruleY, right - left);
+  return ruleY;
 }
 
-function drawTitleBlock(
-  page: PDFPage,
-  model: SitePlanModel,
-  bold: PDFFont,
-  font: PDFFont,
-  pageScalePtsPerMeter: number | null,
-): void {
-  const top = PAGE_HEIGHT - MARGIN;
-  const blockTop = top;
-  const blockBottom = top - TITLE_BLOCK_HEIGHT;
-  const blockLeft = MARGIN;
-  const blockRight = PAGE_WIDTH - MARGIN;
-
-  page.drawRectangle({
-    x: blockLeft,
-    y: blockBottom,
-    width: blockRight - blockLeft,
-    height: TITLE_BLOCK_HEIGHT,
-    borderColor: BLACK,
-    borderWidth: 0.9,
-    color: undefined,
-  });
-
-  page.drawText("SITE PLAN", { x: blockLeft + 8, y: blockTop - 14, size: 14, font: bold, color: BLACK });
-  page.drawText(`Parcel ${fieldOrNotOnFile(model.parcelNodeId)}`, {
-    x: blockLeft + 8,
-    y: blockTop - 28,
-    size: 9,
-    font,
-    color: BLACK,
-  });
-  page.drawText(fieldOrNotOnFile(model.summary.address), {
-    x: blockLeft + 8,
-    y: blockTop - 40,
-    size: 8,
-    font,
-    color: GRAY,
-  });
-
-  // Sheet meta — missing fields render "not on file"; never invent survey dates/scales.
-  // Scale is derived from the drawing transform (pts/metre → ft per printed inch).
-  const metaX = blockLeft + 220;
-  const scaleRatio =
-    pageScalePtsPerMeter != null && pageScalePtsPerMeter > 0
-      ? `1" = ${feetFromMeters(72 / pageScalePtsPerMeter).toFixed(0)} ft`
-      : "not on file";
-  const sheetId = model.parcelNodeId?.trim()
-    ? `SP-${model.parcelNodeId.replace(/:/g, "-")}`
-    : "not on file";
-  const metaRows: Array<[string, string]> = [
-    ["Scale", scaleRatio],
-    ["Date", "not on file"],
-    ["Sheet", sheetId],
-  ];
-  let metaY = blockTop - 14;
-  for (const [k, v] of metaRows) {
-    page.drawText(`${k}:`, { x: metaX, y: metaY, size: 7, font: bold, color: BLACK });
-    page.drawText(v, { x: metaX + 32, y: metaY, size: 7, font, color: GRAY });
-    metaY -= 11;
-  }
-
-  // Legend with color swatches (right side of title band).
-  const legendX = PAGE_WIDTH - MARGIN - 168;
-  const legendItems: Array<{ label: string; color: RGB; style: "solid" | "dash" | "fill" | "thin" }> = [
-    { label: "PROPERTY", color: PROPERTY_COLOR, style: "solid" },
-    { label: "ENVELOPE", color: ENVELOPE_FILL, style: "fill" },
-    { label: "SETBACK", color: SETBACK_COLOR, style: "dash" },
-    { label: "CONTOUR", color: CONTOUR_COLOR, style: "thin" },
-    { label: "STREET", color: STREET_COLOR, style: "solid" },
-  ];
-  let ly = blockTop - 12;
-  page.drawText("LEGEND", { x: legendX, y: ly, size: 7, font: bold, color: BLACK });
-  ly -= 11;
-  for (const item of legendItems) {
-    drawLegendSwatch(page, legendX, ly - 1, item.color, item.style);
-    page.drawText(item.label, { x: legendX + 18, y: ly, size: 6.5, font, color: GRAY });
-    ly -= 9;
-  }
+/** Street portion of an address (before the first comma), for the big header line. */
+function streetOnly(address: string | undefined): string {
+  if (!address) return "not on file";
+  const first = address.split(",")[0]?.trim();
+  return first && first.length > 0 ? first : "not on file";
 }
 
-function drawRing(
-  page: PDFPage,
-  ring: Array<{ x: number; y: number }>,
-  color: RGB = BLACK,
-  thickness = 1.25,
-  dashArray?: number[],
-): void {
+function cityFromAddress(address: string | undefined): string | null {
+  if (!address) return null;
+  // "1009 Chestnut St, Bastrop, TX" -> "Bastrop, TX"
+  const parts = address.split(",").map((p) => p.trim());
+  if (parts.length >= 3) return `${parts[parts.length - 2]}, ${parts[parts.length - 1]}`;
+  if (parts.length === 2) return parts[1]!;
+  return null;
+}
+
+function formatSqFt(n: number): string {
+  return Math.round(n).toLocaleString("en-US");
+}
+
+/** BUILDABLE stat: the shared warm/provisional area if any, else honest short. */
+function buildableStat(s: SitePlanModel["summary"]): string {
+  if (typeof s.buildableAreaSqFt === "number") return `${formatSqFt(s.buildableAreaSqFt)} SF`;
+  return "SEE P.2";
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// DRAWING — layer order & weight per template rule 3:
+// contour → contour labels → envelope fill → setback dash → property line →
+// dimension tags → sheet furniture. Property line is the heaviest stroke.
+// ─────────────────────────────────────────────────────────────────────────
+function drawRing(page: PDFPage, ring: PageXY[], color: RGB, thickness: number, dashArray?: number[]): void {
   const n = ring.length;
   if (n < 2) return;
   for (let i = 0; i < n; i++) {
@@ -195,25 +223,15 @@ function drawFilledRing(page: PDFPage, ring: PageXY[], fill: RGB): void {
   page.drawSvgPath(path, { color: fill, borderWidth: 0 });
 }
 
-function drawPolyline(page: PDFPage, points: Array<{ x: number; y: number }>, color = BLACK, thickness = 0.75): void {
+function drawPolyline(page: PDFPage, points: PageXY[], color: RGB, thickness: number, dashArray?: number[]): void {
   for (let i = 0; i < points.length - 1; i++) {
-    page.drawLine({ start: points[i]!, end: points[i + 1]!, thickness, color });
+    page.drawLine({ start: points[i]!, end: points[i + 1]!, thickness, color, dashArray });
   }
 }
 
-function drawPlacedLabel(
-  page: PDFPage,
-  label: PlacedLabel,
-  font: PDFFont,
-  color: RGB,
-): void {
+function drawPlacedLabel(page: PDFPage, label: PlacedLabel, font: PDFFont, color: RGB): void {
   if (label.leader) {
-    page.drawLine({
-      start: label.leader.from,
-      end: label.leader.to,
-      thickness: 0.4,
-      color: LEADER_COLOR,
-    });
+    page.drawLine({ start: label.leader.from, end: label.leader.to, thickness: 0.4, color: LEADER_COLOR });
   }
   page.drawText(label.text, {
     x: label.drawAt.x,
@@ -224,7 +242,10 @@ function drawPlacedLabel(
   });
 }
 
-/** North arrow with triangular arrowhead + N label. */
+/**
+ * North arrow — filled triangular arrowhead over a condensed "N" (template
+ * rule 9 · sheet furniture; no compass rose).
+ */
 function drawNorthArrow(page: PDFPage, layout: SitePlanDrawingLayout, bold: PDFFont): void {
   const { origin, tip } = layout.north;
   const dx = tip.x - origin.x;
@@ -234,164 +255,275 @@ function drawNorthArrow(page: PDFPage, layout: SitePlanDrawingLayout, bold: PDFF
   const uy = dy / len;
   const px = -uy;
   const py = ux;
-  const headLen = Math.min(10, len * 0.35);
-  const headWidth = headLen * 0.55;
+  const headLen = Math.min(11, len * 0.4);
+  const headWidth = headLen * 0.5;
   const base = { x: tip.x - ux * headLen, y: tip.y - uy * headLen };
-  const left = { x: base.x + px * headWidth, y: base.y + py * headWidth };
-  const right = { x: base.x - px * headWidth, y: base.y - py * headWidth };
+  const notch = { x: tip.x - ux * headLen * 0.55, y: tip.y - uy * headLen * 0.55 };
+  const leftPt = { x: base.x + px * headWidth, y: base.y + py * headWidth };
+  const rightPt = { x: base.x - px * headWidth, y: base.y - py * headWidth };
 
-  page.drawLine({ start: origin, end: tip, thickness: 1.5, color: BLACK });
-  // Filled arrowhead via SVG path.
-  const path = `M ${tip.x.toFixed(2)} ${tip.y.toFixed(2)} L ${left.x.toFixed(2)} ${left.y.toFixed(2)} L ${right.x.toFixed(2)} ${right.y.toFixed(2)} Z`;
-  page.drawSvgPath(path, { color: BLACK, borderWidth: 0 });
+  // Shaft.
+  page.drawLine({ start: origin, end: notch, thickness: 1, color: INK });
+  // Filled arrowhead (with a slight tail notch, like the template polygon).
+  const path =
+    `M ${tip.x.toFixed(2)} ${tip.y.toFixed(2)} ` +
+    `L ${leftPt.x.toFixed(2)} ${leftPt.y.toFixed(2)} ` +
+    `L ${notch.x.toFixed(2)} ${notch.y.toFixed(2)} ` +
+    `L ${rightPt.x.toFixed(2)} ${rightPt.y.toFixed(2)} Z`;
+  page.drawSvgPath(path, { color: INK, borderWidth: 0 });
+  const nSize = pt(11);
   page.drawText("N", {
-    x: tip.x + ux * 4 + 1,
-    y: tip.y + uy * 4 - 2,
-    size: 10,
+    x: tip.x - bold.widthOfTextAtSize("N", nSize) / 2,
+    y: tip.y + pt(6),
+    size: nSize,
     font: bold,
-    color: BLACK,
-  });
-}
-
-/** Graphic scale bar with end ticks, mid tick, 0 / mid / max labels, FEET. */
-function drawScaleBar(page: PDFPage, layout: SitePlanDrawingLayout, font: PDFFont, bold: PDFFont): void {
-  const { start, end, lengthMeters } = layout.scaleBar;
-  const lengthFeet = feetFromMeters(lengthMeters);
-  const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-  const tick = 5;
-
-  page.drawLine({ start, end, thickness: 1.5, color: BLACK });
-  // End + mid ticks.
-  for (const p of [start, mid, end]) {
-    page.drawLine({
-      start: { x: p.x, y: p.y - tick / 2 },
-      end: { x: p.x, y: p.y + tick / 2 },
-      thickness: 1,
-      color: BLACK,
-    });
-  }
-
-  const zero = "0";
-  const midLabel = `${(lengthFeet / 2).toFixed(0)}`;
-  const maxLabel = `${lengthFeet.toFixed(0)}`;
-  page.drawText(zero, { x: start.x - 2, y: start.y + tick + 1, size: 6, font, color: BLACK });
-  page.drawText(midLabel, {
-    x: mid.x - font.widthOfTextAtSize(midLabel, 6) / 2,
-    y: mid.y + tick + 1,
-    size: 6,
-    font,
-    color: BLACK,
-  });
-  page.drawText(maxLabel, {
-    x: end.x - font.widthOfTextAtSize(maxLabel, 6) / 2,
-    y: end.y + tick + 1,
-    size: 6,
-    font,
-    color: BLACK,
-  });
-  page.drawText("FEET", {
-    x: mid.x - font.widthOfTextAtSize("FEET", 6.5) / 2,
-    y: start.y - tick - 8,
-    size: 6.5,
-    font: bold,
-    color: BLACK,
+    color: INK,
   });
 }
 
 function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font: PDFFont, bold: PDFFont): void {
-  // Draw order = visual hierarchy: contours behind, property + envelope dominate.
-
-  // 1) CONTOUR (decluttered / clipped) — light, behind
+  // 1) CONTOUR — faint, behind everything.
   for (const contour of layout.contours) {
-    drawPolyline(page, contour.points, CONTOUR_COLOR, 0.4);
+    drawPolyline(page, contour.points, CONTOUR_COLOR, STROKE.contour);
   }
 
-  // 2) STREET
-  if (layout.streets.honestAbsence) {
-    page.drawText(`STREET: ${layout.streets.reason ?? "no road-anchor data available"}`, {
-      x: MARGIN,
-      y: MARGIN + 28,
-      size: 7,
-      font,
-      color: STREET_COLOR,
-    });
-  } else {
+  // 2) CONTOUR LABELS.
+  for (const label of layout.elevationLabels) {
+    drawPlacedLabel(page, label, font, CONTOUR_LABEL_COLOR);
+  }
+
+  // 3) STREET (drawn behind property line; honest absence handled in footer legend).
+  if (!layout.streets.honestAbsence) {
     for (const anchor of layout.streets.anchors) {
-      if (anchor.leftEdge && anchor.leftEdge.length >= 2) {
-        drawPolyline(page, anchor.leftEdge, STREET_COLOR, 0.75);
-      }
-      if (anchor.rightEdge && anchor.rightEdge.length >= 2) {
-        drawPolyline(page, anchor.rightEdge, STREET_COLOR, 0.75);
-      }
-      drawPolyline(page, anchor.points, STREET_COLOR, 1.75);
-      if (anchor.label) {
-        drawPlacedLabel(page, anchor.label, bold, STREET_COLOR);
-      }
+      if (anchor.leftEdge && anchor.leftEdge.length >= 2) drawPolyline(page, anchor.leftEdge, STREET_COLOR, 0.6);
+      if (anchor.rightEdge && anchor.rightEdge.length >= 2) drawPolyline(page, anchor.rightEdge, STREET_COLOR, 0.6);
+      drawPolyline(page, anchor.points, STREET_COLOR, 1.2);
+      if (anchor.label) drawPlacedLabel(page, anchor.label, font, STREET_COLOR);
     }
   }
 
-  // 3) Buildable envelope fill (same offset ring as CAD SETBACK)
+  // 4) BUILDABLE ENVELOPE fill (accent-tinted).
   if (layout.setback.offsetRing) {
     drawFilledRing(page, layout.setback.offsetRing, ENVELOPE_FILL);
   }
 
-  // 4) PROPERTY_LINE + corners (dominant)
-  drawRing(page, layout.propertyLine, PROPERTY_COLOR, 2);
-  for (const corner of layout.propertyLine) {
-    page.drawCircle({ x: corner.x, y: corner.y, size: 2.1, color: PROPERTY_COLOR });
-  }
-
-  // 5) SETBACK offset ring (dashed)
+  // 5) SETBACK dash (accent-500).
   if (layout.setback.offsetRing) {
-    drawRing(page, layout.setback.offsetRing, SETBACK_COLOR, 1.35, [5, 3]);
-  } else {
-    page.drawText(
-      `SETBACK: no buildable envelope drawn - ${layout.setback.degenerateReason ?? "offset degenerate"}`,
-      { x: MARGIN, y: MARGIN + 16, size: 8, font, color: SETBACK_COLOR },
-    );
+    drawRing(page, layout.setback.offsetRing, SETBACK_DASH_COLOR, STROKE.setbackDash, [3.5, 2.8]);
   }
 
-  // 6) Property-line tags (bearing + distance, GIS-approximate, non-colliding)
+  // 6) PROPERTY LINE — heaviest stroke on the sheet.
+  drawRing(page, layout.propertyLine, PROPERTY_COLOR, STROKE.property);
+
+  // 7) BEARING + DISTANCE tags (GIS-approximate; rotated to segment upstream? — drawn flat, non-colliding).
   for (const tag of layout.propertyLineTags) {
-    drawPlacedLabel(page, tag, font, GRAY);
+    drawPlacedLabel(page, tag, font, DIM_TAG_COLOR);
   }
 
-  // 7) Setback role labels (inward, non-colliding)
+  // 8) SETBACK role labels (accent-700, inward).
   for (const label of layout.setback.labels) {
-    drawPlacedLabel(page, label, bold, SETBACK_COLOR);
+    drawPlacedLabel(page, label, font, SETBACK_LABEL_COLOR);
   }
 
-  // 8) Sparse elevation labels (collision-placed)
-  for (const label of layout.elevationLabels) {
-    drawPlacedLabel(page, label, font, MUTED);
+  // 9) Centered BUILDABLE ENVELOPE callout — condensed uppercase over grey qualifier.
+  if (layout.envelopeCallout) {
+    const { anchor } = layout.envelopeCallout;
+    const title = "BUILDABLE ENVELOPE";
+    const titleSize = pt(13);
+    page.drawText(title, {
+      x: anchor.x - bold.widthOfTextAtSize(title, titleSize) / 2,
+      y: anchor.y,
+      size: titleSize,
+      font: bold,
+      color: INK,
+    });
+    const qualifier = layout.envelopeCallout.qualifier;
+    if (qualifier) {
+      const qSize = pt(8.5);
+      page.drawText(qualifier, {
+        x: anchor.x - font.widthOfTextAtSize(qualifier, qSize) / 2,
+        y: anchor.y - pt(13),
+        size: qSize,
+        font,
+        color: TOKENS.neutral600,
+      });
+    }
   }
 
-  // 8b) Optional lot-area callout
-  if (layout.lotAreaCallout) {
-    drawPlacedLabel(page, layout.lotAreaCallout, bold, BLACK);
-  }
-
-  // 9) NORTH arrow + SCALE bar (craft)
+  // 10) NORTH arrow.
   drawNorthArrow(page, layout, bold);
-  drawScaleBar(page, layout, font, bold);
+}
 
-  // 10) GIS property-line honesty (page 1 — reinforced again on page 2)
-  page.drawText(layout.propertyLineTagsHonesty, {
-    x: MARGIN,
-    y: MARGIN + 4,
-    size: 7,
+// ─────────────────────────────────────────────────────────────────────────
+// PAGE 1 FOOTER — gold reference 2a: LEGEND (bottom-left, two columns, every
+// layer present + honest empty state) · GRAPHIC SCALE BAR (bottom-right,
+// alternating tick blocks, 0/mid/max FEET) · scale-ratio + sheet-id + stamp ·
+// honesty disclaimer paragraph. All on the same baseline band.
+// ─────────────────────────────────────────────────────────────────────────
+interface LegendRow {
+  label: string;
+  swatch: "line-heavy" | "envelope" | "line-thin" | "line-dotted";
+  color: RGB;
+  empty?: boolean;
+}
+
+function legendRows(layout: SitePlanDrawingLayout): LegendRow[] {
+  const streetRow: LegendRow = layout.streets.honestAbsence
+    ? {
+        label: "Street — layer empty · no road node attaches",
+        swatch: "line-dotted",
+        color: SUPPRESSED,
+        empty: true,
+      }
+    : { label: "Street centerline", swatch: "line-heavy", color: STREET_COLOR };
+  return [
+    { label: "Property line", swatch: "line-heavy", color: PROPERTY_COLOR },
+    { label: "Setback / buildable envelope", swatch: "envelope", color: ACCENT },
+    { label: "Contour, 1 m interval", swatch: "line-thin", color: CONTOUR_COLOR },
+    streetRow,
+  ];
+}
+
+function drawLegendSwatch(page: PDFPage, row: LegendRow, x: number, y: number): void {
+  const w = pt(24);
+  if (row.swatch === "envelope") {
+    // Accent-tinted fill with a dashed accent border.
+    page.drawRectangle({ x, y: y - pt(3), width: w, height: pt(9), color: ENVELOPE_FILL, borderWidth: 0 });
+    page.drawRectangle({
+      x,
+      y: y - pt(3),
+      width: w,
+      height: pt(9),
+      borderColor: SETBACK_DASH_COLOR,
+      borderWidth: 0.7,
+      borderDashArray: [2.2, 1.6],
+      color: undefined,
+    });
+    return;
+  }
+  const mid = y + pt(1);
+  if (row.swatch === "line-dotted") {
+    page.drawLine({ start: { x, y: mid }, end: { x: x + w, y: mid }, thickness: 0.8, color: row.color, dashArray: [0.6, 2] });
+    return;
+  }
+  const thick = row.swatch === "line-heavy" ? 1.4 : 0.7;
+  page.drawLine({ start: { x, y: mid }, end: { x: x + w, y: mid }, thickness: thick, color: row.color });
+}
+
+function drawLegend(page: PDFPage, layout: SitePlanDrawingLayout, font: PDFFont, baselineY: number): void {
+  const left = MARGIN_X;
+  const rows = legendRows(layout);
+  // Two columns x two rows, like the template grid.
+  const colWidth = pt(230);
+  const rowGap = pt(15);
+  const size = TYPE.legend;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    const col = i % 2;
+    const line = Math.floor(i / 2);
+    const x = left + col * colWidth;
+    const y = baselineY - line * rowGap;
+    drawLegendSwatch(page, row, x, y);
+    page.drawText(row.label, {
+      x: x + pt(24) + pt(9),
+      y,
+      size,
+      font,
+      color: row.empty ? SUPPRESSED : TOKENS.neutral800,
+    });
+  }
+}
+
+/**
+ * Graphic scale bar — three segments (alternating ink / neutral-300 tick
+ * blocks) with 0 / mid / max labels, unit on the last (FEET). Bottom-right.
+ * Beneath it: scale-ratio · sheet-id · generated stamp.
+ */
+function drawScaleBar(
+  page: PDFPage,
+  layout: SitePlanDrawingLayout,
+  model: SitePlanModel,
+  font: PDFFont,
+  baselineY: number,
+): void {
+  const right = PAGE_WIDTH - MARGIN_X;
+  const lengthFeet = feetFromMeters(layout.scaleBar.lengthMeters);
+  // Three equal blocks; total bar width ~120 pt (template 120 px scaled but
+  // kept legible). Alternate solid ink / neutral-300 fill.
+  const barWidth = pt(120);
+  const blockW = barWidth / 3;
+  const barH = pt(5);
+  const barLeft = right - barWidth;
+  const barTop = baselineY;
+  const blockColors = [INK, TOKENS.neutral300, INK];
+  for (let i = 0; i < 3; i++) {
+    page.drawRectangle({
+      x: barLeft + i * blockW,
+      y: barTop,
+      width: blockW,
+      height: barH,
+      color: blockColors[i]!,
+      borderWidth: 0,
+    });
+  }
+  // Labels 0 / mid / max FEET under the bar.
+  const labelSize = TYPE.scaleBarLabel;
+  const labelY = barTop - pt(11);
+  const zero = "0";
+  const midLabel = `${Math.round(lengthFeet / 2)}`;
+  const maxLabel = `${Math.round(lengthFeet)} ft`;
+  page.drawText(zero, { x: barLeft, y: labelY, size: labelSize, font, color: TOKENS.neutral700 });
+  page.drawText(midLabel, {
+    x: barLeft + barWidth / 2 - font.widthOfTextAtSize(midLabel, labelSize) / 2,
+    y: labelY,
+    size: labelSize,
     font,
-    color: MUTED,
+    color: TOKENS.neutral700,
+  });
+  page.drawText(maxLabel, {
+    x: right - font.widthOfTextAtSize(maxLabel, labelSize),
+    y: labelY,
+    size: labelSize,
+    font,
+    color: TOKENS.neutral700,
+  });
+
+  // Scale-ratio · sheet-id · generated stamp (right-aligned line).
+  // transform.scale = page points per local metre; 1 inch = 72 pt, so a
+  // printed inch spans (72 / scale) metres = feetFromMeters(...) feet.
+  const scaleRatio =
+    layout.transform.scale > 0
+      ? `1" = ${Math.round(feetFromMeters(72 / layout.transform.scale))}'`
+      : '1" = n/a';
+  const sheetId = model.parcelNodeId?.trim() ? `SP-${model.parcelNodeId.replace(/:/g, "-")}` : "SP-not-on-file";
+  const stamp = `generated ${new Date().toISOString().slice(0, 16).replace("T", " ")}Z`;
+  const metaLine = `${scaleRatio} · ${sheetId} · ${stamp}`;
+  const metaSize = TYPE.scaleRatioLine;
+  page.drawText(metaLine, {
+    x: right - font.widthOfTextAtSize(metaLine, metaSize),
+    y: labelY - pt(13),
+    size: metaSize,
+    font,
+    color: TOKENS.neutral600,
   });
 }
 
-const SUMMARY_VALUE_X = MARGIN + 150;
-const SUMMARY_VALUE_SIZE = 9;
+/**
+ * pdf-lib's Helvetica/WinAnsi encoder drops U+2013/U+2014 dashes (and can
+ * swallow the adjacent token), which broke the honesty probe before. Map
+ * en/em dashes to a spaced ASCII hyphen and the middle dot to ASCII so every
+ * drawn string is WinAnsi-safe. All paragraph/label text routes through here.
+ */
+function safeText(text: string): string {
+  return text
+    .replace(/—/g, " - ")
+    .replace(/–/g, " - ")
+    .replace(/·/g, "·"); // middle dot IS in WinAnsi (0xB7) — keep it
+}
 
-/** Greedy word-wrap so long honesty notes (e.g. the buildable-area
- * provisional note) never run off the page edge instead of just being
- * silently truncated by the PDF viewer. */
-function wrapTextToWidth(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+/** Greedy word-wrap so long honesty paragraphs stay on the sheet. */
+function wrapTextToWidth(rawText: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  const text = safeText(rawText);
   const words = text.split(/\s+/);
   const lines: string[] = [];
   let current = "";
@@ -408,112 +540,356 @@ function wrapTextToWidth(text: string, font: PDFFont, size: number, maxWidth: nu
   return lines;
 }
 
-function drawSummaryBlock(page: PDFPage, model: SitePlanModel, bold: PDFFont, font: PDFFont): number {
+/**
+ * Fine print — one paragraph, 8.2px neutral-600, bottom of page. Always the
+ * public-GIS / not-a-survey / GIS-approximate language; honest-absence and
+ * synthetic-DEM disclosures append to the SAME paragraph (template rule 8 ·
+ * no callout boxes on the drawing).
+ */
+function buildFinePrint(model: SitePlanModel, page: 1 | 2): string {
+  // SITE_PLAN_HONESTY_LINE + PROPERTY_LINE_TAGS_HONESTY are drawn verbatim
+  // (75o spec / WDLL 5): any survey-grade claim contradicts these exact
+  // strings on the sheet. Template rule 8 folds honest-absence + synthetic-DEM
+  // disclosures into this same paragraph — no callout boxes on the drawing.
+  const base = `${SITE_PLAN_HONESTY_LINE} ${PROPERTY_LINE_TAGS_HONESTY} These bearing/distance tags are GIS-approximate and not survey-grade.`;
+  if (page === 2) {
+    return `${base} Zoning district and fixture values must be confirmed against live atoms on planner QA. · Sheet 2 of 2`;
+  }
+  const streetNote = model.streets.honestAbsence
+    ? " Street layer intentionally left empty — no road node attaches to this parcel."
+    : "";
+  const demNote = " Elevation from a synthetic DEM on sample runs.";
+  return `${base}${streetNote}${demNote} · Sheet 1 of 2`;
+}
+
+function drawFinePrint(page: PDFPage, text: string, font: PDFFont): void {
+  const left = MARGIN_X;
+  const size = TYPE.finePrint;
+  const maxWidth = PAGE_WIDTH - MARGIN_X * 2;
+  const lines = wrapTextToWidth(text, font, size, maxWidth);
+  let y = MARGIN_BOTTOM + (lines.length - 1) * (size * 1.55) - pt(2);
+  for (const line of lines) {
+    page.drawText(line, { x: left, y, size, font, color: TOKENS.neutral600 });
+    y -= size * 1.55;
+  }
+}
+
+function drawPage1Footer(page: PDFPage, layout: SitePlanDrawingLayout, model: SitePlanModel, font: PDFFont): void {
+  // Footer band sits above the fine print. Reserve a fine-print band at bottom.
+  const finePrintBandTop = MARGIN_BOTTOM + pt(8.2 * 1.55 * 3);
+  // Top rule of the footer band.
+  const ruleY = finePrintBandTop + pt(52);
+  drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
+
+  const legendBaseline = ruleY - pt(16);
+  drawLegend(page, layout, font, legendBaseline);
+  drawScaleBar(page, layout, model, font, ruleY - pt(8));
+
+  drawFinePrint(page, buildFinePrint(model, 1), font);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PAGE 2 — SUMMARY (gold reference 2b): condensed uppercase header w/ sheet
+// number over parcel-id right-aligned; grouped two-column key/value table
+// (PARCEL, ZONING & BUILDABILITY, SITE CONDITIONS); provenance three-column
+// table; fine print.
+// ─────────────────────────────────────────────────────────────────────────
+function drawPage2Header(page: PDFPage, model: SitePlanModel, bold: PDFFont, font: PDFFont): number {
   const s = model.summary;
-  let y = PAGE_HEIGHT - MARGIN;
-  page.drawText("SUMMARY", { x: MARGIN, y, size: 13, font: bold, color: BLACK });
-  y -= 20;
+  const left = MARGIN_X;
+  const right = PAGE_WIDTH - MARGIN_X;
+  let y = PAGE_HEIGHT - MARGIN_TOP;
 
-  // B3: shared vocabulary with PE map card / inspect - never print a bare
-  // "setback-consumes-lot" when the warm envelope (or drawable offset) has area.
-  // ASCII hyphens only in drawn strings: Helvetica/WinAnsi drops U+2014 em-dashes
-  // and can omit the whole token (broke the "unavailable" honesty probe).
-  const buildableAreaLine = s.buildablePdfLabel;
-  const floodLine = "zone" in s.floodZone
-    ? `${s.floodZone.zone ?? "outside mapped SFHA"} (${s.floodZone.inSpecialFloodHazardArea ? "in" : "not in"} special flood hazard area)`
-    : `unavailable - ${s.floodZone.reason}`;
-  const zoningLine = s.zoningDistrict ?? `unavailable - ${s.zoningHonestAbsenceReason ?? "no zoning-fact atom on file"}`;
-  const countyLine = s.countyName ?? `FIPS ${s.countyFips ?? "unknown"} (county name not on file)`;
-  const addressLine = s.address ?? "not on file";
+  drawTrackedText(page, "SUMMARY · SHEET 2 OF 2", {
+    x: left,
+    y,
+    size: TYPE.eyebrow,
+    font: bold,
+    color: ACCENT,
+    trackingEm: TRACKING.eyebrow,
+  });
+  y -= pt(30) + pt(4);
 
-  const rows: Array<[string, string]> = [
-    ["Parcel ID", s.parcelNodeId],
-    ["Address", addressLine],
-    ["County", countyLine],
-    ["Zoning District", zoningLine],
-    ["Lot Area", `${s.lotAreaSqFt.toFixed(0)} sq ft`],
-    ["Setbacks (Front/Side/Rear)", model.setback.displayLine],
-    ["Buildable Area", buildableAreaLine],
-    ["Flood Zone", floodLine],
-    [
-      "Elevation Range",
-      `${s.elevationRangeMeters.min.toFixed(1)} \u2013 ${s.elevationRangeMeters.max.toFixed(1)} m (${s.verticalDatumSummary})`,
-    ],
+  const address = streetOnly(s.address).toUpperCase();
+  page.drawText(address, { x: left, y, size: TYPE.address, font: bold, color: INK });
+
+  // Right: sheet-id over parcel-id (right-aligned).
+  const sheetId = model.parcelNodeId?.trim() ? `SP-${model.parcelNodeId.replace(/:/g, "-")}` : "SP-not-on-file";
+  const metaTop = PAGE_HEIGHT - MARGIN_TOP;
+  const metaSize = TYPE.sheetMeta;
+  page.drawText(sheetId, {
+    x: right - font.widthOfTextAtSize(sheetId, metaSize),
+    y: metaTop - pt(20),
+    size: metaSize,
+    font,
+    color: TOKENS.neutral600,
+  });
+  page.drawText(s.parcelNodeId, {
+    x: right - font.widthOfTextAtSize(s.parcelNodeId, metaSize),
+    y: metaTop - pt(20) - pt(15),
+    size: metaSize,
+    font,
+    color: TOKENS.neutral600,
+  });
+
+  const ruleY = y - pt(12);
+  drawHairlineRule(page, left, ruleY, right - left);
+  return ruleY;
+}
+
+interface SummaryRow {
+  label: string;
+  value: string;
+  qualifier?: string;
+  accentValue?: boolean;
+  chip?: "unavailable" | "fixture";
+}
+
+function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows: SummaryRow[] }> {
+  const s = model.summary;
+  const county = s.countyName ?? (s.countyFips ? `FIPS ${s.countyFips} (county name not on file)` : "not on file");
+  const zoning: SummaryRow = s.zoningDistrict
+    ? { label: "Zoning district", value: s.zoningDistrict }
+    : { label: "Zoning district", value: "", chip: "unavailable", qualifier: s.zoningHonestAbsenceReason ?? "no zoning-fact atom on file" };
+
+  const acres = s.lotAreaSqFt / 43560;
+  // Value is the area + %-of-lot (accent); the provisional/honest note becomes
+  // the single inline grey qualifier (template rule 7 — never its own row).
+  const buildablePct =
+    s.buildableAreaSqFt != null && s.lotAreaSqFt > 0 ? ` (${Math.round((s.buildableAreaSqFt / s.lotAreaSqFt) * 100)}% of lot)` : "";
+  const buildableValue =
+    s.buildableAreaSqFt != null ? `${formatSqFt(s.buildableAreaSqFt)} sq ft${buildablePct}` : "unavailable";
+  const buildableQualifier = s.buildableAreaHonestNote ? `PROVISIONAL — ${s.buildableAreaHonestNote}` : undefined;
+  const buildableRow: SummaryRow = {
+    label: "Buildable area",
+    value: buildableValue,
+    accentValue: true,
+    qualifier: buildableQualifier,
+  };
+
+  const flood: SummaryRow =
+    "zone" in s.floodZone
+      ? {
+          label: "Flood zone",
+          value: s.floodZone.zone ?? "outside mapped SFHA",
+          qualifier: s.floodZone.inSpecialFloodHazardArea ? "in special flood hazard area" : "not in special flood hazard area",
+        }
+      : { label: "Flood zone", value: "", chip: "unavailable", qualifier: s.floodZone.reason };
+
+  const street: SummaryRow = model.streets.honestAbsence
+    ? { label: "Street frontage", value: "", chip: "unavailable", qualifier: model.streets.reason ?? "No road node attaches to this parcel." }
+    : { label: "Street frontage", value: model.streets.anchors.map((a) => a.name).join(", ") || "attached" };
+
+  return [
+    {
+      heading: "PARCEL",
+      rows: [
+        { label: "Parcel ID", value: s.parcelNodeId },
+        { label: "Address", value: s.address ?? "not on file" },
+        { label: "County", value: county },
+      ],
+    },
+    {
+      heading: "ZONING & BUILDABILITY",
+      rows: [
+        zoning,
+        { label: "Lot area", value: `${formatSqFt(s.lotAreaSqFt)} sq ft`, qualifier: `${acres.toFixed(2)} acres` },
+        { label: "Setbacks F / S / R", value: model.setback.displayLine, qualifier: `basis: ${model.setback.basis}` },
+        buildableRow,
+      ],
+    },
+    {
+      heading: "SITE CONDITIONS",
+      rows: [
+        {
+          label: "Elevation range",
+          value: `${s.elevationRangeMeters.min.toFixed(1)} – ${s.elevationRangeMeters.max.toFixed(1)} m`,
+          qualifier: s.verticalDatumSummary,
+        },
+        flood,
+        street,
+      ],
+    },
   ];
-
-  const maxValueWidth = PAGE_WIDTH - MARGIN - SUMMARY_VALUE_X;
-  for (const [label, value] of rows) {
-    page.drawText(`${label}:`, { x: MARGIN, y, size: 9, font: bold, color: BLACK });
-    const lines = wrapTextToWidth(value, font, SUMMARY_VALUE_SIZE, maxValueWidth);
-    for (const line of lines) {
-      page.drawText(line, { x: SUMMARY_VALUE_X, y, size: SUMMARY_VALUE_SIZE, font, color: BLACK });
-      y -= 12;
-    }
-    y -= 4;
-  }
-  return y;
 }
 
-function drawProvenancePanel(page: PDFPage, model: SitePlanModel, bold: PDFFont, font: PDFFont, startY: number): number {
-  let y = startY - 16;
-  page.drawText("PROVENANCE / CITATIONS", { x: MARGIN, y, size: 13, font: bold, color: BLACK });
-  y -= 18;
-  const entries = buildProvenancePanelEntries(model);
-  for (const entry of entries) {
-    page.drawText(entry.layer, { x: MARGIN, y, size: 9, font: bold, color: BLACK });
-    y -= 12;
-    page.drawText(`Source: ${entry.source}`, { x: MARGIN + 12, y, size: 8, font, color: GRAY });
-    y -= 11;
-    page.drawText(`As of: ${entry.asOf}  |  Confidence: ${entry.confidence}`, {
-      x: MARGIN + 12,
+function drawChip(page: PDFPage, kind: "unavailable" | "fixture", x: number, y: number, bold: PDFFont, font: PDFFont): number {
+  const text = kind === "unavailable" ? "UNAVAILABLE" : "FIXTURE LABEL";
+  const size = TYPE.chip;
+  const padX = pt(7);
+  const w = trackedWidth(bold, text, size, TRACKING.chip) + padX * 2;
+  const h = size + pt(4);
+  if (kind === "unavailable") {
+    // Solid ink chip, light text.
+    page.drawRectangle({ x, y: y - pt(2), width: w, height: h, color: INK, borderWidth: 0 });
+    drawTrackedText(page, text, { x: x + padX, y: y + pt(1), size, font: bold, color: TOKENS.neutral100, trackingEm: TRACKING.chip });
+  } else {
+    // Outline accent chip.
+    page.drawRectangle({ x, y: y - pt(2), width: w, height: h, borderColor: ACCENT, borderWidth: 0.8, color: undefined });
+    drawTrackedText(page, text, { x: x + padX, y: y + pt(1), size, font: bold, color: ACCENT, trackingEm: TRACKING.chip });
+  }
+  return x + w;
+}
+
+function drawSummaryTable(page: PDFPage, model: SitePlanModel, bold: PDFFont, font: PDFFont, startY: number): number {
+  const left = MARGIN_X;
+  const right = PAGE_WIDTH - MARGIN_X;
+  const labelColWidth = pt(200);
+  const valueX = left + labelColWidth;
+  const groups = buildSummaryGroups(model);
+  let y = startY - pt(18);
+
+  for (const group of groups) {
+    // Group heading — accent, tracked.
+    drawTrackedText(page, group.heading, {
+      x: left,
       y,
-      size: 8,
-      font,
-      color: GRAY,
+      size: TYPE.groupHeading,
+      font: bold,
+      color: ACCENT,
+      trackingEm: TRACKING.groupHeading,
     });
-    y -= 15;
+    y -= pt(14);
+    for (const row of group.rows) {
+      // Row rule (hairline, top of row).
+      page.drawLine({ start: { x: left, y: y + pt(9) }, end: { x: right, y: y + pt(9) }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
+      // Label (neutral-600).
+      page.drawText(row.label, { x: left, y, size: TYPE.rowLabel, font, color: TOKENS.neutral600 });
+      // Value.
+      let vx = valueX;
+      if (row.chip) {
+        vx = drawChip(page, row.chip, vx, y, bold, font) + pt(8);
+      }
+      if (row.value) {
+        page.drawText(row.value, {
+          x: vx,
+          y,
+          size: TYPE.rowValue,
+          font,
+          color: row.accentValue ? ACCENT_TYPE : INK,
+        });
+        vx += font.widthOfTextAtSize(row.value, TYPE.rowValue) + pt(8);
+      }
+      if (row.qualifier) {
+        const qSize = pt(11);
+        const inlineRoom = right - vx;
+        const isLong = row.qualifier.length > 42 || inlineRoom < pt(120);
+        if (isLong) {
+          // Long note (e.g. the provisional buildable basis): its own wrapped
+          // grey block beneath the value, spanning valueX -> right. Never a
+          // separate labelled row (template rule 7).
+          const qLines = wrapTextToWidth(row.qualifier, font, qSize, right - valueX);
+          for (const line of qLines) {
+            y -= pt(13);
+            page.drawText(line, { x: valueX, y, size: qSize, font, color: TOKENS.neutral600 });
+          }
+        } else {
+          const qText = row.value || row.chip ? `(${row.qualifier})` : row.qualifier;
+          const qLines = wrapTextToWidth(qText, font, qSize, Math.max(inlineRoom, pt(80)));
+          page.drawText(qLines[0]!, { x: vx, y, size: qSize, font, color: TOKENS.neutral600 });
+          for (let li = 1; li < qLines.length; li++) {
+            y -= pt(13);
+            page.drawText(qLines[li]!, { x: valueX, y, size: qSize, font, color: TOKENS.neutral600 });
+          }
+        }
+      }
+      y -= pt(20);
+    }
+    y -= pt(8);
   }
   return y;
 }
 
-function drawHonestyLine(page: PDFPage, bold: PDFFont, font: PDFFont, y: number): void {
-  page.drawText(SITE_PLAN_HONESTY_LINE, { x: MARGIN, y: Math.max(y, MARGIN + 14), size: 9, font: bold, color: BLACK });
-  page.drawText(
-    "Property-line bearing/distance tags are GIS-approximate from the county parcel ring - not survey-grade.",
-    { x: MARGIN, y: Math.max(y - 12, MARGIN), size: 7, font, color: MUTED },
-  );
+function drawProvenanceTable(page: PDFPage, model: SitePlanModel, bold: PDFFont, font: PDFFont, startY: number): void {
+  const left = MARGIN_X;
+  const right = PAGE_WIDTH - MARGIN_X;
+  let y = startY - pt(4);
+  drawTrackedText(page, "PROVENANCE / CITATIONS", {
+    x: left,
+    y,
+    size: TYPE.groupHeading,
+    font: bold,
+    color: ACCENT,
+    trackingEm: TRACKING.groupHeading,
+  });
+  y -= pt(16);
+
+  const layerX = left;
+  const sourceX = left + pt(150);
+  const confX = right - pt(150);
+  const headSize = TYPE.tableHead;
+  // Head row.
+  drawTrackedText(page, "LAYER", { x: layerX, y, size: headSize, font: bold, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
+  drawTrackedText(page, "SOURCE", { x: sourceX, y, size: headSize, font: bold, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
+  drawTrackedText(page, "CONFIDENCE", { x: confX, y, size: headSize, font: bold, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
+  y -= pt(4);
+  page.drawLine({ start: { x: left, y }, end: { x: right, y }, thickness: STROKE.rowRule, color: TOKENS.neutral300 });
+  y -= pt(13);
+
+  const entries = buildProvenancePanelEntries(model);
+  const cellSize = TYPE.tableCell;
+  for (const entry of entries) {
+    // Wrap each cell independently, advance by the tallest.
+    const layerLines = wrapTextToWidth(entry.layer, font, cellSize, sourceX - layerX - pt(6));
+    const sourceLines = wrapTextToWidth(entry.source, font, cellSize, confX - sourceX - pt(6));
+    const confLines = wrapTextToWidth(entry.confidence, font, cellSize, right - confX);
+    const rows = Math.max(layerLines.length, sourceLines.length, confLines.length);
+    for (let i = 0; i < rows; i++) {
+      const ry = y - i * pt(12);
+      if (layerLines[i]) page.drawText(layerLines[i]!, { x: layerX, y: ry, size: cellSize, font, color: TOKENS.neutral700 });
+      if (sourceLines[i]) page.drawText(sourceLines[i]!, { x: sourceX, y: ry, size: cellSize, font, color: INK });
+      if (confLines[i]) page.drawText(confLines[i]!, { x: confX, y: ry, size: cellSize, font, color: TOKENS.neutral600 });
+    }
+    y -= rows * pt(12) + pt(5);
+    page.drawLine({ start: { x: left, y: y + pt(8) }, end: { x: right, y: y + pt(8) }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
+  }
 }
 
 /**
- * Renders the PDF site-plan sheet from the SAME `SitePlanModel` the
- * DXF/IFC site-plan emitters read (WDLL 5) — page 1 is the drawing, page 2
- * is the summary block + provenance panel + honesty line.
+ * Renders the PDF site-plan sheet from the SAME `SitePlanModel` the DXF/IFC
+ * emitters read (WDLL 5) — page 1 is the drawing (template card 2a), page 2
+ * is the summary + provenance (template card 2b).
  */
 export async function emitPdfSitePlan(model: SitePlanModel): Promise<PdfSitePlanResult> {
   const doc = await PDFDocument.create();
+  // Barlow substitution: fontkit + TTFs unavailable in this build. Helvetica
+  // at template sizing/weight/tracking/colour (see FONT_SUBSTITUTION_NOTE).
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 
+  // PAGE 1 — drawing.
   const page1 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  drawNeatline(page1);
+  const headerRuleY = drawPage1Header(page1, model, bold, font);
+
+  // Drawing box: below the header rule, above the footer band.
+  const footerBandTop = MARGIN_BOTTOM + pt(8.2 * 1.55 * 3) + pt(52) + pt(6);
   const drawingBox: DrawingBox = {
-    x: MARGIN,
-    y: MARGIN + 40,
-    width: PAGE_WIDTH - MARGIN * 2,
-    height: PAGE_HEIGHT - MARGIN * 2 - TITLE_BLOCK_HEIGHT - 40,
+    x: MARGIN_X,
+    y: footerBandTop,
+    width: PAGE_WIDTH - MARGIN_X * 2,
+    height: headerRuleY - pt(18) - footerBandTop,
   };
   const layout = buildSitePlanDrawingLayout(model, drawingBox, {
     measureText: (text, size) => font.widthOfTextAtSize(text, size),
+    // Clamp every label to the printable sheet (minus the outer margins),
+    // so a grazing street name / far tag drops instead of drawing off-page.
+    sheetBounds: {
+      minX: MARGIN_X,
+      minY: footerBandTop,
+      maxX: PAGE_WIDTH - MARGIN_X,
+      maxY: headerRuleY - pt(4),
+    },
   });
-  drawTitleBlock(page1, model, bold, font, layout.transform.scale);
   drawSitePlanDrawing(page1, layout, font, bold);
+  drawPage1Footer(page1, layout, model, font);
 
+  // PAGE 2 — summary.
   const page2 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  drawNeatline(page2);
-  const afterSummaryY = drawSummaryBlock(page2, model, bold, font);
-  const afterProvenanceY = drawProvenancePanel(page2, model, bold, font, afterSummaryY);
-  drawHonestyLine(page2, bold, font, afterProvenanceY - 10);
+  const page2RuleY = drawPage2Header(page2, model, bold, font);
+  const afterSummaryY = drawSummaryTable(page2, model, bold, font, page2RuleY);
+  drawProvenanceTable(page2, model, bold, font, afterSummaryY);
+  drawFinePrint(page2, buildFinePrint(model, 2), font);
 
   const bytes = await doc.save({ useObjectStreams: false });
-  return { bytes, pageCount: doc.getPageCount() };
+  return { bytes, pageCount: doc.getPageCount(), fontNote: FONT_SUBSTITUTION_NOTE };
 }
