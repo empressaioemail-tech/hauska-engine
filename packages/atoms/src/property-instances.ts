@@ -197,7 +197,21 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
     totalCells: number;
     resolutionMetersRequested: number | null;
     resolutionMetersActual: number | null;
+    /** Effective DEM resolution actually fetched after adaptive tighten/relax
+     * (may differ from requested when a large bbox is auto-coarsened to fit the
+     * pixel cap, or a small bbox auto-tightened to meet the floor). */
+    resolutionMetersAdapted?: number | null;
     touchesNodata: boolean;
+    /** Contour-rendering tier provenance (qa/topo-fidelity-1ft). The mesh Z is
+     * always 3DEP; this describes the source of the CONTOUR LINES only. */
+    contourSource?: {
+      tier: "authoritative-1ft" | "derived-3dep";
+      source: string;
+      vintage: string;
+      intervalLabel: string;
+      polylineCount: number;
+      fallbackReason?: string;
+    };
   };
   confidence:
     | ContractParcelTerrainModelAtomInstance["confidence"]

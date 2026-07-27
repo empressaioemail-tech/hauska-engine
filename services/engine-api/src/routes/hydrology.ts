@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import { runHydrologyWorker } from "@hauska-engine/adapters/hydrology";
-import { fetchUsgs3depDem } from "@hauska-engine/adapters/topography";
+import {
+  fetchUsgs3depDem,
+  selectAdaptiveResolutionMeters,
+  DEFAULT_TERRAIN_RESOLUTION_METERS,
+} from "@hauska-engine/adapters/topography";
 import { resolveRainfallForcing } from "@hauska-engine/adapters/hydrology";
 import {
   degradedCoverage,
@@ -40,7 +44,33 @@ const rainfallBodySchema = z.object({
   manualDepthMm: z.number().optional(),
 });
 
-const MAX_DRAINAGE_CELLS = 256 * 256;
+/**
+ * Drainage-grid cell cap (qa/topo-fidelity-1ft, 2026-07-27).
+ *
+ * Raised from 256² (65,536) to 512² (262,144). With the terrain path now
+ * fetching ~1m 3DEP (MOVE 1), the DEM feeding hydrology is 4-10x finer; the old
+ * 256² downsample threw most of that resolution away before D8/flow-accumulation
+ * ran, so finer flow lines and drainage delineation needed this cap raised too.
+ *
+ * TRADEOFF: pysheds D8 + flow-accumulation is ~O(cells) in both time and memory
+ * (several Float32/Int arrays per cell). 512² is 4x the cells of 256² — a
+ * defensible bound that materially sharpens flow lines while staying well inside
+ * a single Cloud Run worker's time/memory envelope. We did NOT uncap or jump to
+ * 1024² (16x): a 16x compute/memory blow-up risks worker OOM/timeout on large
+ * catchments for diminishing visual return. Ops can tune via
+ * HYDROLOGY_MAX_DRAINAGE_CELLS without a code change; the value is clamped to a
+ * hard 1024² ceiling so a misconfig cannot uncap the worker.
+ */
+const HYDROLOGY_MAX_DRAINAGE_CELLS_DEFAULT = 512 * 512;
+const HYDROLOGY_MAX_DRAINAGE_CELLS_CEILING = 1024 * 1024;
+
+function resolveMaxDrainageCells(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.HYDROLOGY_MAX_DRAINAGE_CELLS);
+  if (!Number.isFinite(raw) || raw <= 0) return HYDROLOGY_MAX_DRAINAGE_CELLS_DEFAULT;
+  return Math.min(Math.floor(raw), HYDROLOGY_MAX_DRAINAGE_CELLS_CEILING);
+}
+
+const MAX_DRAINAGE_CELLS = resolveMaxDrainageCells();
 
 function downsampleElevation(
   elevation: Float32Array,
@@ -77,8 +107,16 @@ export function buildHydrologyRoutes(): Hono {
       );
     }
     try {
+      // Default to ~1m (3DEP serves it) and auto-relax coarser for large
+      // catchment bboxes so the finer DEM feeds D8/flow-accumulation where it
+      // fits the pixel cap, without ever failing hard on a big extent.
+      const requested = parsed.data.resolutionMeters ?? DEFAULT_TERRAIN_RESOLUTION_METERS;
+      const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
+        parsed.data.bbox,
+        requested,
+      );
       const result = await fetchUsgs3depDem(parsed.data.bbox, {
-        resolutionMeters: parsed.data.resolutionMeters ?? 10,
+        resolutionMeters: resolutionMetersAdapted,
       });
       return envelopeJson(
         c,
@@ -87,6 +125,8 @@ export function buildHydrologyRoutes(): Hono {
           heightPx: result.heightPx,
           bbox: result.bbox,
           demBytesBase64: Buffer.from(result.bytes).toString("base64"),
+          resolutionMetersRequested: requested,
+          resolutionMetersAdapted,
         },
         {
           confidence: resolveReadPathConfidence({ deterministic: true }),

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   fetchUsgs3depDem,
   selectAdaptiveResolutionMeters,
+  DEFAULT_TERRAIN_RESOLUTION_METERS,
   type BboxWgs84,
 } from "@hauska-engine/adapters";
 import type { ParcelTerrainModelAtomInstance } from "@hauska-engine/atoms";
@@ -10,7 +11,8 @@ import type { StoragePort } from "@hauska-engine/storage";
 
 import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
 import { assertTerrainElevationIntegrity, TERRAIN_VERTICAL_DATUM } from "./elevation.js";
-import { emitDxf3dFace, emitDxfContours, emitIfc } from "./emitters.js";
+import { emitDxf3dFace, emitDxfContoursFromPolylines, emitIfc } from "./emitters.js";
+import { resolveContourSource } from "./contour-source.js";
 import { buildTerrainMeshGeometry, emitGlb } from "./mesh.js";
 
 
@@ -69,14 +71,20 @@ export async function authorParcelTerrainExport(
     );
   }
   const fetchedAt = new Date().toISOString();
-  const resolutionMetersRequested = options.resolutionMeters ?? 10;
+  // Reframed 2026-07-27: default to ~1m (3DEP serves lidar-derived 1m across
+  // CONUS). selectAdaptiveResolutionMeters auto-relaxes coarser if a large bbox
+  // would blow the 4096px/axis cap, so this never fails hard on a big extent.
+  const resolutionMetersRequested = options.resolutionMeters ?? DEFAULT_TERRAIN_RESOLUTION_METERS;
   const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
     resolved.bbox,
     resolutionMetersRequested,
   );
   const contourIntervalMeters = options.contourIntervalMeters ?? 1;
   const fetchDem = options.fetchDem ?? fetchUsgs3depDem;
-  const demFetch = await fetchDem(resolved.bbox, { resolutionMeters: resolutionMetersAdapted });
+  const demFetch = await fetchDem(resolved.bbox, {
+    resolutionMeters: resolutionMetersAdapted,
+    resolveActualResolution: true,
+  });
   const resolutionAdaptedNote =
     resolutionMetersAdapted !== resolutionMetersRequested
       ? `; DEM fetch auto-tightened to ${resolutionMetersAdapted}m/px (requested ${resolutionMetersRequested}m/px for 16px floor)`
@@ -108,7 +116,16 @@ export async function authorParcelTerrainExport(
     vertexCount: mesh.vertexCount,
     triangleCount: mesh.triangleCount,
   });
-  const contours = await emitDxfContours(dem, resolved.bbox, contourIntervalMeters);
+  // Authoritative 1-ft contour tier where covered (Bastrop), else honest
+  // 3DEP-derived fallback. Mesh Z is untouched (still 3DEP + integrity gate);
+  // only the contour lines are upgraded.
+  const contourSource = await resolveContourSource({
+    dem,
+    bbox: resolved.bbox,
+    contourIntervalMeters,
+  });
+  const authoritativeContours = contourSource.provenance.tier === "authoritative-1ft";
+  const contours = await emitDxfContoursFromPolylines(contourSource.polylines);
   await persist("dxf-contour", contours.bytes, "application/dxf", {
     contourIntervalMeters,
     contourPolylineCount: contours.polylineCount,
@@ -169,18 +186,48 @@ export async function authorParcelTerrainExport(
       totalCells: dem.width * dem.height,
       resolutionMetersRequested,
       resolutionMetersActual: demFetch.resolutionMetersActual,
+      resolutionMetersAdapted,
       touchesNodata: dem.nodataCount > 0,
+      contourSource: {
+        tier: contourSource.provenance.tier,
+        source: contourSource.provenance.source,
+        vintage: contourSource.provenance.vintage,
+        intervalLabel: contourSource.provenance.intervalLabel,
+        polylineCount: contourSource.provenance.polylineCount,
+        ...(contourSource.provenance.fallbackReason
+          ? { fallbackReason: contourSource.provenance.fallbackReason }
+          : {}),
+      },
     },
-    confidence: {
-      value: 0.6,
-      kind: "asserted",
-      provenance:
-        `USGS 3DEP DEM field; Z=${TERRAIN_VERTICAL_DATUM.summary}; ` +
-        `mesh Z band [${elev.minZ.toFixed(3)}, ${elev.maxZ.toFixed(3)}] m; ` +
-        `calibration pending${resolutionAdaptedNote}`,
-      n: 0,
-      intervalWidth: 1,
-    },
+    confidence: authoritativeContours
+      ? {
+          // Contour lines are drawn from an authoritative LiDAR-derived 1-ft
+          // source (Bastrop Contour1Ft2017, 2017 StratMap). Mesh Z is still
+          // 3DEP, so this is a bounded bump over the 0.6 3DEP-only baseline,
+          // not a fabricated number: the elevation deliverable is county
+          // survey-grade contours, honestly named below.
+          value: 0.72,
+          kind: "asserted",
+          provenance:
+            `Mesh Z: USGS 3DEP DEM field (${TERRAIN_VERTICAL_DATUM.summary}); ` +
+            `contours: ${contourSource.provenance.source} (${contourSource.provenance.vintage}, ` +
+            `${contourSource.provenance.intervalLabel}); ` +
+            `mesh Z band [${elev.minZ.toFixed(3)}, ${elev.maxZ.toFixed(3)}] m; ` +
+            `calibration pending${resolutionAdaptedNote}`,
+          n: 0,
+          intervalWidth: 1,
+        }
+      : {
+          value: 0.6,
+          kind: "asserted",
+          provenance:
+            `USGS 3DEP DEM field; Z=${TERRAIN_VERTICAL_DATUM.summary}; ` +
+            `contours: ${contourSource.provenance.source} (${contourSource.provenance.tier}); ` +
+            `mesh Z band [${elev.minZ.toFixed(3)}, ${elev.maxZ.toFixed(3)}] m; ` +
+            `calibration pending${resolutionAdaptedNote}`,
+          n: 0,
+          intervalWidth: 1,
+        },
   };
   atom.contentHash = checksum(atom);
   await options.storage.writePropertyAtom(atom);

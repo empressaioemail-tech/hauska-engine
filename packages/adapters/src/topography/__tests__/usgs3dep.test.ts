@@ -18,6 +18,7 @@ import {
   USGS_3DEP_EXPORT_ENDPOINT,
   MAX_PIXELS_PER_AXIS,
   MIN_PIXELS_PER_AXIS,
+  DEFAULT_TERRAIN_RESOLUTION_METERS,
   type BboxWgs84,
 } from "../usgs3dep.js";
 
@@ -149,10 +150,34 @@ describe("computeRasterSize", () => {
 });
 
 describe("selectAdaptiveResolutionMeters", () => {
-  it("keeps the default 10m request when the bbox already meets the 16px floor", () => {
+  it("defaults to ~1m (3DEP serves lidar 1m) and keeps it when the bbox fits the cap", () => {
+    // MOAB_BBOX is ~2175m x ~1113m; at the 1m default that is ~2175x1113px,
+    // within [16, 4096] on both axes, so no adaptation is needed.
+    expect(DEFAULT_TERRAIN_RESOLUTION_METERS).toBe(1);
     const result = selectAdaptiveResolutionMeters(MOAB_BBOX);
-    expect(result.resolutionMetersRequested).toBe(10);
-    expect(result.resolutionMetersAdapted).toBe(10);
+    expect(result.resolutionMetersRequested).toBe(1);
+    expect(result.resolutionMetersAdapted).toBe(1);
+    expect(() => computeRasterSize(MOAB_BBOX, result.resolutionMetersAdapted)).not.toThrow();
+  });
+
+  it("auto-RELAXES coarser when a 1m request would blow the 4096px/axis cap", () => {
+    // A ~9km-wide catchment bbox at 1m/px would be ~9000px (> 4096 cap); the
+    // selector must step coarser (to 3m here) rather than throw raster-too-large.
+    const bigBbox: BboxWgs84 = {
+      westLng: -109.60,
+      southLat: 38.50,
+      eastLng: -109.50, // ~8.7km E-W at this latitude
+      northLat: 38.58,
+    };
+    // Confirm 1m really does blow the cap so the test is meaningful.
+    expect(() => computeRasterSize(bigBbox, 1)).toThrowError(/raster-too-large|exceeds/i);
+    const result = selectAdaptiveResolutionMeters(bigBbox, 1);
+    expect(result.resolutionMetersRequested).toBe(1);
+    expect(result.resolutionMetersAdapted).toBeGreaterThan(1);
+    // The adapted resolution must actually fit the cap.
+    const size = computeRasterSize(bigBbox, result.resolutionMetersAdapted);
+    expect(size.widthPx).toBeLessThanOrEqual(MAX_PIXELS_PER_AXIS);
+    expect(size.heightPx).toBeLessThanOrEqual(MAX_PIXELS_PER_AXIS);
   });
 
   it("auto-tightens from 10m to 1m for a small parcel bbox", () => {
@@ -180,9 +205,25 @@ describe("selectAdaptiveResolutionMeters", () => {
     }
   });
 
-  it("surfaces raster-too-large when the requested resolution is too fine", () => {
+  it("auto-relaxes a too-fine request that fits at a coarser ladder step", () => {
+    // 0.1m on MOAB (~2175m) is ~21750px (> cap), but relaxing to 1m fits
+    // (~2175px). The selector must return the relaxed value, not throw.
+    const result = selectAdaptiveResolutionMeters(MOAB_BBOX, 0.1);
+    expect(result.resolutionMetersRequested).toBe(0.1);
+    expect(result.resolutionMetersAdapted).toBeGreaterThanOrEqual(1);
+    expect(() => computeRasterSize(MOAB_BBOX, result.resolutionMetersAdapted)).not.toThrow();
+  });
+
+  it("throws raster-too-large only when even the coarsest ladder step cannot fit the cap", () => {
+    // A continent-scale bbox cannot fit 4096px even at 30m/px.
+    const hugeBbox: BboxWgs84 = {
+      westLng: -120,
+      southLat: 30,
+      eastLng: -80, // ~40 degrees of longitude
+      northLat: 48,
+    };
     try {
-      selectAdaptiveResolutionMeters(MOAB_BBOX, 0.1);
+      selectAdaptiveResolutionMeters(hugeBbox, 1);
       throw new Error("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(Usgs3depFetchError);
@@ -412,6 +453,57 @@ describe("fetchUsgs3depDem — abort + timeout", () => {
       expect(err).toBeInstanceOf(Usgs3depFetchError);
       expect((err as Usgs3depFetchError).code).toBe("timeout");
     }
+  });
+});
+
+describe("fetchUsgs3depDem — resolveActualResolution probe", () => {
+  it("leaves resolutionMetersActual null when the probe is not requested", async () => {
+    const fetchImpl = vi.fn(async () => tiffResponse(new Uint8Array([0x49, 0x49])));
+    const result = await fetchUsgs3depDem(MOAB_BBOX, { resolutionMeters: 1, fetchImpl });
+    expect(result.resolutionMetersActual).toBeNull();
+    expect(result.resolutionMetersRequested).toBe(1);
+    // Only the raster GET — no second f=json call.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves resolutionMetersActual from the f=json pixelSize envelope when requested", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get("f") === "json") {
+        // ~1m in degrees at MOAB latitude: 1 / (111320 * cos(38.57°)) ≈ 1.15e-5.
+        return new Response(
+          JSON.stringify({ pixelSizeX: 1.15e-5, pixelSizeY: 8.98e-6 }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return tiffResponse(new Uint8Array([0x49, 0x49]));
+    });
+    const result = await fetchUsgs3depDem(MOAB_BBOX, {
+      resolutionMeters: 1,
+      fetchImpl,
+      resolveActualResolution: true,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.resolutionMetersActual).not.toBeNull();
+    // Both axes convert to ~1m; the finer axis is reported.
+    expect(result.resolutionMetersActual!).toBeGreaterThan(0.5);
+    expect(result.resolutionMetersActual!).toBeLessThan(1.5);
+  });
+
+  it("keeps resolutionMetersActual null when the probe fails (no fabricated number)", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get("f") === "json") {
+        return new Response("boom", { status: 500, headers: { "content-type": "text/plain" } });
+      }
+      return tiffResponse(new Uint8Array([0x49, 0x49]));
+    });
+    const result = await fetchUsgs3depDem(MOAB_BBOX, {
+      resolutionMeters: 1,
+      fetchImpl,
+      resolveActualResolution: true,
+    });
+    expect(result.resolutionMetersActual).toBeNull();
   });
 });
 

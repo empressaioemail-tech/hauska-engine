@@ -127,6 +127,18 @@ export async function emitDxfContours(
   intervalMeters: number,
 ): Promise<{ bytes: Uint8Array; polylineCount: number }> {
   const polylines = collectContourPolylines(dem, bbox, intervalMeters);
+  return emitDxfContoursFromPolylines(polylines);
+}
+
+/**
+ * Contour DXF from pre-resolved local-ENU polylines. Used by the contour-source
+ * resolver so an authoritative 1-ft tier (or the 3DEP-derived fallback) can be
+ * written by the same ezdxf R2000 path. Same NAVD88 datum guard as the
+ * DEM-derived variant.
+ */
+export async function emitDxfContoursFromPolylines(
+  polylines: ContourPolyline2d[],
+): Promise<{ bytes: Uint8Array; polylineCount: number }> {
   const result = await runDxfWorker({
     kind: "contours",
     layer: "TERRAIN_CONTOURS",

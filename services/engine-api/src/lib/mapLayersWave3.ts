@@ -6,7 +6,11 @@
 
 
 import { arcgisPointQuery } from "@hauska-engine/adapters/arcgis";
-import { fetchUsgs3depDem } from "@hauska-engine/adapters/topography";
+import {
+  fetchUsgs3depDem,
+  selectAdaptiveResolutionMeters,
+  DEFAULT_TERRAIN_RESOLUTION_METERS,
+} from "@hauska-engine/adapters/topography";
 import {
   deriveContoursGeoJson,
   parseDemBytes,
@@ -242,7 +246,11 @@ async function resolveDemSlot(
 ): Promise<MapLayerSlot> {
   const bbox = resolveBbox(request);
   try {
-    const result = await fetchUsgs3depDem(bbox, { resolutionMeters: 10 });
+    const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
+      bbox,
+      DEFAULT_TERRAIN_RESOLUTION_METERS,
+    );
+    const result = await fetchUsgs3depDem(bbox, { resolutionMeters: resolutionMetersAdapted });
     return okWave3Slot(
       "dem",
       "usgs:3dep-dem",
@@ -272,7 +280,11 @@ async function resolveTopographySlot(
 ): Promise<MapLayerSlot> {
   const bbox = resolveBbox(request);
   try {
-    const result = await fetchUsgs3depDem(bbox, { resolutionMeters: 10 });
+    const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
+      bbox,
+      DEFAULT_TERRAIN_RESOLUTION_METERS,
+    );
+    const result = await fetchUsgs3depDem(bbox, { resolutionMeters: resolutionMetersAdapted });
     const dem = await parseDemBytes(new Uint8Array(result.bytes));
     const interval = 1;
     const { featureCollection, thresholds } = deriveContoursGeoJson(
