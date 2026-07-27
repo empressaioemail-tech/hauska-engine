@@ -31,7 +31,9 @@ const LIVE = TXGIO && process.env.BOUNDARY_LIVE_TEST === "1";
 const COUNTY_FIPS = "48021";
 
 describe.skipIf(!LIVE)("boundary primitive live (U2.1–U2.2)", () => {
-  it("U2.2 adjacency matches PRE-2 spot-check on gold parcels", async () => {
+  it(
+    "U2.2 adjacency matches PRE-2 spot-check on gold parcels",
+    async () => {
     const sql = postgres(process.env.TXGIO_DATABASE_URL!, {
       ssl: "require",
       max: 2,
@@ -53,9 +55,11 @@ describe.skipIf(!LIVE)("boundary primitive live (U2.1–U2.2)", () => {
     } finally {
       await sql.end({ timeout: 5 });
     }
-  });
+  }, 120_000);
 
-  it("U2.1 live atoms carry role + adjacency + setback + interior + temporal", async () => {
+  it(
+    "U2.1 live atoms carry role + adjacency + setback + interior + temporal",
+    async () => {
     const sql = postgres(process.env.TXGIO_DATABASE_URL!, {
       ssl: "require",
       max: 2,
@@ -130,7 +134,7 @@ describe.skipIf(!LIVE)("boundary primitive live (U2.1–U2.2)", () => {
       await sql.end({ timeout: 5 });
       await substrateSql.end({ timeout: 5 });
     }
-  });
+  }, 120_000);
 });
 
 describe("boundary primitive honesty + method (U2.3–U2.5)", () => {
