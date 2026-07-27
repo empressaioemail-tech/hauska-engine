@@ -31,10 +31,16 @@ import type {
 import { resolveEffectiveRule, type EffectiveSection } from "./effective-rule.js";
 import { getAtomTrace, type AtomTraceOutput } from "./atom-trace.js";
 import { resolveEditionAtDate, type EditionAtDateResult } from "./edition-at-date.js";
+import {
+  buildPropertyNodeDetail,
+  listBoundaryEdgesWire,
+  type PropertyNodeDetail,
+} from "./node-detail.js";
 
 export * from "./effective-rule.js";
 export * from "./atom-trace.js";
 export * from "./edition-at-date.js";
+export * from "./node-detail.js";
 
 export interface SearchInput {
   q: string;
@@ -235,6 +241,19 @@ export class HybridRetrieval {
       };
     });
     return { roadNodeId, roadNode, atoms };
+  }
+
+  /**
+   * Control-Tower-shaped node detail for parcel / road / boundary-edge
+   * (CC-A U1 / WDLL 1, 2, 6). Edges from StoragePort boundary primitives.
+   */
+  async getPropertyNodeDetail(nodeId: string): Promise<PropertyNodeDetail> {
+    return buildPropertyNodeDetail(this.storage, nodeId);
+  }
+
+  /** Raw boundary-edge list for a parcel (stranded StoragePort → HTTP). */
+  async listBoundaryEdgesByParcelNodeId(parcelNodeId: string) {
+    return listBoundaryEdgesWire(this.storage, parcelNodeId);
   }
 
   async queryJurisdiction(
