@@ -1,6 +1,7 @@
 import {
   fetchUsgs3depDem,
   selectAdaptiveResolutionMeters,
+  DEFAULT_TERRAIN_RESOLUTION_METERS,
   type BboxWgs84,
 } from "@hauska-engine/adapters";
 import { femaNfhlAdapter } from "@hauska-engine/adapters/federal/fema-nfhl";
@@ -13,6 +14,7 @@ import type {
 import type { StoragePort } from "@hauska-engine/storage";
 
 import { TERRAIN_VERTICAL_DATUM } from "../parcel-terrain/elevation.js";
+import { resolveContourSource } from "../parcel-terrain/contour-source.js";
 import { buildTerrainMeshGeometry } from "../parcel-terrain/mesh.js";
 import { DEFAULT_SKIRT_DEPTH_FEET, type BuildTerrainSolidMassOptions } from "../parcel-terrain/solid-mass.js";
 import type { ParcelGeometryResolver, TerrainArtifactStore } from "../parcel-terrain/author.js";
@@ -206,13 +208,24 @@ export async function authorParcelSitePlanExport(
     );
   }
 
-  const resolutionMetersRequested = options.resolutionMeters ?? 10;
+  const resolutionMetersRequested = options.resolutionMeters ?? DEFAULT_TERRAIN_RESOLUTION_METERS;
   const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(resolved.bbox, resolutionMetersRequested);
   const contourIntervalMeters = options.contourIntervalMeters ?? 1;
   const fetchDem = options.fetchDem ?? fetchUsgs3depDem;
-  const demFetch = await fetchDem(resolved.bbox, { resolutionMeters: resolutionMetersAdapted });
+  const demFetch = await fetchDem(resolved.bbox, {
+    resolutionMeters: resolutionMetersAdapted,
+    resolveActualResolution: true,
+  });
   const dem = await (options.parseDem ?? parseDemBytes)(demFetch.bytes);
   const mesh = buildTerrainMeshGeometry(dem, resolved.bbox);
+
+  // Authoritative 1-ft contour tier where covered (Bastrop), else honest
+  // 3DEP-derived fallback. Mesh Z (above) is untouched — 3DEP only.
+  const contourSource = await resolveContourSource({
+    dem,
+    bbox: resolved.bbox,
+    contourIntervalMeters,
+  });
 
   const zoning: ZoningSummaryInput =
     options.zoningOverride ?? (await resolveZoningSummary(options.parcelNodeId, options.storage));
@@ -275,6 +288,11 @@ export async function authorParcelSitePlanExport(
     streetAnchors,
     geometrySourceRef: resolved.sourceRef,
     demSourceCitation: TERRAIN_VERTICAL_DATUM.source,
+    contourOverride: contourSource.polylines,
+    contourSourceCitation:
+      contourSource.provenance.tier === "authoritative-1ft"
+        ? `${contourSource.provenance.source} (${contourSource.provenance.vintage}, ${contourSource.provenance.intervalLabel})`
+        : TERRAIN_VERTICAL_DATUM.source,
     descriptor: options.descriptor,
     zoning,
     floodZone,
@@ -329,7 +347,18 @@ export async function authorParcelSitePlanExport(
       totalCells: dem.width * dem.height,
       resolutionMetersRequested,
       resolutionMetersActual: demFetch.resolutionMetersActual,
+      resolutionMetersAdapted,
       touchesNodata: dem.nodataCount > 0,
+      contourSource: {
+        tier: contourSource.provenance.tier,
+        source: contourSource.provenance.source,
+        vintage: contourSource.provenance.vintage,
+        intervalLabel: contourSource.provenance.intervalLabel,
+        polylineCount: contourSource.provenance.polylineCount,
+        ...(contourSource.provenance.fallbackReason
+          ? { fallbackReason: contourSource.provenance.fallbackReason }
+          : {}),
+      },
     },
     confidence: {
       value: 0.6,
@@ -338,6 +367,19 @@ export async function authorParcelSitePlanExport(
       n: 0,
       intervalWidth: 1,
     },
+  };
+
+  // When merging into an EXISTING terrain atom, refresh the contour-tier
+  // provenance so the atom reflects the source actually drawn this run.
+  atom.coverage.contourSource = {
+    tier: contourSource.provenance.tier,
+    source: contourSource.provenance.source,
+    vintage: contourSource.provenance.vintage,
+    intervalLabel: contourSource.provenance.intervalLabel,
+    polylineCount: contourSource.provenance.polylineCount,
+    ...(contourSource.provenance.fallbackReason
+      ? { fallbackReason: contourSource.provenance.fallbackReason }
+      : {}),
   };
 
   const dxfRef = await options.artifactStore.put({

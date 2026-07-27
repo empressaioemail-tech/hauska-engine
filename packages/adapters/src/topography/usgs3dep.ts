@@ -70,8 +70,29 @@ const MIN_PIXELS_PER_AXIS = 16;
  */
 const FINEST_PRACTICAL_RESOLUTION_METERS = 1;
 
+/**
+ * Default requested DEM resolution for the terrain-mesh / contour / site-plan
+ * path. Reframed 2026-07-27 (qa/topo-fidelity-1ft): 3DEP already serves
+ * lidar-derived ~1m across CONUS (published pixelSize ~0.9999999900), so the
+ * long-standing 10m default was a self-imposed coarsening, not a source limit.
+ * Requesting 1m and letting {@link selectAdaptiveResolutionMeters} auto-relax
+ * on large bboxes (see below) gives parcel-scale extents true 1m fidelity while
+ * keeping catchment-scale extents inside {@link MAX_PIXELS_PER_AXIS}.
+ */
+const DEFAULT_TERRAIN_RESOLUTION_METERS = FINEST_PRACTICAL_RESOLUTION_METERS;
+
 /** Standard coarse-to-fine ladder for auto-tighten (meters per pixel). */
 const PRACTICAL_RESOLUTION_LADDER = [10, 5, 3, 2, 1] as const;
+
+/**
+ * Coarse-to-fine relax ladder for the auto-RELAX direction: when the requested
+ * resolution is so fine the bbox would blow {@link MAX_PIXELS_PER_AXIS}, step
+ * COARSER (2m, 3m, 5m, 10m, then 30m/1arc-sec) until the grid fits the cap. This
+ * is the mirror of the auto-tighten ladder and is what makes a 1m default safe
+ * for catchment-scale bboxes: the client honestly coarsens rather than throwing
+ * raster-too-large. 30m is the 1-arc-second national fallback ceiling.
+ */
+const PRACTICAL_RELAX_LADDER = [1, 2, 3, 5, 10, 30] as const;
 
 /**
  * Default request budget. Raster export is heavier than a feature
@@ -124,6 +145,18 @@ export interface FetchUsgs3depDemOptions {
    * to disable the timeout entirely (only the caller signal applies).
    */
   timeoutMs?: number;
+  /**
+   * When true, resolve the source raster's ACTUAL native cell size from the
+   * ImageServer `/exportImage?f=json` envelope (a cheap metadata-only call, no
+   * raster body) and surface it as {@link FetchUsgs3depDemResult.resolutionMetersActual}.
+   *
+   * Off by default so the narrow single-request contract is unchanged. When on,
+   * the client issues one extra `f=json` GET for the same bbox/size and reads
+   * `pixelSizeX/pixelSizeY`; the finer (smaller) axis is reported as actual. If
+   * that probe fails for any reason, `resolutionMetersActual` stays `null` — we
+   * never fabricate a coverage number (structural commitment #2).
+   */
+  resolveActualResolution?: boolean;
 }
 
 export interface FetchUsgs3depDemResult {
@@ -313,14 +346,38 @@ function adaptiveResolutionCandidates(requestedMeters: number): number[] {
 }
 
 /**
- * Pick an effective DEM resolution that satisfies {@link MIN_PIXELS_PER_AXIS}
- * on both axes. When the requested resolution is too coarse for the bbox, auto-
- * tightens toward {@link FINEST_PRACTICAL_RESOLUTION_METERS}. If even 1m/px
- * cannot meet the floor, throws an honest decline (no geometry invention).
+ * The relax ladder, filtered to candidates at or coarser than the requested
+ * resolution and sorted fine-to-coarse. Used when the requested resolution
+ * would blow {@link MAX_PIXELS_PER_AXIS} on a large bbox: we walk COARSER until
+ * the grid fits, so a 1m default never fails hard on a catchment-scale extent.
+ */
+function relaxResolutionCandidates(requestedMeters: number): number[] {
+  const candidates: number[] = PRACTICAL_RELAX_LADDER.filter((step) => step >= requestedMeters);
+  if (!candidates.some((candidate) => candidate === requestedMeters)) {
+    candidates.unshift(requestedMeters);
+  }
+  return [...new Set(candidates)].sort((a, b) => a - b);
+}
+
+/**
+ * Pick an effective DEM resolution that satisfies BOTH the
+ * {@link MIN_PIXELS_PER_AXIS} floor and the {@link MAX_PIXELS_PER_AXIS} cap on
+ * each axis.
+ *
+ * - Too coarse for the bbox (grid below the 16px floor): auto-TIGHTENS toward
+ *   {@link FINEST_PRACTICAL_RESOLUTION_METERS}. If even 1m/px cannot meet the
+ *   floor, throws an honest decline (no geometry invention).
+ * - Too fine for the bbox (grid above the 4096px cap — the case a 1m default
+ *   hits on a catchment-scale bbox): auto-RELAXES coarser along
+ *   {@link PRACTICAL_RELAX_LADDER} until the grid fits. If even 30m/px cannot
+ *   fit the cap, throws raster-too-large rather than silently downsampling.
+ *
+ * The requested value is preserved in {@link SelectAdaptiveResolutionMetersResult.resolutionMetersRequested};
+ * the effective value the client fetches at is {@link SelectAdaptiveResolutionMetersResult.resolutionMetersAdapted}.
  */
 export function selectAdaptiveResolutionMeters(
   bbox: BboxWgs84,
-  requestedMeters: number = 10,
+  requestedMeters: number = DEFAULT_TERRAIN_RESOLUTION_METERS,
 ): SelectAdaptiveResolutionMetersResult {
   if (!isFiniteNumber(requestedMeters) || requestedMeters <= 0) {
     throw new Usgs3depFetchError(
@@ -329,6 +386,44 @@ export function selectAdaptiveResolutionMeters(
     );
   }
 
+  // Probe the requested resolution first to learn WHICH direction to adapt.
+  try {
+    computeRasterSize(bbox, requestedMeters);
+    return {
+      resolutionMetersRequested: requestedMeters,
+      resolutionMetersAdapted: requestedMeters,
+    };
+  } catch (err) {
+    if (!(err instanceof Usgs3depFetchError)) throw err;
+    if (err.code === "raster-too-large") {
+      // Auto-relax: step COARSER until the grid fits the per-axis cap.
+      for (const candidate of relaxResolutionCandidates(requestedMeters)) {
+        if (candidate === requestedMeters) continue; // already known too-fine
+        try {
+          computeRasterSize(bbox, candidate);
+          return {
+            resolutionMetersRequested: requestedMeters,
+            resolutionMetersAdapted: candidate,
+          };
+        } catch (relaxErr) {
+          if (relaxErr instanceof Usgs3depFetchError && relaxErr.code === "raster-too-large") {
+            continue;
+          }
+          throw relaxErr;
+        }
+      }
+      const { widthM, heightM } = bboxMetersExtent(bbox);
+      throw new Usgs3depFetchError(
+        "raster-too-large",
+        `bbox (~${Math.round(widthM)}m x ${Math.round(heightM)}m) exceeds the ` +
+          `${MAX_PIXELS_PER_AXIS}px cap even at ${PRACTICAL_RELAX_LADDER[PRACTICAL_RELAX_LADDER.length - 1]}m/px; narrow bbox`,
+      );
+    }
+    if (err.code !== "raster-too-small") throw err;
+    // else fall through to the auto-tighten path below.
+  }
+
+  // Auto-tighten: requested resolution is too coarse; step FINER.
   const candidates = adaptiveResolutionCandidates(requestedMeters);
 
   for (const candidate of candidates) {
@@ -391,6 +486,58 @@ function composeAbort(
   // AbortSignal.any composes — either signal firing aborts the result.
   const combined = AbortSignal.any([callerSignal, timer]);
   return { signal: combined, cleanup: () => undefined };
+}
+
+/**
+ * Convert a 3DEP `pixelSizeX/Y` (in the imageSR's linear unit — metres, since
+ * we always request imageSR=4326... in degrees actually). The exportImage JSON
+ * envelope reports `pixelSize` in the imageSR units. We request imageSR=4326
+ * (degrees), so the reported pixelSize would be in degrees; converting back to
+ * metres at the bbox mean latitude recovers the metre cell size. Returns the
+ * finer (smaller) of the two axes in metres, or null when the envelope lacks
+ * usable pixelSize fields.
+ */
+function actualResolutionMetersFromEnvelope(
+  envelope: unknown,
+  bbox: BboxWgs84,
+): number | null {
+  if (typeof envelope !== "object" || envelope === null) return null;
+  const e = envelope as { pixelSizeX?: unknown; pixelSizeY?: unknown; error?: unknown };
+  if (e.error) return null;
+  const psx = Number(e.pixelSizeX);
+  const psy = Number(e.pixelSizeY);
+  if (!Number.isFinite(psx) && !Number.isFinite(psy)) return null;
+  const meanLat = (bbox.southLat + bbox.northLat) / 2;
+  const cosLat = Math.cos((meanLat * Math.PI) / 180);
+  // pixelSize is in imageSR (4326 => degrees); convert each axis to metres.
+  const xM = Number.isFinite(psx) ? psx * METERS_PER_DEG_LAT * cosLat : Infinity;
+  const yM = Number.isFinite(psy) ? psy * METERS_PER_DEG_LAT : Infinity;
+  const finer = Math.min(xM, yM);
+  return Number.isFinite(finer) && finer > 0 ? finer : null;
+}
+
+/**
+ * One extra metadata-only GET against `/exportImage?f=json` for the same
+ * bbox/size, to recover the source raster's actual cell size. Best-effort: any
+ * failure resolves to `null` so the caller reports honest "unknown" rather than
+ * a fabricated number.
+ */
+async function probeActualResolutionMeters(
+  baseUrl: URL,
+  bbox: BboxWgs84,
+  fetchImpl: typeof fetch,
+  signal: AbortSignal | undefined,
+): Promise<number | null> {
+  try {
+    const jsonUrl = new URL(baseUrl.toString());
+    jsonUrl.searchParams.set("f", "json");
+    const res = await fetchImpl(jsonUrl.toString(), { signal });
+    if (!res.ok) return null;
+    const body = (await res.json()) as unknown;
+    return actualResolutionMetersFromEnvelope(body, bbox);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -511,16 +658,20 @@ export async function fetchUsgs3depDem(
   const buffer = await res.arrayBuffer();
   const bytes = new Uint8Array(buffer);
 
+  // Coverage-honesty: `actual` stays null unless the caller opted into the
+  // metadata probe AND it succeeded. We never echo the requested value into
+  // `actual` (structural commitment #2 — no unearned number presented as earned).
+  const resolutionMetersActual = opts.resolveActualResolution
+    ? await probeActualResolutionMeters(url, bbox, fetchImpl, signal)
+    : null;
+
   return {
     bytes,
     contentType,
     bbox,
     resolutionMeters: opts.resolutionMeters,
-    // Coverage-honesty pair: we know what we asked for, we do NOT know
-    // the source raster's native resolution from this response, so
-    // `actual` stays null rather than echoing the request into it.
     resolutionMetersRequested: opts.resolutionMeters,
-    resolutionMetersActual: null,
+    resolutionMetersActual,
     widthPx,
     heightPx,
     endpoint,
@@ -535,5 +686,6 @@ export {
   MAX_PIXELS_PER_AXIS,
   MIN_PIXELS_PER_AXIS,
   FINEST_PRACTICAL_RESOLUTION_METERS,
+  DEFAULT_TERRAIN_RESOLUTION_METERS,
   DEFAULT_TIMEOUT_MS,
 };

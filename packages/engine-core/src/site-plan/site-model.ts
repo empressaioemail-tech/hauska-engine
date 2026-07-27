@@ -117,6 +117,15 @@ export interface ComposeSitePlanModelInputs {
    * outcome must also trigger the buildable-area honesty note, even on a
    * ring shape whose own offset-basis heuristic happened to resolve). */
   envelopeOutcome?: EnvelopeOutcomeInput;
+  /**
+   * Pre-resolved contour polylines in the local-ENU metre frame (qa/topo-
+   * fidelity-1ft). When supplied, the composer draws these instead of deriving
+   * contours from the DEM grid — used to serve the authoritative Bastrop 1-ft
+   * tier. Omit to keep the DEM-derived behaviour. Elevation is metres NAVD88.
+   */
+  contourOverride?: ContourPolyline2d[];
+  /** Provenance for the contour tier used, surfaced to the summary citation. */
+  contourSourceCitation?: string;
 }
 
 export interface ElevationLabel {
@@ -357,7 +366,9 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     degenerateReason: offset.offsetDegenerateReason,
   };
 
-  const contours = collectContourPolylines(inputs.dem, inputs.bbox, inputs.contourIntervalMeters);
+  const contours =
+    inputs.contourOverride ??
+    collectContourPolylines(inputs.dem, inputs.bbox, inputs.contourIntervalMeters);
 
   const cornerLabels: ElevationLabel[] = inputs.ringWgs84.map(([lng, lat], i) => ({
     point: ringLocal[Math.min(i, ringLocal.length - 1)]!,
@@ -493,7 +504,8 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     citations: {
       propertyLine: inputs.geometrySourceRef ?? "parcel-geometry-ring",
       setback: `${inputs.setback.sourceCodeAtomRef.atomDid} (${inputs.setback.sourceCodeAtomRef.role})`,
-      contour: inputs.demSourceCitation ?? TERRAIN_VERTICAL_DATUM.source,
+      contour:
+        inputs.contourSourceCitation ?? inputs.demSourceCitation ?? TERRAIN_VERTICAL_DATUM.source,
       zoning: zoningDistrict ? "zoning-fact atom (parcel zoning polygon)" : undefined,
       flood: "zone" in floodZone ? floodZone.sourceCitation : undefined,
     },

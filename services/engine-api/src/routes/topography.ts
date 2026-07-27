@@ -1,7 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { fetchUsgs3depDem } from "@hauska-engine/adapters/topography";
+import {
+  fetchUsgs3depDem,
+  selectAdaptiveResolutionMeters,
+  DEFAULT_TERRAIN_RESOLUTION_METERS,
+} from "@hauska-engine/adapters/topography";
 import {
   deriveContoursGeoJson,
   parseDemBytes,
@@ -134,8 +138,13 @@ export function buildTopographyRoutes(): Hono {
       );
     }
     try {
+      const requested = parsed.data.resolutionMeters ?? DEFAULT_TERRAIN_RESOLUTION_METERS;
+      const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
+        parsed.data.bbox,
+        requested,
+      );
       const result = await fetchUsgs3depDem(parsed.data.bbox, {
-        resolutionMeters: parsed.data.resolutionMeters ?? 10,
+        resolutionMeters: resolutionMetersAdapted,
       });
       return envelopeJson(
         c,
@@ -144,6 +153,8 @@ export function buildTopographyRoutes(): Hono {
           heightPx: result.heightPx,
           bbox: result.bbox,
           demBytesBase64: Buffer.from(result.bytes).toString("base64"),
+          resolutionMetersRequested: requested,
+          resolutionMetersAdapted,
         },
         {
           confidence: resolveReadPathConfidence({ deterministic: true }),
