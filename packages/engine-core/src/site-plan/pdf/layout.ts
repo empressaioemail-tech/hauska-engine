@@ -6,7 +6,7 @@ import {
   craftLabelFontSize,
   expandRingAabb,
   estimateTextWidth,
-  formatPropertyLineTag,
+  formatPropertyLineTagDistanceFirst,
   placeNonCollidingEdgeLabels,
   placeNonCollidingPointLabels,
   ringCentroidLocal,
@@ -131,6 +131,15 @@ export interface SitePlanDrawingLayout {
   scaleBar: { start: PageXY; end: PageXY; lengthMeters: number };
   /** Optional on-drawing lot-area callout (collision-placed; may be dropped). */
   lotAreaCallout: PlacedLabel | null;
+  /**
+   * Centered BUILDABLE ENVELOPE callout (template gold reference): a
+   * condensed-uppercase title over a grey "{sqft} sq ft · {pct}% of lot"
+   * qualifier, anchored at the envelope centroid. Null when there is no
+   * drawable envelope or the envelope is too narrow for the callout
+   * (template rule 9 · suppress under 40 label-widths). The title baseline
+   * is `anchor.y`; the qualifier draws one line below.
+   */
+  envelopeCallout: { anchor: PageXY; qualifier: string | null } | null;
   /** All labels that occupy collision space (tags + setbacks + streets + contours + callout). */
   allPlacedLabels: PlacedLabel[];
 }
@@ -309,6 +318,37 @@ function declutterContours(
   };
 }
 
+/**
+ * North arrow anchored top-right INSIDE the drawing box (template rule 9),
+ * with its direction taken from the model's north vector projected through the
+ * page transform — so a non-axis-aligned local frame still points true north.
+ * The model geometry is untouched; this is page-space furniture placement.
+ */
+function northArrowTopRight(
+  model: SitePlanModel,
+  transform: PdfTransform,
+  box: DrawingBox,
+): { origin: PageXY; tip: PageXY } {
+  const originLocal = model.north.originLocal;
+  const tipLocal: LocalPoint = {
+    x: originLocal.x + model.north.directionLocal.x,
+    y: originLocal.y + model.north.directionLocal.y,
+  };
+  const pOrigin = projectPoint(transform, originLocal);
+  const pTip = projectPoint(transform, tipLocal);
+  let dx = pTip.x - pOrigin.x;
+  let dy = pTip.y - pOrigin.y;
+  const len = Math.hypot(dx, dy) || 1;
+  dx /= len;
+  dy /= len;
+  const arrowLen = Math.min(box.width, box.height) * 0.09;
+  // Top-right corner, inset from the box edges.
+  const inset = arrowLen + 8;
+  const tip: PageXY = { x: box.x + box.width - inset, y: box.y + box.height - inset + arrowLen };
+  const origin: PageXY = { x: tip.x - dx * arrowLen, y: tip.y - dy * arrowLen };
+  return { origin, tip };
+}
+
 export interface BuildLayoutOptions {
   /**
    * Prefer pdf-lib `font.widthOfTextAtSize`. Defaults to Helvetica-ish estimate
@@ -317,6 +357,14 @@ export interface BuildLayoutOptions {
   measureText?: MeasureTextFn;
   /** When true (default), place an on-drawing lot-area callout if it clears. */
   includeLotAreaCallout?: boolean;
+  /**
+   * Page-space rectangle every label box must stay inside — the printable
+   * sheet. A placement that would leave it is dropped rather than drawn
+   * off-sheet (street names on a road that grazes the parcel edge used to
+   * spiral off the page). Defaults to the drawing box expanded by a generous
+   * margin when omitted.
+   */
+  sheetBounds?: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
 /**
@@ -343,6 +391,16 @@ export function buildSitePlanDrawingLayout(
   const contourFont = craftLabelFontSize(transform.scale, "contour");
   const calloutFont = craftLabelFontSize(transform.scale, "callout");
 
+  // Sheet clamp: labels may sit in the drawing margins (bearing tags outside
+  // the ring), but never off the printable sheet. Default to the box expanded
+  // by a generous margin when the caller does not pass an explicit sheet rect.
+  const bounds = options.sheetBounds ?? {
+    minX: box.x - box.width * 0.35,
+    minY: box.y - box.height * 0.2,
+    maxX: box.x + box.width * 1.35,
+    maxY: box.y + box.height * 1.2,
+  };
+
   const dimensions = model.propertySegments.map((segment) => ({
     mid: projectPoint(transform, { x: (segment.a.x + segment.b.x) / 2, y: (segment.a.y + segment.b.y) / 2 }),
     lengthFeet: segment.lengthFeet,
@@ -355,7 +413,7 @@ export function buildSitePlanDrawingLayout(
       midLocal: { x: (segment.a.x + segment.b.x) / 2, y: (segment.a.y + segment.b.y) / 2 },
       a: segment.a,
       b: segment.b,
-      text: formatPropertyLineTag(segment),
+      text: formatPropertyLineTagDistanceFirst(segment),
       fontSize: edgeFont,
     })),
     (p) => projectPoint(transform, p),
@@ -365,6 +423,7 @@ export function buildSitePlanDrawingLayout(
       pageScale: transform.scale,
       measureText,
       occupied,
+      bounds,
     },
   );
 
@@ -373,16 +432,34 @@ export function buildSitePlanDrawingLayout(
     model.setback.notSpecified?.side ||
     model.setback.notSpecified?.rear
   );
+  // Template rule 4: setback labels print once per unique value per role;
+  // identical adjacent values collapse to "<ROLE> <d>' (typ.)". An
+  // "unassigned" role (the offset could not classify this edge as front/side/
+  // rear) must NEVER be printed as a fabricated FRONT/SIDE/REAR — we honestly
+  // label it "SETBACK <d>' (typ.)" and collapse duplicates, rather than
+  // inventing an edge role we do not have.
+  const seenRoleValue = new Set<string>();
   const setbackLabelItems = model.setback.segments
-    .map((segment, index) => {
+    .map((segment) => {
       const notSpecified = !!segment.notSpecified;
+      const roleUpper = segment.role.toUpperCase();
       let text: string;
       if (notSpecified) {
-        text = `${segment.role.toUpperCase()} not specified - build-to-line governs`;
-      } else if (segment.role === "unassigned" && silentAxes) {
-        text = index === 0 ? model.setback.displayLine : "";
+        text = `${roleUpper} not specified - build-to-line governs`;
+      } else if (segment.role === "unassigned") {
+        // Honest, un-fabricated label; dedupe identical values so the sheet
+        // shows one "SETBACK 5' (typ.)" instead of the same value on 8 edges.
+        const key = `setback:${segment.distanceFt}`;
+        if (seenRoleValue.has(key)) return null;
+        seenRoleValue.add(key);
+        text = silentAxes ? model.setback.displayLine : `SETBACK ${segment.distanceFt}' (typ.)`;
       } else {
-        text = `${segment.role.toUpperCase()} ${segment.distanceFt}'`;
+        // Assigned role: keep the label on each edge (the gold reference shows
+        // SIDE on both sides) but mark repeats "(typ.)" per template rule 4.
+        const key = `${segment.role}:${segment.distanceFt}`;
+        const typ = seenRoleValue.has(key);
+        seenRoleValue.add(key);
+        text = `${roleUpper} ${segment.distanceFt}'${typ ? " (typ.)" : ""}`;
       }
       if (!text) return null;
       return {
@@ -406,6 +483,7 @@ export function buildSitePlanDrawingLayout(
       pageScale: transform.scale,
       measureText,
       occupied,
+      bounds,
     },
   );
 
@@ -435,7 +513,7 @@ export function buildSitePlanDrawingLayout(
     if (!labelPoint || !labelText) return rest;
     const placed = placeNonCollidingPointLabels(
       [{ point: labelPoint, text: labelText, fontSize: streetFont }],
-      { measureText, occupied, pageScale: transform.scale },
+      { measureText, occupied, pageScale: transform.scale, bounds },
     );
     return placed[0] ? { ...rest, label: placed[0] } : rest;
   });
@@ -452,10 +530,51 @@ export function buildSitePlanDrawingLayout(
     measureText,
     occupied,
     pageScale: transform.scale,
+    bounds,
   });
 
+  // Centered BUILDABLE ENVELOPE callout — anchored at the envelope centroid
+  // (template gold reference 2a), suppressed when the envelope is too narrow
+  // for the title (rule 9 · under ~40 label-widths). Reserves a two-line
+  // block in the shared collision set so property-line tags never land on it.
+  let envelopeCallout: SitePlanDrawingLayout["envelopeCallout"] = null;
   let lotAreaCallout: PlacedLabel | null = null;
-  if (includeLotAreaCallout && Number.isFinite(model.summary.lotAreaSqFt)) {
+  const offsetRingLocal = model.setback.offsetRingLocal;
+  if (includeLotAreaCallout && offsetRingLocal && offsetRingLocal.length >= 3) {
+    const envCentroid = ringCentroidLocal(offsetRingLocal);
+    const anchor = projectPoint(transform, envCentroid);
+    // Envelope page-space width at the centroid latitude band.
+    const envPage = offsetRingLocal.map((p) => projectPoint(transform, p));
+    const envXs = envPage.map((p) => p.x);
+    const envWidthPage = Math.max(...envXs) - Math.min(...envXs);
+    const titleText = "BUILDABLE ENVELOPE";
+    const titleSize = calloutFont + 2.5;
+    const titleWidth = measureText(titleText, titleSize);
+    // Rule 9: suppress if the envelope is narrower than the callout needs.
+    if (envWidthPage >= titleWidth * 1.05) {
+      const pct =
+        Number.isFinite(model.summary.lotAreaSqFt) && model.summary.lotAreaSqFt > 0 && model.summary.buildableAreaSqFt != null
+          ? Math.round((model.summary.buildableAreaSqFt / model.summary.lotAreaSqFt) * 100)
+          : null;
+      const qualifier =
+        model.summary.buildableAreaSqFt != null
+          ? `${Math.round(model.summary.buildableAreaSqFt).toLocaleString("en-US")} sq ft${pct != null ? ` · ${pct}% of lot` : ""}`
+          : null;
+      envelopeCallout = { anchor, qualifier };
+      // Reserve the two-line block so tags collide with it.
+      const blockH = titleSize + calloutFont + 6;
+      occupied.push({
+        text: titleText,
+        anchor,
+        drawAt: { x: anchor.x - titleWidth / 2, y: anchor.y - titleSize },
+        box: { x: anchor.x - titleWidth / 2, y: anchor.y - titleSize, width: titleWidth, height: blockH },
+        fontSize: titleSize,
+      });
+    }
+  }
+  // Fallback lot-area callout (kept for callers/tests that read it) only when
+  // no envelope callout was drawn — otherwise the two would overlap.
+  if (!envelopeCallout && includeLotAreaCallout && Number.isFinite(model.summary.lotAreaSqFt)) {
     const centroid = ringCentroidLocal(model.ringLocal);
     const placed = placeNonCollidingPointLabels(
       [
@@ -489,13 +608,14 @@ export function buildSitePlanDrawingLayout(
       reason: streetsRaw.reason,
       anchors: streetAnchors,
     },
-    north: { origin: projectPoint(transform, model.north.originLocal), tip: projectPoint(transform, northTip) },
+    north: northArrowTopRight(model, transform, box),
     scaleBar: {
       start: projectPoint(transform, scaleBarStart),
       end: projectPoint(transform, scaleBarEnd),
       lengthMeters: model.scaleBar.lengthMeters,
     },
     lotAreaCallout,
+    envelopeCallout,
     allPlacedLabels: [...occupied],
   };
 }

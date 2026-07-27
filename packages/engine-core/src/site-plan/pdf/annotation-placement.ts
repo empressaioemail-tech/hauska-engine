@@ -3,6 +3,7 @@ import type { PageXY } from "./layout.js";
 import {
   formatGisBearing as formatGisBearingShared,
   formatPropertyLineTag as formatPropertyLineTagShared,
+  formatPropertyLineTagDistanceFirst as formatPropertyLineTagDistanceFirstShared,
   PROPERTY_LINE_TAGS_HONESTY as PROPERTY_LINE_TAGS_HONESTY_SHARED,
 } from "../../geometry/gis-property-line-tags.js";
 
@@ -47,6 +48,19 @@ export function formatPropertyLineTag(segment: {
   lengthFeet: number;
 }): string {
   return formatPropertyLineTagShared(segment);
+}
+
+/**
+ * Distance-first tag ("98.3' · N 89°58' W"), the Industry template's gold
+ * reference presentation. @see geometry/gis-property-line-tags — same single
+ * bearing formula, template display order.
+ */
+export function formatPropertyLineTagDistanceFirst(segment: {
+  a: LocalPoint;
+  b: LocalPoint;
+  lengthFeet: number;
+}): string {
+  return formatPropertyLineTagDistanceFirstShared(segment);
 }
 
 /** @see geometry/gis-property-line-tags */
@@ -134,6 +148,8 @@ export interface PlaceLabelsOptions {
   maxNudgeIterations?: number;
   /** Minimum font size before drop. Default 4. */
   minFontSize?: number;
+  /** When set, a placement whose box leaves this rect is rejected (drop over off-sheet). */
+  bounds?: LabelBounds;
 }
 
 /**
@@ -160,6 +176,7 @@ export function placeNonCollidingEdgeLabels(
     occupied,
     maxNudgeIterations = 12,
     minFontSize = 4,
+    bounds,
   } = options;
   const newlyPlaced: PlacedLabel[] = [];
 
@@ -174,6 +191,7 @@ export function placeNonCollidingEdgeLabels(
       occupied,
       maxNudgeIterations,
       minFontSize,
+      bounds,
     });
     if (result) {
       occupied.push(result);
@@ -202,6 +220,7 @@ function tryPlaceEdgeLabel(
     occupied: readonly PlacedLabel[];
     maxNudgeIterations: number;
     minFontSize: number;
+    bounds?: LabelBounds;
   },
 ): PlacedLabel | null {
   const sizes: number[] = [];
@@ -241,6 +260,7 @@ function nudgeEdgeLabel(
     measureText: MeasureTextFn;
     occupied: readonly PlacedLabel[];
     maxNudgeIterations: number;
+    bounds?: LabelBounds;
   },
   allowLeader: boolean,
 ): PlacedLabel | null {
@@ -264,7 +284,7 @@ function nudgeEdgeLabel(
       alongM += (iter % 2 === 0 ? 1 : -1) * Math.max(0.4, 3 / opts.pageScale);
       continue;
     }
-    if (!boxHitsOccupied(box, opts.occupied)) {
+    if (!boxHitsOccupied(box, opts.occupied) && boxInsideBounds(box, opts.bounds)) {
       const leader = needsLeader || allowLeader
         ? {
             from: edgeMid,
@@ -295,6 +315,24 @@ export interface PlacePointLabelItem {
   fontSize: number;
 }
 
+/** Page-space rectangle a label box must stay inside (sheet clamp). */
+export interface LabelBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+function boxInsideBounds(box: LabelBox, bounds: LabelBounds | undefined): boolean {
+  if (!bounds) return true;
+  return (
+    box.x >= bounds.minX &&
+    box.y >= bounds.minY &&
+    box.x + box.width <= bounds.maxX &&
+    box.y + box.height <= bounds.maxY
+  );
+}
+
 /**
  * Place free (non-edge) labels — street names, contour elevations, lot-area
  * callouts — into the shared collision set. Nudge → shrink → drop; never
@@ -308,6 +346,8 @@ export function placeNonCollidingPointLabels(
     pageScale: number;
     maxNudgeIterations?: number;
     minFontSize?: number;
+    /** When set, a placement whose box leaves this rect is rejected (drop over off-sheet). */
+    bounds?: LabelBounds;
   },
 ): PlacedLabel[] {
   const {
@@ -316,6 +356,7 @@ export function placeNonCollidingPointLabels(
     pageScale,
     maxNudgeIterations = 12,
     minFontSize = 4,
+    bounds,
   } = options;
   const newlyPlaced: PlacedLabel[] = [];
   const step = Math.max(3, 6 / Math.max(pageScale, 0.01));
@@ -351,7 +392,7 @@ export function placeNonCollidingPointLabels(
         const anchor = { x: item.point.x + dx, y: item.point.y + dy };
         const drawAt = { x: anchor.x - width / 2, y: anchor.y - height / 3 };
         const box = buildBox(drawAt, width, height);
-        if (!boxHitsOccupied(box, occupied)) {
+        if (!boxHitsOccupied(box, occupied) && boxInsideBounds(box, bounds)) {
           const far = Math.hypot(dx, dy) > step * 1.5;
           accepted = {
             text: item.text,

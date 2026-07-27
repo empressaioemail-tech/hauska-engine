@@ -81,6 +81,22 @@ export function formatPropertyLineTag(segment: {
 }
 
 /**
+ * Distance-first tag ("98.3' · N 89°58' W"), the Industry template's gold
+ * reference presentation. Same single `formatGisBearing` formula — only the
+ * display order and separator differ from `formatPropertyLineTag`.
+ */
+export function formatPropertyLineTagDistanceFirst(segment: {
+  a: { x: number; y: number };
+  b: { x: number; y: number };
+  lengthFeet: number;
+}): string {
+  const dx = segment.b.x - segment.a.x;
+  const dy = segment.b.y - segment.a.y;
+  const bearing = formatGisBearing(dx, dy);
+  return `${segment.lengthFeet.toFixed(1)}' · ${bearing}`;
+}
+
+/**
  * Compute atom propertyLineTags from local-ENU edge endpoints (metres).
  * Boundary-primitive `interior.edgeEndpoints` are already in this frame
  * (centroid-projected depth-warm projectRing — not raw lng/lat).

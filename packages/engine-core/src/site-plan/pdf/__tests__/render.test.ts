@@ -1,43 +1,9 @@
-import { inflateSync } from "node:zlib";
-
 import { describe, expect, it } from "vitest";
 
 import { composeSitePlanModel } from "../../site-model.js";
 import { emitPdfSitePlan } from "../render.js";
 import { SITE_PLAN_HONESTY_LINE } from "../provenance.js";
-
-/**
- * pdf-lib Flate-compresses page content streams by default with no public
- * toggle to disable it. To assert drawn TEXT (not just raw bytes) actually
- * reads back from the artifact, inflate every `stream…endstream` block and
- * concatenate the decoded PostScript operators — the drawn strings (Tj
- * operands) are literal ASCII/WinAnsi bytes for the plain text this emitter
- * draws, so a substring search against the decoded text is a real
- * "is this citation/line actually in the rendered PDF" check.
- */
-function decodeAllContentStreams(pdfBytes: Uint8Array): string {
-  const raw = Buffer.from(pdfBytes);
-  const text = raw.toString("latin1");
-  const streamRe = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-  let match: RegExpExecArray | null;
-  const decoded: string[] = [];
-  while ((match = streamRe.exec(text))) {
-    const startIndex = match.index + match[0].indexOf(match[1]!);
-    const endIndex = startIndex + match[1]!.length;
-    const streamBytes = raw.subarray(startIndex, endIndex);
-    try {
-      decoded.push(inflateSync(streamBytes).toString("latin1"));
-    } catch {
-      decoded.push(streamBytes.toString("latin1"));
-    }
-  }
-  const joined = decoded.join("\n");
-  // pdf-lib's Helvetica/WinAnsi text runs emit hex string operands
-  // (`<...> Tj`) rather than literal `(...)` strings; hex-decode those back
-  // to the original ASCII text so the substring assertions below actually
-  // check the drawn text, not its wire encoding.
-  return joined.replace(/<([0-9A-Fa-f]+)>/g, (_all, hex: string) => Buffer.from(hex, "hex").toString("latin1"));
-}
+import { decodeAllContentStreams } from "./decode-pdf-text.js";
 
 const bbox = { westLng: -98.5, southLat: 29.4, eastLng: -98.4995, northLat: 29.4004 };
 const dem = {
@@ -133,17 +99,38 @@ describe("emitPdfSitePlan", () => {
     expect(decoded).toContain("unavailable");
   });
 
-  it("draws craft sheet chrome: FEET scale bar, LEGEND, Date not on file, no silent survey date", async () => {
+  // Template-match chrome (rebuilt 2026-07-27 to the Industry gold reference).
+  // The header eyebrow, right-aligned stat cluster, legend with an honest
+  // empty street layer, scale bar with a feet unit, and a scale-ratio /
+  // sheet-id / generated stamp line all read back from the sheet.
+  it("draws template sheet chrome: address, sub-line, legend w/ honest empty street, scale-ratio + sheet-id + stamp", async () => {
+    const model = buildModel();
+    const { bytes, fontNote } = await emitPdfSitePlan(model);
+    const decoded = decodeAllContentStreams(bytes);
+    // Header: the address is the largest string on the sheet (uppercased).
+    expect(decoded).toContain("1127 N PINE ST");
+    // Sub-line carries city + parcel.
+    expect(decoded).toContain("Parcel 48029:105129");
+    // Legend rows (contiguous, non-tracked) incl. the honest empty street layer.
+    expect(decoded).toContain("Property line");
+    expect(decoded).toContain("Setback / buildable envelope");
+    expect(decoded).toContain("no road node attaches");
+    // Scale bar carries a feet unit; scale-ratio + sheet-id + stamp line present.
+    expect(decoded).toContain(" ft");
+    expect(decoded).toContain('1" = ');
+    expect(decoded).toContain("SP-48029-105129");
+    expect(decoded).toContain("generated ");
+    // The embedded font is surfaced honestly to callers.
+    expect(fontNote).toContain("Inter");
+  });
+
+  it("centers a BUILDABLE ENVELOPE callout with the buildable sq ft + percent-of-lot qualifier", async () => {
     const model = buildModel();
     const { bytes } = await emitPdfSitePlan(model);
     const decoded = decodeAllContentStreams(bytes);
-    expect(decoded).toContain("FEET");
-    expect(decoded).toContain("LEGEND");
-    expect(decoded).toContain("PROPERTY");
-    expect(decoded).toContain("Date:");
-    expect(decoded).toContain("not on file");
-    expect(decoded).toContain("Scale:");
-    expect(decoded).toContain("Sheet:");
+    expect(decoded).toContain("BUILDABLE ENVELOPE");
+    // "{sqft} sq ft · {pct}% of lot" qualifier.
+    expect(decoded).toMatch(/% of lot/);
   });
 
   // Planner HOLD-1 (2026-07-25): buildModel() above uses the default 4-edge
