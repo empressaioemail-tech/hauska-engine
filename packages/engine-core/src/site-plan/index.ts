@@ -38,6 +38,15 @@ export {
 } from "./setback-display.js";
 
 export {
+  mapBuildableDisplay,
+  violatesHistoricalDisagreementGuard,
+  resolveBuildableAreaSqFt,
+  type BuildableDisplayInput,
+  type BuildableDisplayKind,
+  type BuildableDisplayVocab,
+} from "./buildable-display-vocab.js";
+
+export {
   buildDxfSitePlanRequest,
   emitDxfSitePlan,
   emitIfcSitePlan,

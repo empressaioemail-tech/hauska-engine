@@ -158,16 +158,9 @@ function drawSummaryBlock(page: PDFPage, model: SitePlanModel, bold: PDFFont, fo
   page.drawText("SUMMARY", { x: MARGIN, y, size: 13, font: bold, color: BLACK });
   y -= 20;
 
-  // A numeric buildable area and a provisional honesty note are NOT
-  // mutually exclusive (planner HOLD-1, 2026-07-25) — a heuristic or
-  // uniform-minimum front-edge basis still yields a drawable offset ring
-  // and a number, but that number must never be presented as certain.
-  const buildableAreaLine = s.buildableAreaSqFt !== null
-    ? s.buildableAreaHonestNote
-      ? `${s.buildableAreaSqFt.toFixed(0)} sq ft (PROVISIONAL — ${s.buildableAreaHonestNote})`
-      : `${s.buildableAreaSqFt.toFixed(0)} sq ft`
-    : `unavailable — ${s.buildableAreaHonestNote ?? "setback offset degenerate"}`;
-  const floodLine = "zone" in s.floodZone
+  // B3: shared vocabulary with PE map card / inspect — never print a bare
+  // "setback-consumes-lot" when the warm envelope (or drawable offset) has area.
+  const buildableAreaLine = s.buildablePdfLabel;  const floodLine = "zone" in s.floodZone
     ? `${s.floodZone.zone ?? "outside mapped SFHA"} (${s.floodZone.inSpecialFloodHazardArea ? "in" : "not in"} special flood hazard area)`
     : `unavailable — ${s.floodZone.reason}`;
   const zoningLine = s.zoningDistrict ?? `unavailable — ${s.zoningHonestAbsenceReason ?? "no zoning-fact atom on file"}`;
