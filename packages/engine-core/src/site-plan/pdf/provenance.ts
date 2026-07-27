@@ -48,13 +48,20 @@ export function buildProvenancePanelEntries(model: SitePlanModel): ProvenancePan
           layer: "STREET",
           source: "unavailable",
           asOf: nowIso,
-          confidence: `honest absence — ${model.streets.reason ?? "no road-anchor atom available"}`,
+          confidence: `honest absence — ${model.streets.reason ?? "no road-node attaches"}`,
         }
       : {
           layer: "STREET",
           source: model.streets.anchors.map((a) => a.sourceRef ?? a.name).join("; "),
           asOf: nowIso,
-          confidence: "asserted (road-anchor data)",
+          confidence: model.streets.anchors
+            .map((a) => {
+              const kind = a.rowProvenanceKind ?? "asserted";
+              const width =
+                typeof a.assumedWidthFt === "number" ? `, assumedWidthFt=${a.assumedWidthFt}` : "";
+              return `${a.name}: centerline accurate; ROW edges ${kind}${width}`;
+            })
+            .join("; "),
         },
     model.summary.zoningDistrict
       ? {

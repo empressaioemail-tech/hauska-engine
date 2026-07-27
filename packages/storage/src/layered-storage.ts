@@ -75,6 +75,25 @@ export class LayeredStorage implements StoragePort {
     return this.snapshot.listRoadAtomsByRoadNodeId(roadNodeId);
   }
 
+  async listRoadAtomsNearBbox(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+  ): Promise<ReadonlyArray<import("@hauska-engine/atoms").RoadNodeAtomInstance>> {
+    const primaryFn = this.primary.listRoadAtomsNearBbox?.bind(this.primary);
+    const snapshotFn = this.snapshot.listRoadAtomsNearBbox?.bind(this.snapshot);
+    if (primaryFn) {
+      const primary = await primaryFn(countyFips, bbox);
+      if (primary.length > 0) return primary;
+    }
+    if (snapshotFn) return snapshotFn(countyFips, bbox);
+    return [];
+  }
+
   writeBoundaryEdgeAtom(
     instance: import("@hauska-engine/atoms").BoundaryEdgeAtomInstance,
   ) {

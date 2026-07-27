@@ -31,9 +31,21 @@ export interface SetbackRuleInput {
 
 export interface StreetAnchorInput {
   name: string;
-  /** WGS84 [lng, lat] pairs. */
+  /** Centerline WGS84 [lng, lat] pairs (accurate road-node geometry). */
   points: Array<[number, number]>;
   sourceRef?: string;
+  /** Road-node id when this anchor was projected from a ledger road-node. */
+  roadNodeId?: string;
+  /** ROW left edge from road-node assumed width (v1). */
+  leftEdgePoints?: Array<[number, number]>;
+  /** ROW right edge from road-node assumed width (v1). */
+  rightEdgePoints?: Array<[number, number]>;
+  /**
+   * ROW provenance kind from the road-node atom (e.g. approximate-assumed-per-class).
+   * Drawn edges MUST carry this mark — never silent assumed geometry.
+   */
+  rowProvenanceKind?: string;
+  assumedWidthFt?: number;
 }
 
 /** Non-geometry descriptors no atom holds today (address, county name).
@@ -124,8 +136,21 @@ export interface SitePlanSetbackModel {
   degenerateReason?: string;
 }
 
+export interface SitePlanStreetAnchorModel {
+  name: string;
+  /** Centerline in local-ENU metres. */
+  pointsLocal: LocalPoint[];
+  sourceRef?: string;
+  roadNodeId?: string;
+  leftEdgeLocal?: LocalPoint[];
+  rightEdgeLocal?: LocalPoint[];
+  /** Must match road-node row.provenance.kind when edges are drawn. */
+  rowProvenanceKind?: string;
+  assumedWidthFt?: number;
+}
+
 export interface SitePlanStreetModel {
-  anchors: Array<{ name: string; pointsLocal: LocalPoint[]; sourceRef?: string }>;
+  anchors: SitePlanStreetAnchorModel[];
   honestAbsence: boolean;
   reason?: string;
 }
@@ -342,6 +367,15 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
             name: anchor.name,
             pointsLocal: anchor.points.map(([lng, lat]) => projectWgs84ToLocalEnu(lng, lat, inputs.bbox)),
             sourceRef: anchor.sourceRef,
+            roadNodeId: anchor.roadNodeId,
+            leftEdgeLocal: anchor.leftEdgePoints?.map(([lng, lat]) =>
+              projectWgs84ToLocalEnu(lng, lat, inputs.bbox),
+            ),
+            rightEdgeLocal: anchor.rightEdgePoints?.map(([lng, lat]) =>
+              projectWgs84ToLocalEnu(lng, lat, inputs.bbox),
+            ),
+            rowProvenanceKind: anchor.rowProvenanceKind,
+            assumedWidthFt: anchor.assumedWidthFt,
           })),
           honestAbsence: false,
         }
@@ -349,8 +383,8 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           anchors: [],
           honestAbsence: true,
           reason:
-            "No road-anchor atom is available in hauska-engine for this parcel; STREET layer is created " +
-            "empty rather than drawing fabricated street geometry.",
+            "No road-node attaches to this parcel; STREET layer is created empty rather than " +
+            "drawing fabricated street geometry.",
         };
 
   const xs = ringLocal.map((p) => p.x);

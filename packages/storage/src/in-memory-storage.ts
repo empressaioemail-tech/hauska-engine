@@ -120,6 +120,35 @@ export class InMemoryStorage implements StoragePort {
     return out;
   }
 
+  async listRoadAtomsNearBbox(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+  ): Promise<ReadonlyArray<RoadNodeAtomInstance>> {
+    const out: RoadNodeAtomInstance[] = [];
+    for (const inst of this.atoms.values()) {
+      if (!isRoadNodeAtomInstance(inst)) continue;
+      if (inst.countyFips !== countyFips) continue;
+      if (inst.status && inst.status !== "active") continue;
+      const coords = inst.centerline?.coordinates;
+      if (!Array.isArray(coords) || coords.length < 2) continue;
+      const hits = coords.some(([lng, lat]) => {
+        return (
+          lng >= bbox.westLng &&
+          lng <= bbox.eastLng &&
+          lat >= bbox.southLat &&
+          lat <= bbox.northLat
+        );
+      });
+      if (hits) out.push(inst);
+    }
+    return out;
+  }
+
   async writeBoundaryEdgeAtom(
     instance: BoundaryEdgeAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {

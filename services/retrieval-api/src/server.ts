@@ -268,6 +268,30 @@ export function buildApp(options: ServerOptions = {}): Hono {
     return c.json(chain);
   });
 
+  /**
+   * Attaching road-nodes for STREET/map render (Track B1). Optional ring in
+   * the body enables proximity fallback when boundary-edge refs are absent.
+   */
+  app.post("/property-nodes/:parcelNodeId{.+}/attaching-roads", async (c) => {
+    const parcelNodeId = decodeURIComponent(c.req.param("parcelNodeId"));
+    if (!/^\d{5}:[A-Za-z0-9._-]+$/.test(parcelNodeId)) {
+      return c.json(
+        {
+          error: "invalid parcelNodeId",
+          hint: "expected {county_fips}:{prop_id} e.g. 48021:34785",
+          parcelNodeId,
+        },
+        400,
+      );
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      ringWgs84?: Array<[number, number]>;
+    };
+    const ring = Array.isArray(body.ringWgs84) ? body.ringWgs84 : [];
+    const result = await retrieval.getAttachingRoads(parcelNodeId, ring);
+    return c.json(result);
+  });
+
   app.get("/road-nodes/:roadNodeId{.+}/atom-chain", async (c) => {
     const roadNodeId = decodeURIComponent(c.req.param("roadNodeId"));
     if (!/^\d{5}:road:\d+$/.test(roadNodeId)) {
