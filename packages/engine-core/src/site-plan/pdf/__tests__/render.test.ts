@@ -18,13 +18,16 @@ import { SITE_PLAN_HONESTY_LINE } from "../provenance.js";
 function decodeAllContentStreams(pdfBytes: Uint8Array): string {
   const raw = Buffer.from(pdfBytes);
   const text = raw.toString("latin1");
-  const streamRe = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  // Length-aware extraction: non-greedy stream...endstream truncates when
+  // Flate payload accidentally contains ASCII "endstream" (seen after B1
+  // provenance text changed page-2 compressed bytes).
+  const headerRe = /\/Length\s+(\d+)[^>]*>>\s*stream\r?\n/g;
   let match: RegExpExecArray | null;
   const decoded: string[] = [];
-  while ((match = streamRe.exec(text))) {
-    const startIndex = match.index + match[0].indexOf(match[1]!);
-    const endIndex = startIndex + match[1]!.length;
-    const streamBytes = raw.subarray(startIndex, endIndex);
+  while ((match = headerRe.exec(text))) {
+    const length = Number(match[1]);
+    const startIndex = match.index + match[0].length;
+    const streamBytes = raw.subarray(startIndex, startIndex + length);
     try {
       decoded.push(inflateSync(streamBytes).toString("latin1"));
     } catch {
