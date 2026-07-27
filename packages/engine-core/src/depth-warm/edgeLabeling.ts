@@ -11,7 +11,7 @@
 import type { RoadClassification } from "@hauska-engine/atoms";
 
 import { projectRing, type Ring } from "./geometry.js";
-import type { WarmEdgeRole, WarmRoadSource } from "./types.js";
+import type { WarmEdgeRole, WarmRoadProvenanceKind, WarmRoadSource } from "./types.js";
 
 /** Default max metres from edge midpoint to road centerline. */
 export const DEFAULT_ROAD_PROXIMITY_THRESHOLD_M = 25;
