@@ -15,7 +15,7 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "@empressaio/atom-contract": "^1.9.0",
+    "@empressaio/atom-contract": "^1.11.0",
     "@hauska-engine/atom-contract-pin": "workspace:*",
     "@hauska-engine/engine-core": "workspace:*",
     "@hauska-engine/retrieval": "workspace:*",
