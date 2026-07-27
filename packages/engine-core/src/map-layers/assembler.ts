@@ -110,7 +110,9 @@ function envelopeFromOutcome(
     outcome.error?.message ??
     (outcome.status === "no-coverage"
       ? "adapter does not cover this parcel"
-      : "adapter run failed");
+      : outcome.status === "dead-expected"
+        ? "adapter intentionally retired (dead-expected)"
+        : "adapter run failed");
 
   return sealEnvelope(
     {
@@ -215,7 +217,12 @@ function slotFromSpec(
 
   return {
     layerKey,
-    status: chosen.status === "no-coverage" ? "no-coverage" : "failed",
+    status:
+      chosen.status === "no-coverage"
+        ? "no-coverage"
+        : chosen.status === "dead-expected"
+          ? "dead-expected"
+          : "failed",
     adapterKey: chosen.adapterKey,
     error: chosen.error
       ? { code: chosen.error.code, message: chosen.error.message }
@@ -262,7 +269,10 @@ export async function assembleMapLayers(
 
   const okLayers = layers.filter((l) => l.status === "ok");
   const failedLayers = layers.filter(
-    (l) => l.status === "failed" || l.status === "no-coverage",
+    (l) =>
+      l.status === "failed" ||
+      l.status === "no-coverage" ||
+      l.status === "dead-expected",
   );
   const pendingLayers = layers.filter((l) => l.status === "pending");
 
@@ -287,7 +297,10 @@ export function aggregateMapLayersCoverage(
 ): ReturnType<typeof okCoverage> | ReturnType<typeof degradedCoverage> {
   const pending = layers.filter((l) => l.status === "pending").length;
   const failed = layers.filter(
-    (l) => l.status === "failed" || l.status === "no-coverage",
+    (l) =>
+      l.status === "failed" ||
+      l.status === "no-coverage" ||
+      l.status === "dead-expected",
   ).length;
   const ok = layers.filter((l) => l.status === "ok").length;
 
