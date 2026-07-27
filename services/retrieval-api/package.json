@@ -12,10 +12,13 @@
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo 'no lint configured'"
+    "lint": "echo 'no lint configured'",
+    "apply-spine-health-migration": "node ./scripts/apply-spine-health-migration.mjs",
+    "run-bastrop-spine-health": "tsx ./scripts/run-bastrop-spine-health.mjs"
   },
   "dependencies": {
     "@empressaio/atom-contract": "^1.9.0",
+    "@hauska-engine/adapters": "workspace:*",
     "@hauska-engine/atom-contract-pin": "workspace:*",
     "@hauska-engine/engine-core": "workspace:*",
     "@hauska-engine/retrieval": "workspace:*",

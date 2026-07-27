@@ -18,12 +18,18 @@ import {
 } from "./healthz.js";
 import { runCentralTxNodeGraphTally } from "./central-tx-tally.js";
 import { resolveSubstrateDatabaseUrl } from "./substrate-db-probe.js";
+import {
+  readSpineHealthSummary,
+  runBastropSpineHealthPack,
+} from "./spine-health/run-pack.js";
 
 function isPublicHealthPath(path: string): boolean {
   return (
     path === "/health" ||
     path === "/healthz" ||
     path === "/healthz/" ||
+    path === "/health/spine" ||
+    path === "/health/spine/run" ||
     path === "/ready"
   );
 }
@@ -108,6 +114,11 @@ export interface ServerOptions {
   /** Substrate Neon URL for `/healthz` db liveness; falls back to env. */
   substrateDatabaseUrl?: string;
   /**
+   * Cortex / overlay Neon URL for spine-health txgio + place_layer_snapshots
+   * probes. Falls back to OVERLAY_DATABASE_URL / CORTEX_DATABASE_URL.
+   */
+  overlayDatabaseUrl?: string;
+  /**
    * Migration 0037 overlay port (cortex Neon). When set, property-atom
    * READ resolves calibratedConfidence via parcel-node / atom DID keys.
    */
@@ -121,6 +132,7 @@ export function buildApp(options: ServerOptions = {}): Hono {
   });
   const apiKey = options.apiKey ?? process.env.RETRIEVAL_API_KEY ?? "";
   const substrateDatabaseUrl = options.substrateDatabaseUrl;
+  const overlayDatabaseUrl = options.overlayDatabaseUrl;
   const startedAt = new Date().toISOString();
 
   const app = new Hono();
@@ -137,8 +149,70 @@ export function buildApp(options: ServerOptions = {}): Hono {
   });
 
   app.get("/health", (c) =>
-    c.json({ status: "ok", service: "retrieval-api", startedAt }),
+    c.json({
+      status: "ok",
+      service: "retrieval-api",
+      startedAt,
+      links: {
+        spineHealth: "/health/spine",
+        spineHealthRun: "/health/spine/run",
+      },
+    }),
   );
+
+  /**
+   * COMPLETE-BASTROP B1 — latest persisted spine source+engine probe summary.
+   * Returns empty pack shell when nothing has been probed yet.
+   */
+  app.get("/health/spine", async (c) => {
+    try {
+      const summary = await readSpineHealthSummary({
+        substrateDatabaseUrl,
+        pack: c.req.query("pack") ?? "bastrop",
+      });
+      if (!summary) {
+        return c.json({
+          pack: c.req.query("pack") ?? "bastrop",
+          probedAt: null,
+          alertCount: 0,
+          probes: [],
+          note: "no probe rows yet — POST /health/spine/run",
+        });
+      }
+      return c.json(summary);
+    } catch (err) {
+      return c.json(
+        {
+          error: "spine_health_read_failed",
+          message: err instanceof Error ? err.message : String(err),
+        },
+        502,
+      );
+    }
+  });
+
+  async function spineHealthRunHandler(c: Context) {
+    try {
+      const result = await runBastropSpineHealthPack({
+        substrateDatabaseUrl,
+        overlayDatabaseUrl,
+        storage,
+        persist: true,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json(
+        {
+          error: "spine_health_run_failed",
+          message: err instanceof Error ? err.message : String(err),
+        },
+        502,
+      );
+    }
+  }
+
+  app.get("/health/spine/run", spineHealthRunHandler);
+  app.post("/health/spine/run", spineHealthRunHandler);
 
   app.get("/ready", async (c) => {
     // Sanity-poll: storage.listJurisdictionStatus must answer (even with []).
