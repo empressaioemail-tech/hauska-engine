@@ -11,7 +11,7 @@
 import type { RoadClassification } from "@hauska-engine/atoms";
 
 import { projectRing, type Ring } from "./geometry.js";
-import type { WarmEdgeRole, WarmRoadSource } from "./types.js";
+import type { WarmEdgeRole, WarmRoadProvenanceKind, WarmRoadSource } from "./types.js";
 
 /** Default max metres from edge midpoint to road centerline. */
 export const DEFAULT_ROAD_PROXIMITY_THRESHOLD_M = 25;
@@ -32,24 +32,29 @@ export const FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS = new Set([
 ]);
 
 export function isFrontEligibleRoad(road: WarmRoadSource): boolean {
-  if (road.provenanceKind === "county-surveyed-2016") {
+  if (
+    road.provenanceKind === "county-roadway-authoritative" ||
+    road.provenanceKind === "county-surveyed-2016"
+  ) {
     return road.classification !== "alley";
   }
   const tag = road.osmHighwayTag?.trim().toLowerCase() ?? "";
-  if (!tag || tag === "county-surveyed") return true;
+  if (!tag || tag === "county-surveyed" || tag === "county-roadway") return true;
   return !FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS.has(tag);
 }
 
-function isCountySurveyed(road: WarmRoadSource): boolean {
-  return road.provenanceKind === "county-surveyed-2016";
+function countyProvenanceRank(kind: WarmRoadProvenanceKind | undefined): number {
+  if (kind === "county-roadway-authoritative") return 3;
+  if (kind === "county-surveyed-2016") return 2;
+  return 1;
 }
 
 function preferRoadHit(current: EdgeRoadHit | undefined, candidate: EdgeRoadHit): EdgeRoadHit {
   if (!current) return candidate;
-  const currentCounty = isCountySurveyed(current.road);
-  const candidateCounty = isCountySurveyed(candidate.road);
-  if (candidateCounty && !currentCounty) return candidate;
-  if (currentCounty && !candidateCounty) return current;
+  const currentRank = countyProvenanceRank(current.road.provenanceKind);
+  const candidateRank = countyProvenanceRank(candidate.road.provenanceKind);
+  if (candidateRank > currentRank) return candidate;
+  if (currentRank > candidateRank) return current;
   return candidate.distanceM < current.distanceM ? candidate : current;
 }
 

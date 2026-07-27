@@ -23,8 +23,14 @@ export interface RoadAtomBody {
 }
 
 function provenanceKind(body: RoadAtomBody): WarmRoadProvenanceKind {
-  if (body.row?.provenance?.kind === "county-surveyed-2016") return "county-surveyed-2016";
+  const kind = body.row?.provenance?.kind;
+  if (kind === "county-roadway-authoritative") return "county-roadway-authoritative";
+  if (kind === "county-surveyed-2016") return "county-surveyed-2016";
   return "osm-fallback";
+}
+
+function isCountyAuthoritative(provKind: WarmRoadProvenanceKind): boolean {
+  return provKind === "county-roadway-authoritative" || provKind === "county-surveyed-2016";
 }
 
 export function roadAtomToWarmSource(body: RoadAtomBody): WarmRoadSource | null {
@@ -32,16 +38,28 @@ export function roadAtomToWarmSource(body: RoadAtomBody): WarmRoadSource | null 
   if (!Array.isArray(centerline) || centerline.length < 2) return null;
   if (typeof body.osmWayId !== "number") return null;
 
+  const rawKind = body.row?.provenance?.kind;
+  // Undefined county roadway geometry must not enter labeling pool — OSM stays best-available.
+  if (rawKind === "county-roadway-undefined") return null;
+
   const provKind = provenanceKind(body);
   const osmHighwayTag =
     body.row?.provenance?.kind === "approximate-assumed-per-class"
       ? (body.row.provenance.osmHighwayTag ?? "unclassified")
-      : "county-surveyed";
-  const surface = body.row?.provenance?.surface;
+      : provKind === "county-roadway-authoritative"
+        ? "county-roadway"
+        : "county-surveyed";
+  const surface =
+    body.row?.provenance?.kind === "approximate-assumed-per-class"
+      ? body.row.provenance.surface
+      : body.row?.provenance?.kind === "county-roadway-authoritative" ||
+          body.row?.provenance?.kind === "county-surveyed-2016"
+        ? (body.row.provenance as { countySurface?: string }).countySurface
+        : undefined;
   const classification = body.classification;
   if (!classification) return null;
 
-  if (provKind === "osm-fallback") {
+  if (!isCountyAuthoritative(provKind)) {
     const tags = surface ? { surface } : undefined;
     const derived = classifyOsmHighwayTag(osmHighwayTag, tags);
     if (derived !== classification) return null;

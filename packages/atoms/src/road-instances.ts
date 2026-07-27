@@ -55,7 +55,38 @@ export interface CountySurveyedRowProvenance {
   note?: string;
 }
 
-export type RowProvenance = ApproximateRowProvenance | CountySurveyedRowProvenance;
+export interface CountyRoadwayRowProvenance {
+  kind: "county-roadway-authoritative";
+  countySegmentObjectId: number;
+  countyClass: string;
+  countySurface: string;
+  countyRdclsTyp?: string;
+  countyOwner?: string;
+  countyLMuni?: string;
+  countyRMuni?: string;
+  surfaceWidthFt?: number;
+  rowNotes?: string;
+  note?: string;
+}
+
+/** Geometry retained but surface/class undefined — must not win labeling over OSM. */
+export interface CountyRoadwayUndefinedRowProvenance {
+  kind: "county-roadway-undefined";
+  countySegmentObjectId: number;
+  countyClass: string;
+  countySurface: string;
+  countyRdclsTyp?: string;
+  countyOwner?: string;
+  countyLMuni?: string;
+  countyRMuni?: string;
+  note?: string;
+}
+
+export type RowProvenance =
+  | ApproximateRowProvenance
+  | CountySurveyedRowProvenance
+  | CountyRoadwayRowProvenance
+  | CountyRoadwayUndefinedRowProvenance;
 
 export interface RoadRow {
   assumedWidthFt: number;

@@ -9,7 +9,10 @@ import type { GeometryCorrectnessResult, Ring } from "./geometry.js";
 
 export type WarmEdgeRole = "front" | "side" | "rear" | "side_corner";
 
-export type WarmRoadProvenanceKind = "county-surveyed-2016" | "osm-fallback";
+export type WarmRoadProvenanceKind =
+  | "county-roadway-authoritative"
+  | "county-surveyed-2016"
+  | "osm-fallback";
 
 /** Road input attached during warm compute — OSM fallback or county-surveyed. */
 export interface WarmRoadSource {
