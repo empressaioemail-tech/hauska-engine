@@ -1,8 +1,9 @@
 /**
  * Pure status derivation for spine health probes (M0 / WDLL item 7).
  *
- * Rules (COMPLETE-BASTROP B1):
+ * Rules (COMPLETE-BASTROP B1 + QA4):
  *   expectedDead → dead-expected, no alert
+ *   errored + fallbackCovered → degraded-covered, no alert (QA4)
  *   errored OR current===0 with baseline>0 → dead + alert
  *   current below degrade fraction of baseline → degraded + alert
  *   else → firing
@@ -18,6 +19,11 @@ export function deriveProbeStatus(input: DeriveStatusInput): {
 } {
   if (input.expectedDead) {
     return { status: "dead-expected", alert: false };
+  }
+
+  // QA4: overpass (or similar) down but named fallback covers — not a red alarm.
+  if (input.errored && input.fallbackCovered) {
+    return { status: "degraded-covered", alert: false };
   }
 
   const baseline =

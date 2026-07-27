@@ -20,8 +20,10 @@ export {
 export { roadAtomToWarmSource } from "./road-to-warm-source.js";
 export {
   fetchOverpassRoadsInBbox,
+  fetchOverpassRoadsInBboxOutcome,
   fetchOverpassRoadsTiled,
   fetchBastropRoadsForIngest,
+  fetchBastropOverpassOutcome,
   parseBastropBboxFromEnv,
   resolveBastropRoadIngestBbox,
   resolveBastropRoadIngestScope,
@@ -32,6 +34,8 @@ export {
   resolveCaldwellRoadIngestBbox,
   fetchCaldwellRoadsForIngest,
   OSM_OVERPASS_URL,
+  OVERPASS_MAX_ATTEMPTS,
+  OVERPASS_RETRY_BASE_MS,
 } from "./fetch-overpass-bbox.js";
 export {
   fetchStreetsSurveyed2016Features,
@@ -41,6 +45,21 @@ export {
   fetchBastropCountyRoadwayFeatures,
   BASTROP_COUNTY_ROADWAY_URL,
 } from "./fetch-bastrop-county-roadway.js";
+export {
+  resolveHonestRoadCoverage,
+  coverageEmitsRoads,
+  overpassProbeCoverageMode,
+} from "./honest-fallback.js";
+export type {
+  OverpassFetchOutcome,
+  FallbackSourcePresence,
+  HonestRoadCoverage,
+  FallbackSourceName,
+} from "./honest-fallback.js";
+export {
+  resolveBastropRoadsHonest,
+  probeBastropRoadFallbackPresence,
+} from "./resolve-bastrop-roads-honest.js";
 
 export {
   classifyCaldwellCadAttributes,

@@ -20,16 +20,28 @@ const MIGRATION_REL = join(
   "006_spine_health_probe.sql",
 );
 
-function resolveMigrationPath(): string {
+const MIGRATION_007_REL = join(
+  "packages",
+  "storage",
+  "migrations",
+  "007_spine_health_degraded_covered.sql",
+);
+
+function resolveMigrationPath(rel: string = MIGRATION_REL): string {
   // retrieval-api lives at services/retrieval-api — walk up to repo root.
   const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "..", "..", "..", MIGRATION_REL);
+  return join(here, "..", "..", "..", "..", rel);
 }
 
-/** Apply 006 (idempotent) so probe writes never fail on missing table. */
+/** Apply 006 + 007 (idempotent) so probe writes never fail on missing table/status. */
 export async function ensureSpineHealthSchema(sql: Sql): Promise<void> {
-  const migrationSql = await readFile(resolveMigrationPath(), "utf8");
+  const migrationSql = await readFile(resolveMigrationPath(MIGRATION_REL), "utf8");
   await sql.unsafe(migrationSql);
+  const migration007 = await readFile(
+    resolveMigrationPath(MIGRATION_007_REL),
+    "utf8",
+  );
+  await sql.unsafe(migration007);
 }
 
 export async function insertProbeResults(

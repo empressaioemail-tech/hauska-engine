@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * apply-spine-health-migration.mjs — idempotent runner for
- * 006_spine_health_probe.sql (COMPLETE-BASTROP B1).
+ * 006_spine_health_probe.sql (COMPLETE-BASTROP B1) +
+ * 007_spine_health_degraded_covered.sql (QA4).
  *
  *   DATABASE_URL='postgres://.../hauska_mcp?sslmode=require' \
  *     pnpm --filter @hauska-engine/retrieval-api run apply-spine-health-migration
@@ -14,17 +15,23 @@ import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_FILE = "006_spine_health_probe.sql";
-const migrationPath = join(
-  __dirname,
-  "..",
-  "..",
-  "..",
-  "packages",
-  "storage",
-  "migrations",
-  MIGRATION_FILE,
-);
+const MIGRATION_FILES = [
+  "006_spine_health_probe.sql",
+  "007_spine_health_degraded_covered.sql",
+];
+
+function migrationPath(filename) {
+  return join(
+    __dirname,
+    "..",
+    "..",
+    "..",
+    "packages",
+    "storage",
+    "migrations",
+    filename,
+  );
+}
 
 const url = process.env.DATABASE_URL ?? process.env.SUBSTRATE_DATABASE_URL;
 if (!url) {
@@ -42,17 +49,20 @@ const ssl =
 const sql = postgres(url, { ssl, max: 1 });
 
 try {
-  const migrationSql = await readFile(migrationPath, "utf8");
-  console.log(`Applying ${MIGRATION_FILE} ...`);
-  await sql.unsafe(migrationSql);
-  console.log(`Applied ${MIGRATION_FILE} (idempotent).\n`);
+  for (const MIGRATION_FILE of MIGRATION_FILES) {
+    const sqlText = await readFile(migrationPath(MIGRATION_FILE), "utf8");
+    console.log(`Applying ${MIGRATION_FILE} ...`);
+    await sql.unsafe(sqlText);
+    console.log(`Applied ${MIGRATION_FILE} (idempotent).`);
+  }
 
   const migrations = await sql`
     SELECT filename, applied_at
     FROM schema_migrations
-    WHERE filename = ${MIGRATION_FILE}
+    WHERE filename = ANY(${MIGRATION_FILES})
+    ORDER BY filename
   `;
-  console.log("schema_migrations:");
+  console.log("\nschema_migrations:");
   for (const row of migrations) {
     console.log(
       `  - ${row.filename}  (${row.applied_at?.toISOString?.() ?? row.applied_at})`,

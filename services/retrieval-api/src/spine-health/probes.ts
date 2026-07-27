@@ -58,6 +58,8 @@ function finish(input: {
   current: number | null;
   errored?: boolean;
   expectedDead?: boolean;
+  /** QA4: errored but fallback covers → degraded-covered, no alert. */
+  fallbackCovered?: boolean;
   error?: string | null;
   signal: Record<string, unknown>;
   now: Date;
@@ -66,6 +68,7 @@ function finish(input: {
   const derived = deriveProbeStatus({
     expectedDead: input.expectedDead,
     errored: input.errored,
+    fallbackCovered: input.fallbackCovered,
     baseline: input.baseline,
     current: input.current,
   });
@@ -279,7 +282,7 @@ export async function probeBastropZoningDeadExpected(
   });
 }
 
-/** osm-overpass — highway way count in city bbox (out count). */
+/** osm-overpass — highway way count in city bbox (out count). QA4 honesty. */
 export async function probeOsmOverpass(
   ctx: ProbeContext,
 ): Promise<ProbeResult> {
@@ -292,47 +295,104 @@ export async function probeOsmOverpass(
   const north = 30.16;
   const east = -97.25;
   const ql = `[out:json][timeout:60];way["highway"](${south},${west},${north},${east});out count;`;
-  try {
-    const res = await fetchImpl(OVERPASS_INTERPRETER, {
-      method: "POST",
-      headers: {
-        "User-Agent": ARC_GIS_UA,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: `data=${encodeURIComponent(ql)}`,
-    });
-    if (!res.ok) {
-      throw new Error(`Overpass HTTP ${res.status}`);
+
+  const maxAttempts = 3;
+  let lastError: string | null = null;
+  let attempts = 0;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    attempts = attempt;
+    try {
+      const res = await fetchImpl(OVERPASS_INTERPRETER, {
+        method: "POST",
+        headers: {
+          "User-Agent": ARC_GIS_UA,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: `data=${encodeURIComponent(ql)}`,
+      });
+      if (!res.ok) {
+        lastError = `Overpass HTTP ${res.status}`;
+        // Retry transient gateway/timeout statuses (QA4).
+        if ([408, 429, 502, 503, 504].includes(res.status) && attempt < maxAttempts) {
+          continue;
+        }
+        throw new Error(lastError);
+      }
+      const body = (await res.json()) as {
+        elements?: Array<{ tags?: Record<string, string> }>;
+      };
+      const tags = body.elements?.[0]?.tags ?? {};
+      const current = Number(tags.ways ?? tags.total ?? 0);
+      return finish({
+        probeId,
+        kind: "source",
+        baseline,
+        current,
+        signal: {
+          url: OVERPASS_INTERPRETER,
+          bbox: { south, west, north, east },
+          tags,
+          attempts,
+        },
+        now,
+      });
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      if (attempt < maxAttempts && /504|502|503|408|429|fetch failed|timeout/i.test(lastError)) {
+        continue;
+      }
+      break;
     }
-    const body = (await res.json()) as {
-      elements?: Array<{ tags?: Record<string, string> }>;
-    };
-    const tags = body.elements?.[0]?.tags ?? {};
-    const current = Number(tags.ways ?? tags.total ?? 0);
-    return finish({
-      probeId,
-      kind: "source",
-      baseline,
-      current,
-      signal: {
-        url: OVERPASS_INTERPRETER,
-        bbox: { south, west, north, east },
-        tags,
-      },
-      now,
-    });
-  } catch (err) {
-    return finish({
-      probeId,
-      kind: "source",
-      baseline,
-      current: null,
-      errored: true,
-      error: err instanceof Error ? err.message : String(err),
-      signal: { url: OVERPASS_INTERPRETER },
-      now,
-    });
   }
+
+  // Overpass down — check whether county roadway / surveyed covers (QA4).
+  let countyRoadwayCount = 0;
+  let streetsSurveyedCount = 0;
+  try {
+    countyRoadwayCount = await arcgisCount(BASTROP_COUNTY_ROADWAY_URL, fetchImpl);
+  } catch {
+    countyRoadwayCount = 0;
+  }
+  try {
+    streetsSurveyedCount = await arcgisCount(
+      BASTROP_STREETS_SURVEYED_2016_URL,
+      fetchImpl,
+    );
+  } catch {
+    streetsSurveyedCount = 0;
+  }
+  const fallbackCovered = countyRoadwayCount > 0 || streetsSurveyedCount > 0;
+  const fallbackActive: string[] = [];
+  if (countyRoadwayCount > 0) fallbackActive.push("county-roadway");
+  if (streetsSurveyedCount > 0) fallbackActive.push("streets-surveyed-2016");
+
+  return finish({
+    probeId,
+    kind: "source",
+    baseline,
+    current: null,
+    errored: true,
+    fallbackCovered,
+    error: lastError
+      ? `${lastError} after ${attempts} attempt${attempts === 1 ? "" : "s"}`
+      : `Overpass failed after ${attempts} attempts`,
+    signal: {
+      url: OVERPASS_INTERPRETER,
+      bbox: { south, west, north, east },
+      attempts,
+      coverageMode: fallbackCovered ? "degraded-covered" : "degraded-no-source",
+      message: fallbackCovered
+        ? "overpass down, fallback active"
+        : "roads unavailable this run: overpass down, no county roadway source",
+      fallbackActive,
+      fallbackCounts: {
+        "county-roadway": countyRoadwayCount,
+        "streets-surveyed-2016": streetsSurveyedCount,
+      },
+    },
+    now,
+  });
 }
 
 /** county-roadway — ArcGIS count. */
