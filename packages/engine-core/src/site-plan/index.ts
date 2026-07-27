@@ -89,9 +89,12 @@ export {
 export {
   PROPERTY_LINE_TAGS_HONESTY,
   clipPolylineToAabb,
+  craftLabelFontSize,
+  estimateTextWidth,
   formatGisBearing,
   formatPropertyLineTag,
   placeNonCollidingEdgeLabels,
+  placeNonCollidingPointLabels,
 } from "./pdf/annotation-placement.js";
 
 export {

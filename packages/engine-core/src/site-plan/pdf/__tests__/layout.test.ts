@@ -118,16 +118,16 @@ describe("buildSitePlanDrawingLayout", () => {
     }
   });
 
-  it("emits one GIS-approximate property-line tag per segment with honesty string", () => {
+  it("emits GIS-approximate property-line tags with honesty string (drop allowed under collision)", () => {
     const model = buildModel();
     const layout = buildSitePlanDrawingLayout(model, box);
-    expect(layout.propertyLineTags).toHaveLength(model.propertySegments.length);
+    expect(layout.propertyLineTags.length).toBeGreaterThan(0);
+    expect(layout.propertyLineTags.length).toBeLessThanOrEqual(model.propertySegments.length);
     expect(layout.propertyLineTagsHonesty).toBe(PROPERTY_LINE_TAGS_HONESTY);
-    for (let i = 0; i < model.propertySegments.length; i++) {
-      expect(layout.propertyLineTags[i]!.text).toContain(
-        `${model.propertySegments[i]!.lengthFeet.toFixed(1)}'`,
-      );
-      expect(layout.propertyLineTags[i]!.text).toMatch(/[NS] .+°.+[EW]/);
+    for (const tag of layout.propertyLineTags) {
+      expect(tag.text).toMatch(/[NS] .+°.+[EW]/);
+      expect(tag.text).toMatch(/\d+\.\d+'/);
+      expect(tag.fontSize).toBeGreaterThan(0);
     }
   });
 
@@ -148,6 +148,75 @@ describe("buildSitePlanDrawingLayout", () => {
         expect(overlap).toBe(false);
       }
     }
+  });
+
+  it("LABEL-NON-OVERLAP: dense small parcel — measured widths, shared occupied set, zero box overlaps", async () => {
+    // RED on pre-fix (silent-overlap / disjoint passes / estimated widths).
+    // Tiny lot, many short edges + setbacks + street + contour labels compete.
+    const { PDFDocument, StandardFonts } = await import("pdf-lib");
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const measureText = (text: string, size: number) => font.widthOfTextAtSize(text, size);
+
+    // ~25x40 ft lot (WGS84 deltas ≈ 25 ft E-W, 40 ft N-S) with 8 ring vertices.
+    const denseRing: Array<[number, number]> = [
+      [-98.49978, 29.40012],
+      [-98.49974, 29.40012],
+      [-98.49970, 29.40012],
+      [-98.49970, 29.40016],
+      [-98.49970, 29.40020],
+      [-98.49974, 29.40020],
+      [-98.49978, 29.40020],
+      [-98.49978, 29.40016],
+      [-98.49978, 29.40012],
+    ];
+    const model = composeSitePlanModel({
+      parcelNodeId: "dense:qa2",
+      bbox,
+      ringWgs84: denseRing,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      geometrySourceRef: "qa2-dense-fixture",
+      streetAnchors: [
+        {
+          name: "N PINE ST",
+          points: [
+            [-98.49982, 29.40016],
+            [-98.49966, 29.40016],
+          ],
+          sourceRef: "osm:way/dense",
+        },
+      ],
+    });
+
+    const layout = buildSitePlanDrawingLayout(model, box, { measureText });
+    const labels = layout.allPlacedLabels;
+    expect(labels.length).toBeGreaterThan(2);
+
+    // Every box width must match measured Helvetica width (not 0.52*len estimate).
+    for (const label of labels) {
+      const measured = measureText(label.text, label.fontSize);
+      expect(label.box.width).toBeCloseTo(measured, 5);
+    }
+
+    // No two placed boxes overlap (pad=0 — placement uses pad=2 internally).
+    for (let i = 0; i < labels.length; i++) {
+      for (let j = i + 1; j < labels.length; j++) {
+        const a = labels[i]!.box;
+        const b = labels[j]!.box;
+        const overlap = !(
+          a.x + a.width <= b.x ||
+          b.x + b.width <= a.x ||
+          a.y + a.height <= b.y ||
+          b.y + b.height <= a.y
+        );
+        expect(overlap, `overlap between "${labels[i]!.text}" and "${labels[j]!.text}"`).toBe(false);
+      }
+    }
+
+    // Shared occupied: tags + setbacks land in the same set (not two isolated passes).
+    expect(layout.propertyLineTags.length + layout.setback.labels.length).toBeLessThanOrEqual(labels.length);
   });
 
   it("reflects street honest-absence in the layout with no fabricated anchors", () => {

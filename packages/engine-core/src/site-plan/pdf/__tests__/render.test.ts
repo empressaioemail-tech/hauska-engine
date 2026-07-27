@@ -133,6 +133,19 @@ describe("emitPdfSitePlan", () => {
     expect(decoded).toContain("unavailable");
   });
 
+  it("draws craft sheet chrome: FEET scale bar, LEGEND, Date not on file, no silent survey date", async () => {
+    const model = buildModel();
+    const { bytes } = await emitPdfSitePlan(model);
+    const decoded = decodeAllContentStreams(bytes);
+    expect(decoded).toContain("FEET");
+    expect(decoded).toContain("LEGEND");
+    expect(decoded).toContain("PROPERTY");
+    expect(decoded).toContain("Date:");
+    expect(decoded).toContain("not on file");
+    expect(decoded).toContain("Scale:");
+    expect(decoded).toContain("Sheet:");
+  });
+
   // Planner HOLD-1 (2026-07-25): buildModel() above uses the default 4-edge
   // ring with no frontEdgeIndex hint, so its own basis is already the
   // geometric heuristic — the PDF summary must print the provisional
