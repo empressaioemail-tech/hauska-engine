@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Engine-side re-export shim over @hauska/atom-contract. Originally a pre-Sync-1 path-pin mirroring the workspace-private @workspace/empressa-atom surface; flipped to re-export the published npm package on Sync 1 (cc-agent-AC published @hauska/atom-contract@1.0.0).",
+  "description": "Engine-side re-export shim over @empressaio/atom-contract (branding canon). Do not depend on legacy @hauska/atom-contract.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -19,7 +19,7 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "@hauska/atom-contract": "^1.6.1"
+    "@empressaio/atom-contract": "^1.11.0"
   },
   "devDependencies": {
     "typescript": "~5.7.2",
