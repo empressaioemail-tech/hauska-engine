@@ -10,9 +10,11 @@ import {
   buildAtomDid,
   parseAtomDid,
   type AtomLink,
+  type BoundaryEdgeAtomInstance,
   type CodeAtomInstance,
   type CodeAtomEntityType,
   type JurisdictionalOverlayAmendmentInstance,
+  isBoundaryEdgeAtomInstance,
   isPropertyAtomInstance,
   isRoadNodeAtomInstance,
   type PropertyAtomInstance,
@@ -67,6 +69,7 @@ function parseStoredAtom(body: unknown): StoredAtomInstance | null {
   if (typeof body !== "object" || body === null) return null;
   if (isPropertyAtomInstance(body)) return body;
   if (isRoadNodeAtomInstance(body)) return body;
+  if (isBoundaryEdgeAtomInstance(body)) return body;
   const candidate = body as Partial<CodeAtomInstance>;
   if (!candidate.entityType || !candidate.entityId) return null;
   return body as CodeAtomInstance;
@@ -372,6 +375,39 @@ export class PgStorage implements StoragePort {
     for (const row of rows) {
       const inst = parseStoredAtom(row.body);
       if (inst && isRoadNodeAtomInstance(inst)) out.push(inst);
+    }
+    return out;
+  }
+
+  async writeBoundaryEdgeAtom(
+    instance: BoundaryEdgeAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }> {
+    return (await this.writeBoundaryEdgeAtomsBatch([instance]))[0]!;
+  }
+
+  async writeBoundaryEdgeAtomsBatch(
+    instances: ReadonlyArray<BoundaryEdgeAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
+    return this.writePropertyAtomsBatch(
+      instances as unknown as ReadonlyArray<PropertyAtomInstance>,
+    );
+  }
+
+  async listBoundaryEdgesByParcelNodeId(
+    parcelNodeId: string,
+  ): Promise<ReadonlyArray<BoundaryEdgeAtomInstance>> {
+    const rows = await this.sql<AtomBodyRow[]>`
+      SELECT body
+      FROM atoms
+      WHERE entity_type = 'property-boundary-edge'
+        AND body->>'parcelNodeId' = ${parcelNodeId}
+        AND COALESCE(body->>'status', 'active') = 'active'
+      ORDER BY (body->>'edgeIndex')::int ASC, updated_at DESC
+    `;
+    const out: BoundaryEdgeAtomInstance[] = [];
+    for (const row of rows) {
+      const inst = parseStoredAtom(row.body);
+      if (inst && isBoundaryEdgeAtomInstance(inst)) out.push(inst);
     }
     return out;
   }

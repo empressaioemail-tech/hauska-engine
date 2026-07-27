@@ -13,6 +13,7 @@
 
 import type {
   AtomLink,
+  BoundaryEdgeAtomInstance,
   JurisdictionalOverlayAmendmentInstance,
   PropertyAtomInstance,
   RoadNodeAtomInstance,
@@ -108,6 +109,19 @@ export interface StoragePort {
   listRoadAtomsByRoadNodeId(
     roadNodeId: string,
   ): Promise<ReadonlyArray<RoadNodeAtomInstance>>;
+
+  /** Property boundary edges (27f S2-U2). Same atoms table, parcelNodeId linkage. */
+  writeBoundaryEdgeAtom(
+    instance: BoundaryEdgeAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }>;
+
+  writeBoundaryEdgeAtomsBatch(
+    instances: ReadonlyArray<BoundaryEdgeAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>>;
+
+  listBoundaryEdgesByParcelNodeId(
+    parcelNodeId: string,
+  ): Promise<ReadonlyArray<BoundaryEdgeAtomInstance>>;
 
   /** Batch write — atomization output. */
   writeAtoms(

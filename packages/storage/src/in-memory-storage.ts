@@ -9,12 +9,13 @@
 
 import { buildAtomDid, type AtomLink } from "@hauska-engine/atoms";
 import type {
+  BoundaryEdgeAtomInstance,
   CodeAtomInstance,
   PropertyAtomInstance,
   RoadNodeAtomInstance,
   StoredAtomInstance,
 } from "@hauska-engine/atoms";
-import { isPropertyEntityType, isRoadNodeAtomInstance } from "@hauska-engine/atoms";
+import { isBoundaryEdgeAtomInstance, isPropertyEntityType, isRoadNodeAtomInstance } from "@hauska-engine/atoms";
 
 import { HotCache, InProcessIpfsPin } from "./in-process-cache.js";
 import type {
@@ -117,6 +118,37 @@ export class InMemoryStorage implements StoragePort {
       out.push(inst);
     }
     return out;
+  }
+
+  async writeBoundaryEdgeAtom(
+    instance: BoundaryEdgeAtomInstance,
+  ): Promise<{ atomDid: string; cid: string }> {
+    return this.writePropertyAtom(instance as unknown as PropertyAtomInstance);
+  }
+
+  async writeBoundaryEdgeAtomsBatch(
+    instances: ReadonlyArray<BoundaryEdgeAtomInstance>,
+  ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
+    const out: Array<{ atomDid: string; cid: string }> = [];
+    for (const inst of instances) {
+      out.push(
+        await this.writeBoundaryEdgeAtom(inst),
+      );
+    }
+    return out;
+  }
+
+  async listBoundaryEdgesByParcelNodeId(
+    parcelNodeId: string,
+  ): Promise<ReadonlyArray<BoundaryEdgeAtomInstance>> {
+    const out: BoundaryEdgeAtomInstance[] = [];
+    for (const inst of this.atoms.values()) {
+      if (!isBoundaryEdgeAtomInstance(inst)) continue;
+      if (inst.parcelNodeId !== parcelNodeId) continue;
+      if (inst.status && inst.status !== "active") continue;
+      out.push(inst);
+    }
+    return out.sort((a, b) => a.edgeIndex - b.edgeIndex);
   }
 
   async writeAtoms(
