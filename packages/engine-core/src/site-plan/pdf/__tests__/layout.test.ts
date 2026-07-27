@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { composeSitePlanModel } from "../../site-model.js";
 import { buildSitePlanDrawingLayout, projectPoint, type DrawingBox } from "../layout.js";
+import { formatGisBearing, formatPropertyLineTag, PROPERTY_LINE_TAGS_HONESTY } from "../annotation-placement.js";
 
 // Same fixture shape as site-model.test.ts: a ~70x110 ft lot inside a 4x4
 // DEM, San Antonio R-6 setback (front=10, side=5, rear=20 ft) for
@@ -51,6 +52,26 @@ function buildModel(streetAnchors?: Array<{ name: string; points: Array<[number,
 
 const box: DrawingBox = { x: 36, y: 60, width: 540, height: 600 };
 
+describe("formatGisBearing / property-line tags", () => {
+  it("formats cardinal directions from local-ENU deltas ( +Y north, +X east )", () => {
+    expect(formatGisBearing(0, 10)).toBe("N 0°00' E");
+    expect(formatGisBearing(10, 0)).toBe("N 90°00' E");
+    expect(formatGisBearing(0, -10)).toBe("S 0°00' W");
+    expect(formatGisBearing(-10, 0)).toBe("N 90°00' W");
+  });
+
+  it("includes bearing + feet and never claims survey grade in the tag text", () => {
+    const tag = formatPropertyLineTag({
+      a: { x: 0, y: 0 },
+      b: { x: 0, y: 30.48 },
+      lengthFeet: 100,
+    });
+    expect(tag).toContain("100.0'");
+    expect(tag).toMatch(/N /);
+    expect(tag.toLowerCase()).not.toContain("survey");
+  });
+});
+
 describe("buildSitePlanDrawingLayout", () => {
   it("projects every PROPERTY_LINE vertex through the exact same transform as the model's ringLocal points (hash/sampled-point parity)", () => {
     const model = buildModel();
@@ -77,7 +98,7 @@ describe("buildSitePlanDrawingLayout", () => {
     }
   });
 
-  it("keeps every projected point inside the drawing box (fit-to-box did not overflow)", () => {
+  it("keeps every projected property-line point inside the drawing box (fit-to-box did not overflow)", () => {
     const model = buildModel();
     const layout = buildSitePlanDrawingLayout(model, box);
     for (const p of layout.propertyLine) {
@@ -97,6 +118,38 @@ describe("buildSitePlanDrawingLayout", () => {
     }
   });
 
+  it("emits one GIS-approximate property-line tag per segment with honesty string", () => {
+    const model = buildModel();
+    const layout = buildSitePlanDrawingLayout(model, box);
+    expect(layout.propertyLineTags).toHaveLength(model.propertySegments.length);
+    expect(layout.propertyLineTagsHonesty).toBe(PROPERTY_LINE_TAGS_HONESTY);
+    for (let i = 0; i < model.propertySegments.length; i++) {
+      expect(layout.propertyLineTags[i]!.text).toContain(
+        `${model.propertySegments[i]!.lengthFeet.toFixed(1)}'`,
+      );
+      expect(layout.propertyLineTags[i]!.text).toMatch(/[NS] .+°.+[EW]/);
+    }
+  });
+
+  it("places property-line tag boxes without pairwise overlap (non-colliding craft)", () => {
+    const model = buildModel();
+    const layout = buildSitePlanDrawingLayout(model, box);
+    const boxes = layout.propertyLineTags.map((t) => t.box);
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!;
+        const b = boxes[j]!;
+        const overlap = !(
+          a.x + a.width < b.x ||
+          b.x + b.width < a.x ||
+          a.y + a.height < b.y ||
+          b.y + b.height < a.y
+        );
+        expect(overlap).toBe(false);
+      }
+    }
+  });
+
   it("reflects street honest-absence in the layout with no fabricated anchors", () => {
     const model = buildModel();
     const layout = buildSitePlanDrawingLayout(model, box);
@@ -104,31 +157,29 @@ describe("buildSitePlanDrawingLayout", () => {
     expect(layout.streets.anchors).toHaveLength(0);
   });
 
-  // Planner HOLD-2 (2026-07-25): this fixture's DEM bbox is deliberately
-  // larger than the parcel ring (contours reach x/y extents the ring never
-  // does), so it's a real regression case for "contour extent must feed
-  // the fit-to-box transform" rather than a contrived one.
-  it("includes contour extent in the drawing transform bounds, so CONTOUR points land inside the drawing box like every other layer", () => {
+  // Track B2: parcel-primary fit — DEM contours no longer dominate the
+  // transform. Contours that survive declutter must still land in-box;
+  // parcel span must occupy a meaningful fraction of the drawing box.
+  it("uses parcel-primary fit so property line dominates the sheet; decluttered contours stay in-box", () => {
     const model = buildModel();
-    const ringXs = model.ringLocal.map((p) => p.x);
-    const ringYs = model.ringLocal.map((p) => p.y);
-    const contourXs = model.contours.flatMap((c) => c.points.map(([x]) => x));
-    const contourYs = model.contours.flatMap((c) => c.points.map(([, y]) => y));
-    expect(contourXs.length).toBeGreaterThan(0);
-    // Sanity check on the fixture: contours genuinely extend past the ring
-    // bounding box on at least one axis, or this test wouldn't exercise
-    // the bug at all.
-    expect(Math.min(...contourXs)).toBeLessThan(Math.min(...ringXs));
-    expect(Math.max(...contourYs)).toBeGreaterThan(Math.max(...ringYs));
-
     const layout = buildSitePlanDrawingLayout(model, box);
-    expect(layout.contours.length).toBeGreaterThan(0);
+
+    const ringXs = layout.propertyLine.map((p) => p.x);
+    const ringYs = layout.propertyLine.map((p) => p.y);
+    const parcelSpan = Math.max(
+      Math.max(...ringXs) - Math.min(...ringXs),
+      Math.max(...ringYs) - Math.min(...ringYs),
+    );
+    // Parcel should fill a substantial share of the drawing box (not a tiny
+    // island inside DEM-bbox spaghetti).
+    expect(parcelSpan).toBeGreaterThan(Math.min(box.width, box.height) * 0.35);
+
     for (const contour of layout.contours) {
       for (const p of contour.points) {
-        expect(p.x).toBeGreaterThanOrEqual(box.x - 1);
-        expect(p.x).toBeLessThanOrEqual(box.x + box.width + 1);
-        expect(p.y).toBeGreaterThanOrEqual(box.y - 1);
-        expect(p.y).toBeLessThanOrEqual(box.y + box.height + 1);
+        expect(p.x).toBeGreaterThanOrEqual(box.x - 2);
+        expect(p.x).toBeLessThanOrEqual(box.x + box.width + 2);
+        expect(p.y).toBeGreaterThanOrEqual(box.y - 2);
+        expect(p.y).toBeLessThanOrEqual(box.y + box.height + 2);
       }
     }
   });

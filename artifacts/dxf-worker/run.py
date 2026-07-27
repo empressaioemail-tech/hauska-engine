@@ -299,11 +299,24 @@ def emit_site_plan(request: dict) -> dict:
         points_2d = anchor.get("points") or []
         if len(points_2d) < 2:
             continue
+        # ROW edges (assumed width) — thinner polylines; provenance on entity.
+        row_prov = anchor.get("rowProvenanceKind") or ""
+        for edge_key in ("leftEdge", "rightEdge"):
+            edge_pts = anchor.get(edge_key) or []
+            if len(edge_pts) < 2:
+                continue
+            edge_xyz = [pt3(p, grade_z) for p in edge_pts]
+            entity = msp.add_polyline3d(edge_xyz, close=False, dxfattribs={"layer": "STREET"})
+            _tag(entity, "%s edge %s" % (row_prov or "row", edge_key))
+            entity_count += 1
         pts = [pt3(p, grade_z) for p in points_2d]
         entity = msp.add_polyline3d(pts, close=False, dxfattribs={"layer": "STREET"})
         _tag(entity, anchor.get("citation") or anchor.get("name"))
         entity_count += 1
-        text = msp.add_text(str(anchor.get("name", "")), dxfattribs={"layer": "STREET", "height": max(0.2, float(request.get("textHeight", 0.5)))})
+        label = str(anchor.get("name", ""))
+        if row_prov:
+            label = "%s [%s]" % (label, row_prov)
+        text = msp.add_text(label, dxfattribs={"layer": "STREET", "height": max(0.2, float(request.get("textHeight", 0.5)))})
         text.set_placement(pts[0])
         entity_count += 1
     # Honest absence: STREET layer above is always created via SITE_PLAN_LAYERS

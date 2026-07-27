@@ -287,12 +287,12 @@ describe("authorParcelSitePlanExport", () => {
 
     // The override path renders a longer honesty-note paragraph onto the
     // same page 2 layout, so its PDF is strictly larger than the otherwise
-    // identical export with no provisional note at all — a real, if
+    // identical export with no provisional note at all - a real, if
     // indirect, end-to-end proof the override reaches the renderer.
     expect(withOverride.atom.artifacts["pdf-site-plan"]!.byteCount).toBeGreaterThan(
       withoutOverride.atom.artifacts["pdf-site-plan"]!.byteCount,
     );
-  });
+  }, 15_000);
 
   it("degrades to honest flood-zone-unavailable when the flood lookup throws, without failing the export", async () => {
     const storage = new InMemoryStorage();

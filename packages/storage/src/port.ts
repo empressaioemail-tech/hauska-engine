@@ -110,6 +110,20 @@ export interface StoragePort {
     roadNodeId: string,
   ): Promise<ReadonlyArray<RoadNodeAtomInstance>>;
 
+  /**
+   * Road-nodes whose centerline intersects a WGS84 bbox (Track B1 site-plan /
+   * PE frontage resolve). Optional on older ports — callers must feature-detect.
+   */
+  listRoadAtomsNearBbox?(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+  ): Promise<ReadonlyArray<RoadNodeAtomInstance>>;
+
   /** Property boundary edges (27f S2-U2). Same atoms table, parcelNodeId linkage. */
   writeBoundaryEdgeAtom(
     instance: BoundaryEdgeAtomInstance,

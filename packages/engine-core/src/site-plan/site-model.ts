@@ -15,7 +15,11 @@ import {
   type SetbackAssignment,
   type SetbackOffsetResult,
 } from "./ring-geometry.js";
-import { formatSetbackSummaryLine } from "./setback-display.js";
+import { anyNotSpecified, formatSetbackSummaryLine } from "./setback-display.js";
+import {
+  mapBuildableDisplay,
+  type BuildableDisplayKind,
+} from "./buildable-display-vocab.js";
 
 const METERS_PER_FOOT = 0.3048;
 
@@ -31,9 +35,21 @@ export interface SetbackRuleInput {
 
 export interface StreetAnchorInput {
   name: string;
-  /** WGS84 [lng, lat] pairs. */
+  /** Centerline WGS84 [lng, lat] pairs (accurate road-node geometry). */
   points: Array<[number, number]>;
   sourceRef?: string;
+  /** Road-node id when this anchor was projected from a ledger road-node. */
+  roadNodeId?: string;
+  /** ROW left edge from road-node assumed width (v1). */
+  leftEdgePoints?: Array<[number, number]>;
+  /** ROW right edge from road-node assumed width (v1). */
+  rightEdgePoints?: Array<[number, number]>;
+  /**
+   * ROW provenance kind from the road-node atom (e.g. approximate-assumed-per-class).
+   * Drawn edges MUST carry this mark — never silent assumed geometry.
+   */
+  rowProvenanceKind?: string;
+  assumedWidthFt?: number;
 }
 
 /** Non-geometry descriptors no atom holds today (address, county name).
@@ -124,8 +140,21 @@ export interface SitePlanSetbackModel {
   degenerateReason?: string;
 }
 
+export interface SitePlanStreetAnchorModel {
+  name: string;
+  /** Centerline in local-ENU metres. */
+  pointsLocal: LocalPoint[];
+  sourceRef?: string;
+  roadNodeId?: string;
+  leftEdgeLocal?: LocalPoint[];
+  rightEdgeLocal?: LocalPoint[];
+  /** Must match road-node row.provenance.kind when edges are drawn. */
+  rowProvenanceKind?: string;
+  assumedWidthFt?: number;
+}
+
 export interface SitePlanStreetModel {
-  anchors: Array<{ name: string; pointsLocal: LocalPoint[]; sourceRef?: string }>;
+  anchors: SitePlanStreetAnchorModel[];
   honestAbsence: boolean;
   reason?: string;
 }
@@ -157,6 +186,15 @@ export interface SitePlanSummaryModel {
   /** Null when the setback offset degenerated (see `buildableAreaHonestNote`). */
   buildableAreaSqFt: number | null;
   buildableAreaHonestNote?: string;
+  /**
+   * Shared B3 customer vocabulary (same mapper as PE map card / inspect).
+   * Prefer warm envelope area when present so PDF cannot say "consumes lot"
+   * while the map shows a buildable figure for the same inputs.
+   */
+  buildableDisplayKind: BuildableDisplayKind;
+  buildableAgreementToken: string;
+  /** PDF SUMMARY "Buildable Area" value — always from the shared mapper. */
+  buildablePdfLabel: string;
   elevationRangeMeters: { min: number; max: number };
   verticalDatumSummary: string;
   floodZone:
@@ -342,6 +380,15 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
             name: anchor.name,
             pointsLocal: anchor.points.map(([lng, lat]) => projectWgs84ToLocalEnu(lng, lat, inputs.bbox)),
             sourceRef: anchor.sourceRef,
+            roadNodeId: anchor.roadNodeId,
+            leftEdgeLocal: anchor.leftEdgePoints?.map(([lng, lat]) =>
+              projectWgs84ToLocalEnu(lng, lat, inputs.bbox),
+            ),
+            rightEdgeLocal: anchor.rightEdgePoints?.map(([lng, lat]) =>
+              projectWgs84ToLocalEnu(lng, lat, inputs.bbox),
+            ),
+            rowProvenanceKind: anchor.rowProvenanceKind,
+            assumedWidthFt: anchor.assumedWidthFt,
           })),
           honestAbsence: false,
         }
@@ -349,8 +396,8 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           anchors: [],
           honestAbsence: true,
           reason:
-            "No road-anchor atom is available in hauska-engine for this parcel; STREET layer is created " +
-            "empty rather than drawing fabricated street geometry.",
+            "No road-node attaches to this parcel; STREET layer is created empty rather than " +
+            "drawing fabricated street geometry.",
         };
 
   const xs = ringLocal.map((p) => p.x);
@@ -377,6 +424,41 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     reason: "No flood-zone read attempted for this export.",
   };
 
+  const warmKind = inputs.envelopeOutcome?.kind;
+  const warmAreaSqFt =
+    warmKind === "buildable" && typeof inputs.envelopeOutcome?.areaSqFt === "number"
+      ? inputs.envelopeOutcome.areaSqFt
+      : null;
+  const honestNote = computeBuildableAreaHonestNote(offset, inputs.envelopeOutcome);
+  const buildableVocab = mapBuildableDisplay({
+    envelopeStatus:
+      buildableAreaSqFt != null || warmAreaSqFt != null
+        ? "ok"
+        : warmKind === "no-buildable-area" || offset.offsetDegenerate
+          ? "no-buildable-area"
+          : "ok",
+    notSpecifiedAxes: anyNotSpecified(notSpecified),
+    buildableAreaSqFt,
+    provisional:
+      warmKind === "provisional-front-edge" ||
+      (honestNote != null && buildableAreaSqFt != null),
+    warmEnvelopeKind: warmKind,
+    warmEnvelopeAreaSqFt: warmAreaSqFt,
+    offsetDegenerate: offset.offsetDegenerate,
+    offsetDegenerateReason: offset.offsetDegenerateReason,
+  });
+
+  const buildablePdfLabel =
+    buildableVocab.kind === "provisional" && honestNote
+      ? `${
+          warmAreaSqFt != null
+            ? `${Math.round(warmAreaSqFt).toLocaleString("en-US")} sq ft`
+            : buildableAreaSqFt != null
+              ? `${Math.round(buildableAreaSqFt).toLocaleString("en-US")} sq ft`
+              : "buildable area"
+        } (PROVISIONAL — ${honestNote})`
+      : buildableVocab.pdfLabel;
+
   const summary: SitePlanSummaryModel = {
     parcelNodeId: inputs.parcelNodeId,
     countyFips: parseCountyFips(inputs.parcelNodeId),
@@ -386,7 +468,10 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     zoningHonestAbsenceReason,
     lotAreaSqFt,
     buildableAreaSqFt,
-    buildableAreaHonestNote: computeBuildableAreaHonestNote(offset, inputs.envelopeOutcome),
+    buildableAreaHonestNote: honestNote,
+    buildableDisplayKind: buildableVocab.kind,
+    buildableAgreementToken: buildableVocab.agreementToken,
+    buildablePdfLabel,
     elevationRangeMeters: { min: inputs.dem.minElevation, max: inputs.dem.maxElevation },
     verticalDatumSummary: TERRAIN_VERTICAL_DATUM.summary,
     floodZone,

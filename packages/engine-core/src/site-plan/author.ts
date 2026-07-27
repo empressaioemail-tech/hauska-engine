@@ -19,6 +19,7 @@ import type { ParcelGeometryResolver, TerrainArtifactStore } from "../parcel-ter
 import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
 import { emitDxfSitePlan, emitIfcSitePlan } from "./emitters.js";
 import { emitPdfSitePlan } from "./pdf/render.js";
+import { resolveAttachingRoadNodes } from "./resolve-attaching-roads.js";
 import {
   composeSitePlanModel,
   type EnvelopeOutcomeInput,
@@ -144,6 +145,12 @@ export interface AuthorParcelSitePlanExportOptions {
   contourIntervalMeters?: number;
   frontEdgeIndex?: number;
   streetAnchors?: StreetAnchorInput[];
+  /**
+   * When true (default), load attaching road-nodes from storage when
+   * streetAnchors are omitted. Set false in tests that assert honest-absence
+   * without seeding road-nodes.
+   */
+  resolveStreetFromRoadNodes?: boolean;
   skirtDepthFeet?: number;
   fetchDem?: typeof fetchUsgs3depDem;
   parseDem?: (bytes: Uint8Array) => Promise<ParsedDem>;
@@ -236,6 +243,21 @@ export async function authorParcelSitePlanExport(
     tableAxes,
   });
 
+  // Track B1: STREET from attaching road-nodes (centerline + ROW edges).
+  // Caller-supplied streetAnchors win; otherwise resolve from ledger.
+  let streetAnchors = options.streetAnchors;
+  if (
+    (!streetAnchors || streetAnchors.length === 0) &&
+    options.resolveStreetFromRoadNodes !== false
+  ) {
+    const resolvedRoads = await resolveAttachingRoadNodes({
+      parcelNodeId: options.parcelNodeId,
+      ringWgs84,
+      storage: options.storage,
+    });
+    streetAnchors = resolvedRoads.streetAnchors;
+  }
+
   const model = composeSitePlanModel({
     parcelNodeId: options.parcelNodeId,
     bbox: resolved.bbox,
@@ -250,7 +272,7 @@ export async function authorParcelSitePlanExport(
       notSpecified,
     },
     frontEdgeIndex: options.frontEdgeIndex,
-    streetAnchors: options.streetAnchors,
+    streetAnchors,
     geometrySourceRef: resolved.sourceRef,
     demSourceCitation: TERRAIN_VERTICAL_DATUM.source,
     descriptor: options.descriptor,

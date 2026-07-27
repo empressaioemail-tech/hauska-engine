@@ -22,11 +22,27 @@ export {
   type SitePlanModel,
   type SitePlanNorthModel,
   type SitePlanSetbackModel,
+  type SitePlanStreetAnchorModel,
   type SitePlanStreetModel,
   type SitePlanSummaryModel,
   type StreetAnchorInput,
   type ZoningSummaryInput,
 } from "./site-model.js";
+
+export {
+  streetAnchorFromRoadNode,
+  streetAnchorsFromRoadNodes,
+  type RoadNodeStreetSource,
+} from "./road-street-anchors.js";
+
+export {
+  expandRingBbox,
+  filterRoadsAttachingByProximity,
+  resolveAttachingRoadNodes,
+  roadIdsFromBoundaryEdges,
+  type ParcelBboxWgs84,
+  type ResolveAttachingRoadNodesResult,
+} from "./resolve-attaching-roads.js";
 
 export {
   anyNotSpecified,
@@ -36,6 +52,15 @@ export {
   resolveNotSpecifiedAxes,
   type NotSpecifiedAxes,
 } from "./setback-display.js";
+
+export {
+  mapBuildableDisplay,
+  violatesHistoricalDisagreementGuard,
+  resolveBuildableAreaSqFt,
+  type BuildableDisplayInput,
+  type BuildableDisplayKind,
+  type BuildableDisplayVocab,
+} from "./buildable-display-vocab.js";
 
 export {
   buildDxfSitePlanRequest,
@@ -60,6 +85,14 @@ export {
   type PdfTransform,
   type SitePlanDrawingLayout,
 } from "./pdf/layout.js";
+
+export {
+  PROPERTY_LINE_TAGS_HONESTY,
+  clipPolylineToAabb,
+  formatGisBearing,
+  formatPropertyLineTag,
+  placeNonCollidingEdgeLabels,
+} from "./pdf/annotation-placement.js";
 
 export {
   buildProvenancePanelEntries,

@@ -27,15 +27,21 @@ export function buildProvenancePanelEntries(model: SitePlanModel): ProvenancePan
       layer: "PROPERTY_LINE / DIMENSION",
       source: model.citations.propertyLine,
       asOf: "current parcel-geometry snapshot",
-      confidence: "asserted (county GIS parcel polygon, not a survey)",
+      confidence:
+        "asserted (county GIS parcel polygon — bearing/distance tags are GIS-approximate, not a boundary survey)",
     },
     {
       layer: "SETBACK",
       source: model.citations.setback,
       asOf: "current zoning-code snapshot",
-      confidence: model.setback.degenerate
-        ? `asserted — degenerate: ${model.setback.degenerateReason ?? "setback consumes lot"}`
-        : `asserted (front/side/rear basis: ${model.setback.basis})`,
+      confidence:
+        model.summary.buildableDisplayKind === "declined-consume"
+          ? `asserted — degenerate: ${model.setback.degenerateReason ?? "setbacks consume lot"}`
+          : model.setback.degenerate &&
+              (model.summary.buildableDisplayKind === "buildable-with-area" ||
+                model.summary.buildableDisplayKind === "provisional")
+            ? `asserted (warm/shared buildable vocab ${model.summary.buildableAgreementToken}; local offset degenerate — summary prefers warm area)`
+            : `asserted (front/side/rear basis: ${model.setback.basis})`,
     },
     {
       layer: "CONTOUR / ELEVATION_LABEL",
@@ -48,13 +54,20 @@ export function buildProvenancePanelEntries(model: SitePlanModel): ProvenancePan
           layer: "STREET",
           source: "unavailable",
           asOf: nowIso,
-          confidence: `honest absence — ${model.streets.reason ?? "no road-anchor atom available"}`,
+          confidence: `honest absence — ${model.streets.reason ?? "no road-node attaches"}`,
         }
       : {
           layer: "STREET",
           source: model.streets.anchors.map((a) => a.sourceRef ?? a.name).join("; "),
           asOf: nowIso,
-          confidence: "asserted (road-anchor data)",
+          confidence: model.streets.anchors
+            .map((a) => {
+              const kind = a.rowProvenanceKind ?? "asserted";
+              const width =
+                typeof a.assumedWidthFt === "number" ? `, assumedWidthFt=${a.assumedWidthFt}` : "";
+              return `${a.name}: centerline accurate; ROW edges ${kind}${width}`;
+            })
+            .join("; "),
         },
     model.summary.zoningDistrict
       ? {

@@ -88,6 +88,10 @@ export function buildDxfSitePlanRequest(model: SitePlanModel, mesh: TerrainMeshG
       anchors: model.streets.anchors.map((anchor) => ({
         name: anchor.name,
         points: anchor.pointsLocal.map((p) => [p.x, p.y]),
+        leftEdge: anchor.leftEdgeLocal?.map((p) => [p.x, p.y]) ?? null,
+        rightEdge: anchor.rightEdgeLocal?.map((p) => [p.x, p.y]) ?? null,
+        rowProvenanceKind: anchor.rowProvenanceKind ?? null,
+        assumedWidthFt: anchor.assumedWidthFt ?? null,
         citation: anchor.sourceRef ?? anchor.name,
       })),
       honestAbsence: model.streets.honestAbsence,
@@ -190,6 +194,9 @@ export async function emitIfcSitePlan(
       : model.streets.anchors.map((anchor) => ({
           name: anchor.name,
           points: anchor.pointsLocal.map((p) => [p.x, p.y]),
+          leftEdge: anchor.leftEdgeLocal?.map((p) => [p.x, p.y]) ?? null,
+          rightEdge: anchor.rightEdgeLocal?.map((p) => [p.x, p.y]) ?? null,
+          rowProvenanceKind: anchor.rowProvenanceKind ?? null,
           citation: anchor.sourceRef ?? anchor.name,
         })),
   }) as unknown as IfcSitePlanResult;
