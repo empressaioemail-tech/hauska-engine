@@ -19,7 +19,7 @@
   "dependencies": {
     "@hauska-engine/atoms": "workspace:*",
     "@hauska-engine/storage": "workspace:*",
-    "@hauska/atom-contract": "^1.6.1",
+    "@empressaio/atom-contract": "^1.11.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

@@ -290,15 +290,15 @@ importers:
 
   packages/workspace:
     dependencies:
+      '@empressaio/atom-contract':
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/atoms':
         specifier: workspace:*
         version: link:../atoms
       '@hauska-engine/storage':
         specifier: workspace:*
         version: link:../storage
-      '@hauska/atom-contract':
-        specifier: ^1.6.1
-        version: 1.6.1(@types/pg@8.20.0)(postgres@3.4.9)
       zod:
         specifier: ^3.24.1
         version: 3.25.76

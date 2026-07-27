@@ -7,7 +7,7 @@ import {
   validatePropertyWorkspace,
   validateWorkspaceAttachment,
   validateWorkspaceShareEdge,
-} from "@hauska/atom-contract/workspace";
+} from "@empressaio/atom-contract/workspace";
 import {
   parseAtomDid,
   type AtomLink,
