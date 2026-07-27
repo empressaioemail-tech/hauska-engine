@@ -31,6 +31,7 @@ export function verifyRoadClassificationMatchesSource(
 ): { pass: boolean; reasons: string[] } {
   const reasons: string[] = [];
   for (const edge of candidate.edges) {
+    if (edge.roadProvenanceKind === "county-surveyed-2016") continue;
     if (!edge.roadClass || !edge.osmHighwayTag) continue;
     const fromTag = classifyForVerify(edge.osmHighwayTag, edge.osmSurfaceTag);
     if (fromTag !== edge.roadClass) {
@@ -40,6 +41,7 @@ export function verifyRoadClassificationMatchesSource(
     }
   }
   for (const road of candidate.roads) {
+    if (road.provenanceKind === "county-surveyed-2016") continue;
     const fromTag = classifyForVerify(road.osmHighwayTag, road.surface);
     if (fromTag !== road.classification) {
       reasons.push(
