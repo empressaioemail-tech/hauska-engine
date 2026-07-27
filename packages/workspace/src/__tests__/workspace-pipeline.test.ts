@@ -10,7 +10,7 @@ import {
   SAMPLE_WORKSPACE_ATTACHMENT_LINK,
   SAMPLE_WORKSPACE_ATTACHMENT_NOTE,
   SAMPLE_WORKSPACE_SHARE_EDGE,
-} from "@hauska/atom-contract/workspace";
+} from "@empressaio/atom-contract/workspace";
 import { bootstrapEngineAtomRegistry, type InstanceLookup } from "@hauska-engine/atoms";
 
 import {

@@ -35,9 +35,9 @@ importers:
 
   packages/atom-contract-pin:
     dependencies:
-      '@hauska/atom-contract':
-        specifier: ^1.6.1
-        version: 1.6.1(@types/pg@8.20.0)(postgres@3.4.9)
+      '@empressaio/atom-contract':
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
     devDependencies:
       typescript:
         specifier: ~5.7.2
@@ -49,14 +49,11 @@ importers:
   packages/atoms:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.9.0
-        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/atom-contract-pin':
         specifier: workspace:*
         version: link:../atom-contract-pin
-      '@hauska/atom-contract':
-        specifier: ^1.6.1
-        version: 1.6.1(@types/pg@8.20.0)(postgres@3.4.9)
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -130,8 +127,8 @@ importers:
         specifier: ^0.78.0
         version: 0.78.0(zod@3.25.76)
       '@empressaio/atom-contract':
-        specifier: ^1.9.0
-        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@gltf-transform/core':
         specifier: ^4.2.1
         version: 4.4.1
@@ -188,8 +185,8 @@ importers:
   packages/og-sources:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: 1.7.0
-        version: 1.7.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
       cheerio:
         specifier: ^1.0.0
         version: 1.2.0
@@ -210,8 +207,8 @@ importers:
   packages/og-title:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: 1.7.0
-        version: 1.7.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
       pdf-parse:
         specifier: ^1.1.1
         version: 1.1.4
@@ -251,8 +248,8 @@ importers:
         version: link:../storage
     devDependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.9.0
-        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
       typescript:
         specifier: ~5.7.2
         version: 5.7.3
@@ -279,8 +276,8 @@ importers:
         version: 3.4.9
     devDependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.9.0
-        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
@@ -293,15 +290,15 @@ importers:
 
   packages/workspace:
     dependencies:
+      '@empressaio/atom-contract':
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/atoms':
         specifier: workspace:*
         version: link:../atoms
       '@hauska-engine/storage':
         specifier: workspace:*
         version: link:../storage
-      '@hauska/atom-contract':
-        specifier: ^1.6.1
-        version: 1.6.1(@types/pg@8.20.0)(postgres@3.4.9)
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -387,8 +384,8 @@ importers:
   services/retrieval-api:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.9.0
-        version: 1.9.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.11.0
+        version: 1.11.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
@@ -536,12 +533,8 @@ packages:
     resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
 
-  '@empressaio/atom-contract@1.7.0':
-    resolution: {integrity: sha512-KAU9m38OvcX+/nxz4vC3SYuHiaIyIXL0jzw+/7QSWTbyGg1Hd2R1A6F4qkmgmmZRrJkd/mhN1x2AvB2EiGhEkA==}
-    engines: {node: '>=18.18.0'}
-
-  '@empressaio/atom-contract@1.9.0':
-    resolution: {integrity: sha512-/YzMAOqrOpRZQaM/0HU6d0DSSA2bDptuWcIP9FUd8VxsvhATtV97Go3fdMGbKXCbYv2lbUvQrK16FtSAV04iuw==}
+  '@empressaio/atom-contract@1.11.0':
+    resolution: {integrity: sha512-CdaLCZNECgV/N7Y2CL9FyaOtPPPWgPw992wGLo7bHnJLfaOlnmUKL3qk2clkAUAxjH/y++GFR5JWWkAoMqTh5g==}
     engines: {node: '>=18.18.0'}
 
   '@esbuild/aix-ppc64@0.21.5':
@@ -856,10 +849,6 @@ packages:
   '@google-cloud/storage@7.21.0':
     resolution: {integrity: sha512-l+IFTkd+6Y5LoAuXyYCKNAKtw/Ci+rAMqgdTB1jv4iZiLhw0rtq+0qjIRbBizXkNzEFmXiXUW0H7sZQQvk1ffA==}
     engines: {node: '>=14'}
-
-  '@hauska/atom-contract@1.6.1':
-    resolution: {integrity: sha512-LNjfJuvI4p9XiobcOgn7KHJgsPBLkowel04V9TBhN2IJUyXdXF+gdKnx0pQAqhm1Dhdk7nQLsFuWflOUMI54oQ==}
-    engines: {node: '>=18.18.0'}
 
   '@hono/node-server@1.19.14':
     resolution: {integrity: sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw==}
@@ -1910,42 +1899,7 @@ snapshots:
 
   '@babel/runtime@7.29.7': {}
 
-  '@empressaio/atom-contract@1.7.0(@types/pg@8.20.0)(postgres@3.4.9)':
-    dependencies:
-      drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@opentelemetry/api'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/react'
-      - '@types/sql.js'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - expo-sqlite
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - react
-      - sql.js
-      - sqlite3
-
-  '@empressaio/atom-contract@1.9.0(@types/pg@8.20.0)(postgres@3.4.9)':
+  '@empressaio/atom-contract@1.11.0(@types/pg@8.20.0)(postgres@3.4.9)':
     dependencies:
       drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
       zod: 3.25.76
@@ -2159,41 +2113,6 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - supports-color
-
-  '@hauska/atom-contract@1.6.1(@types/pg@8.20.0)(postgres@3.4.9)':
-    dependencies:
-      drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@opentelemetry/api'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/react'
-      - '@types/sql.js'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - expo-sqlite
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - react
-      - sql.js
-      - sqlite3
 
   '@hono/node-server@1.19.14(hono@4.12.19)':
     dependencies:

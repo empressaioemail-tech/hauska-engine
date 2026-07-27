@@ -1,6 +1,10 @@
 /**
  * Gate C property-atom proof fixtures for Central-TX parcel nodes.
  *
+ * FIXTURE-ONLY (S-13 / H4) — never a production serving path. District code
+ * `RS` is the Hays gold proof stamp, not a live Bastrop Place Type. Do not
+ * treat these bodies as GIS-sourced atoms in archaeology.
+ *
  * Written via StoragePort (PROPERTY_ATOM_PATH=1). Canonical DIDs match MCP
  * `propertyChainAtomDid(parcelNodeId, entityType)`.
  */
@@ -73,7 +77,8 @@ export function buildHaysZoningFactProof(): ZoningFactAtomInstance {
     extractedAt: EXTRACTED_AT,
     sourceAdapter: "property-atom-proof",
     sourceUrl: "https://hauska.dev/internal/property-atom-proof/hays-gold",
-    sourceCitation: "Gate C Hays gold zoning stamp (RS) — PROPERTY_ATOM_PATH proof",
+    sourceCitation:
+      "FIXTURE-ONLY Gate C Hays gold zoning stamp (RS) — PROPERTY_ATOM_PATH proof; not live GIS",
     contentHash: "gate-c-hays-zoning-v1",
     accessPolicy: "public-free",
     atomTier: "data",
@@ -97,7 +102,7 @@ export function buildHaysSetbackRuleProof(): SetbackRuleAtomInstance {
     extractedAt: EXTRACTED_AT,
     sourceAdapter: "property-atom-proof",
     sourceUrl: "https://hauska.dev/internal/property-atom-proof/hays-gold",
-    sourceCitation: `Setback rule for RS cited to ${STORAGE_PORT_PROOF_ATOM_DID}`,
+    sourceCitation: `FIXTURE-ONLY setback rule for RS cited to ${STORAGE_PORT_PROOF_ATOM_DID}`,
     contentHash: "gate-c-hays-setback-v1",
     accessPolicy: "public-free",
     atomTier: "data",
@@ -146,7 +151,8 @@ export function buildHaysEnvelopeProof(): BuildableEnvelopeAtomInstance {
     extractedAt: EXTRACTED_AT,
     sourceAdapter: "property-atom-proof",
     sourceUrl: "https://hauska.dev/internal/property-atom-proof/hays-gold",
-    sourceCitation: "Gate C derived buildable-envelope-inset-v1 — assertedConfidence only",
+    sourceCitation:
+      "FIXTURE-ONLY Gate C derived buildable-envelope-inset-v1 — assertedConfidence only",
     contentHash: "gate-c-hays-envelope-v1",
     accessPolicy: "public-free",
     atomTier: "data",

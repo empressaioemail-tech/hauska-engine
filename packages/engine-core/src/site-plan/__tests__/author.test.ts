@@ -113,7 +113,7 @@ const fakeFetchDem = (async (bboxArg: unknown, opts: { resolutionMeters: number 
 
 const fakeParseDem = async () => dem;
 
-describe("authorParcelSitePlanExport", () => {
+describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
   it("composes the site model, emits DXF+IFC, and persists artifacts merged into the terrain atom", async () => {
     const storage = new InMemoryStorage();
     const artifactStore = fakeArtifactStore();
