@@ -70,6 +70,8 @@
     "ingest-bastrop-roads-pilot": "tsx scripts/ingest-bastrop-roads-pilot.mjs",
     "ingest-bastrop-roads-overpass": "tsx scripts/ingest-bastrop-roads-overpass.mjs",
     "ingest-bastrop-roads-county-surveyed": "tsx scripts/ingest-bastrop-roads-county-surveyed.mjs",
+    "ingest-bastrop-roads-county-roadway": "tsx scripts/ingest-bastrop-roads-county-roadway.mjs",
+    "fetch-bastrop-county-roadway-fixture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-bastrop-county-roadway-fixture.ps1",
     "fetch-bastrop-overpass-fixture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-bastrop-overpass-fixture.ps1",
     "depth-warm-bastrop-pilot": "tsx scripts/depth-warm-bastrop-pilot.mjs",
     "depth-warm-bastrop-batch": "tsx scripts/depth-warm-bastrop-batch.mjs",
