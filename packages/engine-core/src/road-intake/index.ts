@@ -59,3 +59,12 @@ export {
   fetchCaldwellCadRoadFeatures,
   CALDWELL_CAD_ROAD_CENTERLINES_URL,
 } from "./fetch-caldwell-cad-roads.js";
+export {
+  cityGisProvenancePosture,
+  isUnreachableCityGisVerdict,
+  unreachableCityGisReconHolds,
+} from "./unreachable-city-gis.js";
+export type {
+  CityGisReachability,
+  RoadSourceReconFixture,
+} from "./unreachable-city-gis.js";
