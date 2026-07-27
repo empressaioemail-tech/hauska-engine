@@ -1,5 +1,3 @@
-import { inflateSync } from "node:zlib";
-
 import { describe, expect, it } from "vitest";
 
 import { InMemoryStorage } from "@hauska-engine/storage";
@@ -8,29 +6,7 @@ import type { SetbackRuleAtomInstance } from "@hauska-engine/atoms";
 import { authorParcelSitePlanExport } from "../author.js";
 import type { ParcelGeometryResolver } from "../../parcel-terrain/author.js";
 import type { TerrainArtifactStore } from "../../parcel-terrain/author.js";
-
-/** Same decode technique as `pdf/__tests__/render.test.ts` — used here to
- * verify the buildable-envelope-atom honesty note actually reaches the
- * rendered PDF bytes stored on the artifact, not just an in-memory model. */
-function decodeAllContentStreams(pdfBytes: Uint8Array): string {
-  const raw = Buffer.from(pdfBytes);
-  const text = raw.toString("latin1");
-  const streamRe = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-  let match: RegExpExecArray | null;
-  const decoded: string[] = [];
-  while ((match = streamRe.exec(text))) {
-    const startIndex = match.index + match[0].indexOf(match[1]!);
-    const endIndex = startIndex + match[1]!.length;
-    const streamBytes = raw.subarray(startIndex, endIndex);
-    try {
-      decoded.push(inflateSync(streamBytes).toString("latin1"));
-    } catch {
-      decoded.push(streamBytes.toString("latin1"));
-    }
-  }
-  const joined = decoded.join("\n");
-  return joined.replace(/<([0-9A-Fa-f]+)>/g, (_all, hex: string) => Buffer.from(hex, "hex").toString("latin1"));
-}
+import { decodeAllContentStreams } from "../pdf/__tests__/decode-pdf-text.js";
 
 const bbox = { westLng: -98.5, southLat: 29.4, eastLng: -98.4995, northLat: 29.4004 };
 const dem = {

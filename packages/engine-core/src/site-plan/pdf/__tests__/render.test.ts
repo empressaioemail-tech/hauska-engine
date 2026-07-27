@@ -1,43 +1,9 @@
-import { inflateSync } from "node:zlib";
-
 import { describe, expect, it } from "vitest";
 
 import { composeSitePlanModel } from "../../site-model.js";
 import { emitPdfSitePlan } from "../render.js";
 import { SITE_PLAN_HONESTY_LINE } from "../provenance.js";
-
-/**
- * pdf-lib Flate-compresses page content streams by default with no public
- * toggle to disable it. To assert drawn TEXT (not just raw bytes) actually
- * reads back from the artifact, inflate every `stream…endstream` block and
- * concatenate the decoded PostScript operators — the drawn strings (Tj
- * operands) are literal ASCII/WinAnsi bytes for the plain text this emitter
- * draws, so a substring search against the decoded text is a real
- * "is this citation/line actually in the rendered PDF" check.
- */
-function decodeAllContentStreams(pdfBytes: Uint8Array): string {
-  const raw = Buffer.from(pdfBytes);
-  const text = raw.toString("latin1");
-  const streamRe = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-  let match: RegExpExecArray | null;
-  const decoded: string[] = [];
-  while ((match = streamRe.exec(text))) {
-    const startIndex = match.index + match[0].indexOf(match[1]!);
-    const endIndex = startIndex + match[1]!.length;
-    const streamBytes = raw.subarray(startIndex, endIndex);
-    try {
-      decoded.push(inflateSync(streamBytes).toString("latin1"));
-    } catch {
-      decoded.push(streamBytes.toString("latin1"));
-    }
-  }
-  const joined = decoded.join("\n");
-  // pdf-lib's Helvetica/WinAnsi text runs emit hex string operands
-  // (`<...> Tj`) rather than literal `(...)` strings; hex-decode those back
-  // to the original ASCII text so the substring assertions below actually
-  // check the drawn text, not its wire encoding.
-  return joined.replace(/<([0-9A-Fa-f]+)>/g, (_all, hex: string) => Buffer.from(hex, "hex").toString("latin1"));
-}
+import { decodeAllContentStreams } from "./decode-pdf-text.js";
 
 const bbox = { westLng: -98.5, southLat: 29.4, eastLng: -98.4995, northLat: 29.4004 };
 const dem = {
@@ -154,8 +120,8 @@ describe("emitPdfSitePlan", () => {
     expect(decoded).toContain('1" = ');
     expect(decoded).toContain("SP-48029-105129");
     expect(decoded).toContain("generated ");
-    // Font substitution is surfaced honestly to callers.
-    expect(fontNote).toContain("Helvetica");
+    // The embedded font is surfaced honestly to callers.
+    expect(fontNote).toContain("Inter");
   });
 
   it("centers a BUILDABLE ENVELOPE callout with the buildable sq ft + percent-of-lot qualifier", async () => {

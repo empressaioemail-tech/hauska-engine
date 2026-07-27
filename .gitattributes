@@ -1,2 +1,5 @@
 # COMPLETE-BASTROP C1: setback tables must stay LF-byte-identical across repos (hash-lock).
 packages/adapters/src/local/setbacks/*.json text eol=lf
+
+# Vendored Inter TTFs (site-plan PDF embed) — binary, never line-ending-munged.
+*.ttf binary

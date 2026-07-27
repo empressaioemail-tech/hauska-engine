@@ -1,4 +1,9 @@
-import { PDFDocument, PDFFont, PDFPage, StandardFonts, type RGB } from "pdf-lib";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import fontkit from "@pdf-lib/fontkit";
+import { PDFDocument, PDFFont, PDFPage, type RGB } from "pdf-lib";
 
 import type { SitePlanModel } from "../site-model.js";
 import { feetFromMeters, type PlacedLabel } from "./annotation-placement.js";
@@ -15,15 +20,53 @@ import { STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js";
  * unchanged; the header, drawing chrome, legend, scale bar, and summary page
  * were rebuilt to the template's caliber.
  *
- * FONT: the template calls for Barlow (body) + Barlow Condensed (headings).
- * This build environment has no network egress and no @pdf-lib/fontkit, so
- * the TTFs could not be vendored. Falls back to Helvetica / Helvetica-Bold,
- * matching the template's sizing, weight, colour, and (emulated) letter
- * spacing as closely as Helvetica allows. See FONT_SUBSTITUTION_NOTE.
+ * FONT: rendered with embedded Inter (Regular for body, SemiBold for headings
+ * and emphasis), subset into the PDF via @pdf-lib/fontkit. Inter is a clean,
+ * modern grotesque that reads close to the template's Barlow hierarchy; the
+ * TTFs are OFL-licensed and vendored under packages/engine-core/assets/fonts/.
+ * See FONT_NOTE.
  */
-export const FONT_SUBSTITUTION_NOTE =
-  "Barlow / Barlow Condensed unavailable in this build (no network, no fontkit); " +
-  "rendered with Helvetica at template sizing/weight/tracking/colour.";
+export const FONT_NOTE = "Rendered with embedded Inter (Regular/SemiBold), OFL.";
+/** @deprecated retained for API compatibility; see FONT_NOTE. */
+export const FONT_SUBSTITUTION_NOTE = FONT_NOTE;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Vendored Inter TTFs (OFL). Resolve the assets dir robustly so the same code
+// finds the fonts whether this module runs from src (tsx / vitest — the
+// engine-api Docker runtime executes `tsx src/index.ts`, so src is the live
+// path) or from a compiled dist/ build. We walk up from the module directory
+// to the package root (the dir that owns `assets/fonts/`) rather than hard-
+// coding a `../../..` hop that a different emitted layout could break.
+// ─────────────────────────────────────────────────────────────────────────
+const FONT_DIR = resolveFontDir();
+
+function resolveFontDir(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  // Walk up until we find the assets/fonts dir that ships with engine-core.
+  // From src:  .../engine-core/src/site-plan/pdf -> up 3 -> engine-core
+  // From dist: .../engine-core/dist/site-plan/pdf -> up 3 -> engine-core
+  let dir = here;
+  for (let i = 0; i < 8; i++) {
+    const candidate = join(dir, "assets", "fonts");
+    try {
+      // readFileSync on a known font proves the dir; cheap and deterministic.
+      readFileSync(join(candidate, "Inter-Regular.ttf"));
+      return candidate;
+    } catch {
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  }
+  throw new Error(
+    `[site-plan] Inter TTFs not found walking up from ${here}; expected packages/engine-core/assets/fonts/Inter-Regular.ttf. ` +
+      "Ensure the assets dir ships with the module (COPY packages in the engine-api image).",
+  );
+}
+
+function loadFont(file: string): Uint8Array {
+  return new Uint8Array(readFileSync(join(FONT_DIR, file)));
+}
 
 // US Letter, PDF points (72/in). Template sheet is 816x1056 px @96dpi.
 const PAGE_WIDTH = 612;
@@ -52,7 +95,7 @@ const LEADER_COLOR = TOKENS.neutral500;
 export interface PdfSitePlanResult {
   bytes: Uint8Array;
   pageCount: number;
-  /** Names the font actually used (Barlow when embedded, else the fallback). */
+  /** Names the font actually used (embedded Inter Regular/SemiBold, OFL). */
   fontNote: string;
 }
 
@@ -852,10 +895,17 @@ function drawProvenanceTable(page: PDFPage, model: SitePlanModel, bold: PDFFont,
  */
 export async function emitPdfSitePlan(model: SitePlanModel): Promise<PdfSitePlanResult> {
   const doc = await PDFDocument.create();
-  // Barlow substitution: fontkit + TTFs unavailable in this build. Helvetica
-  // at template sizing/weight/tracking/colour (see FONT_SUBSTITUTION_NOTE).
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  // Embed Inter (OFL) via fontkit — body = Inter-Regular, headings and
+  // emphasis = Inter-SemiBold (reads close to the template's condensed-bold
+  // hierarchy). subset:false embeds each weight ONCE as a full font shared by
+  // every draw; subset:true would re-subset per glyph (this sheet draws tracked
+  // headings glyph-by-glyph), exploding into hundreds of tiny font objects and
+  // breaking ToUnicode text extraction. Full-embed keeps a stable glyph->char
+  // CMap and a ~440KB 2-page sheet. Full Unicode is available so en/em dashes
+  // no longer need the WinAnsi ASCII workaround (kept in safeText, harmless).
+  doc.registerFontkit(fontkit);
+  const font = await doc.embedFont(loadFont("Inter-Regular.ttf"), { subset: false });
+  const bold = await doc.embedFont(loadFont("Inter-SemiBold.ttf"), { subset: false });
 
   // PAGE 1 — drawing.
   const page1 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
@@ -891,5 +941,5 @@ export async function emitPdfSitePlan(model: SitePlanModel): Promise<PdfSitePlan
   drawFinePrint(page2, buildFinePrint(model, 2), font);
 
   const bytes = await doc.save({ useObjectStreams: false });
-  return { bytes, pageCount: doc.getPageCount(), fontNote: FONT_SUBSTITUTION_NOTE };
+  return { bytes, pageCount: doc.getPageCount(), fontNote: FONT_NOTE };
 }
