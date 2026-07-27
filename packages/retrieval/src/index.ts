@@ -285,6 +285,53 @@ export class HybridRetrieval {
   }
 
   /**
+   * Viewport road layer (Track B1-map). Serves road-nodes whose centerline
+   * intersects a WGS84 bbox — same StoragePort as site-plan proximity, now
+   * reachable over HTTP so PE is not stranded on per-parcel attaching-roads.
+   */
+  async listRoadNodesNearBbox(input: {
+    countyFips: string;
+    westLng: number;
+    southLat: number;
+    eastLng: number;
+    northLat: number;
+    limit?: number;
+  }): Promise<{
+    countyFips: string;
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    };
+    limit: number;
+    count: number;
+    roads: ReadonlyArray<StoredAtomInstance>;
+  }> {
+    const limit =
+      typeof input.limit === "number" && Number.isFinite(input.limit)
+        ? Math.max(1, Math.min(Math.floor(input.limit), 2000))
+        : 400;
+    const bbox = {
+      westLng: input.westLng,
+      southLat: input.southLat,
+      eastLng: input.eastLng,
+      northLat: input.northLat,
+    };
+    const listFn = this.storage.listRoadAtomsNearBbox?.bind(this.storage);
+    const roads = listFn
+      ? await listFn(input.countyFips, bbox, { limit })
+      : [];
+    return {
+      countyFips: input.countyFips,
+      bbox,
+      limit,
+      count: roads.length,
+      roads,
+    };
+  }
+
+  /**
    * Control-Tower-shaped node detail for parcel / road / boundary-edge
    * (CC-A U1 / WDLL 1, 2, 6). Edges from StoragePort boundary primitives.
    */

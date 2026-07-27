@@ -83,14 +83,15 @@ export class LayeredStorage implements StoragePort {
       eastLng: number;
       northLat: number;
     },
+    opts?: { limit?: number },
   ): Promise<ReadonlyArray<import("@hauska-engine/atoms").RoadNodeAtomInstance>> {
     const primaryFn = this.primary.listRoadAtomsNearBbox?.bind(this.primary);
     const snapshotFn = this.snapshot.listRoadAtomsNearBbox?.bind(this.snapshot);
     if (primaryFn) {
-      const primary = await primaryFn(countyFips, bbox);
+      const primary = await primaryFn(countyFips, bbox, opts);
       if (primary.length > 0) return primary;
     }
-    if (snapshotFn) return snapshotFn(countyFips, bbox);
+    if (snapshotFn) return snapshotFn(countyFips, bbox, opts);
     return [];
   }
 

@@ -112,7 +112,8 @@ export interface StoragePort {
 
   /**
    * Road-nodes whose centerline intersects a WGS84 bbox (Track B1 site-plan /
-   * PE frontage resolve). Optional on older ports — callers must feature-detect.
+   * PE viewport road layer). Optional on older ports — callers must feature-detect.
+   * `limit` caps rows for map payloads (default left to implementation).
    */
   listRoadAtomsNearBbox?(
     countyFips: string,
@@ -122,6 +123,7 @@ export interface StoragePort {
       eastLng: number;
       northLat: number;
     },
+    opts?: { limit?: number },
   ): Promise<ReadonlyArray<RoadNodeAtomInstance>>;
 
   /** Property boundary edges (27f S2-U2). Same atoms table, parcelNodeId linkage. */
