@@ -12,6 +12,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MapLayersAssembleRequest } from "@hauska-engine/engine-core/map-layers";
 import { resolveWave3MapLayerSlot } from "../lib/mapLayersWave3.js";
+import {
+  resolveMapLayerRasterPlan,
+  mapLayerBboxAreaKm2,
+  MAP_LAYER_MAX_PIXELS_PER_AXIS,
+  TOPOGRAPHY_1FT_MAX_AREA_KM2,
+} from "../lib/mapLayerBboxGuard.js";
 
 const EMPTY_OUTCOMES = new Map();
 
@@ -21,6 +27,16 @@ const bastropBbox = {
   southLat: 30.108,
   eastLng: -97.318,
   northLat: 30.112,
+};
+
+// A ZOOMED-OUT viewport in Bastrop County (~0.6deg ≈ ~60 km per side) — the
+// large-bbox case that fetched a ~67 MB raster and OOM'd the container before
+// the guard. In county, so it exercises the 1-ft area gate + 3DEP degrade too.
+const zoomedOutBastropBbox = {
+  westLng: -97.6,
+  southLat: 30.0,
+  eastLng: -97.0,
+  northLat: 30.5,
 };
 
 // Moab, UT bbox (~38.57, -109.55) — outside Bastrop 1-ft footprint.
@@ -202,6 +218,76 @@ describe("topography-1ft slot", () => {
         ?.attributes?.contourSource?.tier ?? null;
     expect(tier).not.toBe("authoritative-1ft");
   });
+});
+
+describe("mapLayerBboxGuard (bbox-area / raster-budget guard)", () => {
+  it("picks a map-safe fine resolution for a parcel-scale bbox (fetch allowed)", () => {
+    const plan = resolveMapLayerRasterPlan(bastropBbox);
+    expect(plan.fit).toBe(true);
+    if (plan.fit) {
+      // Parcel-scale extent: raster stays within the tight map pixel budget on
+      // BOTH axes, so a normal-bbox request still fetches a real DEM unchanged.
+      expect(plan.widthPx).toBeLessThanOrEqual(MAP_LAYER_MAX_PIXELS_PER_AXIS);
+      expect(plan.heightPx).toBeLessThanOrEqual(MAP_LAYER_MAX_PIXELS_PER_AXIS);
+      expect(plan.resolutionMeters).toBeGreaterThan(0);
+    }
+  });
+
+  it("honest-degrades (no fetch) for a zoomed-out viewport over the raster budget", () => {
+    const plan = resolveMapLayerRasterPlan(zoomedOutBastropBbox);
+    // ~60 km per side cannot fit 1024px even at 30 m/px -> degrade, not fetch.
+    expect(plan.fit).toBe(false);
+    if (!plan.fit) {
+      expect(plan.degradeReason).toContain("zoom in");
+    }
+    expect(mapLayerBboxAreaKm2(zoomedOutBastropBbox)).toBeGreaterThan(
+      TOPOGRAPHY_1FT_MAX_AREA_KM2,
+    );
+  });
+});
+
+describe("large-bbox slots honest-degrade WITHOUT fetching (OOM guard)", () => {
+  // The core regression guard: at a zoomed-out viewport NO network fetch fires
+  // for the terrain slots, so the ~67 MB raster fetch/parse that OOM'd the
+  // container cannot happen. Each slot returns a clean honest-empty instead.
+  for (const layerKey of ["dem", "topography", "topography-1ft", "hydrology-flow"] as const) {
+    it(`${layerKey}: no fetch, honest-empty FeatureCollection at large bbox`, async () => {
+      const fetchSpy = vi.fn(async () => {
+        throw new Error(`fetch must NOT be called for a guarded large bbox (${layerKey})`);
+      });
+      vi.stubGlobal("fetch", fetchSpy);
+
+      const slot = await resolveWave3MapLayerSlot(
+        layerKey,
+        requestFor(zoomedOutBastropBbox),
+        EMPTY_OUTCOMES,
+      );
+
+      // The guard runs before any fetch.
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(slot.layerKey).toBe(layerKey);
+      expect(slot.status).toBe("ok");
+
+      const payload = slot.envelope!.payload as unknown as {
+        geojson?: { type: string; features: unknown[] };
+        attributes?: {
+          honestEmptyReason?: string;
+          degradeReason?: string;
+          viewportTooLarge?: boolean;
+        };
+      };
+      // Honest-empty: empty collection + a real degrade reason, never fabricated.
+      expect(payload.geojson?.features).toEqual([]);
+      expect(
+        payload.attributes?.honestEmptyReason ?? payload.attributes?.degradeReason,
+      ).toBeTruthy();
+      expect(slot.envelope!.coverage.degraded).toBe(true);
+      // Must NEVER mislabel the honest-empty as authoritative 1-ft.
+      const tier = (payload.attributes as { contourSource?: { tier?: string } } | undefined)
+        ?.contourSource?.tier;
+      expect(tier).not.toBe("authoritative-1ft");
+    });
+  }
 });
 
 describe("hydrology-flow slot", () => {
