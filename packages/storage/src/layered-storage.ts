@@ -12,6 +12,8 @@ import { buildAtomDid, type AtomLink, type CodeAtomInstance, type PropertyAtomIn
 import type {
   AtomQuery,
   AtomSearchResult,
+  GraphNodeListQuery,
+  GraphNodeListResult,
   JurisdictionStatusSnapshot,
   StoragePort,
 } from "./port.js";
@@ -93,6 +95,21 @@ export class LayeredStorage implements StoragePort {
     }
     if (snapshotFn) return snapshotFn(countyFips, bbox, opts);
     return [];
+  }
+
+  /**
+   * County node roster: primary wins when it has any nodes for the county;
+   * fall back to snapshot otherwise (same shape as listRoadAtomsNearBbox).
+   */
+  async listGraphNodes(query: GraphNodeListQuery): Promise<GraphNodeListResult> {
+    const primaryFn = this.primary.listGraphNodes?.bind(this.primary);
+    const snapshotFn = this.snapshot.listGraphNodes?.bind(this.snapshot);
+    if (primaryFn) {
+      const primary = await primaryFn(query);
+      if (primary.countyHasNodes) return primary;
+    }
+    if (snapshotFn) return snapshotFn(query);
+    return { nodes: [], total: 0, totalCapped: false, countyHasNodes: false };
   }
 
   writeBoundaryEdgeAtom(

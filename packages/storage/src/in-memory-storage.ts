@@ -21,6 +21,9 @@ import { HotCache, InProcessIpfsPin } from "./in-process-cache.js";
 import type {
   AtomQuery,
   AtomSearchResult,
+  GraphNodeListQuery,
+  GraphNodeListResult,
+  GraphNodeListRow,
   JurisdictionStatusSnapshot,
   StoragePort,
 } from "./port.js";
@@ -157,6 +160,106 @@ export class InMemoryStorage implements StoragePort {
         ? Math.max(1, Math.min(Math.floor(opts.limit), 2000))
         : 500;
     return out.slice(0, limit);
+  }
+
+  /**
+   * County → node roster LIST (CC browse). Same semantics as the PgStorage
+   * implementation: parcels = DISTINCT parcelNodeId over property atom
+   * families; roads = DISTINCT roadNodeId over road-node atoms. Identifiers
+   * only from fields that genuinely exist (propId from the node id; roadName
+   * from road displayName) — property atoms carry no address/APN.
+   */
+  async listGraphNodes(query: GraphNodeListQuery): Promise<GraphNodeListResult> {
+    const { countyFips, nodeType, limit, offset } = query;
+    const q = (query.q ?? "").trim().toLowerCase();
+
+    interface Agg {
+      nodeId: string;
+      displayName: string | null;
+      families: Set<string>;
+    }
+    const byNode = new Map<string, Agg>();
+    let countyHasNodes = false;
+
+    const PARCEL_FAMILIES = new Set([
+      "zoning-fact",
+      "setback-rule",
+      "buildable-envelope",
+      "parcel-terrain-model",
+    ]);
+
+    for (const inst of this.atoms.values()) {
+      let nodeId: string | null = null;
+      let displayName: string | null = null;
+      if (nodeType === "road") {
+        if (!isRoadNodeAtomInstance(inst)) continue;
+        if (inst.countyFips !== countyFips) continue;
+        if (inst.status && inst.status !== "active") continue;
+        nodeId = inst.roadNodeId;
+        displayName =
+          typeof inst.displayName === "string" ? inst.displayName : null;
+      } else {
+        if (!PARCEL_FAMILIES.has(inst.entityType)) continue;
+        const parcelNodeId = (inst as { parcelNodeId?: unknown }).parcelNodeId;
+        if (typeof parcelNodeId !== "string") continue;
+        if (!parcelNodeId.startsWith(`${countyFips}:`)) continue;
+        const status = (inst as { status?: string }).status;
+        if (status && status !== "active") continue;
+        nodeId = parcelNodeId;
+      }
+      countyHasNodes = true;
+      if (q) {
+        const idHit = nodeId.toLowerCase().includes(q);
+        const nameHit = displayName?.toLowerCase().includes(q) ?? false;
+        if (!idHit && !nameHit) continue;
+      }
+      const agg = byNode.get(nodeId) ?? {
+        nodeId,
+        displayName: null,
+        families: new Set<string>(),
+      };
+      if (displayName && !agg.displayName) agg.displayName = displayName;
+      agg.families.add(inst.entityType);
+      byNode.set(nodeId, agg);
+    }
+
+    const sorted = [...byNode.values()].sort((a, b) => {
+      if (nodeType === "road") {
+        const an = a.displayName ?? "￿";
+        const bn = b.displayName ?? "￿";
+        if (an !== bn) return an < bn ? -1 : 1;
+      }
+      return a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0;
+    });
+
+    const nodes: GraphNodeListRow[] = sorted
+      .slice(offset, offset + limit)
+      .map((agg) => {
+        if (nodeType === "road") {
+          return {
+            nodeId: agg.nodeId,
+            nodeType,
+            displayName: agg.displayName,
+            identifiers: agg.displayName ? { roadName: agg.displayName } : {},
+            atomFamilies: [...agg.families].sort(),
+          };
+        }
+        const propId = agg.nodeId.split(":")[1];
+        return {
+          nodeId: agg.nodeId,
+          nodeType,
+          displayName: null,
+          identifiers: propId ? { propId } : {},
+          atomFamilies: [...agg.families].sort(),
+        };
+      });
+
+    return {
+      nodes,
+      total: sorted.length,
+      totalCapped: false,
+      countyHasNodes,
+    };
   }
 
   async writeBoundaryEdgeAtom(

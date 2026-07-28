@@ -25,6 +25,7 @@ import { resolveAttachingRoadNodes } from "@hauska-engine/engine-core/site-plan"
 import type {
   AccessPolicy,
   AtomSearchResult,
+  GraphNodeListType,
   JurisdictionStatusSnapshot,
   StoragePort,
 } from "@hauska-engine/storage";
@@ -102,6 +103,30 @@ export interface RoadAtomChainWire {
     accessPolicy: string;
     payload: StoredAtomInstance;
   }>;
+}
+
+/** One node row on the county roster wire (snake_case pinned with CC). */
+export interface NodeListWireNode {
+  node_id: string;
+  node_type: GraphNodeListType;
+  display_name: string | null;
+  identifiers: { propId?: string; roadName?: string };
+  atom_families?: string[];
+}
+
+/** GET /nodes wire shape (county → parcel/road roster; CC browse). */
+export interface NodeListWire {
+  available: boolean;
+  reason?: string;
+  county: string;
+  nodeType: GraphNodeListType;
+  nodes: NodeListWireNode[];
+  /** Real count for the filtered query; a floor when total_capped is true. */
+  total: number;
+  /** Present (true) when the count scan hit its bound — total is a floor. */
+  total_capped?: true;
+  limit: number;
+  offset: number;
 }
 
 export interface QueryJurisdictionInput {
@@ -328,6 +353,66 @@ export class HybridRetrieval {
       limit,
       count: roads.length,
       roads,
+    };
+  }
+
+  /**
+   * County → node roster LIST (CC browse; Control-Tower flow port). Wire
+   * shape pinned with Command Center: snake_case node rows, real (capped)
+   * total, honest-degrade `{ available: false, reason }` when the county has
+   * no nodes of the requested type or the backend cannot list.
+   *
+   * `identifiers` only carries fields that genuinely exist in atom bodies:
+   * parcel → propId (from parcelNodeId); road → roadName (displayName).
+   * No address/APN — persisted property atoms do not carry them.
+   */
+  async listGraphNodes(input: {
+    county: string;
+    nodeType: GraphNodeListType;
+    q?: string;
+    limit: number;
+    offset: number;
+  }): Promise<NodeListWire> {
+    const { county, nodeType, limit, offset } = input;
+    const base = { county, nodeType, limit, offset };
+    const listFn = this.storage.listGraphNodes?.bind(this.storage);
+    if (!listFn) {
+      return {
+        available: false,
+        reason: "node listing not supported by this storage backend",
+        ...base,
+        nodes: [],
+        total: 0,
+      };
+    }
+    const result = await listFn({
+      countyFips: county,
+      nodeType,
+      ...(input.q !== undefined ? { q: input.q } : {}),
+      limit,
+      offset,
+    });
+    if (!result.countyHasNodes) {
+      return {
+        available: false,
+        reason: `no ${nodeType} nodes persisted for county ${county} (honest empty — not an error)`,
+        ...base,
+        nodes: [],
+        total: 0,
+      };
+    }
+    return {
+      available: true,
+      ...base,
+      nodes: result.nodes.map((row) => ({
+        node_id: row.nodeId,
+        node_type: row.nodeType,
+        display_name: row.displayName,
+        identifiers: row.identifiers,
+        atom_families: [...row.atomFamilies],
+      })),
+      total: result.total,
+      ...(result.totalCapped ? { total_capped: true as const } : {}),
     };
   }
 

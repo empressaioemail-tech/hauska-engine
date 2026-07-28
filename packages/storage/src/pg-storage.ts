@@ -27,6 +27,9 @@ import { InProcessIpfsPin } from "./in-process-cache.js";
 import type {
   AtomQuery,
   AtomSearchResult,
+  GraphNodeListQuery,
+  GraphNodeListResult,
+  GraphNodeListRow,
   JurisdictionStatusSnapshot,
   StoragePort,
 } from "./port.js";
@@ -86,6 +89,37 @@ function toIsoString(value: Date | string | null | undefined): string | null {
   if (value == null) return null;
   if (value instanceof Date) return value.toISOString();
   return value;
+}
+
+/**
+ * Property atom entity_types that anchor a parcel node via body.parcelNodeId.
+ * Mirrors listPropertyAtomsByParcelNodeId — parcels exist implicitly as
+ * DISTINCT body->>'parcelNodeId' over these families.
+ */
+const PARCEL_ANCHOR_ENTITY_TYPES = [
+  "zoning-fact",
+  "setback-rule",
+  "buildable-envelope",
+  "parcel-terrain-model",
+] as const;
+
+/**
+ * Count-scan bound for listGraphNodes. When a filtered county roster has
+ * more distinct nodes than this, `total` is reported as the cap with
+ * `totalCapped: true` — a documented floor, never a silent lie. Keeps the
+ * COUNT(DISTINCT jsonb expr) scan bounded at Bastrop scale (62k parcels).
+ */
+export const NODE_LIST_COUNT_CAP = 10_000;
+
+/** Escape LIKE/ILIKE metacharacters so user `q` is a literal substring. */
+function escapeLikePattern(q: string): string {
+  return q.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+interface NodeListAggRow {
+  node_id: string;
+  display_name: string | null;
+  atom_families: string[];
 }
 
 export class PgStorage implements StoragePort {
@@ -450,6 +484,136 @@ export class PgStorage implements StoragePort {
       if (inst && isBoundaryEdgeAtomInstance(inst)) out.push(inst);
     }
     return out;
+  }
+
+  /**
+   * County → node roster LIST (CC browse). Parcels exist implicitly as
+   * DISTINCT body->>'parcelNodeId' over the property atom families; roads as
+   * DISTINCT body->>'roadNodeId' over 'road-node'. County filter for parcels
+   * is a `{fips}:` prefix LIKE on parcelNodeId (property atom bodies carry NO
+   * countyFips field — verified against @empressaio/atom-contract/property).
+   * Served by the migration-008 partial expression indexes
+   * (text_pattern_ops → prefix LIKE + equality both indexable).
+   */
+  async listGraphNodes(query: GraphNodeListQuery): Promise<GraphNodeListResult> {
+    const { countyFips, nodeType, limit, offset } = query;
+    const q = query.q?.trim() ?? "";
+    const qPattern = q.length > 0 ? `%${escapeLikePattern(q)}%` : null;
+    const parcelPrefix = `${countyFips}:%`;
+    const parcelTypes = [...PARCEL_ANCHOR_ENTITY_TYPES];
+
+    let rows: NodeListAggRow[];
+    let countRows: Array<{ total: number }>;
+
+    if (nodeType === "road") {
+      const qFrag = qPattern
+        ? this.sql`AND (body->>'roadNodeId' ILIKE ${qPattern} OR body->>'displayName' ILIKE ${qPattern})`
+        : this.sql``;
+      rows = await this.sql<NodeListAggRow[]>`
+        SELECT body->>'roadNodeId' AS node_id,
+               MAX(body->>'displayName') AS display_name,
+               array_agg(DISTINCT entity_type) AS atom_families
+        FROM atoms
+        WHERE entity_type = 'road-node'
+          AND body->>'countyFips' = ${countyFips}
+          AND COALESCE(body->>'status', 'active') = 'active'
+          ${qFrag}
+        GROUP BY body->>'roadNodeId'
+        ORDER BY MAX(body->>'displayName') ASC NULLS LAST,
+                 body->>'roadNodeId' ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+      countRows = await this.sql<Array<{ total: number }>>`
+        SELECT COUNT(*)::int AS total FROM (
+          SELECT DISTINCT body->>'roadNodeId'
+          FROM atoms
+          WHERE entity_type = 'road-node'
+            AND body->>'countyFips' = ${countyFips}
+            AND COALESCE(body->>'status', 'active') = 'active'
+            ${qFrag}
+          LIMIT ${NODE_LIST_COUNT_CAP + 1}
+        ) capped
+      `;
+    } else {
+      // parcel: q matches nodeId (and therefore propId — propId is the
+      // substring after "{fips}:"). No address/APN fields exist in bodies.
+      const qFrag = qPattern
+        ? this.sql`AND body->>'parcelNodeId' ILIKE ${qPattern}`
+        : this.sql``;
+      rows = await this.sql<NodeListAggRow[]>`
+        SELECT body->>'parcelNodeId' AS node_id,
+               NULL AS display_name,
+               array_agg(DISTINCT entity_type) AS atom_families
+        FROM atoms
+        WHERE entity_type IN ${this.sql(parcelTypes)}
+          AND body->>'parcelNodeId' LIKE ${parcelPrefix}
+          AND COALESCE(body->>'status', 'active') = 'active'
+          ${qFrag}
+        GROUP BY body->>'parcelNodeId'
+        ORDER BY body->>'parcelNodeId' ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+      countRows = await this.sql<Array<{ total: number }>>`
+        SELECT COUNT(*)::int AS total FROM (
+          SELECT DISTINCT body->>'parcelNodeId'
+          FROM atoms
+          WHERE entity_type IN ${this.sql(parcelTypes)}
+            AND body->>'parcelNodeId' LIKE ${parcelPrefix}
+            AND COALESCE(body->>'status', 'active') = 'active'
+            ${qFrag}
+          LIMIT ${NODE_LIST_COUNT_CAP + 1}
+        ) capped
+      `;
+    }
+
+    const rawTotal = countRows[0]?.total ?? 0;
+    const totalCapped = rawTotal > NODE_LIST_COUNT_CAP;
+    const total = totalCapped ? NODE_LIST_COUNT_CAP : rawTotal;
+
+    let countyHasNodes = total > 0;
+    if (!countyHasNodes) {
+      // Distinguish "q matched nothing" from "county has no nodes at all".
+      const probe =
+        nodeType === "road"
+          ? await this.sql<Array<{ one: number }>>`
+              SELECT 1 AS one FROM atoms
+              WHERE entity_type = 'road-node'
+                AND body->>'countyFips' = ${countyFips}
+                AND COALESCE(body->>'status', 'active') = 'active'
+              LIMIT 1
+            `
+          : await this.sql<Array<{ one: number }>>`
+              SELECT 1 AS one FROM atoms
+              WHERE entity_type IN ${this.sql(parcelTypes)}
+                AND body->>'parcelNodeId' LIKE ${parcelPrefix}
+                AND COALESCE(body->>'status', 'active') = 'active'
+              LIMIT 1
+            `;
+      countyHasNodes = probe.length > 0;
+    }
+
+    const nodes: GraphNodeListRow[] = rows.map((row) => {
+      if (nodeType === "road") {
+        const displayName = row.display_name ?? null;
+        return {
+          nodeId: row.node_id,
+          nodeType,
+          displayName,
+          identifiers: displayName ? { roadName: displayName } : {},
+          atomFamilies: row.atom_families ?? [],
+        };
+      }
+      const propId = row.node_id.split(":")[1];
+      return {
+        nodeId: row.node_id,
+        nodeType,
+        displayName: null,
+        identifiers: propId ? { propId } : {},
+        atomFamilies: row.atom_families ?? [],
+      };
+    });
+
+    return { nodes, total, totalCapped, countyHasNodes };
   }
 
   async writeAtoms(

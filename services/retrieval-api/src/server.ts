@@ -467,6 +467,73 @@ export function buildApp(options: ServerOptions = {}): Hono {
   });
 
   /**
+   * County → node roster LIST (CC browse; Trading Control Tower flow port).
+   * Registered BEFORE /nodes/:nodeId so the bare collection path is never
+   * captured by the param route (same pattern as road-nodes/near-bbox).
+   * County is required + parameterized — uniform public-record pattern, no
+   * per-jurisdiction special path. Honest-degrade: { available: false,
+   * reason } when the county has no nodes of the requested type.
+   */
+  app.get("/nodes", async (c) => {
+    const county = (c.req.query("county") ?? "").trim();
+    if (!/^\d{5}$/.test(county)) {
+      return c.json(
+        {
+          error: "invalid county",
+          hint: "county is required — 5-digit FIPS e.g. 48021",
+        },
+        400,
+      );
+    }
+    const nodeTypeRaw = c.req.query("nodeType") ?? "parcel";
+    if (nodeTypeRaw !== "parcel" && nodeTypeRaw !== "road") {
+      return c.json(
+        {
+          error: "invalid nodeType",
+          hint: "expected parcel|road (default parcel)",
+          nodeType: nodeTypeRaw,
+        },
+        400,
+      );
+    }
+    const limitRaw = c.req.query("limit");
+    let limit = 50;
+    if (limitRaw !== undefined && limitRaw !== "") {
+      limit = Number(limitRaw);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+        return c.json(
+          { error: "invalid limit", hint: "integer 1..200 (default 50)" },
+          400,
+        );
+      }
+    }
+    const offsetRaw = c.req.query("offset");
+    let offset = 0;
+    if (offsetRaw !== undefined && offsetRaw !== "") {
+      offset = Number(offsetRaw);
+      if (!Number.isInteger(offset) || offset < 0) {
+        return c.json(
+          { error: "invalid offset", hint: "integer >= 0 (default 0)" },
+          400,
+        );
+      }
+    }
+    const qRaw = c.req.query("q");
+    const q = qRaw?.trim();
+    if (q !== undefined && q.length > 200) {
+      return c.json({ error: "invalid q", hint: "max 200 chars" }, 400);
+    }
+    const body = await retrieval.listGraphNodes({
+      county,
+      nodeType: nodeTypeRaw,
+      ...(q ? { q } : {}),
+      limit,
+      offset,
+    });
+    return c.json(body);
+  });
+
+  /**
    * CC-A U1 / WDLL 1+2+6 — Control-Tower-shaped node detail for parcel /
    * road / property-boundary-edge. Walkable edges_out / edges_in.
    */
