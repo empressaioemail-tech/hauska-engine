@@ -44,6 +44,54 @@ export interface AtomSearchResult {
   score: number;
 }
 
+/** Node kinds servable by the county node roster (CC browse). */
+export type GraphNodeListType = "parcel" | "road";
+
+/**
+ * One roster row for the county node LIST (CC county → parcel/road browse).
+ *
+ * `identifiers` carries ONLY fields that genuinely exist in atom bodies:
+ * - parcel: `propId` (derived from `parcelNodeId` = `{fips}:{propId}`). The
+ *   persisted property atom shapes (zoning-fact / setback-rule /
+ *   buildable-envelope / parcel-terrain-model) carry NO situs address and NO
+ *   APN — those fields are never fabricated here.
+ * - road: `roadName` (from the road-node atom's optional `displayName`).
+ */
+export interface GraphNodeListRow {
+  nodeId: string;
+  nodeType: GraphNodeListType;
+  /** Road `displayName` when present; parcels have no display name in data. */
+  displayName: string | null;
+  identifiers: { propId?: string; roadName?: string };
+  /** DISTINCT atom entity_types persisted against this node. */
+  atomFamilies: ReadonlyArray<string>;
+}
+
+export interface GraphNodeListResult {
+  nodes: ReadonlyArray<GraphNodeListRow>;
+  /**
+   * Count of DISTINCT nodes matching the filtered query. When
+   * `totalCapped` is true the count scan hit its bound and `total` is a
+   * floor (documented estimate), never a silent lie.
+   */
+  total: number;
+  totalCapped: boolean;
+  /**
+   * False when the county has NO nodes of this type at all (regardless of
+   * `q`) — the honest-degrade signal for the wire layer.
+   */
+  countyHasNodes: boolean;
+}
+
+export interface GraphNodeListQuery {
+  countyFips: string;
+  nodeType: GraphNodeListType;
+  /** Case-insensitive substring over nodeId/propId (parcel) or nodeId/displayName (road). */
+  q?: string;
+  limit: number;
+  offset: number;
+}
+
 export interface JurisdictionStatusSnapshot {
   jurisdictionTenant: string;
   jurisdictionName: string;
@@ -125,6 +173,13 @@ export interface StoragePort {
     },
     opts?: { limit?: number },
   ): Promise<ReadonlyArray<RoadNodeAtomInstance>>;
+
+  /**
+   * County → node roster LIST (CC browse; Control-Tower flow port). Pages
+   * DISTINCT parcel / road node ids for a county with a real (capped) count.
+   * Optional on older ports — callers must feature-detect.
+   */
+  listGraphNodes?(query: GraphNodeListQuery): Promise<GraphNodeListResult>;
 
   /** Property boundary edges (27f S2-U2). Same atoms table, parcelNodeId linkage. */
   writeBoundaryEdgeAtom(

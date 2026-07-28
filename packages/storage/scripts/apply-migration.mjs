@@ -1,24 +1,31 @@
 #!/usr/bin/env node
 /**
- * apply-migration.mjs — idempotent runner for 005_atoms_storage_port.sql.
+ * apply-migration.mjs — idempotent runner for packages/storage/migrations.
  *
  * Reads DATABASE_URL (fallback SUBSTRATE_DATABASE_URL) from the env, applies
- * the 005 migration against the live DB, and prints the resulting
+ * the requested migration against the live DB, and prints the resulting
  * schema_migrations rows plus a table-existence check. Safe to re-run.
  *
- * Operator apply against substrate Neon:
+ * Operator apply against substrate Neon (defaults to 005; pass a filename
+ * from packages/storage/migrations to apply a later one):
  *   DATABASE_URL='postgres://...neon.tech/...?sslmode=require' \
- *     node packages/storage/scripts/apply-migration.mjs
+ *     node packages/storage/scripts/apply-migration.mjs 008_node_list_indexes.sql
  */
 
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import postgres from "postgres";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_FILE = "005_atoms_storage_port.sql";
+const MIGRATION_FILE = basename(process.argv[2] ?? "005_atoms_storage_port.sql");
+if (!/^\d{3}_[A-Za-z0-9_-]+\.sql$/.test(MIGRATION_FILE)) {
+  console.error(
+    `FATAL: migration filename ${MIGRATION_FILE} does not match NNN_name.sql`,
+  );
+  process.exit(1);
+}
 const migrationPath = join(__dirname, "..", "migrations", MIGRATION_FILE);
 
 const url = process.env.DATABASE_URL ?? process.env.SUBSTRATE_DATABASE_URL;
