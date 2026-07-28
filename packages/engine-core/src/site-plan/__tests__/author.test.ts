@@ -278,10 +278,14 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
     const pdfRef = result.atom.artifacts["pdf-site-plan"]!.ref;
     const pdfBytes = artifactStore.data.get(pdfRef)!;
+    // SHEET STANDARD §11: machine identifiers (provisional-front-edge, the
+    // atom's reason string) stay OFF the sheet — the model still carries them
+    // (buildableAreaHonestNote below), and the sheet shows the provisional
+    // qualifier + the fine-print planning-estimate sentence.
+    expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
     const decoded = decodeAllContentStreams(pdfBytes);
-    expect(decoded).toContain("PROVISIONAL");
-    expect(decoded).toContain("provisional-front-edge");
-    expect(decoded).toContain("front-edge-anchor atom unresolved");
+    expect(decoded).toContain("provisional planning estimate");
+    expect(decoded).toContain("planning estimate, not a permit-ready boundary");
   });
 
   it("honors an explicit envelopeOutcomeOverride test seam without requiring a stored buildable-envelope atom", async () => {

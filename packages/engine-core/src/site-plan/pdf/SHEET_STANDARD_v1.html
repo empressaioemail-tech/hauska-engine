@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_ds/industry-885b9fd4-4276-48de-9248-e0dda5eb6630/styles.css">
+<script src="_ds/industry-885b9fd4-4276-48de-9248-e0dda5eb6630/_ds_bundle.js"></script>
+<script src="./doc-page.js"></script>
+<style>
+  doc-page:not(:defined) { visibility: hidden; }
+  a { color: var(--color-accent-700); }
+  a:hover { color: var(--color-accent-900); }
+</style>
+</helmet>
+
+<doc-page margin="0.7in">
+  <div style="font-family:var(--font-body); color:var(--color-text); font-size:10.5pt; line-height:1.55;">
+
+    <div style="display:flex; flex-direction:column; gap:6px; padding-bottom:14px; border-bottom:2px solid var(--color-text);">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; font-family:var(--font-heading); font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--color-accent);"><span>Renderer standard · binding · v1.0</span><span style="color:var(--color-neutral-600);">Hauska engine · 2026-07-28</span></div>
+      <h1 style="margin:0; font-family:var(--font-heading); font-size:32pt; font-weight:600; letter-spacing:0.01em; line-height:1.05;">SITE PLAN SHEET STANDARD</h1>
+      <p style="margin:0; font-size:11pt; color:var(--color-neutral-700); max-width:46em;">Twenty rules, a token map and an acceptance checklist for the generated three-page site-plan PDF. Written against the output of 2026-07-27 (parcels 48021:34785 and qa2:dense-small); every rule below exists because that output broke it.</p>
+    </div>
+
+    <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:22px 0 6px;">1 · SCOPE AND SHEET ORDER</h2>
+    <p style="margin:0 0 8px;">Every parcel produces exactly three Letter-portrait pages, in this order and never a different count:</p>
+    <table class="table" style="font-size:9.5pt; width:100%;">
+      <thead><tr><th style="width:64px;">Sheet</th><th style="width:150px;">Content</th><th>Carries</th></tr></thead>
+      <tbody>
+        <tr><td>1 of 3</td><td>Drawing</td><td>Parcel ring, buildable envelope, setbacks, contours, street, dimension tags, legend, scale bar, north arrow, lot-area callout</td></tr>
+        <tr><td>2 of 3</td><td>Summary</td><td>Two-column key/value data under three group headings, the segment table when tags were moved off sheet 1, provenance table</td></tr>
+        <tr><td>3 of 3</td><td>Aerial</td><td>Duotone orthophoto backdrop, vector overlay of the same ring geometry, imagery provenance strip</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:8px 0 0; color:var(--color-neutral-700);">A sheet is never omitted. If its data is unavailable the sheet still prints, carrying the honest-absence treatment described in §5, §6 and §17.</p>
+
+    <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px;">2 · THE TWENTY RULES</h2>
+
+    <div style="display:flex; flex-direction:column; gap:11px;">
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§1 · SHEET</strong><br>Letter portrait, 8.5×11 in, ground neutral-100. Page margins 48 / 46 / 36 px at 96 dpi; inner gaps from the spacing scale. No bleed. Content never exceeds the page box — see §13.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§2 · HEADER, EVERY PAGE</strong><br>Accent kicker (11px, 0.22em, uppercase, naming the sheet and its number) → street address in Barlow Condensed 600 uppercase 30px → one 13px line of city, parcel and county. Right: three stat columns in Barlow Condensed 600 22px. A 1px full-ink rule closes the header. No frame, no title strip, no boxed block. No empty-field placeholders — never print “Date: not on file”; omit the field or print the generated stamp.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§3 · LAYER ORDER AND WEIGHT</strong><br>contour → contour labels → envelope fill → setback dash → property line → dimension tags → sheet furniture. The property line is the heaviest stroke on the sheet; nothing may match or exceed it. One accent hue only. Colour never carries meaning alone — every layer also differs in weight or dash.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§4 · LABEL COLLISION CASCADE</strong><br>Bearing/distance tags sit outside the ring, one per segment, rotated to the segment, centred on its midpoint, distance first. On collision, in order: <strong>(a)</strong> shorten to distance only; <strong>(b)</strong> move to a margin leader (§16); <strong>(c)</strong> drop from the drawing and tabulate on sheet 2. Never stack, never duplicate. Setback labels print once per unique value per side; identical adjacent values collapse to “SIDE 5' (typ.)”. Suppress any label on an edge shorter than 3× the label. A setback label must clear the dash it labels — if the gap between ring and envelope is narrower than the label, place it inside the envelope. Contour labels: one per contour, in the left margin, never inside the envelope.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§5 · EMPTY LAYERS MUST LOOK INTENTIONAL</strong><br>Every layer appears in the legend, in fixed order, populated or not. An empty layer greys to neutral-500 with its reason inline on the same row (“Street — layer empty · no road node attaches”). Never delete the row, never leave a blank swatch, never draw substitute geometry, never dump the reason as a floating paragraph on the drawing.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§6 · UNAVAILABLE VALUES</strong><br>A solid ink UNAVAILABLE chip plus one plain sentence of reason, sentence case, ≤12 words. Never “N/A”, never a bare lowercase “unavailable”, never a hyphen where an em dash belongs, never a fabricated value. Fixture or provisional values keep their real value and take a FIXTURE LABEL chip — identical wording every time, no inline parenthetical, no second spelling of the same state.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§7 · SUMMARY PAGE</strong><br>Two-column key/value on a 200px label column, hairline rule per row, grouped under PARCEL, ZONING &amp; BUILDABILITY, SITE CONDITIONS in that order, max 5 rows each; group headings in accent, 10.5px, 0.2em. Values carry their unit plus at most one grey qualifier inline; qualifiers never become their own row. Numbers tabular. Provenance follows as a three-column table — layer, source, confidence — one row per layer, never four stacked lines.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§8 · FINE PRINT</strong><br>Bottom of each page, 8.2px, neutral-600, one paragraph. Always: derived from public GIS records / not a boundary survey / not for legal record / tags GIS-approximate. Honest-absence, synthetic-fixture, moved-tag and imagery-age disclosures append to that same paragraph. No callout boxes on the drawing.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§9 · SHEET FURNITURE</strong><br>Exactly one north arrow, top-right inside the drawing area: filled triangle over a condensed “N”, no compass rose, no cardinal text. Exactly one scale bar, bottom-right: three segments, three labels, unit on the last one (0 · 33 · 66 ft) — never the unit on its own line. Legend bottom-left on the same baseline, two columns. Lot-area callout centred in the envelope, condensed uppercase over a grey qualifier; suppress it if the envelope is narrower than 40 label-widths.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§10 · NEVER</strong><br>No fabricated geometry. No rounded corners, no drop shadows in print, no gradients, no emoji, no second accent hue, no italic body text, no hard-coded hex, font name or px where a token exists.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§11 · PROSE HYGIENE</strong><br>Nothing on the sheet may contain a machine identifier, a colon-delimited code, a nested parenthesis, or a clause that repeats a source name. Every reason is one sentence, sentence case, ends in a period, ≤12 words. Every value carries at most one grey qualifier. Machine codes (<span style="font-variant-numeric:tabular-nums;">setback-consumes-lot</span>, <span style="font-variant-numeric:tabular-nums;">front-edge-hint</span>) appear only in the provenance source column.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§12 · NUMBER AND UNIT FORM</strong><br>Thousands separator on every quantity ≥ 1,000. Feet take a prime (15'), inches a double prime, metres a space and “m”. Areas read “sq ft”, never “sqft” or “ft²”. Scale reads 1" = 29', never 1" = 29 ft. Ranges take a spaced en dash, negations an em dash. Acreage to two decimals in parentheses after square feet. All figures tabular-lined.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§13 · NO TRUNCATION, NO OVERFLOW</strong><br>If a string does not fit its box, shorten the content upstream — never clip the glyphs. If a page's content exceeds the page box, restructure it (split a table into columns, fold a column into a caption, tighten block gaps) — never let it spill or scroll. Confidence is a fixed short enum: asserted · rule · sample · centerline accurate · honest absence · honest unavailable, plus at most one qualifier such as “· GIS-approx”. Long narrative belongs in the fine print, which wraps.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§14 · DRAW-ONCE GUARANTEE</strong><br>Each layer renders in exactly one pass. One tag per segment, one label per unique setback value per side, one north arrow, one scale bar, one legend. If a pass may run twice, key every mark by segment or layer id and drop duplicates before drawing — a doubled tag is worse than a missing one.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§15 · DEGENERATE GEOMETRY</strong><br>When the inward offset collapses, draw no envelope and no setback lines. State it three ways and nowhere else: the BUILDABLE header stat reads NONE in neutral-500; a centred callout inside the ring reads “NO BUILDABLE ENVELOPE” over one sentence of reason; the envelope and setback legend rows grey out with their reason inline. Sheet 2 carries an UNAVAILABLE chip on buildable area. Never draw a zero-width or inverted polygon.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§16 · MARGIN LEADERS AND THE SEGMENT TABLE</strong><br>Cascade tier (b) draws a 0.13-unit neutral-500 leader from the segment midpoint to the nearest sheet margin, ending in “S<span style="font-variant-numeric:tabular-nums;">n</span> · distance”. Leaders never cross each other or the ring. Any segment whose tag was shortened, moved or dropped appears in the sheet-2 segment table with its full bearing, its distance and what happened to it on sheet 1; the fine print says the tags were moved. A dropped tag with no table row is a defect.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§17 · IMAGERY IS A BACKDROP</strong><br>The aerial sheet illustrates context; it never carries a measurement. No dimension, area, bearing or setback figure may be derived from the raster. The fine print says so in one sentence and names sheet 1 as governing where the two disagree. If imagery is missing, print the sheet with the overlay on the paper ground and an UNAVAILABLE chip in the imagery strip — do not drop the page.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§18 · ONE GEOMETRY, TWO SHEETS</strong><br>The ring and envelope on the aerial sheet are drawn from the same coordinates and the same viewBox as sheet 1 — never re-projected, re-simplified or re-fit to the image. State the registration tolerance in the header stat and again in the fine print; if it cannot be computed, the stat takes an UNAVAILABLE chip rather than a guessed number. Distances over imagery are distance-only; full bearings stay on sheet 1.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§19 · IMAGERY PROVENANCE STRIP</strong><br>Four cells above the fine print, always all four, in this order: source · capture date · resolution · registration. Capture date carries its age in months as a grey qualifier; imagery older than 24 months adds one sentence to the fine print saying conditions may have changed. Each missing cell takes an UNAVAILABLE chip with its reason — never an empty cell, never an inferred date.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§20 · DUOTONE AND LEGIBILITY OVER RASTER</strong><br>Imagery passes through the duotone treatment so it desaturates into the accent — never full colour, never a second hue. Nothing is burned into the raster: every mark is vector, above the image. Type and the ring take a paper-coloured outline behind them (paint-order stroke, 0.9–1.1 units) so they hold over any tone. The frame keeps its registration marks. Contours are omitted here and the legend says where to find them.</div>
+    </div>
+
+    <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px; break-before:page;">3 · TOKEN MAP</h2>
+    <p style="margin:0 0 8px; color:var(--color-neutral-700);">Every value resolves from the Industry token sheet. Never hard-code a hex, a font name or a px a token carries.</p>
+    <table class="table" style="font-size:9.5pt; width:100%;">
+      <thead><tr><th style="width:200px;">Role</th><th>Token</th><th style="width:130px;">Value</th></tr></thead>
+      <tbody>
+        <tr><td>Sheet ground</td><td>--color-neutral-100</td><td>#f5f5f8</td></tr>
+        <tr><td>Ink — property line, type</td><td>--color-text</td><td>#1d1f20</td></tr>
+        <tr><td>Setback dash</td><td>--color-accent-500</td><td>#749dc4</td></tr>
+        <tr><td>Envelope fill</td><td>--color-accent-100</td><td>#eef6ff</td></tr>
+        <tr><td>Accent type, kickers, group headings</td><td>--color-accent-700</td><td>#416180</td></tr>
+        <tr><td>Contour</td><td>--color-neutral-300</td><td>#d4d4d7</td></tr>
+        <tr><td>Contour label, suppressed layer</td><td>--color-neutral-500</td><td>#98989b</td></tr>
+        <tr><td>Dimension tag</td><td>--color-neutral-700</td><td>#5d5d60</td></tr>
+        <tr><td>Muted label, fine print</td><td>--color-neutral-600</td><td>#7a7a7d</td></tr>
+        <tr><td>Row rule / group rule</td><td>--color-neutral-200 / 300</td><td>#e7e7ea / #d4d4d7</td></tr>
+        <tr><td>Display type</td><td>--font-heading</td><td>Barlow Condensed 600</td></tr>
+        <tr><td>Body and data type</td><td>--font-body</td><td>Barlow 400, tabular figures</td></tr>
+        <tr><td>Padding and gaps</td><td>--space-2 … --space-8</td><td>6.8 … 27.2 px</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="font-family:var(--font-heading); font-size:13pt; font-weight:600; letter-spacing:0.02em; margin:18px 0 6px;">Drawing geometry — sheets 1 and 3</h3>
+    <table class="table" style="font-size:9.5pt; width:100%;">
+      <thead><tr><th style="width:200px;">Quantity</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>viewBox</td><td style="font-variant-numeric:tabular-nums;">-30 -14 162 196 · drawing units = feet</td></tr>
+        <tr><td>Property-line width</td><td style="font-variant-numeric:tabular-nums;">1.05 units — heaviest stroke on the sheet</td></tr>
+        <tr><td>Setback width</td><td style="font-variant-numeric:tabular-nums;">0.45, dash 2.5 / 2</td></tr>
+        <tr><td>Contour width</td><td style="font-variant-numeric:tabular-nums;">0.40, solid</td></tr>
+        <tr><td>Margin-leader width</td><td style="font-variant-numeric:tabular-nums;">0.13, neutral-500</td></tr>
+        <tr><td>Dimension tag size</td><td style="font-variant-numeric:tabular-nums;">3.3 units — renders ≥ 11 px / ≈ 9 pt on paper</td></tr>
+        <tr><td>Setback and contour label size</td><td style="font-variant-numeric:tabular-nums;">2.95 units — renders ≥ 10 px</td></tr>
+        <tr><td>Lot-area callout</td><td style="font-variant-numeric:tabular-nums;">5.6 units over a 3.1 qualifier</td></tr>
+        <tr><td>Fine print</td><td style="font-variant-numeric:tabular-nums;">8.2 px</td></tr>
+        <tr><td>Raster outline behind overlay type</td><td style="font-variant-numeric:tabular-nums;">paint-order stroke, 0.9–1.1 units, paper colour</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:8px 0 0; color:var(--color-neutral-700);">Stroke widths and drawing type sizes are in drawing units at viewBox scale — multiply by px-per-foot at render. The floor that matters is the rendered one: no drawing type below 10 px on an 816×1056 sheet.</p>
+
+    <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px; break-before:page;">4 · DEFECT AUDIT — OUTPUT OF 2026-07-27</h2>
+    <p style="margin:0 0 8px; color:var(--color-neutral-700);">Read from the two generated PDFs. Each row is a fix, not an opinion.</p>
+    <table class="table" style="font-size:9pt; width:100%;">
+      <thead><tr><th style="width:90px;">Where</th><th style="width:200px;">Emitted</th><th>Rule</th></tr></thead>
+      <tbody>
+        <tr><td>Dense · drawing</td><td style="font-variant-numeric:tabular-nums;">N 90°00' E 12.7'&nbsp; N 90°00' E 12.7'</td><td>§14 — every bearing tag drawn twice.</td></tr>
+        <tr><td>Dense · drawing</td><td style="font-variant-numeric:tabular-nums;">SIDE 5' × 7, FRONT 10' overlapping</td><td>§4, §15 — no collapse, no suppression; with no envelope no setback label may print at all.</td></tr>
+        <tr><td>Dense · drawing</td><td>Two north arrows</td><td>§9, §14 — exactly one.</td></tr>
+        <tr><td>Dense · drawing</td><td>“setback-consumes-lot: inward offset collapsed or inverted (no honest buildable margin to draw) (setbacks exceed the lot”</td><td>§6, §11, §13 — machine identifier, nested parentheses, truncated mid-sentence, on the sheet.</td></tr>
+        <tr><td>Both · legend</td><td>Bare words PROPERTY / ENVELOPE / SETBACK / CONTOUR / STREET, reason in a separate paragraph</td><td>§5 — swatch, sentence-case label, reason inline on the row.</td></tr>
+        <tr><td>Both · header</td><td>“Date: not on file”</td><td>§2 — no empty-field placeholders.</td></tr>
+        <tr><td>Both · header</td><td>Scale: 1" = 29 ft</td><td>§12 — prime mark: 1" = 29'.</td></tr>
+        <tr><td>Both · drawing</td><td style="font-variant-numeric:tabular-nums;">16111 sq ft</td><td>§12 — thousands separator.</td></tr>
+        <tr><td>Both · scale bar</td><td style="font-variant-numeric:tabular-nums;">0 33 66 / FEET on its own line</td><td>§9 — unit on the last label.</td></tr>
+        <tr><td>Both · summary</td><td>Flat “Key: value” lines</td><td>§7 — two-column grid, hairline rules, three group headings.</td></tr>
+        <tr><td>Both · summary</td><td style="font-variant-numeric:tabular-nums;">unavailable - reason</td><td>§6 — chip plus one sentence; em dash, not hyphen.</td></tr>
+        <tr><td>Both · summary</td><td>R-1 (fixture label — confirm live zoning-fact…) / R-6 (fixture)</td><td>§6 — one FIXTURE LABEL chip, identical wording.</td></tr>
+        <tr><td>Both · summary</td><td>“(NAVD88 orthometric metres (USGS 3DEP; not ellipsoidal height))”</td><td>§11 — one grey qualifier, no nesting, no repeated source.</td></tr>
+        <tr><td>Both · provenance</td><td>“…not a boundary surv” · “no buildable”</td><td>§13 — clipped mid-word; confidence is an enum, not a sentence.</td></tr>
+        <tr><td>Both · provenance</td><td>Four stacked lines per layer</td><td>§7 — three columns, one row per layer.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px;">5 · ACCEPTANCE CHECKLIST</h2>
+    <p style="margin:0 0 8px; color:var(--color-neutral-700);">Run on both fixtures before grading. Any single failure fails the sheet.</p>
+    <div style="display:grid; grid-template-columns:22px 1fr; gap:7px 10px; font-size:10pt;">
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Three pages, in order, none omitted.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>No mark drawn twice: count tags, setback labels, north arrows, scale bars, legends.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>No label overlaps another label, the ring, or the envelope dash it describes.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Every drawing string renders at 10 px or more on the 816×1056 sheet.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>No string clipped mid-word anywhere, and no page content past the page box.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>No machine identifier, colon code or nested parenthesis outside the provenance source column.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Legend lists every layer, greyed with an inline reason where empty; no floating note paragraphs.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Every unavailable value has a chip and one sentence ≤12 words; no “N/A”, no empty cell.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Thousands separators, prime marks and “sq ft” correct on every figure.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Moved or dropped tags all appear in the sheet-2 segment table, and the fine print says so.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Degenerate parcels state the collapse exactly three times and draw no envelope.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Aerial overlay uses sheet 1's coordinates; registration tolerance printed in the header and fine print.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Imagery strip carries all four cells; imagery over 24 months old disclosed in the fine print.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>Fine print on all three pages carries the four standing disclaimers.</span>
+      <span style="border:1px solid var(--color-text); width:13px; height:13px; margin-top:3px;"></span><span>No colour outside the steel accent and the neutral ramp; no hard-coded hex or font name.</span>
+    </div>
+
+    <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px;">6 · REFERENCE SHEETS</h2>
+    <p style="margin:0;">Pixel references accompany this standard: <strong>48021:34785</strong> as the three-page gold set (drawing, summary, aerial), and <strong>qa2:dense-small</strong> as the degenerate case — eight segments, no buildable envelope, cascade tiers (a) and (b) both exercised, overflow tabulated on sheet 2. Where the standard and a reference sheet disagree, the standard governs and the reference is the defect.</p>
+    <p style="margin:14px 0 0; padding-top:8px; border-top:1px solid var(--color-neutral-300); font-size:8.5pt; color:var(--color-neutral-600);">Site plan sheet standard v1.0 · Hauska engine, site-plan renderer · reference sheets 48021:34785 (three-page gold) and qa2:dense-small (degenerate) · 2026-07-28</p>
+
+  </div>
+</doc-page>
+
+</x-dc>
+</body>
+</html>

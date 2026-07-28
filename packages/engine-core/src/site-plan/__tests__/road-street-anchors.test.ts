@@ -97,10 +97,13 @@ describe("Track B1 STREET from road-node", () => {
     expect(model.streets.anchors[0]!.rightEdgeLocal!.length).toBeGreaterThanOrEqual(2);
     expect(model.streets.anchors[0]!.rowProvenanceKind).toBe("approximate-assumed-per-class");
 
+    // SHEET STANDARD §11/§13: the machine provenance kind stays on the MODEL
+    // (rowProvenanceKind asserted above); the sheet confidence cell is the
+    // fixed enum plus one qualifier.
     const provenance = buildProvenancePanelEntries(model);
-    const streetEntry = provenance.find((e) => e.layer === "STREET");
+    const streetEntry = provenance.find((e) => e.layer === "Street");
     expect(streetEntry).toBeDefined();
-    expect(streetEntry!.confidence).toMatch(/approximate-assumed-per-class/);
+    expect(streetEntry!.confidence).toBe("centerline accurate · ROW assumed");
   });
 
   it("keeps honest absence when no road-node attaches (no fabricated STREET)", () => {
@@ -117,7 +120,7 @@ describe("Track B1 STREET from road-node", () => {
     expect(model.streets.reason).toMatch(/no road-node attaches/i);
 
     const provenance = buildProvenancePanelEntries(model);
-    const streetEntry = provenance.find((e) => e.layer === "STREET");
+    const streetEntry = provenance.find((e) => e.layer === "Street");
     expect(streetEntry!.confidence).toMatch(/honest absence/i);
   });
 });

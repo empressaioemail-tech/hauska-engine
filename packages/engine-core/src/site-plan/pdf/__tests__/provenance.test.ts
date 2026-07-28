@@ -54,9 +54,12 @@ describe("buildProvenancePanelEntries", () => {
       floodZone: { honestUnavailable: true, reason: "test" },
     });
     const entries = buildProvenancePanelEntries(model);
-    const setbackEntry = entries.find((e) => e.layer === "SETBACK");
+    const setbackEntry = entries.find((e) => e.layer === "Setback");
     expect(setbackEntry).toBeTruthy();
+    // §11: machine identifiers live ONLY in the source column.
     expect(setbackEntry!.source).toContain("san_antonio_tx/udc/35-310.01/35-310.01");
+    // §13: confidence is the fixed short enum.
+    expect(setbackEntry!.confidence).toBe("rule");
   });
 
   it("honestly discloses zoning and flood-zone absence/unavailability rather than fabricating them", () => {
@@ -69,8 +72,8 @@ describe("buildProvenancePanelEntries", () => {
       setback,
     });
     const entries = buildProvenancePanelEntries(model);
-    const zoningEntry = entries.find((e) => e.layer.startsWith("ZONING"));
-    const floodEntry = entries.find((e) => e.layer.startsWith("FLOOD"));
+    const zoningEntry = entries.find((e) => e.layer === "Zoning");
+    const floodEntry = entries.find((e) => e.layer === "Flood zone");
     expect(zoningEntry!.confidence).toMatch(/honest absence/i);
     expect(floodEntry!.confidence).toMatch(/honest unavailable/i);
   });
@@ -91,7 +94,7 @@ describe("buildProvenancePanelEntries", () => {
       },
     });
     const entries = buildProvenancePanelEntries(model);
-    const floodEntry = entries.find((e) => e.layer.startsWith("FLOOD"));
+    const floodEntry = entries.find((e) => e.layer === "Flood zone");
     expect(floodEntry!.source).toBe("FEMA National Flood Hazard Layer (NFHL)");
     expect(floodEntry!.confidence).toMatch(/zone X/);
   });
@@ -107,7 +110,7 @@ describe("buildProvenancePanelEntries", () => {
       zoning: { district: "R-6" },
     });
     const entries = buildProvenancePanelEntries(model);
-    const zoningEntry = entries.find((e) => e.layer.startsWith("ZONING"));
+    const zoningEntry = entries.find((e) => e.layer === "Zoning");
     expect(zoningEntry!.confidence).toBe("asserted");
   });
 });

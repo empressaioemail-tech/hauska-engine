@@ -69,11 +69,11 @@ export function pt(px: number): number {
 }
 
 /**
- * Type sizes from the template (px @96dpi) → PDF points. Named for the role
- * each occupies in the gold reference (card 2a / spec 2c).
+ * Type sizes from the SHEET STANDARD v1.0 token map (px @96dpi) → PDF points.
+ * Named for the role each occupies in the standard (§2, §7, §8, §9).
  */
 export const TYPE = {
-  // Header, page 1 + 2
+  // Header, every page (§2)
   eyebrow: pt(11), // accent kicker, 0.22em tracked, uppercase
   address: pt(30), // Barlow Condensed 600 uppercase
   subline: pt(13), // city · parcel · county
@@ -81,20 +81,37 @@ export const TYPE = {
   statValue: pt(22), // Barlow Condensed 600
   sheetMeta: pt(11), // sheet-id / parcel, right of p2 header
 
-  // Summary page 2
+  // Summary page 2 (§7)
   groupHeading: pt(10.5), // PARCEL / ZONING & BUILDABILITY ... 0.2em accent
   rowLabel: pt(11.5),
   rowValue: pt(13),
+  rowQualifier: pt(11),
   tableHead: pt(11),
   tableCell: pt(11),
 
-  // Sheet furniture / fine print
+  // Sheet furniture / fine print (§8, §9)
   scaleBarLabel: pt(9.5),
   scaleRatioLine: pt(9.5),
   legend: pt(11),
   finePrint: pt(8.2),
   chip: pt(9.5),
+
+  // Drawing type (SHEET STANDARD geometry table): the floor that matters is
+  // the RENDERED one — no drawing type below 10 px on an 816×1056 sheet.
+  // 11 px ≈ 8.25 pt (dimension tags), 10 px ≈ 7.5 pt (setback/contour/street).
+  drawingTag: pt(11),
+  drawingSetback: pt(10),
+  drawingContour: pt(10),
+  drawingStreet: pt(10),
+  drawingLeader: pt(11),
+
+  // Imagery provenance strip (§19)
+  stripLabel: pt(10),
+  stripValue: pt(11.5),
 } as const;
+
+/** §13 floor: no drawing string below 10 px (≈ 7.5 pt) on the sheet. */
+export const MIN_DRAWING_TYPE_PT = pt(10);
 
 /**
  * Letter-spacing (tracking) in em, from the template. pdf-lib 1.17 drawText
@@ -124,9 +141,13 @@ export const STROKE = {
   property: 1.6, // heaviest on sheet
   setbackDash: 0.9,
   contour: 0.5,
+  marginLeader: 0.5, // §16 · 0.13-unit neutral-500 margin leader (page pts)
   hairlineRule: 1, // full-ink header/footer rule
   rowRule: 0.6,
 } as const;
 
 /** Setback dash pattern (accent-500, dash 2.5 / 2 in template units). */
 export const SETBACK_DASH: [number, number] = [3.5, 2.8];
+
+/** §20 · paper-coloured outline behind type/ring over raster (page pts). */
+export const RASTER_OUTLINE_PT = 1.0;
