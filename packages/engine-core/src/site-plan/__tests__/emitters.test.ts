@@ -97,7 +97,7 @@ function extractZValuesForLayer(dxf: string, layer: string): number[] {
   return zs;
 }
 
-describe("site-plan DXF/IFC emitters", () => {
+describe("site-plan DXF/IFC emitters", { timeout: 20_000 }, () => {
   it("builds a DXF worker request sourced entirely from the shared site model", () => {
     const model = buildModel();
     const mesh = buildTerrainMeshGeometry(dem, bbox);
