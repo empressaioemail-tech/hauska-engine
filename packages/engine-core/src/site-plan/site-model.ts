@@ -89,7 +89,14 @@ export type FloodZoneSummaryInput =
       sourceCitation: string;
       asOfIso: string;
     }
-  | { honestUnavailable: true; reason: string };
+  | {
+      honestUnavailable: true;
+      /** SHEET copy (§11): one plain sentence, ≤12 words, no machine codes. */
+      reason: string;
+      /** Machine detail (upstream error string) — provenance SOURCE column
+       * only, never drawn in the summary row (§11). */
+      detail?: string;
+    };
 
 /** Minimal shape of the buildable-envelope atom's own honest outcome —
  * declared locally rather than imported from `@hauska-engine/atoms` so
@@ -230,7 +237,7 @@ export interface SitePlanSummaryModel {
   verticalDatumSummary: string;
   floodZone:
     | { zone: string | null; inSpecialFloodHazardArea: boolean; sourceCitation: string; asOfIso: string }
-    | { honestUnavailable: true; reason: string };
+    | { honestUnavailable: true; reason: string; detail?: string };
 }
 
 export interface SitePlanModel {

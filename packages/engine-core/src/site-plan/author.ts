@@ -57,9 +57,13 @@ async function defaultFetchFloodZone(input: { latitude: number; longitude: numbe
       asOfIso: result.snapshotDate,
     };
   } catch (error) {
+    // §11 split: the SHEET carries one plain sentence; the machine detail
+    // (upstream error text) rides `detail` into the provenance SOURCE column
+    // only — never into the summary row.
     return {
       honestUnavailable: true,
-      reason: `FEMA NFHL lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+      reason: "FEMA flood lookup did not return for this parcel.",
+      detail: `FEMA NFHL lookup failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

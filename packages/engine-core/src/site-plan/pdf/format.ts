@@ -124,6 +124,11 @@ export function isCleanReasonSentence(raw: string): boolean {
   if (s.length === 0) return false;
   if (!/[.]$/.test(s)) return false;
   if (s.split(/\s+/).length > 12) return false;
+  // A colon anywhere marks a machine-composed string ("lookup failed: ..."),
+  // not a plain sentence — the 2026-07-28 live sheet leaked exactly this
+  // shape past the tighter code-pattern regex below. §11: no colon-delimited
+  // strings on the sheet, ever.
+  if (s.includes(":")) return false;
   if (MACHINE_CODE_RE.test(s)) return false;
   if (NESTED_PAREN_RE.test(s)) return false;
   return true;
