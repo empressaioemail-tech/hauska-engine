@@ -1,5 +1,8 @@
 export {
   runHydrologyNative,
+  accumulationThresholdForResolution,
+  ACCUMULATION_THRESHOLD_BASE_CELLS,
+  ACCUMULATION_THRESHOLD_REFERENCE_RESOLUTION_METERS,
   type BboxWgs84,
   type GeoJsonFeatureCollection,
   type HydrologyNativeInput,

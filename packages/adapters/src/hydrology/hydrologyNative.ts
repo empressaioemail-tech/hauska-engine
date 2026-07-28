@@ -64,6 +64,48 @@ export interface HydrologyNativeError {
 
 export type HydrologyNativeResult = HydrologyNativeSuccess | HydrologyNativeError;
 
+/**
+ * Long-standing default D8 accumulation threshold, in CELLS of accumulated
+ * flow: a channel is emitted for cells whose accumulation count is at or above
+ * this value (see `flowLinesFromAccumulation`). Calibrated against ~10m DEMs.
+ */
+export const ACCUMULATION_THRESHOLD_BASE_CELLS = 50;
+
+/**
+ * The DEM resolution (meters per pixel) the 50-cell base threshold was
+ * calibrated against (the historical 10m 3DEP default).
+ */
+export const ACCUMULATION_THRESHOLD_REFERENCE_RESOLUTION_METERS = 10;
+
+/**
+ * Scale the D8 accumulation threshold with DEM resolution so channel density is
+ * resolution-invariant (fix/hydrology-resolution-floor, 2026-07-28).
+ *
+ * The threshold is in CELLS of accumulated flow. A cell's upstream drainage
+ * area is `accumulation * resolution^2` m², so holding the PHYSICAL drainage
+ * -area cutoff constant at the 10m-reference 50-cell value means:
+ *
+ *   threshold(res) = round(50 * (10 / res)^2), clamped at >= 50
+ *
+ * Without this, a finer DEM (e.g. 1m) makes the same 50-cell cutoff represent a
+ * ~100x smaller physical drainage area, exploding flow-seed count (~100x more
+ * cells over threshold) and channel-trace compute. The clamp keeps coarse DEMs
+ * (>= 10m) at the long-standing 50-cell default.
+ */
+export function accumulationThresholdForResolution(
+  resolutionMeters: number,
+): number {
+  if (!Number.isFinite(resolutionMeters) || resolutionMeters <= 0) {
+    return ACCUMULATION_THRESHOLD_BASE_CELLS;
+  }
+  const scaled = Math.round(
+    ACCUMULATION_THRESHOLD_BASE_CELLS *
+      (ACCUMULATION_THRESHOLD_REFERENCE_RESOLUTION_METERS / resolutionMeters) **
+        2,
+  );
+  return Math.max(ACCUMULATION_THRESHOLD_BASE_CELLS, scaled);
+}
+
 const D8_OFFSETS: ReadonlyArray<[number, number]> = [
   [0, 1],
   [1, 1],
@@ -333,7 +375,8 @@ export function runHydrologyNative(
   input: HydrologyNativeInput,
 ): HydrologyNativeResult {
   const { width, height, elevation, catchmentBbox } = input;
-  const threshold = input.accumulationThreshold ?? 50;
+  const threshold =
+    input.accumulationThreshold ?? ACCUMULATION_THRESHOLD_BASE_CELLS;
 
   let minElev = Infinity;
   let maxElev = -Infinity;
