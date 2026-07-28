@@ -227,6 +227,14 @@ export interface SitePlanSummaryModel {
 
 export interface SitePlanModel {
   parcelNodeId: string;
+  /**
+   * The WGS84 bbox the local-ENU frame is anchored to (origin = SW corner,
+   * `projectWgs84ToLocalEnu`). Carried on the model so page-space consumers
+   * that need a georeference (the PDF aerial-context page's Web-Mercator
+   * imagery alignment) can invert `ringLocal` exactly instead of re-deriving
+   * or duplicating the ring.
+   */
+  bboxWgs84: BboxWgs84;
   ringLocal: LocalPoint[];
   propertySegments: Array<RingSegment & { lengthFeet: number }>;
   setback: SitePlanSetbackModel;
@@ -520,6 +528,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
 
   return {
     parcelNodeId: inputs.parcelNodeId,
+    bboxWgs84: inputs.bbox,
     ringLocal,
     propertySegments,
     setback,

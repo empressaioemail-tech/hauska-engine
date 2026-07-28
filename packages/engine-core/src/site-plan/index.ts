@@ -112,4 +112,18 @@ export {
   type ProvenancePanelEntry,
 } from "./pdf/provenance.js";
 
-export { emitPdfSitePlan, type PdfSitePlanResult } from "./pdf/render.js";
+export {
+  emitPdfSitePlan,
+  TOTAL_SHEETS,
+  type EmitPdfSitePlanOptions,
+  type PdfSitePlanResult,
+} from "./pdf/render.js";
+
+export {
+  AERIAL_IMAGERY_ATTRIBUTION,
+  AERIAL_NOT_A_SURVEY_LINE,
+  AERIAL_UNAVAILABLE_NOTE,
+  fetchAerialImagery,
+  type AerialImageFetcher,
+  type AerialImageryResult,
+} from "./pdf/aerial.js";

@@ -20,6 +20,7 @@ import { DEFAULT_SKIRT_DEPTH_FEET, type BuildTerrainSolidMassOptions } from "../
 import type { ParcelGeometryResolver, TerrainArtifactStore } from "../parcel-terrain/author.js";
 import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
 import { emitDxfSitePlan, emitIfcSitePlan } from "./emitters.js";
+import type { AerialImageFetcher } from "./pdf/aerial.js";
 import { emitPdfSitePlan } from "./pdf/render.js";
 import { resolveAttachingRoadNodes } from "./resolve-attaching-roads.js";
 import {
@@ -176,6 +177,11 @@ export interface AuthorParcelSitePlanExportOptions {
    * path looks up the parcel's buildable-envelope atom from storage when
    * omitted (absence is not an error — see `resolveEnvelopeOutcome`). */
   envelopeOutcomeOverride?: EnvelopeOutcomeInput;
+  /** Test seam for the PDF sheet-3 aerial imagery fetch; production path
+   * uses the bounded Esri World Imagery fetcher. Tests MUST stub this so
+   * they never hit the network — any failure degrades to the honest
+   * "imagery unavailable" page, never a failed export. */
+  fetchAerialImage?: AerialImageFetcher;
 }
 
 export interface AuthorParcelSitePlanExportResult {
@@ -432,7 +438,9 @@ export async function authorParcelSitePlanExport(
     contentType: "application/step",
   });
 
-  const pdf = await emitPdfSitePlan(model);
+  const pdf = await emitPdfSitePlan(model, {
+    aerial: { fetchImage: options.fetchAerialImage },
+  });
   const pdfRef = await options.artifactStore.put({
     parcelNodeId: options.parcelNodeId,
     format: "pdf-site-plan",
@@ -479,6 +487,10 @@ export async function authorParcelSitePlanExport(
     streetHonestAbsence: model.streets.honestAbsence,
     zoningHonestAbsence,
     floodZoneHonestUnavailable,
+    aerialImageryEmbedded: pdf.aerial.imageryEmbedded,
+    ...(pdf.aerial.unavailableReason
+      ? { aerialImageryUnavailableReason: pdf.aerial.unavailableReason }
+      : {}),
   };
 
   await options.storage.writePropertyAtom(atom);
