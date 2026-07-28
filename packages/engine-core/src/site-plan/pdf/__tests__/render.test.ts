@@ -1,9 +1,31 @@
 import { describe, expect, it } from "vitest";
 
 import { composeSitePlanModel } from "../../site-model.js";
-import { emitPdfSitePlan } from "../render.js";
+import { AERIAL_UNAVAILABLE_NOTE } from "../aerial.js";
+import { emitPdfSitePlan, type EmitPdfSitePlanOptions } from "../render.js";
 import { SITE_PLAN_HONESTY_LINE } from "../provenance.js";
 import { decodeAllContentStreams } from "./decode-pdf-text.js";
+
+// 1x1 red PNG — a real, decodable PNG so the success path exercises the
+// actual embedPng pipeline without any network.
+const TINY_PNG = new Uint8Array(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+);
+
+/** Hermetic default for every test: the aerial fetch NEVER hits the network. */
+const aerialStubOk: EmitPdfSitePlanOptions = {
+  aerial: { fetchImage: async () => TINY_PNG },
+};
+const aerialStubDown: EmitPdfSitePlanOptions = {
+  aerial: {
+    fetchImage: async () => {
+      throw new Error("test stub: aerial endpoint unreachable");
+    },
+  },
+};
 
 const bbox = { westLng: -98.5, southLat: 29.4, eastLng: -98.4995, northLat: 29.4004 };
 const dem = {
@@ -51,19 +73,19 @@ function buildModel() {
 }
 
 describe("emitPdfSitePlan", () => {
-  it("emits a well-formed 2-page PDF from the shared site model", async () => {
+  it("emits a well-formed 3-page PDF (drawing, summary, aerial context) from the shared site model", async () => {
     const model = buildModel();
-    const result = await emitPdfSitePlan(model);
+    const result = await emitPdfSitePlan(model, aerialStubDown);
 
     expect(result.bytes.byteLength).toBeGreaterThan(0);
     const header = new TextDecoder().decode(result.bytes.slice(0, 8));
     expect(header).toContain("%PDF-");
-    expect(result.pageCount).toBe(2);
+    expect(result.pageCount).toBe(3);
   });
 
   it("embeds the exact honesty line and the setback code citation as readable text in the PDF content streams", async () => {
     const model = buildModel();
-    const { bytes } = await emitPdfSitePlan(model);
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     // The dispatch's "assert drawing coords / citations match model" bar,
     // applied to the actual rendered artifact rather than just the pure
     // layout: decode the (Flate-compressed) page content streams and
@@ -76,7 +98,7 @@ describe("emitPdfSitePlan", () => {
 
   it("draws GIS-approximate property-line tags (bearing+distance) with honesty, never survey-grade", async () => {
     const model = buildModel();
-    const { bytes } = await emitPdfSitePlan(model);
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
     expect(decoded).toContain("GIS-approximate");
     expect(decoded).toContain("not a boundary survey");
@@ -94,7 +116,7 @@ describe("emitPdfSitePlan", () => {
       contourIntervalMeters: 0.5,
       setback,
     });
-    const { bytes } = await emitPdfSitePlan(model);
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
     expect(decoded).toContain("unavailable");
   });
@@ -105,7 +127,7 @@ describe("emitPdfSitePlan", () => {
   // sheet-id / generated stamp line all read back from the sheet.
   it("draws template sheet chrome: address, sub-line, legend w/ honest empty street, scale-ratio + sheet-id + stamp", async () => {
     const model = buildModel();
-    const { bytes, fontNote } = await emitPdfSitePlan(model);
+    const { bytes, fontNote } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
     // Header: the address is the largest string on the sheet (uppercased).
     expect(decoded).toContain("1127 N PINE ST");
@@ -126,7 +148,7 @@ describe("emitPdfSitePlan", () => {
 
   it("centers a BUILDABLE ENVELOPE callout with the buildable sq ft + percent-of-lot qualifier", async () => {
     const model = buildModel();
-    const { bytes } = await emitPdfSitePlan(model);
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
     expect(decoded).toContain("BUILDABLE ENVELOPE");
     // "{sqft} sq ft · {pct}% of lot" qualifier.
@@ -142,9 +164,71 @@ describe("emitPdfSitePlan", () => {
     const model = buildModel();
     expect(model.setback.basis).toBe("geometric-heuristic:shortest-edge-pair-south-most");
     expect(model.summary.buildableAreaSqFt).not.toBeNull();
-    const { bytes } = await emitPdfSitePlan(model);
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
     expect(decoded).toContain("PROVISIONAL");
     expect(decoded).toContain("sq ft");
+  });
+
+  // ── AERIAL CONTEXT (sheet 3) ─────────────────────────────────────────────
+  describe("aerial context page", () => {
+    it("embeds the imagery, draws the sheet chrome + attribution + not-a-survey honesty, and reports the outcome", async () => {
+      const model = buildModel();
+      const result = await emitPdfSitePlan(model, aerialStubOk);
+
+      expect(result.pageCount).toBe(3);
+      expect(result.aerial.imageryEmbedded).toBe(true);
+      expect(result.aerial.sourceUrl).toContain("World_Imagery/MapServer/export");
+      expect(result.aerial.sourceUrl).toContain("bboxSR=3857");
+      expect(result.aerial.unavailableReason).toBeUndefined();
+
+      // A PNG image XObject is actually inside the document.
+      const latin1 = Buffer.from(result.bytes).toString("latin1");
+      expect(latin1).toContain("/Subtype /Image");
+
+      const decoded = decodeAllContentStreams(result.bytes);
+      // Tracked eyebrow reconstructs contiguously in the tight join.
+      expect(decoded).toContain("AERIAL CONTEXT");
+      expect(decoded).toContain("SHEET 3 OF 3");
+      // Required provider attribution + not-a-survey honesty (single tokens —
+      // wrapped fine print may break phrases at spaces).
+      expect(decoded).toContain("Maxar");
+      expect(decoded).toContain("Earthstar");
+      expect(decoded).toContain("not a survey");
+      expect(decoded).toContain("capture date is not verified");
+    });
+
+    it("still emits the page with the honest unavailable note when the fetch fails, without failing the export", async () => {
+      const model = buildModel();
+      const result = await emitPdfSitePlan(model, aerialStubDown);
+
+      expect(result.pageCount).toBe(3);
+      expect(result.aerial.imageryEmbedded).toBe(false);
+      expect(result.aerial.unavailableReason).toContain("aerial endpoint unreachable");
+
+      const latin1 = Buffer.from(result.bytes).toString("latin1");
+      expect(latin1).not.toContain("/Subtype /Image");
+
+      const decoded = decodeAllContentStreams(result.bytes);
+      expect(decoded).toContain("AERIAL IMAGERY UNAVAILABLE");
+      expect(decoded).toContain(AERIAL_UNAVAILABLE_NOTE);
+      // Attribution + honesty fine print still present on the honest page.
+      expect(decoded).toContain("Earthstar");
+    });
+
+    it("degrades to the honest path when the endpoint returns a non-PNG body (Esri JSON error with HTTP 200)", async () => {
+      const model = buildModel();
+      const result = await emitPdfSitePlan(model, {
+        aerial: {
+          fetchImage: async () => new TextEncoder().encode('{"error":{"code":500}}'),
+        },
+      });
+
+      expect(result.pageCount).toBe(3);
+      expect(result.aerial.imageryEmbedded).toBe(false);
+      expect(result.aerial.unavailableReason).toContain("non-PNG body");
+      const decoded = decodeAllContentStreams(result.bytes);
+      expect(decoded).toContain("AERIAL IMAGERY UNAVAILABLE");
+    });
   });
 });

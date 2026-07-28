@@ -89,6 +89,13 @@ const fakeFetchDem = (async (bboxArg: unknown, opts: { resolutionMeters: number 
 
 const fakeParseDem = async () => dem;
 
+// Hermetic aerial-imagery stub: tests never hit the Esri endpoint. Failing
+// fast exercises the honest "imagery unavailable" page — the export must
+// succeed regardless (sheet 3 always ships).
+const stubAerialFetch = async (): Promise<Uint8Array> => {
+  throw new Error("test stub: no aerial imagery fetch in unit tests");
+};
+
 describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
   it("composes the site model, emits DXF+IFC, and persists artifacts merged into the terrain atom", async () => {
     const storage = new InMemoryStorage();
@@ -100,6 +107,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       setback,
       storage,
       artifactStore,
+      fetchAerialImage: stubAerialFetch,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
       // Deterministic stub: the real FEMA-adapter default path (network
@@ -125,8 +133,14 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     // the same authored model — never a second geometry pipeline.
     expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
     expect(result.atom.artifacts["pdf-site-plan"]?.byteCount).toBeGreaterThan(0);
-    expect(result.atom.artifacts["pdf-site-plan"]?.pageCount).toBe(2);
-    expect(result.pdfPageCount).toBe(2);
+    expect(result.atom.artifacts["pdf-site-plan"]?.pageCount).toBe(3);
+    expect(result.pdfPageCount).toBe(3);
+    // Aerial fetch stub failed -> sheet 3 still ships with the honest note,
+    // and the artifact records the outcome.
+    expect(result.atom.artifacts["pdf-site-plan"]?.aerialImageryEmbedded).toBe(false);
+    expect(result.atom.artifacts["pdf-site-plan"]?.aerialImageryUnavailableReason).toContain(
+      "no aerial imagery fetch in unit tests",
+    );
     // No zoning-fact atom in storage and no override supplied -> honest
     // absence, never a fabricated district.
     expect(result.zoningHonestAbsence).toBe(true);
@@ -152,6 +166,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       setback: undefined,
       storage,
       artifactStore,
+      fetchAerialImage: stubAerialFetch,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
       fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
@@ -162,7 +177,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     expect(result.atom.artifacts["ifc-site-plan"]?.byteCount).toBeGreaterThan(0);
     expect(result.atom.artifacts["ifc-site-plan"]?.vertexCount).toBeGreaterThan(0);
     expect(result.atom.artifacts["pdf-site-plan"]?.byteCount).toBeGreaterThan(0);
-    expect(result.atom.artifacts["pdf-site-plan"]?.pageCount).toBe(2);
+    expect(result.atom.artifacts["pdf-site-plan"]?.pageCount).toBe(3);
     expect(artifactStore.data.size).toBe(3);
 
     // Setback layer honestly absent — NOT degenerate, NOT fabricated.
@@ -207,6 +222,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       setback,
       storage,
       artifactStore,
+      fetchAerialImage: stubAerialFetch,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
       floodZoneOverride: {
@@ -249,6 +265,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       setback,
       storage,
       artifactStore,
+      fetchAerialImage: stubAerialFetch,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
       // frontEdgeIndex hint would otherwise resolve the composer's OWN
@@ -277,6 +294,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       setback,
       storage,
       artifactStore,
+      fetchAerialImage: stubAerialFetch,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
       frontEdgeIndex: 0,
@@ -294,6 +312,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       setback,
       storage: storage2,
       artifactStore: artifactStore2,
+      fetchAerialImage: stubAerialFetch,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
       frontEdgeIndex: 0,
@@ -319,6 +338,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       setback,
       storage,
       artifactStore,
+      fetchAerialImage: stubAerialFetch,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
       fetchFloodZone: async () => {
@@ -341,6 +361,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
         setback,
         storage,
         artifactStore,
+        fetchAerialImage: stubAerialFetch,
         fetchDem: fakeFetchDem,
         parseDem: fakeParseDem,
       }),
@@ -390,6 +411,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       setback,
       storage,
       artifactStore,
+      fetchAerialImage: stubAerialFetch,
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
       // Deterministic stub — this test only cares about artifact merge

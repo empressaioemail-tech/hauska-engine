@@ -3,10 +3,25 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, PDFFont, PDFPage, type RGB } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, rgb, type PDFImage, type RGB } from "pdf-lib";
 
 import type { SitePlanModel } from "../site-model.js";
-import { feetFromMeters, type PlacedLabel } from "./annotation-placement.js";
+import {
+  AERIAL_IMAGERY_ATTRIBUTION,
+  AERIAL_NOT_A_SURVEY_LINE,
+  AERIAL_UNAVAILABLE_NOTE,
+  aerialImagePixelSize,
+  aerialPagePointsPerGroundMeter,
+  buildAerialExportUrl,
+  computeAerialMercatorBbox,
+  fetchAerialImagery,
+  makeAerialOverlayTransform,
+  type AerialImageFetcher,
+  type AerialImageryResult,
+  type MercatorBbox,
+  type PageRect,
+} from "./aerial.js";
+import { clipPolylineToAabb, feetFromMeters, type PlacedLabel } from "./annotation-placement.js";
 import { buildSitePlanDrawingLayout, type DrawingBox, type PageXY, type SitePlanDrawingLayout } from "./layout.js";
 import { buildProvenancePanelEntries, SITE_PLAN_HONESTY_LINE } from "./provenance.js";
 import { PROPERTY_LINE_TAGS_HONESTY } from "../../geometry/gis-property-line-tags.js";
@@ -92,11 +107,30 @@ const ACCENT = TOKENS.accent;
 const ACCENT_TYPE = TOKENS.accent700;
 const LEADER_COLOR = TOKENS.neutral500;
 
+/** The sheet set is always exactly this size: drawing, summary, aerial context. */
+export const TOTAL_SHEETS = 3;
+
 export interface PdfSitePlanResult {
   bytes: Uint8Array;
   pageCount: number;
   /** Names the font actually used (embedded Inter Regular/SemiBold, OFL). */
   fontNote: string;
+  /**
+   * Aerial-context page (sheet 3) outcome. The page is ALWAYS emitted; when
+   * the bounded imagery fetch fails the page carries an honest
+   * "aerial imagery unavailable" note instead of imagery, and
+   * `unavailableReason` says why. Never blocks the export.
+   */
+  aerial: { imageryEmbedded: boolean; sourceUrl: string; unavailableReason?: string };
+}
+
+export interface EmitPdfSitePlanOptions {
+  /** Aerial-context page (sheet 3) imagery seam. Tests MUST stub `fetchImage`
+   * so no test hits the network; production uses the default Esri fetcher. */
+  aerial?: {
+    fetchImage?: AerialImageFetcher;
+    timeoutMs?: number;
+  };
 }
 
 function fieldOrNotOnFile(value: string | null | undefined): string {
@@ -146,7 +180,7 @@ function drawPage1Header(page: PDFPage, model: SitePlanModel, bold: PDFFont, fon
   let y = PAGE_HEIGHT - MARGIN_TOP;
 
   // Eyebrow — accent, uppercase, 0.22em tracking.
-  drawTrackedText(page, "SITE PLAN · SHEET 1 OF 2", {
+  drawTrackedText(page, `SITE PLAN · SHEET 1 OF ${TOTAL_SHEETS}`, {
     x: left,
     y,
     size: TYPE.eyebrow,
@@ -289,8 +323,8 @@ function drawPlacedLabel(page: PDFPage, label: PlacedLabel, font: PDFFont, color
  * North arrow — filled triangular arrowhead over a condensed "N" (template
  * rule 9 · sheet furniture; no compass rose).
  */
-function drawNorthArrow(page: PDFPage, layout: SitePlanDrawingLayout, bold: PDFFont): void {
-  const { origin, tip } = layout.north;
+function drawNorthArrow(page: PDFPage, north: { origin: PageXY; tip: PageXY }, bold: PDFFont): void {
+  const { origin, tip } = north;
   const dx = tip.x - origin.x;
   const dy = tip.y - origin.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -394,7 +428,7 @@ function drawSitePlanDrawing(page: PDFPage, layout: SitePlanDrawingLayout, font:
   }
 
   // 10) NORTH arrow.
-  drawNorthArrow(page, layout, bold);
+  drawNorthArrow(page, layout.north, bold);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -589,20 +623,25 @@ function wrapTextToWidth(rawText: string, font: PDFFont, size: number, maxWidth:
  * synthetic-DEM disclosures append to the SAME paragraph (template rule 8 ·
  * no callout boxes on the drawing).
  */
-function buildFinePrint(model: SitePlanModel, page: 1 | 2): string {
+function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, aerial?: AerialImageryResult): string {
   // SITE_PLAN_HONESTY_LINE + PROPERTY_LINE_TAGS_HONESTY are drawn verbatim
   // (75o spec / WDLL 5): any survey-grade claim contradicts these exact
   // strings on the sheet. Template rule 8 folds honest-absence + synthetic-DEM
   // disclosures into this same paragraph — no callout boxes on the drawing.
   const base = `${SITE_PLAN_HONESTY_LINE} ${PROPERTY_LINE_TAGS_HONESTY} These bearing/distance tags are GIS-approximate and not survey-grade.`;
+  if (page === 3) {
+    const unavailable =
+      aerial && !aerial.ok ? ` ${AERIAL_UNAVAILABLE_NOTE}: ${aerial.reason}.` : "";
+    return `${SITE_PLAN_HONESTY_LINE} ${AERIAL_NOT_A_SURVEY_LINE}${unavailable} ${AERIAL_IMAGERY_ATTRIBUTION} · Sheet 3 of ${TOTAL_SHEETS}`;
+  }
   if (page === 2) {
-    return `${base} Zoning district and fixture values must be confirmed against live atoms on planner QA. · Sheet 2 of 2`;
+    return `${base} Zoning district and fixture values must be confirmed against live atoms on planner QA. · Sheet 2 of ${TOTAL_SHEETS}`;
   }
   const streetNote = model.streets.honestAbsence
     ? " Street layer intentionally left empty — no road node attaches to this parcel."
     : "";
   const demNote = " Elevation from a synthetic DEM on sample runs.";
-  return `${base}${streetNote}${demNote} · Sheet 1 of 2`;
+  return `${base}${streetNote}${demNote} · Sheet 1 of ${TOTAL_SHEETS}`;
 }
 
 function drawFinePrint(page: PDFPage, text: string, font: PDFFont): void {
@@ -638,12 +677,33 @@ function drawPage1Footer(page: PDFPage, layout: SitePlanDrawingLayout, model: Si
 // table; fine print.
 // ─────────────────────────────────────────────────────────────────────────
 function drawPage2Header(page: PDFPage, model: SitePlanModel, bold: PDFFont, font: PDFFont): number {
+  return drawMetaSheetHeader(page, model, bold, font, `SUMMARY · SHEET 2 OF ${TOTAL_SHEETS}`);
+}
+
+/** The meta-sheet header's closing-rule y is deterministic (eyebrow + address
+ * rows have fixed heights). Exposed as its own function so the aerial page
+ * can size its imagery rect BEFORE the header is drawn (the imagery fetch
+ * needs the rect's aspect ratio) with zero drift risk. */
+function metaSheetHeaderRuleY(): number {
+  return PAGE_HEIGHT - MARGIN_TOP - (pt(30) + pt(4)) - pt(12);
+}
+
+/** Shared header for the non-drawing sheets (summary, aerial context):
+ * eyebrow / address on the left, sheet-id over parcel-id right-aligned,
+ * closed by the full ink rule. Returns the rule's y. */
+function drawMetaSheetHeader(
+  page: PDFPage,
+  model: SitePlanModel,
+  bold: PDFFont,
+  font: PDFFont,
+  eyebrow: string,
+): number {
   const s = model.summary;
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
   let y = PAGE_HEIGHT - MARGIN_TOP;
 
-  drawTrackedText(page, "SUMMARY · SHEET 2 OF 2", {
+  drawTrackedText(page, eyebrow, {
     x: left,
     y,
     size: TYPE.eyebrow,
@@ -675,7 +735,8 @@ function drawPage2Header(page: PDFPage, model: SitePlanModel, bold: PDFFont, fon
     color: TOKENS.neutral600,
   });
 
-  const ruleY = y - pt(12);
+  void y; // y's decrements are mirrored in metaSheetHeaderRuleY() by construction
+  const ruleY = metaSheetHeaderRuleY();
   drawHairlineRule(page, left, ruleY, right - left);
   return ruleY;
 }
@@ -888,12 +949,277 @@ function drawProvenanceTable(page: PDFPage, model: SitePlanModel, bold: PDFFont,
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// PAGE 3 — AERIAL CONTEXT: Esri World Imagery for the parcel's padded
+// mercator bbox with the model's vector overlay (property line, buildable
+// envelope, street centerline) drawn on top through the ONE aerial transform
+// (local-ENU -> exact ENU inverse -> WGS84 -> EPSG:3857 -> page). The page is
+// ALWAYS emitted; a failed/timed-out fetch renders the honest unavailable
+// note instead of imagery. Imagery is context only — never surveyed data.
+// ─────────────────────────────────────────────────────────────────────────
+const OVERLAY_HALO = rgb(1, 1, 1);
+const AERIAL_PROPERTY_STROKE = 1.8; // heaviest on the aerial sheet
+const AERIAL_HALO_EXTRA = 1.6;
+
+function aerialImageRect(headerRuleY: number, footerBandTop: number): PageRect {
+  return {
+    x: MARGIN_X,
+    y: footerBandTop,
+    width: PAGE_WIDTH - MARGIN_X * 2,
+    height: headerRuleY - pt(18) - footerBandTop,
+  };
+}
+
+function drawHaloedRing(page: PDFPage, ring: PageXY[], color: RGB, thickness: number, dashArray?: number[]): void {
+  drawRing(page, ring, OVERLAY_HALO, thickness + AERIAL_HALO_EXTRA);
+  drawRing(page, ring, color, thickness, dashArray);
+}
+
+function drawHaloedPolyline(page: PDFPage, points: PageXY[], color: RGB, thickness: number): void {
+  drawPolyline(page, points, OVERLAY_HALO, thickness + AERIAL_HALO_EXTRA);
+  drawPolyline(page, points, color, thickness);
+}
+
+/** Clips a projected page-space polyline to the imagery rect (streets can run
+ * far beyond the padded bbox; they must never draw over the sheet chrome). */
+function clipToRect(points: PageXY[], rect: PageRect): PageXY[][] {
+  const tuples: Array<[number, number]> = points.map((p) => [p.x, p.y]);
+  const parts = clipPolylineToAabb(tuples, {
+    minX: rect.x,
+    maxX: rect.x + rect.width,
+    minY: rect.y,
+    maxY: rect.y + rect.height,
+  });
+  return parts.filter((part) => part.length >= 2).map((part) => part.map(([x, y]) => ({ x, y })));
+}
+
+function drawAerialOverlay(
+  page: PDFPage,
+  model: SitePlanModel,
+  mercBbox: MercatorBbox,
+  rect: PageRect,
+  bold: PDFFont,
+): void {
+  const toPage = makeAerialOverlayTransform(mercBbox, rect, model.bboxWgs84);
+
+  // STREET centerlines first (beneath the parcel linework), clipped to the
+  // imagery rect. Honest absence stays absent — nothing fabricated.
+  if (!model.streets.honestAbsence) {
+    for (const anchor of model.streets.anchors) {
+      const projected = anchor.pointsLocal.map(toPage);
+      for (const part of clipToRect(projected, rect)) {
+        drawHaloedPolyline(page, part, STREET_COLOR, 1.2);
+      }
+    }
+  }
+
+  // BUILDABLE ENVELOPE / setback ring — dashed accent, no fill (fill would
+  // obscure the imagery). Skipped when the setback layer is honest-absent:
+  // the zero-inset ring is identical to the property line and drawing it
+  // would fake a setback that is not on file.
+  if (model.setback.offsetRingLocal && !model.setback.honestAbsence) {
+    drawHaloedRing(page, model.setback.offsetRingLocal.map(toPage), SETBACK_DASH_COLOR, STROKE.setbackDash + 0.3, [
+      3.5, 2.8,
+    ]);
+  }
+
+  // PROPERTY LINE — heaviest stroke on the sheet.
+  drawHaloedRing(page, model.ringLocal.map(toPage), PROPERTY_COLOR, AERIAL_PROPERTY_STROKE);
+
+  // NORTH arrow, top-right inside the imagery, direction taken from the
+  // model's north vector THROUGH the aerial transform (never assumed).
+  const pOrigin = toPage(model.north.originLocal);
+  const pTip = toPage({
+    x: model.north.originLocal.x + model.north.directionLocal.x,
+    y: model.north.originLocal.y + model.north.directionLocal.y,
+  });
+  let dx = pTip.x - pOrigin.x;
+  let dy = pTip.y - pOrigin.y;
+  const len = Math.hypot(dx, dy) || 1;
+  dx /= len;
+  dy /= len;
+  const arrowLen = Math.min(rect.width, rect.height) * 0.09;
+  const inset = arrowLen + 10;
+  const tip: PageXY = { x: rect.x + rect.width - inset, y: rect.y + rect.height - inset + arrowLen };
+  const origin: PageXY = { x: tip.x - dx * arrowLen, y: tip.y - dy * arrowLen };
+  // White halo disc behind the arrow so it reads over dark imagery.
+  page.drawCircle({ x: tip.x, y: tip.y - arrowLen * 0.35, size: arrowLen * 0.95, color: OVERLAY_HALO, opacity: 0.55 });
+  drawNorthArrow(page, { origin, tip }, bold);
+}
+
+interface AerialLegendEntry {
+  label: string;
+  swatch: "line-heavy" | "line-dashed" | "line-thin";
+  color: RGB;
+}
+
+function drawAerialFooter(
+  page: PDFPage,
+  model: SitePlanModel,
+  mercBbox: MercatorBbox,
+  rect: PageRect,
+  imagery: AerialImageryResult,
+  font: PDFFont,
+  ruleY: number,
+): void {
+  drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
+  const baseline = ruleY - pt(16);
+
+  // Legend (bottom-left): only layers actually drawn on this sheet.
+  const rows: AerialLegendEntry[] = [{ label: "Property line", swatch: "line-heavy", color: PROPERTY_COLOR }];
+  if (model.setback.offsetRingLocal && !model.setback.honestAbsence) {
+    rows.push({ label: "Setback / buildable envelope", swatch: "line-dashed", color: SETBACK_DASH_COLOR });
+  }
+  if (!model.streets.honestAbsence) {
+    rows.push({ label: "Street centerline", swatch: "line-thin", color: STREET_COLOR });
+  }
+  const colWidth = pt(230);
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    const col = i % 2;
+    const line = Math.floor(i / 2);
+    const x = MARGIN_X + col * colWidth;
+    const y = baseline - line * pt(15);
+    const w = pt(24);
+    const mid = y + pt(1);
+    const thickness = row.swatch === "line-heavy" ? 1.4 : row.swatch === "line-thin" ? 0.9 : 0.9;
+    const dash = row.swatch === "line-dashed" ? [2.2, 1.6] : undefined;
+    page.drawLine({ start: { x, y: mid }, end: { x: x + w, y: mid }, thickness, color: row.color, dashArray: dash });
+    page.drawText(row.label, { x: x + w + pt(9), y, size: TYPE.legend, font, color: TOKENS.neutral800 });
+  }
+
+  // Ground-true graphic scale bar (bottom-right): mercator plane distances are
+  // inflated by 1/cos(lat) — aerialPagePointsPerGroundMeter divides that back
+  // out, so the bar states GROUND feet, not mercator metres.
+  if (imagery.ok) {
+    const right = PAGE_WIDTH - MARGIN_X;
+    const ptsPerMeter = aerialPagePointsPerGroundMeter(mercBbox, rect, model.bboxWgs84);
+    const targetMeters = pt(120) / ptsPerMeter;
+    // Nice 1/2/5 length at or below target.
+    let nice = 0;
+    const exp = Math.floor(Math.log10(Math.max(targetMeters, 1)));
+    outer: for (let e = exp; e >= exp - 3; e--) {
+      for (const step of [5, 2, 1]) {
+        const candidate = step * 10 ** e;
+        if (candidate <= targetMeters) {
+          nice = candidate;
+          break outer;
+        }
+      }
+    }
+    if (nice <= 0) nice = Math.max(targetMeters, 1);
+    const barWidth = nice * ptsPerMeter;
+    const blockW = barWidth / 3;
+    const barLeft = right - barWidth;
+    const barTop = ruleY - pt(8);
+    const blockColors = [INK, TOKENS.neutral300, INK];
+    for (let i = 0; i < 3; i++) {
+      page.drawRectangle({ x: barLeft + i * blockW, y: barTop, width: blockW, height: pt(5), color: blockColors[i]!, borderWidth: 0 });
+    }
+    const lengthFeet = feetFromMeters(nice);
+    const labelY = barTop - pt(11);
+    const maxLabel = `${Math.round(lengthFeet)} ft`;
+    page.drawText("0", { x: barLeft, y: labelY, size: TYPE.scaleBarLabel, font, color: TOKENS.neutral700 });
+    page.drawText(maxLabel, {
+      x: right - font.widthOfTextAtSize(maxLabel, TYPE.scaleBarLabel),
+      y: labelY,
+      size: TYPE.scaleBarLabel,
+      font,
+      color: TOKENS.neutral700,
+    });
+  }
+
+  drawFinePrint(page, buildFinePrint(model, 3, imagery), font);
+}
+
+function drawAerialPage(
+  doc: PDFDocument,
+  model: SitePlanModel,
+  imagery: AerialImageryResult,
+  /** Pre-embedded PNG (embed happens in emit so a decode failure can degrade
+   * to the honest path instead of failing the export). Set iff imagery.ok. */
+  png: PDFImage | undefined,
+  mercBbox: MercatorBbox,
+  /** The SAME rect whose aspect sized the imagery request (no recompute —
+   * a drifted rect would stretch the image and break overlay alignment). */
+  rect: PageRect,
+  bold: PDFFont,
+  font: PDFFont,
+): void {
+  const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  drawMetaSheetHeader(page, model, bold, font, `AERIAL CONTEXT · SHEET 3 OF ${TOTAL_SHEETS}`);
+
+  if (imagery.ok && png) {
+    // The mercator bbox was aspect-matched to this rect, so the image fills
+    // it exactly — the overlay's linear transform is valid across the rect.
+    page.drawImage(png, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+    drawAerialOverlay(page, model, mercBbox, rect, bold);
+  } else {
+    // HONEST PATH: page still ships, clearly labeled — never a blank lie,
+    // never a failed export because a basemap endpoint was down.
+    page.drawRectangle({
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      borderColor: TOKENS.neutral300,
+      borderWidth: 0.7,
+      color: TOKENS.neutral100,
+    });
+    const title = "AERIAL IMAGERY UNAVAILABLE";
+    const titleSize = pt(16);
+    const cx = rect.x + rect.width / 2;
+    const cy = rect.y + rect.height / 2;
+    page.drawText(title, {
+      x: cx - bold.widthOfTextAtSize(title, titleSize) / 2,
+      y: cy + pt(6),
+      size: titleSize,
+      font: bold,
+      color: TOKENS.neutral600,
+    });
+    const reason = imagery.ok ? "imagery decode failed" : imagery.reason;
+    const detail = safeText(`${AERIAL_UNAVAILABLE_NOTE}: ${reason}. Site geometry is on Sheet 1.`);
+    const detailLines = wrapTextToWidth(detail, font, pt(10.5), rect.width - pt(60));
+    let dy = cy - pt(12);
+    for (const line of detailLines) {
+      page.drawText(line, {
+        x: cx - font.widthOfTextAtSize(line, pt(10.5)) / 2,
+        y: dy,
+        size: pt(10.5),
+        font,
+        color: TOKENS.neutral600,
+      });
+      dy -= pt(14);
+    }
+  }
+
+  // Thin frame over the imagery edge (keeps the sheet chrome crisp).
+  page.drawRectangle({
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    borderColor: TOKENS.neutral300,
+    borderWidth: 0.7,
+    color: undefined,
+  });
+
+  // Footer rule sits just below the imagery rect (same band geometry as the
+  // page-1 footer: rule, then legend/scale band, then fine print).
+  drawAerialFooter(page, model, mercBbox, rect, imagery, font, rect.y - pt(6));
+}
+
 /**
  * Renders the PDF site-plan sheet from the SAME `SitePlanModel` the DXF/IFC
  * emitters read (WDLL 5) — page 1 is the drawing (template card 2a), page 2
- * is the summary + provenance (template card 2b).
+ * is the summary + provenance (template card 2b), page 3 is the aerial
+ * context sheet (Esri World Imagery + vector overlay; honest-unavailable on
+ * fetch failure, never a failed export).
  */
-export async function emitPdfSitePlan(model: SitePlanModel): Promise<PdfSitePlanResult> {
+export async function emitPdfSitePlan(
+  model: SitePlanModel,
+  options: EmitPdfSitePlanOptions = {},
+): Promise<PdfSitePlanResult> {
   const doc = await PDFDocument.create();
   // Embed Inter (OFL) via fontkit — body = Inter-Regular, headings and
   // emphasis = Inter-SemiBold (reads close to the template's condensed-bold
@@ -906,6 +1232,17 @@ export async function emitPdfSitePlan(model: SitePlanModel): Promise<PdfSitePlan
   doc.registerFontkit(fontkit);
   const font = await doc.embedFont(loadFont("Inter-Regular.ttf"), { subset: false });
   const bold = await doc.embedFont(loadFont("Inter-SemiBold.ttf"), { subset: false });
+
+  // AERIAL (sheet 3) imagery fetch — started first so the bounded network
+  // wait (default 8s cap) overlaps the vector rendering of sheets 1–2.
+  const aerialFooterBandTop = MARGIN_BOTTOM + pt(8.2 * 1.55 * 4) + pt(52) + pt(6);
+  const aerialRect = aerialImageRect(metaSheetHeaderRuleY(), aerialFooterBandTop);
+  const mercBbox = computeAerialMercatorBbox(model.ringLocal, model.bboxWgs84, aerialRect.width / aerialRect.height);
+  const aerialUrl = buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox));
+  const aerialPromise = fetchAerialImagery(aerialUrl, {
+    fetchImage: options.aerial?.fetchImage,
+    timeoutMs: options.aerial?.timeoutMs,
+  });
 
   // PAGE 1 — drawing.
   const page1 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
@@ -940,6 +1277,32 @@ export async function emitPdfSitePlan(model: SitePlanModel): Promise<PdfSitePlan
   drawProvenanceTable(page2, model, bold, font, afterSummaryY);
   drawFinePrint(page2, buildFinePrint(model, 2), font);
 
+  // PAGE 3 — aerial context. The fetch is already bounded and never throws;
+  // a failure renders the honest unavailable page, never a failed export.
+  // A body that passed the PNG-signature guard but still fails pdf-lib's
+  // decoder degrades to the same honest path.
+  let imagery = await aerialPromise;
+  let aerialPng: PDFImage | undefined;
+  if (imagery.ok) {
+    try {
+      aerialPng = await doc.embedPng(imagery.bytes);
+    } catch (error) {
+      imagery = {
+        ok: false,
+        reason: `imagery decode failed: ${error instanceof Error ? error.message : String(error)}`,
+        url: imagery.url,
+      };
+    }
+  }
+  drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, bold, font);
+
   const bytes = await doc.save({ useObjectStreams: false });
-  return { bytes, pageCount: doc.getPageCount(), fontNote: FONT_NOTE };
+  return {
+    bytes,
+    pageCount: doc.getPageCount(),
+    fontNote: FONT_NOTE,
+    aerial: imagery.ok
+      ? { imageryEmbedded: true, sourceUrl: imagery.url }
+      : { imageryEmbedded: false, sourceUrl: imagery.url, unavailableReason: imagery.reason },
+  };
 }

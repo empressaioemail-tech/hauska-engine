@@ -192,6 +192,11 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
         pageCount?: number;
         zoningHonestAbsence?: boolean;
         floodZoneHonestUnavailable?: boolean;
+        /** pdf-site-plan only: sheet-3 aerial imagery outcome. The page always
+         * ships; false means it carries the honest "imagery unavailable" note
+         * (bounded fetch failed/timed out) instead of Esri World Imagery. */
+        aerialImageryEmbedded?: boolean;
+        aerialImageryUnavailableReason?: string;
       }
     >
   >;
