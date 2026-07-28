@@ -13,7 +13,9 @@ import { composeSitePlanModel } from "../src/site-plan/site-model.ts";
 import { emitPdfSitePlan } from "../src/site-plan/pdf/render.ts";
 
 const PARCEL_NODE_ID = "qa2:dense-small";
-const OUT_DIR = process.argv[2] ?? "P:/doc_repo/_inbox/2026-07-27_qa2_site_plan_craft_samples";
+// Default: the in-repo sample location (committed so the planner can eyeball
+// the SHEET STANDARD v1.0 output against the pixel reference).
+const OUT_DIR = process.argv[2] ?? new URL("../samples/site-plan/", import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
 
 const ringWgs84 = [
   [-98.49978, 29.40012],
@@ -72,11 +74,13 @@ async function main() {
     frontEdgeIndex: 0,
     geometrySourceRef: "qa2-dense-synthetic-ring",
     demSourceCitation: "synthetic-fixture DEM (QA2 craft sample; not live 3DEP)",
+    // SHEET STANDARD §2: no fabricated address — the fixture has none, so the
+    // header carries the parcel id plus a NO ADDRESS chip, and sheet 2 an
+    // UNAVAILABLE chip. §6: fixture zoning takes the flag, not a suffix.
     descriptor: {
-      address: "DENSE QA2 FIXTURE",
       countyName: "Bexar County",
     },
-    zoning: { district: "R-6 (fixture)" },
+    zoning: { district: "R-6", fixture: true },
     floodZone: {
       honestUnavailable: true,
       reason: "Gold sample script does not call FEMA NFHL (offline regenerate).",

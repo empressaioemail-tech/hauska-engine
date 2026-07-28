@@ -18,7 +18,9 @@ import { composeSitePlanModel } from "../src/site-plan/site-model.ts";
 import { emitPdfSitePlan } from "../src/site-plan/pdf/render.ts";
 
 const PARCEL_NODE_ID = "48021:34785";
-const OUT_DIR = process.argv[2] ?? "P:/doc_repo/_inbox/2026-07-27_track_b2_site_plan_samples";
+// Default: the in-repo sample location (committed so the planner can eyeball
+// the SHEET STANDARD v1.0 output against the pixel reference).
+const OUT_DIR = process.argv[2] ?? new URL("../samples/site-plan/", import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
 
 const ringWgs84 = PARCEL_1009_CHESTNUT_34785_LIVE_TXGIO;
 
@@ -84,7 +86,10 @@ async function main() {
       address: "1009 CHESTNUT ST, BASTROP, TX",
       countyName: "Bastrop County",
     },
-    zoning: { district: "R-1 (fixture label — confirm live zoning-fact on planner QA)" },
+    // SHEET STANDARD §6: the district keeps its real value; fixture-ness is
+    // the `fixture` flag (one FIXTURE LABEL chip), never a second spelling
+    // baked into the district string.
+    zoning: { district: "R-1", fixture: true },
     floodZone: {
       honestUnavailable: true,
       reason: "Gold sample script does not call FEMA NFHL (offline regenerate).",
@@ -120,14 +125,20 @@ async function main() {
   await writeFile(
     join(OUT_DIR, "README.md"),
     [
-      "# Track B2 — site-plan design pass samples",
+      "# Site-plan SHEET STANDARD v1.0 reference samples",
       "",
-      "Gold parcel: `48021:34785` (1009 Chestnut).",
+      "Rendered by the standard-governed renderer (src/site-plan/pdf/SHEET_STANDARD_v1.html).",
       "",
-      "Regenerate:",
+      "| Fixture | File | Role |",
+      "|---|---|---|",
+      "| `48021:34785` (1009 Chestnut, Bastrop) | `48021_34785_site_plan.pdf` | three-page gold set |",
+      "| `qa2:dense-small` | `qa2_dense-small_site_plan.pdf` | degenerate case (8 segments, no buildable envelope) |",
+      "",
+      "Regenerate (gold hits the live Esri World Imagery export for sheet 3):",
       "```",
-      "cd P:/hauska-engine/packages/engine-core",
+      "cd packages/engine-core",
       "npx tsx scripts/generate-site-plan-gold-34785.mjs",
+      "npx tsx scripts/generate-site-plan-gold-dense-qa2.mjs",
       "```",
       "",
       "Planner verifies the live PDF (customer-reads-as-paid-deliverable). Builder does not claim customer QA.",

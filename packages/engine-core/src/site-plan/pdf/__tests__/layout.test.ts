@@ -194,10 +194,15 @@ describe("buildSitePlanDrawingLayout", () => {
     const labels = layout.allPlacedLabels;
     expect(labels.length).toBeGreaterThan(2);
 
-    // Every box width must match measured Helvetica width (not 0.52*len estimate).
+    // Every label carries the measured Helvetica run width (not the
+    // 0.52*len estimate). box is the collision AABB, which for rotated tags
+    // (Sheet Standard §4) differs from the run width — textWidth is the
+    // measured run, and the AABB must always be able to contain it.
     for (const label of labels) {
       const measured = measureText(label.text, label.fontSize);
-      expect(label.box.width).toBeCloseTo(measured, 5);
+      expect(label.textWidth).toBeCloseTo(measured, 5);
+      const diag = Math.hypot(label.box.width, label.box.height);
+      expect(diag).toBeGreaterThanOrEqual(measured - 1e-6);
     }
 
     // No two placed boxes overlap (pad=0 — placement uses pad=2 internally).

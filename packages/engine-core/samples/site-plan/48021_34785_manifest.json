@@ -1,0 +1,23 @@
+{
+  "parcelNodeId": "48021:34785",
+  "generatedAt": "2026-07-28T22:37:25.356Z",
+  "track": "B2",
+  "wdllItems": [
+    3,
+    4,
+    6
+  ],
+  "fixtureKind": "live-txgio-ring + synthetic DEM",
+  "fixtureDisclosure": "Ring is the live TxGIO fixture PARCEL_1009_CHESTNUT_34785_LIVE_TXGIO (GIS parcel polygon, not a survey). DEM is synthetic for offline regenerate. STREET is honest-absence until B1 road geometry merges. Property-line bearing/distance tags are GIS-approximate — not survey-grade.",
+  "streetHonestAbsence": true,
+  "setbackDegenerate": false,
+  "setbackBasis": "front-edge-hint",
+  "buildableAreaSqFt": 10504.001714954278,
+  "lotAreaSqFt": 16111.446088839632,
+  "propertySegmentCount": 4,
+  "pdf": {
+    "pageCount": 3,
+    "byteCount": 345433
+  },
+  "regenerate": "cd P:/hauska-engine/packages/engine-core && npx tsx scripts/generate-site-plan-gold-34785.mjs"
+}

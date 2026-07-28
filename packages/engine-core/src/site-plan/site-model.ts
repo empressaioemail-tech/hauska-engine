@@ -73,7 +73,13 @@ export interface SitePlanDescriptorInput {
 }
 
 export type ZoningSummaryInput =
-  | { district: string }
+  | {
+      district: string;
+      /** True when the district is a fixture/provisional value — the sheet
+       * keeps the real value and adds ONE `FIXTURE LABEL` chip (SHEET
+       * STANDARD §6); never encode fixture-ness into the district string. */
+      fixture?: boolean;
+    }
   | { honestAbsence: true; reason: string };
 
 export type FloodZoneSummaryInput =
@@ -204,6 +210,8 @@ export interface SitePlanSummaryModel {
   countyName?: string;
   address?: string;
   zoningDistrict?: string;
+  /** §6: the district keeps its real value and takes a FIXTURE LABEL chip. */
+  zoningFixture?: boolean;
   zoningHonestAbsenceReason?: string;
   lotAreaSqFt: number;
   /** Null when the setback offset degenerated (see `buildableAreaHonestNote`). */
@@ -239,6 +247,8 @@ export interface SitePlanModel {
   propertySegments: Array<RingSegment & { lengthFeet: number }>;
   setback: SitePlanSetbackModel;
   contours: ContourPolyline2d[];
+  /** Contour interval used for this export (legend row text, §5). */
+  contourIntervalMeters: number;
   elevationLabels: ElevationLabel[];
   streets: SitePlanStreetModel;
   north: SitePlanNorthModel;
@@ -465,6 +475,8 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     : null;
 
   const zoningDistrict = inputs.zoning && "district" in inputs.zoning ? inputs.zoning.district : undefined;
+  const zoningFixture =
+    inputs.zoning && "district" in inputs.zoning ? inputs.zoning.fixture === true : false;
   const zoningHonestAbsenceReason =
     inputs.zoning && "honestAbsence" in inputs.zoning ? inputs.zoning.reason : undefined;
 
@@ -514,6 +526,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     countyName: inputs.descriptor?.countyName,
     address: inputs.descriptor?.address,
     zoningDistrict,
+    zoningFixture,
     zoningHonestAbsenceReason,
     lotAreaSqFt,
     buildableAreaSqFt,
@@ -533,6 +546,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     propertySegments,
     setback,
     contours,
+    contourIntervalMeters: inputs.contourIntervalMeters,
     elevationLabels: [...cornerLabels, ...contourLabels],
     streets,
     north,

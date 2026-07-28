@@ -30,10 +30,18 @@ export interface PlacedLabel {
   anchor: PageXY;
   /** Bottom-left-ish draw origin for pdf-lib drawText. */
   drawAt: PageXY;
+  /** Collision box. For rotated labels this is the AABB of the rotated rect. */
   box: LabelBox;
   fontSize: number;
   /** When the label was nudged off the edge midpoint, connect with a leader. */
   leader?: { from: PageXY; to: PageXY };
+  /** Rotation in degrees (counter-clockwise, pdf-lib convention) — §4: tags
+   * rotate to their segment. Absent = draw flat. */
+  rotationDeg?: number;
+  /** Measured text width at fontSize (box.width is the AABB, not the run). */
+  textWidth?: number;
+  /** 1-based segment index for marks keyed by segment id (§14 draw-once). */
+  seg?: number;
 }
 
 export type MeasureTextFn = (text: string, fontSize: number) => number;
@@ -299,6 +307,7 @@ function nudgeEdgeLabel(
         drawAt,
         box,
         fontSize,
+        textWidth: width,
         leader: useLeader ? leader : undefined,
       };
     }
@@ -400,6 +409,7 @@ export function placeNonCollidingPointLabels(
             drawAt,
             box,
             fontSize,
+            textWidth: width,
             leader: far
               ? { from: item.point, to: { x: drawAt.x + width / 2, y: drawAt.y + height / 3 } }
               : undefined,

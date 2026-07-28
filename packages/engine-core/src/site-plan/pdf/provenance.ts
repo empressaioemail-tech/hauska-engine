@@ -1,4 +1,5 @@
 import type { SitePlanModel } from "../site-model.js";
+import { CONFIDENCE, confidenceCell } from "./format.js";
 
 /**
  * The honesty line, formalized verbatim per 75o spec / WDLL item 5. Any
@@ -8,10 +9,16 @@ import type { SitePlanModel } from "../site-model.js";
 export const SITE_PLAN_HONESTY_LINE =
   "Derived from public GIS records. Not a boundary survey. Not for legal record.";
 
+/**
+ * SHEET STANDARD v1.0 §7 + §13: provenance is a THREE-column table — layer,
+ * source, confidence — one row per layer. Confidence is the fixed short enum
+ * (asserted · rule · sample · centerline accurate · honest absence · honest
+ * unavailable) plus at most one qualifier. Machine identifiers appear ONLY in
+ * the source column (§11).
+ */
 export interface ProvenancePanelEntry {
   layer: string;
   source: string;
-  asOf: string;
   confidence: string;
 }
 
@@ -21,81 +28,73 @@ export interface ProvenancePanelEntry {
  * from fields already on the shared `SitePlanModel`; no second lookup.
  */
 export function buildProvenancePanelEntries(model: SitePlanModel): ProvenancePanelEntry[] {
-  const nowIso = new Date().toISOString().slice(0, 10);
+  const contourIsSample = /synthetic|sample|fixture/i.test(model.citations.contour);
+  const streetHasAssumedEdges = model.streets.anchors.some(
+    (a) => a.leftEdgeLocal || a.rightEdgeLocal,
+  );
+
+  const setbackConfidence = model.setback.honestAbsence
+    ? CONFIDENCE.honestAbsence
+    : model.setback.degenerate
+      ? confidenceCell(CONFIDENCE.rule, "degenerate")
+      : CONFIDENCE.rule;
+
   const entries: ProvenancePanelEntry[] = [
     {
-      layer: "PROPERTY_LINE / DIMENSION",
+      layer: "Property / dimension",
       source: model.citations.propertyLine,
-      asOf: "current parcel-geometry snapshot",
-      confidence:
-        "asserted (county GIS parcel polygon — bearing/distance tags are GIS-approximate, not a boundary survey)",
+      confidence: confidenceCell(CONFIDENCE.asserted, "GIS-approx"),
     },
     {
-      layer: "SETBACK",
+      layer: "Setback",
       source: model.citations.setback,
-      asOf: "current zoning-code snapshot",
-      confidence:
-        model.summary.buildableDisplayKind === "declined-consume"
-          ? `asserted — degenerate: ${model.setback.degenerateReason ?? "setbacks consume lot"}`
-          : model.setback.degenerate &&
-              (model.summary.buildableDisplayKind === "buildable-with-area" ||
-                model.summary.buildableDisplayKind === "provisional")
-            ? `asserted (warm/shared buildable vocab ${model.summary.buildableAgreementToken}; local offset degenerate — summary prefers warm area)`
-            : `asserted (front/side/rear basis: ${model.setback.basis})`,
+      confidence: setbackConfidence,
     },
     {
-      layer: "CONTOUR / ELEVATION_LABEL",
+      layer: "Contour / elevation",
       source: model.citations.contour,
-      asOf: "USGS 3DEP DEM snapshot",
-      confidence: model.verticalDatum.summary,
+      confidence: contourIsSample
+        ? confidenceCell(CONFIDENCE.sample, "not live 3DEP")
+        : CONFIDENCE.asserted,
     },
     model.streets.honestAbsence
       ? {
-          layer: "STREET",
+          layer: "Street",
           source: "unavailable",
-          asOf: nowIso,
-          confidence: `honest absence — ${model.streets.reason ?? "no road-node attaches"}`,
+          confidence: CONFIDENCE.honestAbsence,
         }
       : {
-          layer: "STREET",
+          layer: "Street",
           source: model.streets.anchors.map((a) => a.sourceRef ?? a.name).join("; "),
-          asOf: nowIso,
-          confidence: model.streets.anchors
-            .map((a) => {
-              const kind = a.rowProvenanceKind ?? "asserted";
-              const width =
-                typeof a.assumedWidthFt === "number" ? `, assumedWidthFt=${a.assumedWidthFt}` : "";
-              return `${a.name}: centerline accurate; ROW edges ${kind}${width}`;
-            })
-            .join("; "),
+          confidence: streetHasAssumedEdges
+            ? confidenceCell(CONFIDENCE.centerlineAccurate, "ROW assumed")
+            : CONFIDENCE.centerlineAccurate,
         },
     model.summary.zoningDistrict
       ? {
-          layer: "ZONING (summary block)",
+          layer: "Zoning",
           source: model.citations.zoning ?? "zoning-fact atom",
-          asOf: "current zoning-fact snapshot",
-          confidence: "asserted",
+          confidence: model.summary.zoningFixture
+            ? confidenceCell(CONFIDENCE.asserted, "fixture")
+            : CONFIDENCE.asserted,
         }
       : {
-          layer: "ZONING (summary block)",
+          layer: "Zoning",
           source: "unavailable",
-          asOf: nowIso,
-          confidence: `honest absence — ${model.summary.zoningHonestAbsenceReason ?? "no zoning-fact atom on file"}`,
+          confidence: CONFIDENCE.honestAbsence,
         },
     "zone" in model.summary.floodZone
       ? {
-          layer: "FLOOD ZONE (summary block)",
+          layer: "Flood zone",
           source: model.summary.floodZone.sourceCitation,
-          asOf: model.summary.floodZone.asOfIso.slice(0, 10),
           confidence: model.summary.floodZone.zone
-            ? `asserted (FEMA zone ${model.summary.floodZone.zone})`
-            : "asserted (outside mapped FEMA special flood hazard area)",
+            ? confidenceCell(CONFIDENCE.asserted, `zone ${model.summary.floodZone.zone}`)
+            : confidenceCell(CONFIDENCE.asserted, "outside mapped SFHA"),
         }
       : {
-          layer: "FLOOD ZONE (summary block)",
+          layer: "Flood zone",
           source: "unavailable",
-          asOf: nowIso,
-          confidence: `honest unavailable — ${model.summary.floodZone.reason}`,
+          confidence: CONFIDENCE.honestUnavailable,
         },
   ];
   return entries;

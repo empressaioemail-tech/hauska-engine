@@ -102,8 +102,7 @@ describe("emitPdfSitePlan", () => {
     const decoded = decodeAllContentStreams(bytes);
     expect(decoded).toContain("GIS-approximate");
     expect(decoded).toContain("not a boundary survey");
-    expect(decoded.toLowerCase()).toContain("not survey-grade");
-    // At least one quadrant bearing tag from the ring.
+    // At least one quadrant bearing tag from the ring (distance-first, §4).
     expect(decoded).toMatch(/[NS] \d+°\d{2}' [EW]/);
   });
 
@@ -133,17 +132,18 @@ describe("emitPdfSitePlan", () => {
     expect(decoded).toContain("1127 N PINE ST");
     // Sub-line carries city + parcel.
     expect(decoded).toContain("Parcel 48029:105129");
-    // Legend rows (contiguous, non-tracked) incl. the honest empty street layer.
+    // Legend rows (§5: every layer, fixed order) incl. the honest empty street.
     expect(decoded).toContain("Property line");
-    expect(decoded).toContain("Setback / buildable envelope");
+    expect(decoded).toContain("Buildable envelope");
+    expect(decoded).toContain("Setback line");
     expect(decoded).toContain("no road node attaches");
     // Scale bar carries a feet unit; scale-ratio + sheet-id + stamp line present.
     expect(decoded).toContain(" ft");
     expect(decoded).toContain('1" = ');
     expect(decoded).toContain("SP-48029-105129");
     expect(decoded).toContain("generated ");
-    // The embedded font is surfaced honestly to callers.
-    expect(fontNote).toContain("Inter");
+    // The embedded font is surfaced honestly to callers (Sheet Standard token map).
+    expect(fontNote).toContain("Barlow");
   });
 
   it("centers a BUILDABLE ENVELOPE callout with the buildable sq ft + percent-of-lot qualifier", async () => {
@@ -166,7 +166,10 @@ describe("emitPdfSitePlan", () => {
     expect(model.summary.buildableAreaSqFt).not.toBeNull();
     const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
-    expect(decoded).toContain("PROVISIONAL");
+    // §7/§11: the provisional state is ONE grey qualifier on the value row,
+    // with the long narrative folded into the sheet-2 fine print.
+    expect(decoded).toContain("provisional planning estimate");
+    expect(decoded).toContain("planning estimate, not a permit-ready boundary");
     expect(decoded).toContain("sq ft");
   });
 
@@ -187,9 +190,17 @@ describe("emitPdfSitePlan", () => {
       expect(latin1).toContain("/Subtype /Image");
 
       const decoded = decodeAllContentStreams(result.bytes);
-      // Tracked eyebrow reconstructs contiguously in the tight join.
-      expect(decoded).toContain("AERIAL CONTEXT");
+      // Tracked eyebrow reconstructs contiguously in the tight join (§2).
+      expect(decoded).toContain("AERIAL");
       expect(decoded).toContain("SHEET 3 OF 3");
+      // §19 imagery provenance strip — all four cells present.
+      expect(decoded).toContain("SOURCE");
+      expect(decoded).toContain("CAPTURE DATE");
+      expect(decoded).toContain("RESOLUTION");
+      expect(decoded).toContain("REGISTRATION");
+      // Esri publishes no capture date — honest UNAVAILABLE, never inferred.
+      expect(decoded).toContain("UNAVAILABLE");
+      expect(decoded).toContain("does not publish a capture date");
       // Required provider attribution + not-a-survey honesty (single tokens —
       // wrapped fine print may break phrases at spaces).
       expect(decoded).toContain("Maxar");
@@ -209,8 +220,12 @@ describe("emitPdfSitePlan", () => {
       const latin1 = Buffer.from(result.bytes).toString("latin1");
       expect(latin1).not.toContain("/Subtype /Image");
 
+      // §17: the page still ships with the overlay on the paper ground and an
+      // UNAVAILABLE chip in the imagery strip; the fine print carries the
+      // honest unavailable note. (The old full-page headline is retired.)
       const decoded = decodeAllContentStreams(result.bytes);
-      expect(decoded).toContain("AERIAL IMAGERY UNAVAILABLE");
+      expect(decoded).toContain("UNAVAILABLE");
+      expect(decoded).toContain("Imagery fetch failed on this run.");
       expect(decoded).toContain(AERIAL_UNAVAILABLE_NOTE);
       // Attribution + honesty fine print still present on the honest page.
       expect(decoded).toContain("Earthstar");
@@ -228,7 +243,8 @@ describe("emitPdfSitePlan", () => {
       expect(result.aerial.imageryEmbedded).toBe(false);
       expect(result.aerial.unavailableReason).toContain("non-PNG body");
       const decoded = decodeAllContentStreams(result.bytes);
-      expect(decoded).toContain("AERIAL IMAGERY UNAVAILABLE");
+      expect(decoded).toContain("UNAVAILABLE");
+      expect(decoded).toContain(AERIAL_UNAVAILABLE_NOTE);
     });
   });
 });
