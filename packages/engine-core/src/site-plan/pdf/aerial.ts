@@ -135,21 +135,36 @@ export function computeAerialMercatorBbox(
   return { xmin, ymin, xmax, ymax };
 }
 
-/**
- * Longest image dimension requested from the export endpoint (px). The
- * World_Imagery export operation advertises maxImageWidth 4096 but returns
- * HTTP 500 ("Error: bytes") above ~1300px at parcel zoom (live-probed
- * 2026-07-28: 1300 ok, 1350+ fails); 1024 leaves a comfortable margin and
- * is ample for a Letter-sheet embed.
- */
+/** Longest image dimension requested from the export endpoint (px). */
 export const AERIAL_IMAGE_MAX_PX = 1024;
 
+/** Smallest longest-axis request we bother making (px). */
+export const AERIAL_IMAGE_MIN_PX = 64;
+
+/**
+ * Resolution floor for the export request, in web-mercator units per pixel.
+ * The World_Imagery export op serves only cached LODs and returns HTTP 500
+ * ("Error: bytes") when asked for a finer resolution than the deepest cached
+ * level (level 19 = 0.298 merc-units/px here). Live-probed 2026-07-28 on the
+ * Bastrop gold parcel: 0.300 m/px → 200 PNG, 0.296 m/px → 500; pixel count
+ * alone is NOT the constraint (1024px failed on a 150m box, passed on 400m).
+ * 0.33 leaves margin above the level-19 boundary.
+ */
+export const AERIAL_MIN_MERC_UNITS_PER_PX = 0.33;
+
 export function aerialImagePixelSize(mercBbox: MercatorBbox): { width: number; height: number } {
-  const aspect = (mercBbox.xmax - mercBbox.xmin) / (mercBbox.ymax - mercBbox.ymin);
+  const w = mercBbox.xmax - mercBbox.xmin;
+  const h = mercBbox.ymax - mercBbox.ymin;
+  const aspect = w / h;
+  // Cap the longest axis by BOTH the pixel budget and the cached-LOD
+  // resolution floor (requesting finer than the cache 500s — see above).
+  const longestUnits = Math.max(w, h);
+  const lodCapPx = Math.floor(longestUnits / AERIAL_MIN_MERC_UNITS_PER_PX);
+  const longPx = Math.max(AERIAL_IMAGE_MIN_PX, Math.min(AERIAL_IMAGE_MAX_PX, lodCapPx));
   if (aspect >= 1) {
-    return { width: AERIAL_IMAGE_MAX_PX, height: Math.max(1, Math.round(AERIAL_IMAGE_MAX_PX / aspect)) };
+    return { width: longPx, height: Math.max(1, Math.round(longPx / aspect)) };
   }
-  return { width: Math.max(1, Math.round(AERIAL_IMAGE_MAX_PX * aspect)), height: AERIAL_IMAGE_MAX_PX };
+  return { width: Math.max(1, Math.round(longPx * aspect)), height: longPx };
 }
 
 /** Builds the keyless Esri World Imagery export URL for the mercator bbox. */
