@@ -8,8 +8,6 @@
 import { arcgisPointQuery } from "@hauska-engine/adapters/arcgis";
 import {
   fetchUsgs3depDem,
-  selectAdaptiveResolutionMeters,
-  DEFAULT_TERRAIN_RESOLUTION_METERS,
   fetchBastropCountyContours,
   bastropContourCoverage,
   BASTROP_CONTOUR_SOURCE,
@@ -36,6 +34,12 @@ import type {
   MapLayersAssembleRequest,
 } from "@hauska-engine/engine-core/map-layers";
 import { lookupOpportunityZoneTract } from "./opportunityZoneRegistry.js";
+import {
+  resolveMapLayerRasterPlan,
+  mapLayerBboxAreaKm2,
+  TOPOGRAPHY_1FT_MAX_AREA_KM2,
+  TOPOGRAPHY_1FT_MAP_MAX_FEATURES,
+} from "./mapLayerBboxGuard.js";
 
 const FEMA_NFHL_FLOOD_ZONES =
   "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28";
@@ -102,6 +106,40 @@ function pendingWave3Slot(layerKey: MapLayerKey, reason: string): MapLayerSlot {
       },
     ),
   };
+}
+
+/**
+ * Honest-empty terrain/contour/flow slot for a viewport too large to fetch a
+ * live raster (bbox-area / raster-budget guard). Returns `status:'ok'` with an
+ * empty FeatureCollection and an honest `honestEmptyReason` / `degradeReason`,
+ * NOT an error and NOT a fabricated layer — the PE panel surfaces the reason on
+ * the chip, so a clean honest-empty reads as "zoom in", not a failure. Crucially
+ * this returns BEFORE any DEM/contour fetch, so the large-bbox OOM cannot occur.
+ */
+function honestEmptyGeojsonSlot(
+  layerKey: MapLayerKey,
+  adapterKey: string,
+  kind: string,
+  reason: string,
+  extraAttributes: Record<string, unknown> = {},
+): MapLayerSlot {
+  return okWave3Slot(
+    layerKey,
+    adapterKey,
+    {
+      kind,
+      geojson: { type: "FeatureCollection", features: [] },
+      attributes: {
+        honestEmptyReason: reason,
+        degradeReason: reason,
+        viewportTooLarge: true,
+        ...extraAttributes,
+      },
+      note: `${layerKey} honest-empty: ${reason}`,
+    } as unknown as MapLayerGeometryPayload,
+    new Date().toISOString(),
+    degradedCoverage(reason, true),
+  );
 }
 
 function esriToGeoJsonFeature(
@@ -252,11 +290,22 @@ async function resolveDemSlot(
 ): Promise<MapLayerSlot> {
   const bbox = resolveBbox(request);
   try {
-    const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
-      bbox,
-      DEFAULT_TERRAIN_RESOLUTION_METERS,
-    );
-    const result = await fetchUsgs3depDem(bbox, { resolutionMeters: resolutionMetersAdapted });
+    // BBOX-AREA / RASTER-BUDGET GUARD (pre-fetch): a zoomed-out viewport at the
+    // mesh 4096px cap is a ~67 MB F32 raster; the map DEM needs far less. Fetch
+    // at the map pixel budget, or honest-degrade above it — never the huge fetch.
+    const plan = resolveMapLayerRasterPlan(bbox);
+    if (!plan.fit) {
+      return honestEmptyGeojsonSlot(
+        "dem",
+        "usgs:3dep-dem",
+        "dem",
+        plan.degradeReason,
+        { areaKm2: Math.round(mapLayerBboxAreaKm2(bbox)) },
+      );
+    }
+    const result = await fetchUsgs3depDem(bbox, {
+      resolutionMeters: plan.resolutionMeters,
+    });
     return okWave3Slot(
       "dem",
       "usgs:3dep-dem",
@@ -286,11 +335,20 @@ async function resolveTopographySlot(
 ): Promise<MapLayerSlot> {
   const bbox = resolveBbox(request);
   try {
-    const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
-      bbox,
-      DEFAULT_TERRAIN_RESOLUTION_METERS,
-    );
-    const result = await fetchUsgs3depDem(bbox, { resolutionMeters: resolutionMetersAdapted });
+    // BBOX-AREA / RASTER-BUDGET GUARD (pre-fetch) — see resolveDemSlot.
+    const plan = resolveMapLayerRasterPlan(bbox);
+    if (!plan.fit) {
+      return honestEmptyGeojsonSlot(
+        "topography",
+        "site-topography:contours",
+        "topography-contours",
+        plan.degradeReason,
+        { areaKm2: Math.round(mapLayerBboxAreaKm2(bbox)) },
+      );
+    }
+    const result = await fetchUsgs3depDem(bbox, {
+      resolutionMeters: plan.resolutionMeters,
+    });
     const dem = await parseDemBytes(new Uint8Array(result.bytes));
     const interval = 1;
     const { featureCollection, thresholds } = deriveContoursGeoJson(
@@ -357,12 +415,23 @@ async function resolveTopography1ftSlot(
   const derived3depFallback = async (
     fallbackReason: string,
   ): Promise<MapLayerSlot> => {
-    const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
-      bbox,
-      DEFAULT_TERRAIN_RESOLUTION_METERS,
-    );
+    // BBOX-AREA / RASTER-BUDGET GUARD (pre-fetch) — a large viewport that fell
+    // through to the 3DEP path must not fetch a huge raster; honest-degrade.
+    const plan = resolveMapLayerRasterPlan(bbox);
+    if (!plan.fit) {
+      return honestEmptyGeojsonSlot(
+        "topography-1ft",
+        "usgs:3dep-dem",
+        "topography-contours",
+        plan.degradeReason,
+        {
+          areaKm2: Math.round(mapLayerBboxAreaKm2(bbox)),
+          fallbackReason,
+        },
+      );
+    }
     const dem = await fetchUsgs3depDem(bbox, {
-      resolutionMeters: resolutionMetersAdapted,
+      resolutionMeters: plan.resolutionMeters,
     });
     const parsed = await parseDemBytes(new Uint8Array(dem.bytes));
     const interval = 1;
@@ -413,9 +482,23 @@ async function resolveTopography1ftSlot(
       );
     }
 
+    // AREA GATE: above the 1-ft threshold the viewport is too zoomed-out to
+    // need (or cheaply render) 1-ft contours, and the county FeatureServer would
+    // return a huge feature count. Degrade to the coarse 3DEP tier honestly
+    // (which itself honest-empties if the bbox is too large even for 3DEP).
+    const areaKm2 = mapLayerBboxAreaKm2(bbox);
+    if (areaKm2 > TOPOGRAPHY_1FT_MAX_AREA_KM2) {
+      return await derived3depFallback(
+        `viewport ~${Math.round(areaKm2)} km² over the ${TOPOGRAPHY_1FT_MAX_AREA_KM2} km² ` +
+          `1-ft threshold — zoom in for 1-ft contours (showing coarser 3DEP tier)`,
+      );
+    }
+
     let county;
     try {
-      county = await fetchBastropCountyContours(bbox);
+      county = await fetchBastropCountyContours(bbox, {
+        maxFeatures: TOPOGRAPHY_1FT_MAP_MAX_FEATURES,
+      });
     } catch (err) {
       return await derived3depFallback(
         `Bastrop 1-ft fetch failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -522,10 +605,23 @@ async function resolveHydrologyFlowSlot(
 ): Promise<MapLayerSlot> {
   const bbox = resolveBbox(request);
   try {
-    const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
-      bbox,
-      DEFAULT_TERRAIN_RESOLUTION_METERS,
-    );
+    // BBOX-AREA / RASTER-BUDGET GUARD (pre-fetch): the 512²-cell D8 cap bounds
+    // the COMPUTE, but the DEM FETCH before downsample can still be ~67 MB at a
+    // large bbox. Bound the fetch to the map pixel budget, or honest-empty.
+    const plan = resolveMapLayerRasterPlan(bbox);
+    if (!plan.fit) {
+      return honestEmptyGeojsonSlot(
+        "hydrology-flow",
+        "hydrology:d8",
+        "hydrology-flow",
+        plan.degradeReason,
+        {
+          channelCount: 0,
+          areaKm2: Math.round(mapLayerBboxAreaKm2(bbox)),
+        },
+      );
+    }
+    const resolutionMetersAdapted = plan.resolutionMeters;
     const dem = await fetchUsgs3depDem(bbox, {
       resolutionMeters: resolutionMetersAdapted,
     });
