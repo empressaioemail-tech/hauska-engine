@@ -135,8 +135,14 @@ export function computeAerialMercatorBbox(
   return { xmin, ymin, xmax, ymax };
 }
 
-/** Longest image dimension requested from the export endpoint (px). */
-export const AERIAL_IMAGE_MAX_PX = 1400;
+/**
+ * Longest image dimension requested from the export endpoint (px). The
+ * World_Imagery export operation advertises maxImageWidth 4096 but returns
+ * HTTP 500 ("Error: bytes") above ~1300px at parcel zoom (live-probed
+ * 2026-07-28: 1300 ok, 1350+ fails); 1024 leaves a comfortable margin and
+ * is ample for a Letter-sheet embed.
+ */
+export const AERIAL_IMAGE_MAX_PX = 1024;
 
 export function aerialImagePixelSize(mercBbox: MercatorBbox): { width: number; height: number } {
   const aspect = (mercBbox.xmax - mercBbox.xmin) / (mercBbox.ymax - mercBbox.ymin);
