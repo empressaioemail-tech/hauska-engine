@@ -248,23 +248,25 @@ export function buildParcelTerrainRoutes(
     return c.body(Buffer.from(bytes));
   });
 
-  // Site-plan export (2026-07-25 sprint): additive to terrain-export above.
-  // Refuse ONLY when there is genuinely no setback-rule atom. Axes marked
-  // not_specified (code silent / build-to-line) are a valid export state —
-  // they must be labeled honestly on the sheet, never treated as "missing".
+  // Site-plan export (2026-07-25 sprint; 2026-07-27 no-setback relaxation):
+  // export SUCCEEDS whether or not a setback-rule atom exists. When present,
+  // setbacks are drawn as before. When ABSENT, the sheet still exports with
+  // parcel + envelope + contours + provenance, and the setback layer is drawn
+  // honest-absent ("setbacks not specified — no rule on file, not verified") —
+  // NEVER a fabricated front/side/rear value (commitment #1). Axes marked
+  // not_specified (code silent / build-to-line) remain a valid drawn state.
   app.post("/:parcelNodeId/site-plan-export/refresh", async (c) => {
     const parsed = sitePlanRefreshBody.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: "invalid_request", details: parsed.error.flatten() }, 400);
     const parcelNodeId = c.req.param("parcelNodeId");
-    const setback = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
+    const setbackCandidate = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
       (candidate) => candidate.entityType === "setback-rule",
     );
-    if (!setback || setback.entityType !== "setback-rule") {
-      return c.json({
-        error: "setback_rule_missing",
-        message: `No setback-rule atom for ${parcelNodeId}; site-plan export refuses to fabricate front/side/rear values.`,
-      }, 422);
-    }
+    // Optional: absent setback is an honest-absent layer, not a refusal.
+    const setback =
+      setbackCandidate && setbackCandidate.entityType === "setback-rule"
+        ? setbackCandidate
+        : undefined;
     try {
       const result = await authorParcelSitePlanExport({
         parcelNodeId,
@@ -293,6 +295,8 @@ export function buildParcelTerrainRoutes(
         },
         setbackDegenerate: result.setbackDegenerate,
         setbackDegenerateReason: result.setbackDegenerateReason,
+        setbackHonestAbsence: result.setbackHonestAbsence,
+        setbackHonestAbsenceReason: result.setbackHonestAbsenceReason,
         streetHonestAbsence: result.streetHonestAbsence,
         zoningHonestAbsence: result.zoningHonestAbsence,
         floodZoneHonestUnavailable: result.floodZoneHonestUnavailable,

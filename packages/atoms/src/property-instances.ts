@@ -183,6 +183,10 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
         setbackDegenerateReason?: string;
         /** dxf-site-plan / ifc-site-plan only: no road-anchor atom was available. */
         streetHonestAbsence?: boolean;
+        /** site-plan only: no setback-rule atom on file — setback layer drawn
+         * honest-absent (no F/S/R fabricated), not a refusal to export. */
+        setbackHonestAbsence?: boolean;
+        setbackHonestAbsenceReason?: string;
         annotationCount?: number;
         /** pdf-site-plan only: page count and honesty flags for the summary block. */
         pageCount?: number;

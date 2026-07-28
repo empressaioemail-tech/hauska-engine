@@ -139,8 +139,14 @@ export interface AuthorParcelSitePlanExportOptions {
    * requires the resolver to supply one (fail closed otherwise). */
   ringOverride?: Array<[number, number]>;
   resolver: ParcelGeometryResolver;
-  /** Fail closed if this is missing rather than inventing a setback. */
-  setback: SetbackRuleAtomInstance;
+  /**
+   * The parcel's setback-rule atom. OPTIONAL: when absent, the export still
+   * succeeds — the setback layer is drawn honest-absent (no F/S/R fabricated;
+   * the offset ring equals the property line) and the sheet says "setbacks
+   * not specified / not verified". A rule that IS present is drawn as before.
+   * This never fabricates a setback — absent is honestly labeled absent.
+   */
+  setback?: SetbackRuleAtomInstance;
   storage: StoragePort;
   artifactStore: TerrainArtifactStore;
   resolutionMeters?: number;
@@ -176,6 +182,9 @@ export interface AuthorParcelSitePlanExportResult {
   atom: ParcelTerrainModelAtomInstance;
   setbackDegenerate: boolean;
   setbackDegenerateReason?: string;
+  /** True when no setback-rule atom existed — layer drawn honest-absent. */
+  setbackHonestAbsence: boolean;
+  setbackHonestAbsenceReason?: string;
   streetHonestAbsence: boolean;
   zoningHonestAbsence: boolean;
   floodZoneHonestUnavailable: boolean;
@@ -234,27 +243,40 @@ export async function authorParcelSitePlanExport(
   const envelopeOutcome: EnvelopeOutcomeInput | undefined =
     options.envelopeOutcomeOverride ?? (await resolveEnvelopeOutcome(options.parcelNodeId, options.storage));
 
+  // Honest-absent path: NO setback-rule atom for this parcel. The export
+  // still succeeds — the setback layer is drawn honest-absent (no F/S/R
+  // fabricated) rather than refusing the whole sheet. `notSpecified` /
+  // districtCode enrichment only applies when a rule actually exists.
+  const setbackHonestAbsence = !options.setback;
+  const setbackAtom = options.setback as
+    | (SetbackRuleAtomInstance & {
+        districtCode?: string;
+        fieldProvenance?: unknown;
+      })
+    | undefined;
+
   // not_specified ≠ missing: enrich silent axes from fieldProvenance and/or
   // the B3 table so the sheet can label them honestly without refusing export.
   // Contract types may lag the runtime `notSpecified` flag written by emit-setback-rule.
   const districtCode =
-    options.setback.districtCode ??
+    setbackAtom?.districtCode ??
     ("district" in zoning ? zoning.district : undefined);
-  const tableAxes = notSpecifiedAxesFromSetbackTable(
-    undefined,
-    districtCode,
-  );
-  const fieldProvenance = options.setback.fieldProvenance as
+  const tableAxes = setbackHonestAbsence
+    ? undefined
+    : notSpecifiedAxesFromSetbackTable(undefined, districtCode);
+  const fieldProvenance = setbackAtom?.fieldProvenance as
     | {
         front?: { notSpecified?: boolean };
         side?: { notSpecified?: boolean };
         rear?: { notSpecified?: boolean };
       }
     | undefined;
-  const notSpecified = resolveNotSpecifiedAxes({
-    fieldProvenance,
-    tableAxes,
-  });
+  const notSpecified = setbackHonestAbsence
+    ? undefined
+    : resolveNotSpecifiedAxes({
+        fieldProvenance,
+        tableAxes,
+      });
 
   // Track B1: STREET from attaching road-nodes (centerline + ROW edges).
   // Caller-supplied streetAnchors win; otherwise resolve from ledger.
@@ -277,13 +299,27 @@ export async function authorParcelSitePlanExport(
     ringWgs84,
     dem,
     contourIntervalMeters,
-    setback: {
-      front: options.setback.front,
-      side: options.setback.side,
-      rear: options.setback.rear,
-      sourceCodeAtomRef: options.setback.sourceCodeAtomRef,
-      notSpecified,
-    },
+    setback: setbackHonestAbsence
+      ? {
+          // No rule atom: zero inset on every axis (offset ring == property
+          // line, nothing fabricated), flagged honest-absent for the legend.
+          front: 0,
+          side: 0,
+          rear: 0,
+          sourceCodeAtomRef: {
+            atomDid: "no-setback-rule-atom",
+            role: "honest-absence",
+            entityType: "setback-rule",
+          },
+          honestAbsence: true,
+        }
+      : {
+          front: options.setback!.front,
+          side: options.setback!.side,
+          rear: options.setback!.rear,
+          sourceCodeAtomRef: options.setback!.sourceCodeAtomRef,
+          notSpecified,
+        },
     frontEdgeIndex: options.frontEdgeIndex,
     streetAnchors,
     geometrySourceRef: resolved.sourceRef,
@@ -414,6 +450,8 @@ export async function authorParcelSitePlanExport(
     contourIntervalMeters,
     setbackDegenerate: model.setback.degenerate,
     setbackDegenerateReason: model.setback.degenerateReason,
+    setbackHonestAbsence,
+    setbackHonestAbsenceReason: model.setback.honestAbsenceReason,
     streetHonestAbsence: model.streets.honestAbsence,
   };
   atom.artifacts["ifc-site-plan"] = {
@@ -425,6 +463,8 @@ export async function authorParcelSitePlanExport(
     annotationCount: ifc.annotationCount,
     setbackDegenerate: model.setback.degenerate,
     setbackDegenerateReason: model.setback.degenerateReason,
+    setbackHonestAbsence,
+    setbackHonestAbsenceReason: model.setback.honestAbsenceReason,
     streetHonestAbsence: model.streets.honestAbsence,
   };
   atom.artifacts["pdf-site-plan"] = {
@@ -434,6 +474,8 @@ export async function authorParcelSitePlanExport(
     pageCount: pdf.pageCount,
     setbackDegenerate: model.setback.degenerate,
     setbackDegenerateReason: model.setback.degenerateReason,
+    setbackHonestAbsence,
+    setbackHonestAbsenceReason: model.setback.honestAbsenceReason,
     streetHonestAbsence: model.streets.honestAbsence,
     zoningHonestAbsence,
     floodZoneHonestUnavailable,
@@ -445,6 +487,8 @@ export async function authorParcelSitePlanExport(
     atom,
     setbackDegenerate: model.setback.degenerate,
     setbackDegenerateReason: model.setback.degenerateReason,
+    setbackHonestAbsence,
+    setbackHonestAbsenceReason: model.setback.honestAbsenceReason,
     streetHonestAbsence: model.streets.honestAbsence,
     zoningHonestAbsence,
     floodZoneHonestUnavailable,

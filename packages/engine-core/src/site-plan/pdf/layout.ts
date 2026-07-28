@@ -444,7 +444,15 @@ export function buildSitePlanDrawingLayout(
       const notSpecified = !!segment.notSpecified;
       const roleUpper = segment.role.toUpperCase();
       let text: string;
-      if (notSpecified) {
+      if (model.setback.honestAbsence) {
+        // No setback-rule atom on file at all: honestly unverified, NOT a
+        // code-silent build-to-line (that implies a positive rule we don't
+        // have). Collapse to a single note rather than one per edge.
+        const key = "setback:honest-absent";
+        if (seenRoleValue.has(key)) return null;
+        seenRoleValue.add(key);
+        text = "SETBACKS NOT SPECIFIED - no rule on file (not verified)";
+      } else if (notSpecified) {
         text = `${roleUpper} not specified - build-to-line governs`;
       } else if (segment.role === "unassigned") {
         // Honest, un-fabricated label; dedupe identical values so the sheet

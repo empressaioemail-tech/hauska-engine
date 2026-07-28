@@ -141,6 +141,45 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     expect((terrainAtom as any).artifacts["pdf-site-plan"]).toBeTruthy();
   });
 
+  it("exports a real sheet with NO setback-rule atom — honest-absent setback layer, never a 422 or a fabricated F/S/R (2026-07-27 operator requirement)", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+
+    const result = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      // No setback atom supplied at all.
+      setback: undefined,
+      storage,
+      artifactStore,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
+    });
+
+    // Real sheet still produced across all three formats.
+    expect(result.atom.artifacts["dxf-site-plan"]?.byteCount).toBeGreaterThan(0);
+    expect(result.atom.artifacts["ifc-site-plan"]?.byteCount).toBeGreaterThan(0);
+    expect(result.atom.artifacts["ifc-site-plan"]?.vertexCount).toBeGreaterThan(0);
+    expect(result.atom.artifacts["pdf-site-plan"]?.byteCount).toBeGreaterThan(0);
+    expect(result.atom.artifacts["pdf-site-plan"]?.pageCount).toBe(2);
+    expect(artifactStore.data.size).toBe(3);
+
+    // Setback layer honestly absent — NOT degenerate, NOT fabricated.
+    expect(result.setbackHonestAbsence).toBe(true);
+    expect(result.setbackDegenerate).toBe(false);
+    expect(result.setbackHonestAbsenceReason).toMatch(/no setback-rule atom/i);
+    expect(result.atom.artifacts["pdf-site-plan"]?.setbackHonestAbsence).toBe(true);
+    expect(result.atom.artifacts["dxf-site-plan"]?.setbackHonestAbsence).toBe(true);
+
+    // The honest-absent note is drawn on the PDF; no fabricated F/S/R number.
+    const pdfRef = result.atom.artifacts["pdf-site-plan"]!.ref;
+    const pdfBytes = artifactStore.data.get(pdfRef)!;
+    const decoded = decodeAllContentStreams(pdfBytes);
+    expect(decoded.toLowerCase()).toContain("not specified");
+    expect(decoded).not.toMatch(/build-to-line governs/i);
+  }, 20_000);
+
   it("resolves zoning district from a zoning-fact atom already in storage, and honors explicit zoning/flood overrides", async () => {
     const storage = new InMemoryStorage();
     const artifactStore = fakeArtifactStore();
