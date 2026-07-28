@@ -31,6 +31,17 @@ export interface SetbackRuleInput {
   atomDid?: string;
   /** Silent axes (code silent / build-to-line). Distinct from missing setback data. */
   notSpecified?: { front?: boolean; side?: boolean; rear?: boolean };
+  /**
+   * True when NO setback-rule atom exists for this parcel at all — a distinct
+   * honest state from `notSpecified` (where a rule exists but the code is
+   * silent on an axis). The whole sheet still exports: the setback layer is
+   * drawn as honest-absent, no F/S/R value is fabricated (all axes inset 0,
+   * so the offset ring equals the property line), and the summary/legend say
+   * "no setback rule on file — not verified", NEVER a fabricated dimension.
+   */
+  honestAbsence?: boolean;
+  /** Reason surfaced on the sheet when `honestAbsence` is set. */
+  honestAbsenceReason?: string;
 }
 
 export interface StreetAnchorInput {
@@ -139,6 +150,9 @@ export interface SitePlanSetbackModel {
   side: number;
   rear: number;
   notSpecified?: { front?: boolean; side?: boolean; rear?: boolean };
+  /** True when no setback-rule atom exists at all (whole layer honest-absent). */
+  honestAbsence?: boolean;
+  honestAbsenceReason?: string;
   /** Honest F/S/R summary for PDF (never prints silent axes as real 0 ft). */
   displayLine: string;
   sourceCodeAtomRef: { atomDid: string; role: string; entityType?: string };
@@ -339,7 +353,19 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     lengthFeet: segment.lengthMeters / METERS_PER_FOOT,
   }));
 
-  const notSpecified = inputs.setback.notSpecified;
+  // Honest-absent setback (no rule atom at all): force every axis silent so
+  // the geometry insets 0 (offset ring == property line, no fabricated
+  // setback lines) and the legend labels the whole layer as unverified —
+  // NEVER a fabricated F/S/R. Distinct from a per-axis `notSpecified` (a rule
+  // exists but the code is silent on that axis).
+  const setbackHonestAbsence = inputs.setback.honestAbsence === true;
+  const setbackHonestAbsenceReason = setbackHonestAbsence
+    ? inputs.setback.honestAbsenceReason ??
+      "No setback-rule atom on file for this parcel; setbacks are not specified here and have not been verified."
+    : undefined;
+  const notSpecified = setbackHonestAbsence
+    ? { front: true, side: true, rear: true }
+    : inputs.setback.notSpecified;
   const offset = computeSetbackOffset(
     ringLocal,
     { front: inputs.setback.front, side: inputs.setback.side, rear: inputs.setback.rear },
@@ -352,12 +378,16 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     side: inputs.setback.side,
     rear: inputs.setback.rear,
     notSpecified,
-    displayLine: formatSetbackSummaryLine({
-      front: inputs.setback.front,
-      side: inputs.setback.side,
-      rear: inputs.setback.rear,
-      notSpecified,
-    }),
+    honestAbsence: setbackHonestAbsence,
+    honestAbsenceReason: setbackHonestAbsenceReason,
+    displayLine: setbackHonestAbsence
+      ? "Setbacks not specified — no setback rule on file for this parcel (not verified)"
+      : formatSetbackSummaryLine({
+          front: inputs.setback.front,
+          side: inputs.setback.side,
+          rear: inputs.setback.rear,
+          notSpecified,
+        }),
     sourceCodeAtomRef: inputs.setback.sourceCodeAtomRef,
     basis: offset.basis,
     segments: offset.segments,
@@ -503,7 +533,9 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     summary,
     citations: {
       propertyLine: inputs.geometrySourceRef ?? "parcel-geometry-ring",
-      setback: `${inputs.setback.sourceCodeAtomRef.atomDid} (${inputs.setback.sourceCodeAtomRef.role})`,
+      setback: setbackHonestAbsence
+        ? "no setback-rule atom on file (setbacks not verified)"
+        : `${inputs.setback.sourceCodeAtomRef.atomDid} (${inputs.setback.sourceCodeAtomRef.role})`,
       contour:
         inputs.contourSourceCitation ?? inputs.demSourceCitation ?? TERRAIN_VERTICAL_DATUM.source,
       zoning: zoningDistrict ? "zoning-fact atom (parcel zoning polygon)" : undefined,

@@ -3,24 +3,29 @@ import { InMemoryStorage } from "@hauska-engine/storage";
 import type { SetbackRuleAtomInstance } from "@hauska-engine/atoms";
 
 vi.mock("@hauska-engine/engine-core/site-plan", () => ({
-  authorParcelSitePlanExport: vi.fn(async (opts: { parcelNodeId: string; setback: { front: number } }) => ({
-    atom: {
-      entityType: "parcel-terrain-model",
-      parcelNodeId: opts.parcelNodeId,
-      artifacts: {
-        "dxf-site-plan": { ref: "memory://dxf", contentType: "application/dxf" },
-        "ifc-site-plan": { ref: "memory://ifc", contentType: "application/step" },
-        "pdf-site-plan": { ref: "memory://pdf", contentType: "application/pdf" },
+  authorParcelSitePlanExport: vi.fn(
+    async (opts: { parcelNodeId: string; setback?: { front: number } }) => ({
+      atom: {
+        entityType: "parcel-terrain-model",
+        parcelNodeId: opts.parcelNodeId,
+        artifacts: {
+          "dxf-site-plan": { ref: "memory://dxf", contentType: "application/dxf" },
+          "ifc-site-plan": { ref: "memory://ifc", contentType: "application/step" },
+          "pdf-site-plan": { ref: "memory://pdf", contentType: "application/pdf" },
+        },
       },
-    },
-    setbackDegenerate: false,
-    streetHonestAbsence: true,
-    zoningHonestAbsence: false,
-    floodZoneHonestUnavailable: true,
-    pdfPageCount: 1,
-    // Prove the author received the real atom (incl. silent axes), not a fabricated setback.
-    _echoFront: opts.setback.front,
-  })),
+      setbackDegenerate: false,
+      // Honest-absent when the route passed no setback atom (2026-07-27 change).
+      setbackHonestAbsence: !opts.setback,
+      streetHonestAbsence: true,
+      zoningHonestAbsence: false,
+      floodZoneHonestUnavailable: true,
+      pdfPageCount: 1,
+      // Prove the author received the real atom (incl. silent axes) when present,
+      // and undefined (not a fabricated setback) when absent.
+      _echoFront: opts.setback?.front ?? null,
+    }),
+  ),
 }));
 
 import { authorParcelSitePlanExport } from "@hauska-engine/engine-core/site-plan";
@@ -68,7 +73,7 @@ describe("site-plan setback gate", () => {
     vi.mocked(authorParcelSitePlanExport).mockClear();
   });
 
-  it("422 setback_rule_missing only when no atom exists", async () => {
+  it("exports honest-absent (201, NOT 422) when no setback-rule atom exists (2026-07-27 operator requirement)", async () => {
     const storage = new InMemoryStorage();
     const app = buildParcelTerrainRoutes(
       { async resolve() { return null; } },
@@ -78,10 +83,15 @@ describe("site-plan setback gate", () => {
       `/${parcelMissing}/site-plan-export/refresh`,
       { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
     );
-    expect(res.status).toBe(422);
-    const body = await res.json() as { error: string };
-    expect(body.error).toBe("setback_rule_missing");
-    expect(authorParcelSitePlanExport).not.toHaveBeenCalled();
+    // The whole sheet still exports; the setback layer is honest-absent, never a
+    // 422 refusal and never a fabricated F/S/R.
+    expect(res.status).toBe(201);
+    const body = await res.json() as { setbackHonestAbsence?: boolean };
+    expect(body.setbackHonestAbsence).toBe(true);
+    // The author was called with NO setback atom (undefined) — nothing fabricated.
+    expect(authorParcelSitePlanExport).toHaveBeenCalledOnce();
+    const call = vi.mocked(authorParcelSitePlanExport).mock.calls[0]![0]!;
+    expect(call.setback).toBeUndefined();
   });
 
   it("allows export when atom exists with not_specified side/rear (no false refusal)", async () => {
@@ -98,12 +108,13 @@ describe("site-plan setback gate", () => {
     expect(res.status).toBe(201);
     expect(authorParcelSitePlanExport).toHaveBeenCalledOnce();
     const call = vi.mocked(authorParcelSitePlanExport).mock.calls[0]![0]!;
-    expect(call.setback.front).toBe(15);
-    expect(call.setback.side).toBe(0);
-    expect(call.setback.rear).toBe(0);
-    const sideProv = call.setback.fieldProvenance?.side as
-      | { notSpecified?: boolean }
-      | undefined;
+    expect(call.setback).toBeDefined();
+    const setback = call.setback!;
+    expect(setback.front).toBe(15);
+    expect(setback.side).toBe(0);
+    expect(setback.rear).toBe(0);
+    const sideProv = (setback as { fieldProvenance?: { side?: { notSpecified?: boolean } } })
+      .fieldProvenance?.side;
     expect(sideProv?.notSpecified).toBe(true);
   });
 });

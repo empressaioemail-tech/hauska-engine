@@ -205,6 +205,20 @@ export function computeSetbackOffset(
   const withAssignment = segments.map((segment, i) => ({ ...segment, ...assignments[i]! }));
 
   const insetFeetPerEdge = assignments.map((a) => Math.max(0, a.distanceFt));
+  // All-zero inset (every axis silent / honest-absent — no setback to draw):
+  // the "setback line" honestly coincides with the property line. This is NOT
+  // a degenerate offset (nothing collapsed) and NOT a fabricated dimension —
+  // it is the correct geometry when there is no setback rule to apply. Return
+  // the property ring itself so the sheet draws no phantom inset, and never
+  // trips the `offsetArea >= originalArea` consumes-lot guard below.
+  if (insetFeetPerEdge.every((ft) => ft === 0)) {
+    return {
+      basis,
+      segments: withAssignment,
+      offsetRing: dedupeClosingVertex(ring),
+      offsetDegenerate: false,
+    };
+  }
   if (insetFeetPerEdge.some((ft) => !Number.isFinite(ft))) {
     return {
       basis,
