@@ -40,17 +40,28 @@ import {
   sheetReason,
 } from "./format.js";
 import { buildSitePlanDrawingLayout, type DrawingBox, type PageXY, type SitePlanDrawingLayout } from "./layout.js";
+import {
+  RhythmCapture,
+  fontVerticalMetrics,
+  lineBox,
+  placeRowBelowRule,
+  type FontVerticalMetrics,
+  type LineBox,
+  type RhythmRow,
+} from "./line-box.js";
 import { buildProvenancePanelEntries, SITE_PLAN_HONESTY_LINE } from "./provenance.js";
 import { PROPERTY_LINE_TAGS_HONESTY } from "../../geometry/gis-property-line-tags.js";
-import { RASTER_OUTLINE_PT, SETBACK_DASH, STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js";
+import { LINE_HEIGHT, RASTER_OUTLINE_PT, SETBACK_DASH, SPACE, STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js";
 import { anyNotSpecified } from "../setback-display.js";
 
 /**
  * Site-plan PDF renderer, reworked 2026-07-28 to the operator's binding
- * SITE PLAN SHEET STANDARD v1.0. The standard is committed alongside this
- * module as `SHEET_STANDARD_v1.html` — twenty rules (§1–§20), a token map,
- * the 2026-07-27 defect audit and a 15-item acceptance checklist. Where any
- * other reference and the standard disagree, the standard governs.
+ * SITE PLAN SHEET STANDARD v1.1. The standard is committed alongside this
+ * module as `SHEET_STANDARD_v1.html` — twenty-one rules (§1–§21), a token
+ * map, the 2026-07-27 defect audit and a 15-item acceptance checklist.
+ * Where any other reference and the standard disagree, the standard
+ * governs. §21 (v1.1) is the vertical-rhythm rule: every text row against a
+ * rule is a metrics-driven line box (line-box.ts), never a bare baseline.
  *
  * Geometry still comes exclusively from the shared `SitePlanModel` (WDLL 5/6);
  * this module maps model geometry to the three Letter sheets: drawing,
@@ -95,6 +106,48 @@ function resolveFontDir(): string {
 function loadFont(file: string): Uint8Array {
   return new Uint8Array(readFileSync(join(FONT_DIR, file)));
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// §21 · real vertical metrics per vendored face, read once per process via
+// fontkit — the line-box model (line-box.ts) is computed from these, never
+// from guessed offsets. All four Barlow faces share upm 1000 / ascent 1000 /
+// descent −200 / capHeight 700, but each is still read individually so a
+// font swap retunes the rhythm automatically.
+// ─────────────────────────────────────────────────────────────────────────
+const METRICS: { body: FontVerticalMetrics; bodyMedium: FontVerticalMetrics; display: FontVerticalMetrics; displayMedium: FontVerticalMetrics } = {
+  body: fontVerticalMetrics(loadFont("Barlow-Regular.ttf")),
+  bodyMedium: fontVerticalMetrics(loadFont("Barlow-Medium.ttf")),
+  display: fontVerticalMetrics(loadFont("BarlowCondensed-SemiBold.ttf")),
+  displayMedium: fontVerticalMetrics(loadFont("BarlowCondensed-Medium.ttf")),
+};
+
+/** §21 line boxes for the recurring sheet roles (PDF points). */
+const LB = {
+  /** Sheet-2 K/V row: governed by the 13px value at body line-height 1.6. */
+  kvRow: lineBox(METRICS.body, TYPE.rowValue, LINE_HEIGHT.body),
+  /** Group heading: condensed 10.5px at display line-height 1.1. */
+  groupHeading: lineBox(METRICS.display, TYPE.groupHeading, LINE_HEIGHT.display),
+  /** Data-table row (segment + provenance): 11px body at 1.6. */
+  tableRow: lineBox(METRICS.body, TYPE.tableCell, LINE_HEIGHT.body),
+  /** Data-table header row (tracked condensed-medium caps, 11px). */
+  tableHead: lineBox(METRICS.displayMedium, TYPE.tableHead, LINE_HEIGHT.display),
+  /** Legend row, 11px body at 1.6. */
+  legend: lineBox(METRICS.body, TYPE.legend, LINE_HEIGHT.body),
+  /** Aerial-sheet legend row, 10px body at 1.6. */
+  legendSmall: lineBox(METRICS.body, pt(10), LINE_HEIGHT.body),
+  /** Header block lines. */
+  eyebrow: lineBox(METRICS.display, TYPE.eyebrow, LINE_HEIGHT.display),
+  address: lineBox(METRICS.display, TYPE.address, LINE_HEIGHT.display),
+  subline: lineBox(METRICS.body, TYPE.subline, LINE_HEIGHT.body),
+  statLabel: lineBox(METRICS.body, TYPE.statLabel, LINE_HEIGHT.display),
+  statValue: lineBox(METRICS.display, TYPE.statValue, LINE_HEIGHT.display),
+  sheetMeta: lineBox(METRICS.body, TYPE.sheetMeta, LINE_HEIGHT.body),
+  /** Imagery-strip cells (§19). */
+  stripLabel: lineBox(METRICS.body, TYPE.stripLabel, LINE_HEIGHT.display),
+  stripValue: lineBox(METRICS.body, TYPE.stripValue, LINE_HEIGHT.body),
+  /** Fine print keeps the template's 1.55. */
+  finePrint: lineBox(METRICS.body, TYPE.finePrint, LINE_HEIGHT.finePrint),
+} as const;
 
 // US Letter, PDF points (72/in). Standard sheet is 816x1056 px @96dpi (§1).
 const PAGE_WIDTH = 612;
@@ -147,6 +200,12 @@ export interface PdfSitePlanResult {
    * (page, kind, key). Tests assert tag/arrow/legend counts here.
    */
   marks: ReadonlyArray<SheetMark>;
+  /**
+   * §21 rhythm capture seam: one record per rhythm-governed text row (rule
+   * y, cap-top y, baseline y, pads, half-leading). The vertical-rhythm gate
+   * asserts the line-box invariants numerically against this.
+   */
+  rhythm: ReadonlyArray<RhythmRow>;
 }
 
 export interface EmitPdfSitePlanOptions {
@@ -256,10 +315,33 @@ function drawChipText(
   return x + w;
 }
 
+/**
+ * §21: a chip is a BOX, not a baseline run — centre it vertically on the
+ * row's line box so it neither crowds the rule above nor sinks below the
+ * baseline neighbours. Returns the x just past the chip.
+ */
+function drawChipOnLineBox(
+  page: PDFPage,
+  text: string,
+  x: number,
+  boxTopY: number,
+  lb: LineBox,
+  style: "solid" | "outline",
+  F: Fonts,
+  size: number = TYPE.chip,
+): number {
+  const h = size + pt(4);
+  const centerY = boxTopY - lb.lineBoxHeight / 2;
+  const chipBaseline = centerY - h / 2 + pt(2);
+  return drawChipText(page, text, x, chipBaseline, style, F, size);
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // HEADER (§2): kicker → address (condensed 600 uppercase) → one meta line;
 // right: stat columns in condensed 600. A 1px full-ink rule closes it.
-// No frame, no boxed block, no empty-field placeholders.
+// No frame, no boxed block, no empty-field placeholders. Vertical placement
+// is the §21 line-box stack: 2px gaps between line boxes, space-4 to the
+// closing rule.
 // ─────────────────────────────────────────────────────────────────────────
 interface HeaderStat {
   label: string;
@@ -268,8 +350,11 @@ interface HeaderStat {
   color?: RGB;
 }
 
-function drawHeaderStats(page: PDFPage, stats: HeaderStat[], right: number, top: number, F: Fonts): void {
+function drawHeaderStats(page: PDFPage, stats: HeaderStat[], right: number, boxTop: number, F: Fonts): void {
   const colGap = pt(30);
+  const labelBaseline = boxTop - LB.statLabel.baselineFromBoxTop;
+  const valueBoxTop = boxTop - LB.statLabel.lineBoxHeight - pt(2);
+  const valueBaseline = valueBoxTop - LB.statValue.baselineFromBoxTop;
   const widths = stats.map((st) => {
     const lw = trackedWidth(F.body, st.label, TYPE.statLabel, TRACKING.statLabel);
     const vw = st.chip
@@ -284,18 +369,18 @@ function drawHeaderStats(page: PDFPage, stats: HeaderStat[], right: number, top:
     const colLeft = cx - w;
     drawTrackedText(page, st.label, {
       x: colLeft,
-      y: top,
+      y: labelBaseline,
       size: TYPE.statLabel,
       font: F.body,
       color: TOKENS.neutral600,
       trackingEm: TRACKING.statLabel,
     });
     if (st.chip) {
-      drawChipText(page, st.chip, colLeft, top - pt(20), "solid", F);
+      drawChipOnLineBox(page, st.chip, colLeft, valueBoxTop, LB.statValue, "solid", F);
     } else {
       page.drawText(st.value ?? "", {
         x: colLeft,
-        y: top - pt(22),
+        y: valueBaseline,
         size: TYPE.statValue,
         font: F.display,
         color: st.color ?? INK,
@@ -343,43 +428,55 @@ function drawSheetHeader(
   const s = model.summary;
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
-  let y = PAGE_HEIGHT - MARGIN_TOP;
+  const top = PAGE_HEIGHT - MARGIN_TOP; // top of the kicker's line box
 
   drawTrackedText(page, eyebrow, {
     x: left,
-    y,
+    y: top - LB.eyebrow.baselineFromBoxTop,
     size: TYPE.eyebrow,
     font: F.display,
     color: ACCENT,
     trackingEm: TRACKING.eyebrow,
   });
-  y -= pt(30) + pt(4);
 
   // Address, or the parcel id plus a NO ADDRESS chip — never a placeholder (§2).
+  const titleBoxTop = top - LB.eyebrow.lineBoxHeight - pt(2);
   const street = streetOnly(s.address);
   const big = (street ?? `PARCEL ${s.parcelNodeId}`).toUpperCase();
-  page.drawText(big, { x: left, y, size: TYPE.address, font: F.display, color: INK });
+  page.drawText(big, {
+    x: left,
+    y: titleBoxTop - LB.address.baselineFromBoxTop,
+    size: TYPE.address,
+    font: F.display,
+    color: INK,
+  });
   if (!street) {
     const bigW = F.display.widthOfTextAtSize(big, TYPE.address);
-    drawChipText(page, CHIP_NO_ADDRESS, left + bigW + pt(10), y + pt(4), "solid", F);
+    drawChipOnLineBox(page, CHIP_NO_ADDRESS, left + bigW + pt(10), titleBoxTop, LB.address, "solid", F);
   }
-  y -= pt(13) + pt(4);
 
   // One meta line — only fields that exist (§2: omit absent fields).
+  const metaBoxTop = titleBoxTop - LB.address.lineBoxHeight - pt(2);
   const metaParts = [cityFromAddress(s.address), `Parcel ${s.parcelNodeId}`, s.countyName].filter(
     (p): p is string => !!p,
   );
-  page.drawText(metaParts.join("  ·  "), { x: left, y, size: TYPE.subline, font: F.body, color: TOKENS.neutral700 });
+  page.drawText(metaParts.join("  ·  "), {
+    x: left,
+    y: metaBoxTop - LB.subline.baselineFromBoxTop,
+    size: TYPE.subline,
+    font: F.body,
+    color: TOKENS.neutral700,
+  });
 
   if (stats) {
-    drawHeaderStats(page, stats, right, PAGE_HEIGHT - MARGIN_TOP - pt(6), F);
+    drawHeaderStats(page, stats, right, top - pt(6), F);
   }
   if (rightMeta) {
-    const metaTop = PAGE_HEIGHT - MARGIN_TOP;
+    const metaTop = top - pt(6);
     rightMeta.forEach((line, i) => {
       page.drawText(line, {
         x: right - F.body.widthOfTextAtSize(line, TYPE.sheetMeta),
-        y: metaTop - pt(20) - i * pt(15),
+        y: metaTop - i * LB.sheetMeta.lineBoxHeight - LB.sheetMeta.baselineFromBoxTop,
         size: TYPE.sheetMeta,
         font: F.body,
         color: TOKENS.neutral600,
@@ -392,10 +489,20 @@ function drawSheetHeader(
   return ruleY;
 }
 
-/** The header's closing-rule y is deterministic (fixed row heights), so the
- * aerial page can size its imagery rect BEFORE the header is drawn. */
+/** The header's closing-rule y is deterministic (§21 line-box stack with
+ * fixed 2px gaps and a space-4 pad to the rule), so the aerial page can size
+ * its imagery rect BEFORE the header is drawn. */
 function headerRuleY(): number {
-  return PAGE_HEIGHT - MARGIN_TOP - (pt(30) + pt(4)) - (pt(13) + pt(4)) - pt(14);
+  return (
+    PAGE_HEIGHT -
+    MARGIN_TOP -
+    LB.eyebrow.lineBoxHeight -
+    pt(2) -
+    LB.address.lineBoxHeight -
+    pt(2) -
+    LB.subline.lineBoxHeight -
+    pt(SPACE.s4)
+  );
 }
 
 function page1HeaderStats(model: SitePlanModel): HeaderStat[] {
@@ -722,14 +829,17 @@ function drawLegend(
   layout: SitePlanDrawingLayout,
   model: SitePlanModel,
   F: Fonts,
-  baselineY: number,
+  ruleY: number,
   marks: MarkRegistry,
+  rhythm: RhythmCapture,
 ): void {
   if (!marks.once(1, "legend", "legend")) return;
   const left = MARGIN_X;
   const rows = legendRows(layout, model);
-  const rowGap = pt(15);
   const size = TYPE.legend;
+  // §21: rows hang from the footer rule — space-2 pad, then line boxes on a
+  // uniform pitch (line box + space-2 row gap).
+  const pitch = LB.legend.lineBoxHeight + pt(SPACE.s2);
   // Column-major fill (fixed §5 order, read down then across) with a measured
   // first-column width so long inline reasons never collide with the scale bar.
   const perCol = Math.ceil(rows.length / 2);
@@ -741,7 +851,8 @@ function drawLegend(
     const col = Math.floor(i / perCol);
     const line = i % perCol;
     const x = col === 0 ? left : left + col1Width + pt(18);
-    const y = baselineY - line * rowGap;
+    const boxTop = ruleY - pt(SPACE.s2) - line * pitch;
+    const y = boxTop - LB.legend.baselineFromBoxTop;
     drawLegendSwatch(page, row, x, y);
     page.drawText(row.label, {
       x: x + swatchBand,
@@ -750,7 +861,23 @@ function drawLegend(
       font: F.body,
       color: row.empty ? SUPPRESSED : TOKENS.neutral800,
     });
+    if (col === 0) {
+      const placed = placeRowBelowRule(ruleY - line * pitch, LB.legend, {
+        padTop: pt(SPACE.s2),
+        padBottom: pt(SPACE.s2),
+      });
+      rhythm.row(1, "legend-row", placed, LB.legend, pt(SPACE.s2), { ruleDrawn: line === 0 });
+    }
   }
+}
+
+/** §21 footer geometry, page 1: worst-case legend depth (4 rows per column)
+ * reserved above the fine-print band — the drawing box never overlaps the
+ * legend even when the margin-leader row appears. */
+function page1FooterRuleY(): number {
+  const finePrintBandTop = MARGIN_BOTTOM + LB.finePrint.lineBoxHeight * 4;
+  const legendBlock = pt(SPACE.s2) + 4 * LB.legend.lineBoxHeight + 3 * pt(SPACE.s2);
+  return finePrintBandTop + pt(SPACE.s3) + legendBlock;
 }
 
 /**
@@ -915,10 +1042,10 @@ function drawFinePrint(page: PDFPage, pageNo: 1 | 2 | 3, text: string, F: Fonts,
   const size = TYPE.finePrint;
   const maxWidth = PAGE_WIDTH - MARGIN_X * 2;
   const lines = wrapTextToWidth(text, F.body, size, maxWidth);
-  let y = MARGIN_BOTTOM + (lines.length - 1) * (size * 1.55) - pt(2);
+  let y = MARGIN_BOTTOM + (lines.length - 1) * LB.finePrint.lineBoxHeight - pt(2);
   for (const line of lines) {
     page.drawText(line, { x: left, y, size, font: F.body, color: TOKENS.neutral600 });
-    y -= size * 1.55;
+    y -= LB.finePrint.lineBoxHeight;
   }
 }
 
@@ -929,13 +1056,12 @@ function drawPage1Footer(
   F: Fonts,
   marks: MarkRegistry,
   finePrint: string,
+  rhythm: RhythmCapture,
 ): void {
-  const finePrintBandTop = MARGIN_BOTTOM + pt(8.2 * 1.55 * 4);
-  const ruleY = finePrintBandTop + pt(58);
+  const ruleY = page1FooterRuleY();
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
 
-  const legendBaseline = ruleY - pt(16);
-  drawLegend(page, layout, model, F, legendBaseline, marks);
+  drawLegend(page, layout, model, F, ruleY, marks, rhythm);
   drawScaleBar(page, layout, model, F, ruleY - pt(8), marks);
 
   drawFinePrint(page, 1, finePrint, F, marks);
@@ -977,14 +1103,20 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
         chipReason: sheetReason(s.zoningHonestAbsenceReason, REASON.noZoning),
       };
 
+  // §7/§11 one-qualifier rule: the value cell carries ONLY the three axis
+  // states. When an axis is code-silent, "build-to-line governs" IS the one
+  // grey qualifier; the front-edge basis moves to the provenance SOURCE
+  // column (see buildProvenancePanelEntries). Otherwise the basis stays the
+  // single qualifier.
+  const setbacksNotSpecified = anyNotSpecified(model.setback.notSpecified);
   const setbacks: SummaryRow = model.setback.honestAbsence
     ? { label: "Setbacks F / S / R", chip: "unavailable", chipReason: REASON.noSetbackRule }
     : {
         label: "Setbacks F / S / R",
-        value: anyNotSpecified(model.setback.notSpecified)
-          ? model.setback.displayLine
+        value: setbacksNotSpecified
+          ? model.setback.displayLine.replace(/\s*—\s*build-to-line governs\s*$/, "")
           : formatSetbacksFSR(model.setback.front, model.setback.side, model.setback.rear),
-        qualifier: describeSetbackBasis(model.setback.basis),
+        qualifier: setbacksNotSpecified ? "build-to-line governs" : describeSetbackBasis(model.setback.basis),
       };
 
   const provisional = s.buildableAreaHonestNote != null && s.buildableAreaSqFt != null;
@@ -1059,96 +1191,143 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
   ];
 }
 
-function drawSummaryTable(page: PDFPage, model: SitePlanModel, F: Fonts, startY: number): number {
+/**
+ * §21 · section heading: the heading's line box hangs space-6 below the
+ * previous block's bottom boundary and sits space-2 above its first row's
+ * rule — closer to its own rows than to the section above (proximity rule).
+ * Returns the y where the group's first rule goes.
+ */
+function drawSectionHeading(
+  page: PDFPage,
+  pageNo: 1 | 2 | 3,
+  text: string,
+  prevBottomY: number,
+  F: Fonts,
+  rhythm: RhythmCapture,
+): number {
+  const boxTop = prevBottomY - pt(SPACE.s6);
+  drawTrackedText(page, text, {
+    x: MARGIN_X,
+    y: boxTop - LB.groupHeading.baselineFromBoxTop,
+    size: TYPE.groupHeading,
+    font: F.display,
+    color: ACCENT,
+    trackingEm: TRACKING.groupHeading,
+  });
+  const placed = placeRowBelowRule(prevBottomY, LB.groupHeading, {
+    padTop: pt(SPACE.s6),
+    padBottom: pt(SPACE.s2),
+  });
+  rhythm.row(pageNo, "group-heading", placed, LB.groupHeading, pt(SPACE.s6), { ruleDrawn: false });
+  return placed.nextRuleY;
+}
+
+function drawSummaryTable(
+  page: PDFPage,
+  model: SitePlanModel,
+  F: Fonts,
+  headerRule: number,
+  rhythm: RhythmCapture,
+): number {
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
   const labelColWidth = pt(200);
   const valueX = left + labelColWidth;
   const groups = buildSummaryGroups(model);
-  let y = startY - pt(18);
+  const padRow = pt(SPACE.s2);
+  let bottom = headerRule;
 
   for (const group of groups) {
-    drawTrackedText(page, group.heading, {
-      x: left,
-      y,
-      size: TYPE.groupHeading,
-      font: F.display,
-      color: ACCENT,
-      trackingEm: TRACKING.groupHeading,
-    });
-    y -= pt(14);
-    for (const row of group.rows) {
-      page.drawLine({
-        start: { x: left, y: y + pt(9) },
-        end: { x: right, y: y + pt(9) },
-        thickness: STROKE.rowRule,
-        color: TOKENS.neutral200,
-      });
-      page.drawText(row.label, { x: left, y, size: TYPE.rowLabel, font: F.body, color: TOKENS.neutral600 });
+    let ruleY = drawSectionHeading(page, 2, group.heading, bottom, F, rhythm);
+    group.rows.forEach((row, ri) => {
+      // Pre-compose the trailing grey text (chip reason or qualifier) so the
+      // row's line count — and therefore its box — is known before drawing.
       let vx = valueX;
+      const chipPadX = pt(7);
       if (row.chip === "unavailable") {
-        vx = drawChipText(page, CHIP_UNAVAILABLE, vx, y, "solid", F) + pt(8);
+        vx += trackedWidth(F.displayMedium, CHIP_UNAVAILABLE, TYPE.chip, TRACKING.chip) + chipPadX * 2 + pt(8);
+      }
+      if (row.value) {
+        vx += F.body.widthOfTextAtSize(row.value, TYPE.rowValue) + pt(8);
+      }
+      if (row.chip === "fixture") {
+        vx += trackedWidth(F.displayMedium, CHIP_FIXTURE_LABEL, TYPE.chip, TRACKING.chip) + chipPadX * 2 + pt(8);
+      }
+      const grey = row.chipReason ?? row.qualifier;
+      const greySize = row.chipReason ? pt(12) : TYPE.rowQualifier;
+      const greyColor = row.chipReason ? TOKENS.neutral700 : TOKENS.neutral600;
+      const greyLines = grey
+        ? wrapTextToWidth(grey, F.body, greySize, Math.max(right - vx, row.chipReason ? pt(120) : pt(90)))
+        : [];
+      const lines = Math.max(1, greyLines.length);
+
+      const placed = placeRowBelowRule(ruleY, LB.kvRow, { padTop: padRow, padBottom: padRow, lines });
+      // Rule above: neutral-300 opens a group, neutral-200 within it (§7/§21).
+      page.drawLine({
+        start: { x: left, y: ruleY },
+        end: { x: right, y: ruleY },
+        thickness: STROKE.rowRule,
+        color: ri === 0 ? TOKENS.neutral300 : TOKENS.neutral200,
+      });
+      const baseline = placed.baselines[0]!;
+      page.drawText(row.label, { x: left, y: baseline, size: TYPE.rowLabel, font: F.body, color: TOKENS.neutral600 });
+      let dx = valueX;
+      if (row.chip === "unavailable") {
+        dx = drawChipOnLineBox(page, CHIP_UNAVAILABLE, dx, placed.boxTopY, LB.kvRow, "solid", F) + pt(8);
       }
       if (row.value) {
         page.drawText(row.value, {
-          x: vx,
-          y,
+          x: dx,
+          y: baseline,
           size: TYPE.rowValue,
           font: row.accentValue ? F.bodyMedium : F.body,
           color: row.accentValue ? ACCENT_TYPE : INK,
         });
-        vx += F.body.widthOfTextAtSize(row.value, TYPE.rowValue) + pt(8);
+        dx += F.body.widthOfTextAtSize(row.value, TYPE.rowValue) + pt(8);
       }
       if (row.chip === "fixture") {
-        vx = drawChipText(page, CHIP_FIXTURE_LABEL, vx, y, "outline", F) + pt(8);
+        dx = drawChipOnLineBox(page, CHIP_FIXTURE_LABEL, dx, placed.boxTopY, LB.kvRow, "outline", F) + pt(8);
       }
-      if (row.chipReason) {
-        const qSize = pt(12);
-        const qLines = wrapTextToWidth(row.chipReason, F.body, qSize, Math.max(right - vx, pt(120)));
-        page.drawText(qLines[0]!, { x: vx, y, size: qSize, font: F.body, color: TOKENS.neutral700 });
-        for (let li = 1; li < qLines.length; li++) {
-          y -= pt(13);
-          page.drawText(qLines[li]!, { x: valueX, y, size: qSize, font: F.body, color: TOKENS.neutral700 });
-        }
-      } else if (row.qualifier) {
-        const qSize = TYPE.rowQualifier;
-        const inlineRoom = right - vx;
-        const qLines = wrapTextToWidth(row.qualifier, F.body, qSize, Math.max(inlineRoom, pt(90)));
-        page.drawText(qLines[0]!, { x: vx, y, size: qSize, font: F.body, color: TOKENS.neutral600 });
-        for (let li = 1; li < qLines.length; li++) {
-          y -= pt(13);
-          page.drawText(qLines[li]!, { x: valueX, y, size: qSize, font: F.body, color: TOKENS.neutral600 });
-        }
-      }
-      y -= pt(20);
-    }
-    y -= pt(8);
+      greyLines.forEach((line, li) => {
+        page.drawText(line, {
+          x: li === 0 ? dx : valueX,
+          y: placed.baselines[li]!,
+          size: greySize,
+          font: F.body,
+          color: greyColor,
+        });
+      });
+      rhythm.row(2, "kv-row", placed, LB.kvRow, padRow);
+      ruleY = placed.nextRuleY;
+    });
+    bottom = ruleY;
   }
-  return y;
+  // One closing rule ends the grid (mock: final border-top row).
+  page.drawLine({
+    start: { x: left, y: bottom },
+    end: { x: right, y: bottom },
+    thickness: STROKE.rowRule,
+    color: TOKENS.neutral200,
+  });
+  return bottom;
 }
 
-/** §16 segment table — full bearing, distance, and sheet-1 disposition. */
+/** §16 segment table — full bearing, distance, and sheet-1 disposition.
+ * §21 row model at table density: 11px cells at body 1.6, space-1 pads. */
 function drawSegmentTable(
   page: PDFPage,
   layout: SitePlanDrawingLayout,
   F: Fonts,
   startY: number,
   marks: MarkRegistry,
+  rhythm: RhythmCapture,
 ): number {
   if (layout.segmentTable.length === 0) return startY;
   if (!marks.once(2, "segment-table", "table")) return startY;
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
-  let y = startY - pt(4);
-  drawTrackedText(page, "SEGMENT TABLE — TAGS MOVED OFF THE DRAWING", {
-    x: left,
-    y,
-    size: TYPE.groupHeading,
-    font: F.display,
-    color: ACCENT,
-    trackingEm: TRACKING.groupHeading,
-  });
-  y -= pt(16);
+  const padCell = pt(SPACE.s1);
+  const headRuleY = drawSectionHeading(page, 2, "SEGMENT TABLE — TAGS MOVED OFF THE DRAWING", startY, F, rhythm);
 
   const twoCol = layout.segmentTable.length > 6;
   const colSpan = twoCol ? (right - left - pt(24)) / 2 : right - left;
@@ -1163,22 +1342,36 @@ function drawSegmentTable(
     "margin leader": "moved to margin leader",
     dropped: "dropped · this table governs",
   };
-  let maxY = y;
+  let minY = headRuleY;
   columns.forEach((rows, ci) => {
     const colLeft = left + ci * (colSpan + pt(24));
     const segX = colLeft;
     const bearingX = colLeft + pt(44);
     const distX = colLeft + pt(150);
     const dispX = colLeft + pt(210);
-    let cy = y;
-    drawTrackedText(page, "SEG", { x: segX, y: cy, size: headSize, font: F.displayMedium, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
-    drawTrackedText(page, "BEARING", { x: bearingX, y: cy, size: headSize, font: F.displayMedium, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
-    drawTrackedText(page, "DIST.", { x: distX, y: cy, size: headSize, font: F.displayMedium, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
-    drawTrackedText(page, "ON SHEET 1", { x: dispX, y: cy, size: headSize, font: F.displayMedium, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
-    cy -= pt(4);
-    page.drawLine({ start: { x: colLeft, y: cy }, end: { x: colLeft + colSpan, y: cy }, thickness: STROKE.rowRule, color: TOKENS.neutral300 });
-    cy -= pt(13);
+    // Header row (no rule above; a neutral-300 rule closes it).
+    const head = placeRowBelowRule(headRuleY, LB.tableHead, { padTop: padCell, padBottom: padCell });
+    for (const [text, x] of [
+      ["SEG", segX],
+      ["BEARING", bearingX],
+      ["DIST.", distX],
+      ["ON SHEET 1", dispX],
+    ] as const) {
+      drawTrackedText(page, text, {
+        x,
+        y: head.baselines[0]!,
+        size: headSize,
+        font: F.displayMedium,
+        color: TOKENS.neutral600,
+        trackingEm: TRACKING.tableHead,
+      });
+    }
+    if (ci === 0) rhythm.row(2, "segment-head", head, LB.tableHead, padCell, { ruleDrawn: false });
+    let ruleY = head.nextRuleY;
+    page.drawLine({ start: { x: colLeft, y: ruleY }, end: { x: colLeft + colSpan, y: ruleY }, thickness: STROKE.rowRule, color: TOKENS.neutral300 });
     for (const row of rows) {
+      const placed = placeRowBelowRule(ruleY, LB.tableRow, { padTop: padCell, padBottom: padCell });
+      const cy = placed.baselines[0]!;
       page.drawText(row.seg, { x: segX, y: cy, size: cellSize, font: F.body, color: TOKENS.neutral700 });
       page.drawText(row.bearing, { x: bearingX, y: cy, size: cellSize, font: F.body, color: INK });
       page.drawText(row.distance, { x: distX, y: cy, size: cellSize, font: F.body, color: INK });
@@ -1189,40 +1382,52 @@ function drawSegmentTable(
         font: F.body,
         color: TOKENS.neutral600,
       });
-      cy -= pt(5);
-      page.drawLine({ start: { x: colLeft, y: cy + pt(1) }, end: { x: colLeft + colSpan, y: cy + pt(1) }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
-      cy -= pt(10);
+      if (ci === 0) rhythm.row(2, "segment-row", placed, LB.tableRow, padCell);
+      ruleY = placed.nextRuleY;
+      page.drawLine({ start: { x: colLeft, y: ruleY }, end: { x: colLeft + colSpan, y: ruleY }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
     }
-    maxY = Math.min(maxY, cy);
+    minY = Math.min(minY, ruleY);
   });
-  return maxY - pt(6);
+  return minY;
 }
 
-/** Provenance (§7/§13): three columns — layer · source · confidence enum. */
-function drawProvenanceTable(page: PDFPage, model: SitePlanModel, F: Fonts, startY: number): void {
+/** Provenance (§7/§13): three columns — layer · source · confidence enum.
+ * §21 row model at table density; multi-line cells grow the row's line
+ * boxes, the rule always clears the deepest cell. */
+function drawProvenanceTable(
+  page: PDFPage,
+  model: SitePlanModel,
+  F: Fonts,
+  startY: number,
+  rhythm: RhythmCapture,
+): void {
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
-  let y = startY - pt(4);
-  drawTrackedText(page, "PROVENANCE / CITATIONS", {
-    x: left,
-    y,
-    size: TYPE.groupHeading,
-    font: F.display,
-    color: ACCENT,
-    trackingEm: TRACKING.groupHeading,
-  });
-  y -= pt(16);
+  const padCell = pt(SPACE.s1);
+  const headRuleY = drawSectionHeading(page, 2, "PROVENANCE / CITATIONS", startY, F, rhythm);
 
   const layerX = left;
   const sourceX = left + pt(140);
   const confX = right - pt(150);
   const headSize = TYPE.tableHead;
-  drawTrackedText(page, "LAYER", { x: layerX, y, size: headSize, font: F.displayMedium, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
-  drawTrackedText(page, "SOURCE", { x: sourceX, y, size: headSize, font: F.displayMedium, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
-  drawTrackedText(page, "CONFIDENCE", { x: confX, y, size: headSize, font: F.displayMedium, color: TOKENS.neutral600, trackingEm: TRACKING.tableHead });
-  y -= pt(4);
-  page.drawLine({ start: { x: left, y }, end: { x: right, y }, thickness: STROKE.rowRule, color: TOKENS.neutral300 });
-  y -= pt(13);
+  const head = placeRowBelowRule(headRuleY, LB.tableHead, { padTop: padCell, padBottom: padCell });
+  for (const [text, x] of [
+    ["LAYER", layerX],
+    ["SOURCE", sourceX],
+    ["CONFIDENCE", confX],
+  ] as const) {
+    drawTrackedText(page, text, {
+      x,
+      y: head.baselines[0]!,
+      size: headSize,
+      font: F.displayMedium,
+      color: TOKENS.neutral600,
+      trackingEm: TRACKING.tableHead,
+    });
+  }
+  rhythm.row(2, "provenance-head", head, LB.tableHead, padCell, { ruleDrawn: false });
+  let ruleY = head.nextRuleY;
+  page.drawLine({ start: { x: left, y: ruleY }, end: { x: right, y: ruleY }, thickness: STROKE.rowRule, color: TOKENS.neutral300 });
 
   const entries = buildProvenancePanelEntries(model);
   const cellSize = TYPE.tableCell;
@@ -1230,15 +1435,17 @@ function drawProvenanceTable(page: PDFPage, model: SitePlanModel, F: Fonts, star
     const layerLines = wrapTextToWidth(entry.layer, F.body, cellSize, sourceX - layerX - pt(8));
     const sourceLines = wrapTextToWidth(entry.source, F.body, cellSize, confX - sourceX - pt(8));
     const confLines = wrapTextToWidth(entry.confidence, F.body, cellSize, right - confX);
-    const rows = Math.max(layerLines.length, sourceLines.length, confLines.length);
-    for (let i = 0; i < rows; i++) {
-      const ry = y - i * pt(12);
+    const lines = Math.max(layerLines.length, sourceLines.length, confLines.length);
+    const placed = placeRowBelowRule(ruleY, LB.tableRow, { padTop: padCell, padBottom: padCell, lines });
+    for (let i = 0; i < lines; i++) {
+      const ry = placed.baselines[i]!;
       if (layerLines[i]) page.drawText(layerLines[i]!, { x: layerX, y: ry, size: cellSize, font: F.body, color: TOKENS.neutral700 });
       if (sourceLines[i]) page.drawText(sourceLines[i]!, { x: sourceX, y: ry, size: cellSize, font: F.body, color: INK });
       if (confLines[i]) page.drawText(confLines[i]!, { x: confX, y: ry, size: cellSize, font: F.body, color: TOKENS.neutral600 });
     }
-    y -= rows * pt(12) + pt(5);
-    page.drawLine({ start: { x: left, y: y + pt(8) }, end: { x: right, y: y + pt(8) }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
+    rhythm.row(2, "provenance-row", placed, LB.tableRow, padCell);
+    ruleY = placed.nextRuleY;
+    page.drawLine({ start: { x: left, y: ruleY }, end: { x: right, y: ruleY }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
   }
 }
 
@@ -1479,16 +1686,34 @@ interface ImageryStripCell {
   chipReason?: string;
 }
 
+/** §19/§21 imagery strip height: space-3 pads around a label line box, a 2px
+ * gap, and TWO value line boxes (chip reasons legitimately wrap — the §19
+ * capture-date cell always carries one on the Esri basemap). */
+function imageryStripHeight(): number {
+  return pt(SPACE.s3) * 2 + LB.stripLabel.lineBoxHeight + pt(2) + 2 * LB.stripValue.lineBoxHeight;
+}
+
 /** §19: four cells, always all four — source · capture date · resolution · registration. */
-function drawImageryStrip(page: PDFPage, cells: ImageryStripCell[], topY: number, F: Fonts, marks: MarkRegistry): number {
+function drawImageryStrip(
+  page: PDFPage,
+  cells: ImageryStripCell[],
+  topY: number,
+  F: Fonts,
+  marks: MarkRegistry,
+  rhythm: RhythmCapture,
+): number {
   if (!marks.once(3, "imagery-strip", "strip")) return topY;
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
   const width = right - left;
   const cellW = width / 4;
-  const stripH = pt(46);
+  const stripH = imageryStripHeight();
   drawHairlineRule(page, left, topY, width, TOKENS.neutral300, 0.7);
   drawHairlineRule(page, left, topY - stripH, width, TOKENS.neutral300, 0.7);
+  const labelBoxTop = topY - pt(SPACE.s3);
+  const labelBaseline = labelBoxTop - LB.stripLabel.baselineFromBoxTop;
+  const valueBoxTop = labelBoxTop - LB.stripLabel.lineBoxHeight - pt(2);
+  const valueBaseline = valueBoxTop - LB.stripValue.baselineFromBoxTop;
   cells.forEach((cell, i) => {
     const x = left + i * cellW + (i === 0 ? 0 : pt(10));
     if (i > 0) {
@@ -1501,29 +1726,36 @@ function drawImageryStrip(page: PDFPage, cells: ImageryStripCell[], topY: number
     }
     drawTrackedText(page, cell.label, {
       x,
-      y: topY - pt(14),
+      y: labelBaseline,
       size: TYPE.stripLabel,
       font: F.body,
       color: TOKENS.neutral600,
       trackingEm: TRACKING.statLabel,
     });
-    const valueY = topY - pt(30);
     if (cell.chip) {
-      const chipEnd = drawChipText(page, CHIP_UNAVAILABLE, x, valueY, "solid", F, pt(8.5));
+      const chipEnd = drawChipOnLineBox(page, CHIP_UNAVAILABLE, x, valueBoxTop, LB.stripValue, "solid", F, pt(8.5));
       if (cell.chipReason) {
         const reasonLines = wrapTextToWidth(cell.chipReason, F.body, pt(8.5), cellW - (chipEnd - x) - pt(16));
-        page.drawText(reasonLines[0]!, { x: chipEnd + pt(5), y: valueY, size: pt(8.5), font: F.body, color: TOKENS.neutral600 });
+        page.drawText(reasonLines[0]!, { x: chipEnd + pt(5), y: valueBaseline, size: pt(8.5), font: F.body, color: TOKENS.neutral600 });
         if (reasonLines[1]) {
-          page.drawText(reasonLines[1]!, { x, y: valueY - pt(10), size: pt(8.5), font: F.body, color: TOKENS.neutral600 });
+          page.drawText(reasonLines[1]!, {
+            x,
+            y: valueBaseline - LB.stripValue.lineBoxHeight,
+            size: pt(8.5),
+            font: F.body,
+            color: TOKENS.neutral600,
+          });
         }
       }
     } else {
-      page.drawText(cell.value ?? "", { x, y: valueY, size: TYPE.stripValue, font: F.body, color: INK });
+      page.drawText(cell.value ?? "", { x, y: valueBaseline, size: TYPE.stripValue, font: F.body, color: INK });
       if (cell.qualifier) {
         const vw = F.body.widthOfTextAtSize(cell.value ?? "", TYPE.stripValue);
-        page.drawText(cell.qualifier, { x: x + vw + pt(5), y: valueY, size: pt(9.5), font: F.body, color: TOKENS.neutral600 });
+        page.drawText(cell.qualifier, { x: x + vw + pt(5), y: valueBaseline, size: pt(9.5), font: F.body, color: TOKENS.neutral600 });
       }
     }
+    const placed = placeRowBelowRule(topY, LB.stripLabel, { padTop: pt(SPACE.s3), padBottom: pt(2) });
+    rhythm.row(3, "strip-cell", placed, LB.stripLabel, pt(SPACE.s3), { ruleDrawn: true });
   });
   return topY - stripH;
 }
@@ -1545,9 +1777,9 @@ function drawAerialFooter(
   ruleY: number,
   marks: MarkRegistry,
   finePrint: string,
+  rhythm: RhythmCapture,
 ): void {
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
-  const baseline = ruleY - pt(16);
 
   // Legend (§5 applied to this sheet): fixed rows, empty states inline.
   const drawsEnvelope =
@@ -1572,13 +1804,22 @@ function drawAerialFooter(
   if (marks.once(3, "legend", "legend")) {
     const perCol = Math.ceil(rows.length / 2);
     const swatchBand = pt(24) + pt(9);
+    const pitch = LB.legendSmall.lineBoxHeight + pt(SPACE.s2);
     const col1Width =
       Math.max(...rows.slice(0, perCol).map((r) => F.body.widthOfTextAtSize(r.label, pt(10)))) + swatchBand;
     rows.forEach((row, i) => {
       const col = Math.floor(i / perCol);
       const line = i % perCol;
       const x = col === 0 ? MARGIN_X : MARGIN_X + col1Width + pt(18);
-      const y = baseline - line * pt(15);
+      const boxTop = ruleY - pt(SPACE.s2) - line * pitch;
+      const y = boxTop - LB.legendSmall.baselineFromBoxTop;
+      if (col === 0) {
+        const placed = placeRowBelowRule(ruleY - line * pitch, LB.legendSmall, {
+          padTop: pt(SPACE.s2),
+          padBottom: pt(SPACE.s2),
+        });
+        rhythm.row(3, "legend-row", placed, LB.legendSmall, pt(SPACE.s2), { ruleDrawn: line === 0 });
+      }
       const w = pt(24);
       const mid = y + pt(1);
       if (row.swatch === "imagery") {
@@ -1668,6 +1909,7 @@ function drawAerialPage(
   rect: PageRect,
   F: Fonts,
   marks: MarkRegistry,
+  rhythm: RhythmCapture,
 ): void {
   const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
@@ -1734,7 +1976,7 @@ function drawAerialPage(
       : { label: "REGISTRATION", chip: true, chipReason: REASON.registrationNotComputable },
   ];
   const stripTop = rect.y - pt(6);
-  const stripBottom = drawImageryStrip(page, cells, stripTop, F, marks);
+  const stripBottom = drawImageryStrip(page, cells, stripTop, F, marks, rhythm);
 
   const registrationSentence =
     tolFeet != null
@@ -1757,6 +1999,7 @@ function drawAerialPage(
       // §19 imagery-age disclosure never fires from an inferred date.
       imageryAgeMonths: null,
     }),
+    rhythm,
   );
 }
 
@@ -1783,11 +2026,17 @@ export async function emitPdfSitePlan(
     displayMedium: await doc.embedFont(loadFont("BarlowCondensed-Medium.ttf"), { subset: false }),
   };
   const marks = new MarkRegistry();
+  const rhythm = new RhythmCapture();
 
   // AERIAL (sheet 3) imagery fetch — started first so the bounded network
   // wait (default 8s cap) overlaps the vector rendering of sheets 1–2.
-  const aerialStripBand = pt(46) + pt(6);
-  const aerialFooterBandTop = MARGIN_BOTTOM + pt(8.2 * 1.55 * 6) + pt(52) + aerialStripBand + pt(6);
+  // §21 footer stack, bottom up: fine print (6 lines) → legend band (space-3
+  // gap + two small-legend line boxes with space-2 pads) → footer rule →
+  // strip → imagery rect.
+  const aerialLegendBand =
+    pt(SPACE.s3) + pt(SPACE.s2) * 2 + 2 * LB.legendSmall.lineBoxHeight + pt(8);
+  const aerialFooterBandTop =
+    MARGIN_BOTTOM + LB.finePrint.lineBoxHeight * 6 + aerialLegendBand + imageryStripHeight() + pt(6);
   const aerialRect = aerialImageRect(headerRuleY(), aerialFooterBandTop);
   const mercBbox = computeAerialMercatorBbox(model.ringLocal, model.bboxWgs84, aerialRect.width / aerialRect.height);
   const aerialUrl = buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox));
@@ -1807,7 +2056,7 @@ export async function emitPdfSitePlan(
     null,
   );
 
-  const footerBandTop = MARGIN_BOTTOM + pt(8.2 * 1.55 * 4) + pt(58) + pt(6);
+  const footerBandTop = page1FooterRuleY() + pt(6);
   const drawingBox: DrawingBox = {
     x: MARGIN_X,
     y: footerBandTop,
@@ -1825,7 +2074,7 @@ export async function emitPdfSitePlan(
   });
   drawSitePlanDrawing(page1, layout, F, marks);
   const movedSegs = layout.segmentTable.map((r) => r.seg);
-  drawPage1Footer(page1, layout, model, F, marks, buildFinePrint(model, 1, { movedSegs }));
+  drawPage1Footer(page1, layout, model, F, marks, buildFinePrint(model, 1, { movedSegs }), rhythm);
 
   // PAGE 2 — summary.
   const page2 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
@@ -1833,9 +2082,9 @@ export async function emitPdfSitePlan(
     `SP-${model.parcelNodeId.replace(/:/g, "-")}`,
     model.parcelNodeId,
   ]);
-  const afterSummaryY = drawSummaryTable(page2, model, F, page2RuleY);
-  const afterSegmentsY = drawSegmentTable(page2, layout, F, afterSummaryY, marks);
-  drawProvenanceTable(page2, model, F, afterSegmentsY);
+  const afterSummaryY = drawSummaryTable(page2, model, F, page2RuleY, rhythm);
+  const afterSegmentsY = drawSegmentTable(page2, layout, F, afterSummaryY, marks, rhythm);
+  drawProvenanceTable(page2, model, F, afterSegmentsY, rhythm);
   drawFinePrint(page2, 2, buildFinePrint(model, 2, { movedSegs }), F, marks);
 
   // PAGE 3 — aerial context. The fetch is bounded and never throws; §20
@@ -1871,7 +2120,7 @@ export async function emitPdfSitePlan(
       }
     }
   }
-  drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks);
+  drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks, rhythm);
 
   const bytes = await doc.save({ useObjectStreams: false });
   return {
@@ -1882,6 +2131,7 @@ export async function emitPdfSitePlan(
       ? { imageryEmbedded: true, sourceUrl: imagery.url }
       : { imageryEmbedded: false, sourceUrl: imagery.url, unavailableReason: imagery.reason },
     marks: marks.marks,
+    rhythm: rhythm.rows,
   };
 }
 

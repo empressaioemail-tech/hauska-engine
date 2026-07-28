@@ -24,9 +24,10 @@
   <div style="font-family:var(--font-body); color:var(--color-text); font-size:10.5pt; line-height:1.55;">
 
     <div style="display:flex; flex-direction:column; gap:6px; padding-bottom:14px; border-bottom:2px solid var(--color-text);">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; font-family:var(--font-heading); font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--color-accent);"><span>Renderer standard · binding · v1.0</span><span style="color:var(--color-neutral-600);">Hauska engine · 2026-07-28</span></div>
+      <div style="display:flex; justify-content:space-between; align-items:baseline; font-family:var(--font-heading); font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--color-accent);"><span>Renderer standard · binding · v1.1</span><span style="color:var(--color-neutral-600);">Hauska engine · 2026-07-28</span></div>
       <h1 style="margin:0; font-family:var(--font-heading); font-size:32pt; font-weight:600; letter-spacing:0.01em; line-height:1.05;">SITE PLAN SHEET STANDARD</h1>
-      <p style="margin:0; font-size:11pt; color:var(--color-neutral-700); max-width:46em;">Twenty rules, a token map and an acceptance checklist for the generated three-page site-plan PDF. Written against the output of 2026-07-27 (parcels 48021:34785 and qa2:dense-small); every rule below exists because that output broke it.</p>
+      <p style="margin:0; font-size:11pt; color:var(--color-neutral-700); max-width:46em;">Twenty-one rules, a token map and an acceptance checklist for the generated three-page site-plan PDF. Written against the output of 2026-07-27 (parcels 48021:34785 and qa2:dense-small); every rule below exists because that output broke it.</p>
+      <p style="margin:0; font-size:9pt; color:var(--color-neutral-600); max-width:46em;">v1.1 (2026-07-28): adds §21 · VERTICAL RHYTHM — the metrics-driven line-box model that keeps type off the rules above it.</p>
     </div>
 
     <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:22px 0 6px;">1 · SCOPE AND SHEET ORDER</h2>
@@ -41,7 +42,7 @@
     </table>
     <p style="margin:8px 0 0; color:var(--color-neutral-700);">A sheet is never omitted. If its data is unavailable the sheet still prints, carrying the honest-absence treatment described in §5, §6 and §17.</p>
 
-    <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px;">2 · THE TWENTY RULES</h2>
+    <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px;">2 · THE TWENTY-ONE RULES</h2>
 
     <div style="display:flex; flex-direction:column; gap:11px;">
       <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§1 · SHEET</strong><br>Letter portrait, 8.5×11 in, ground neutral-100. Page margins 48 / 46 / 36 px at 96 dpi; inner gaps from the spacing scale. No bleed. Content never exceeds the page box — see §13.</div>
@@ -64,6 +65,20 @@
       <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§18 · ONE GEOMETRY, TWO SHEETS</strong><br>The ring and envelope on the aerial sheet are drawn from the same coordinates and the same viewBox as sheet 1 — never re-projected, re-simplified or re-fit to the image. State the registration tolerance in the header stat and again in the fine print; if it cannot be computed, the stat takes an UNAVAILABLE chip rather than a guessed number. Distances over imagery are distance-only; full bearings stay on sheet 1.</div>
       <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§19 · IMAGERY PROVENANCE STRIP</strong><br>Four cells above the fine print, always all four, in this order: source · capture date · resolution · registration. Capture date carries its age in months as a grey qualifier; imagery older than 24 months adds one sentence to the fine print saying conditions may have changed. Each missing cell takes an UNAVAILABLE chip with its reason — never an empty cell, never an inferred date.</div>
       <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§20 · DUOTONE AND LEGIBILITY OVER RASTER</strong><br>Imagery passes through the duotone treatment so it desaturates into the accent — never full colour, never a second hue. Nothing is burned into the raster: every mark is vector, above the image. Type and the ring take a paper-coloured outline behind them (paint-order stroke, 0.9–1.1 units) so they hold over any tone. The frame keeps its registration marks. Contours are omitted here and the legend says where to find them.</div>
+      <div><strong style="font-family:var(--font-heading); font-size:12pt; letter-spacing:0.02em;">§21 · VERTICAL RHYTHM</strong><br>All spacing derives from the base unit 3.4px (--space-1) scale, and every text row against a rule is a LINE BOX, never a bare baseline. The row model is: rule → padding-top (space token) → line box(es) → padding-bottom → next rule. A line box is <span style="font-variant-numeric:tabular-nums;">line-height × size</span> tall with the glyph content area (ascent − descent, from real font metrics) centred in it; text draws at its baseline INSIDE the box, so the cap tops clear the rule above by padding-top plus half-leading plus (ascent − cap-height) — computed from the embedded font's unitsPerEm / ascent / descent / capHeight, never from an eyeballed offset. Multi-line values wrap within the row, growing it one line box per line; chips centre vertically on the row's line box. PROXIMITY: a group heading belongs to its rows — heading padding-bottom is space-2 to its first rule, while the gap to the section above is ≥ space-6; the heading must always sit closer to its own rows than to what precedes it.
+      <table class="table" style="font-size:9.5pt; width:100%; margin-top:6px;">
+        <thead><tr><th style="width:220px;">Row</th><th style="width:130px;">Type / line-height</th><th style="width:120px;">Pad (top &amp; bottom)</th><th>Rule → cap top</th></tr></thead>
+        <tbody>
+          <tr><td>Summary K/V row (§7)</td><td style="font-variant-numeric:tabular-nums;">13px · 1.6</td><td style="font-variant-numeric:tabular-nums;">space-2 (6.8px)</td><td style="font-variant-numeric:tabular-nums;">6.8 + 2.6 + 3.9 = 13.3px</td></tr>
+          <tr><td>Group heading</td><td style="font-variant-numeric:tabular-nums;">10.5px heading · 1.1</td><td style="font-variant-numeric:tabular-nums;">space-6 above / space-2 below</td><td style="font-variant-numeric:tabular-nums;">from block above, ≥ space-6</td></tr>
+          <tr><td>Segment / provenance table row</td><td style="font-variant-numeric:tabular-nums;">11px · 1.6</td><td style="font-variant-numeric:tabular-nums;">space-1 (3.4px)</td><td style="font-variant-numeric:tabular-nums;">3.4 + 2.2 + 3.3 = 8.9px</td></tr>
+          <tr><td>Legend row (§5)</td><td style="font-variant-numeric:tabular-nums;">11px · 1.6</td><td style="font-variant-numeric:tabular-nums;">space-2</td><td style="font-variant-numeric:tabular-nums;">6.8 + 2.2 + 3.3 = 12.3px</td></tr>
+          <tr><td>Imagery strip cell (§19)</td><td style="font-variant-numeric:tabular-nums;">10 / 11.5px</td><td style="font-variant-numeric:tabular-nums;">space-3 (10.2px)</td><td style="font-variant-numeric:tabular-nums;">10.2 + label box offset</td></tr>
+          <tr><td>Header stack (§2)</td><td style="font-variant-numeric:tabular-nums;">11 / 30px display · 1.1, meta 13px · 1.6</td><td style="font-variant-numeric:tabular-nums;">2px gaps, space-4 to rule</td><td>—</td></tr>
+          <tr><td>Fine print (§8)</td><td style="font-variant-numeric:tabular-nums;">8.2px · 1.55</td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+      With the Barlow faces (upm 1000, ascent 1000, descent −200, capHeight 700), a 13px body line at 1.6 gives: line box 20.8px, half-leading 2.6px, baseline 15.6px from box top, cap top 6.5px from box top. Body line-height 1.6 dominates; display (condensed headings, titles) runs 1.1; fine print keeps 1.55. The renderer computes these from the embedded fonts at run time (line-box.ts) and exports every placed row on the rhythm capture seam; the vertical-rhythm gate fails the sheet when any row's rule-to-cap gap deviates from the model or rows of one kind lose uniformity.</div>
     </div>
 
     <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px; break-before:page;">3 · TOKEN MAP</h2>
@@ -150,7 +165,7 @@
 
     <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px;">6 · REFERENCE SHEETS</h2>
     <p style="margin:0;">Pixel references accompany this standard: <strong>48021:34785</strong> as the three-page gold set (drawing, summary, aerial), and <strong>qa2:dense-small</strong> as the degenerate case — eight segments, no buildable envelope, cascade tiers (a) and (b) both exercised, overflow tabulated on sheet 2. Where the standard and a reference sheet disagree, the standard governs and the reference is the defect.</p>
-    <p style="margin:14px 0 0; padding-top:8px; border-top:1px solid var(--color-neutral-300); font-size:8.5pt; color:var(--color-neutral-600);">Site plan sheet standard v1.0 · Hauska engine, site-plan renderer · reference sheets 48021:34785 (three-page gold) and qa2:dense-small (degenerate) · 2026-07-28</p>
+    <p style="margin:14px 0 0; padding-top:8px; border-top:1px solid var(--color-neutral-300); font-size:8.5pt; color:var(--color-neutral-600);">Site plan sheet standard v1.1 (v1.0 + §21 vertical rhythm) · Hauska engine, site-plan renderer · reference sheets 48021:34785 (three-page gold) and qa2:dense-small (degenerate) · 2026-07-28</p>
 
   </div>
 </doc-page>

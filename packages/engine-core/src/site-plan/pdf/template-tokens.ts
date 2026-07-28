@@ -114,6 +114,17 @@ export const TYPE = {
 export const MIN_DRAWING_TYPE_PT = pt(10);
 
 /**
+ * §21 · line-height ratios (CSS-equivalent). Body copy runs at the mock's
+ * dominant 1.6; display (condensed headings / titles) at 1.1; fine print
+ * keeps the template's 1.55. Consumed by line-box.ts via `lineBox()`.
+ */
+export const LINE_HEIGHT = {
+  body: 1.6,
+  display: 1.1,
+  finePrint: 1.55,
+} as const;
+
+/**
  * Letter-spacing (tracking) in em, from the template. pdf-lib 1.17 drawText
  * has no characterSpacing option, so tracked runs are drawn glyph-by-glyph
  * with this advance (see drawTrackedText in render.ts).

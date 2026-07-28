@@ -1,5 +1,5 @@
 import type { SitePlanModel } from "../site-model.js";
-import { CONFIDENCE, confidenceCell } from "./format.js";
+import { CONFIDENCE, confidenceCell, describeSetbackBasis } from "./format.js";
 
 /**
  * The honesty line, formalized verbatim per 75o spec / WDLL item 5. Any
@@ -46,8 +46,12 @@ export function buildProvenancePanelEntries(model: SitePlanModel): ProvenancePan
       confidence: confidenceCell(CONFIDENCE.asserted, "GIS-approx"),
     },
     {
+      // §11: the front-edge basis lives HERE (source column), not as a
+      // second qualifier on the summary row.
       layer: "Setback",
-      source: model.citations.setback,
+      source: model.setback.honestAbsence
+        ? model.citations.setback
+        : `${model.citations.setback} · ${describeSetbackBasis(model.setback.basis)}`,
       confidence: setbackConfidence,
     },
     {
@@ -93,7 +97,11 @@ export function buildProvenancePanelEntries(model: SitePlanModel): ProvenancePan
         }
       : {
           layer: "Flood zone",
-          source: "unavailable",
+          // §11: machine detail (upstream error string) belongs to the
+          // SOURCE column only; the summary row carries the plain sentence.
+          source:
+            ("detail" in model.summary.floodZone ? model.summary.floodZone.detail : undefined) ??
+            "unavailable",
           confidence: CONFIDENCE.honestUnavailable,
         },
   ];

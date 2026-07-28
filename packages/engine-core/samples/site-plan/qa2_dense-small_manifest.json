@@ -1,6 +1,6 @@
 {
   "parcelNodeId": "qa2:dense-small",
-  "generatedAt": "2026-07-28T22:36:39.762Z",
+  "generatedAt": "2026-07-28T23:22:57.191Z",
   "track": "QA2-site-plan-craft",
   "fixtureKind": "synthetic dense small ring",
   "fixtureDisclosure": "Synthetic crowded parcel for label-collision visual QA. GIS tags are approximate. Not a survey.",
@@ -9,7 +9,7 @@
   "propertySegmentCount": 8,
   "pdf": {
     "pageCount": 3,
-    "byteCount": 261172
+    "byteCount": 264909
   },
   "regenerate": "cd P:/hauska-engine/packages/engine-core && npx tsx scripts/generate-site-plan-gold-dense-qa2.mjs"
 }
