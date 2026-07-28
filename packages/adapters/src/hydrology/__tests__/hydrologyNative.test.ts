@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { runHydrologyNative } from "../hydrologyNative.js";
+import {
+  runHydrologyNative,
+  accumulationThresholdForResolution,
+  ACCUMULATION_THRESHOLD_BASE_CELLS,
+} from "../hydrologyNative.js";
 
 describe("runHydrologyNative", () => {
   it("produces drainage zones and flow lines on a sloped grid", () => {
@@ -30,5 +34,38 @@ describe("runHydrologyNative", () => {
     expect(result.drainageZonesGeoJson.features.length).toBeGreaterThan(0);
     expect(result.flowLinesGeoJson.features.length).toBeGreaterThan(0);
     expect(result.rainfallResultGeoJson?.features.length).toBeGreaterThan(0);
+  });
+});
+
+describe("accumulationThresholdForResolution", () => {
+  it("stays at the 50-cell base at the 10m reference resolution", () => {
+    expect(accumulationThresholdForResolution(10)).toBe(
+      ACCUMULATION_THRESHOLD_BASE_CELLS,
+    );
+  });
+
+  it("scales quadratically finer so channel density is resolution-invariant", () => {
+    // Same PHYSICAL drainage-area cutoff: threshold * res^2 is constant.
+    expect(accumulationThresholdForResolution(1)).toBe(5000); // 50 * 10^2
+    expect(accumulationThresholdForResolution(2)).toBe(1250); // 50 * 5^2
+    expect(accumulationThresholdForResolution(5)).toBe(200); // 50 * 2^2
+  });
+
+  it("never drops below the base for coarse DEMs (min 50)", () => {
+    expect(accumulationThresholdForResolution(30)).toBe(
+      ACCUMULATION_THRESHOLD_BASE_CELLS,
+    );
+  });
+
+  it("falls back to the base on degenerate resolutions", () => {
+    expect(accumulationThresholdForResolution(0)).toBe(
+      ACCUMULATION_THRESHOLD_BASE_CELLS,
+    );
+    expect(accumulationThresholdForResolution(-1)).toBe(
+      ACCUMULATION_THRESHOLD_BASE_CELLS,
+    );
+    expect(accumulationThresholdForResolution(Number.NaN)).toBe(
+      ACCUMULATION_THRESHOLD_BASE_CELLS,
+    );
   });
 });

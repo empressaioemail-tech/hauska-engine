@@ -14,7 +14,10 @@ import {
   BASTROP_CONTOUR_VINTAGE,
   BASTROP_CONTOUR_INTERVAL_LABEL,
 } from "@hauska-engine/adapters/topography";
-import { runHydrologyWorker } from "@hauska-engine/adapters/hydrology";
+import {
+  runHydrologyWorker,
+  accumulationThresholdForResolution,
+} from "@hauska-engine/adapters/hydrology";
 import {
   deriveContoursGeoJson,
   parseDemBytes,
@@ -36,6 +39,8 @@ import type {
 import { lookupOpportunityZoneTract } from "./opportunityZoneRegistry.js";
 import {
   resolveMapLayerRasterPlan,
+  resolveHydrologyRasterPlan,
+  resolveHydrologyMinResolutionMeters,
   mapLayerBboxAreaKm2,
   TOPOGRAPHY_1FT_MAX_AREA_KM2,
   TOPOGRAPHY_1FT_MAP_MAX_FEATURES,
@@ -608,7 +613,15 @@ async function resolveHydrologyFlowSlot(
     // BBOX-AREA / RASTER-BUDGET GUARD (pre-fetch): the 512²-cell D8 cap bounds
     // the COMPUTE, but the DEM FETCH before downsample can still be ~67 MB at a
     // large bbox. Bound the fetch to the map pixel budget, or honest-empty.
-    const plan = resolveMapLayerRasterPlan(bbox);
+    //
+    // HYDROLOGY RESOLUTION FLOOR (fix/hydrology-resolution-floor): the shared
+    // map plan resolves 1m at parcel scale (topo fidelity), but flow-line
+    // derivation does not need 1m — a 1m DEM costs ~100x the cells of 10m and
+    // pushed the pysheds worker past PE's 60s proxy budget (HTTP 504). So the
+    // hydrology plan clamps the shared plan's resolution UP to the floor
+    // (default 10m, env HYDROLOGY_MIN_RESOLUTION_METERS) BEFORE the fetch.
+    const plan = resolveHydrologyRasterPlan(bbox);
+    const resolutionFloorMeters = resolveHydrologyMinResolutionMeters();
     if (!plan.fit) {
       return honestEmptyGeojsonSlot(
         "hydrology-flow",
@@ -621,7 +634,16 @@ async function resolveHydrologyFlowSlot(
         },
       );
     }
+    // The ACTUAL resolution used for the fetch (floor-clamped) — every
+    // metadata field below reports this value, never the pre-clamp plan.
     const resolutionMetersAdapted = plan.resolutionMeters;
+    // Scale the D8 accumulation threshold with resolution so channel density
+    // is resolution-invariant (threshold is in CELLS of accumulated flow; the
+    // physical drainage-area cutoff is held at the 10m/50-cell reference). At
+    // the 10m floor this stays 50; it protects any future finer-res call.
+    const accumulationThreshold = accumulationThresholdForResolution(
+      resolutionMetersAdapted,
+    );
     const dem = await fetchUsgs3depDem(bbox, {
       resolutionMeters: resolutionMetersAdapted,
     });
@@ -640,6 +662,7 @@ async function resolveHydrologyFlowSlot(
     const pourLng = (bbox.westLng + bbox.eastLng) / 2;
     const pourLat = (bbox.southLat + bbox.northLat) / 2;
 
+    const workerStartedAtMs = Date.now();
     const result = await runHydrologyWorker({
       demBytes: new Uint8Array(dem.bytes).buffer.slice(0) as ArrayBuffer,
       pourLng,
@@ -648,7 +671,19 @@ async function resolveHydrologyFlowSlot(
       width: down.width,
       height: down.height,
       elevation: down.elevation,
+      accumulationThreshold,
     });
+    const workerWallMs = Date.now() - workerStartedAtMs;
+
+    // Timing sanity: DEM cells + worker wall-time so live latency is
+    // observable per request (the 504 regression was invisible without this).
+    console.info(
+      `[hydrology-flow] dem=${parsed.width}x${parsed.height}` +
+        ` (${parsed.width * parsed.height} cells @ ${resolutionMetersAdapted}m,` +
+        ` floor=${resolutionFloorMeters}m) grid=${down.width}x${down.height}` +
+        ` threshold=${accumulationThreshold} workerMs=${workerWallMs}` +
+        ` status=${result.status}`,
+    );
 
     if (result.status === "error") {
       // Honest-empty: real reason (flat terrain, nodata DEM, worker failure).
@@ -663,8 +698,11 @@ async function resolveHydrologyFlowSlot(
             honestEmptyReason: result.message,
             errorCode: result.code,
             resolutionMetersAdapted,
+            resolutionFloorMeters,
+            accumulationThreshold,
             gridWidth: down.width,
             gridHeight: down.height,
+            workerWallMs,
           },
           provider: "USGS 3DEP + D8 flow accumulation",
           snapshotDate: dem.fetchedAt,
@@ -706,8 +744,10 @@ async function resolveHydrologyFlowSlot(
           fallbackReason: result.fallbackReason ?? null,
           pourPoint: result.pourPoint,
           resolutionMetersAdapted,
+          resolutionFloorMeters,
           gridWidth: down.width,
           gridHeight: down.height,
+          workerWallMs,
           honestEmptyReason:
             channelCount === 0
               ? "no flow channels above accumulation threshold in this bbox"

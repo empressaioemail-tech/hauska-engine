@@ -46,6 +46,7 @@
 import {
   bboxMetersExtent,
   MAX_PIXELS_PER_AXIS,
+  MIN_PIXELS_PER_AXIS,
   FINEST_PRACTICAL_RESOLUTION_METERS,
   type BboxWgs84,
 } from "@hauska-engine/adapters/topography";
@@ -165,6 +166,76 @@ export function resolveMapLayerRasterPlan(bbox: BboxWgs84): MapLayerRasterPlan {
     widthPxAtCoarsest: widthPx,
     heightPxAtCoarsest: heightPx,
   };
+}
+
+/**
+ * Default resolution FLOOR (meters per pixel) for the hydrology-flow slot's DEM
+ * fetch (fix/hydrology-resolution-floor, 2026-07-28).
+ *
+ * WHY: after the topo-fidelity swap the shared raster plan resolves 1m for any
+ * parcel-scale viewport (the ladder's finest rung fits the 1024px budget). The
+ * terrain/contour slots WANT that fidelity; D8 flow-line derivation does NOT —
+ * flow channels read identically at 10m, while a 1m DEM costs ~100x the cells,
+ * exploded the flow-seed count (fixed 50-cell accumulation threshold), and blew
+ * the pysheds worker past PE's 60s Vercel proxy budget → HTTP 504 on the chip.
+ * So hydrology clamps the shared plan's resolution UP to this floor before the
+ * fetch. Env-tunable via HYDROLOGY_MIN_RESOLUTION_METERS; clamped to [1, 30]
+ * (1 = no floor beyond the ladder's finest, 30 = the national fallback ceiling)
+ * so a misconfig can neither re-open the 1m blow-up ceilinglessly coarse nor
+ * go below the ladder.
+ */
+export const HYDROLOGY_MIN_RESOLUTION_METERS_DEFAULT = 10;
+
+/** Resolve the hydrology resolution floor from env (default 10m). */
+export function resolveHydrologyMinResolutionMeters(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = Number(env.HYDROLOGY_MIN_RESOLUTION_METERS);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return HYDROLOGY_MIN_RESOLUTION_METERS_DEFAULT;
+  }
+  return Math.min(
+    Math.max(raw, FINEST_PRACTICAL_RESOLUTION_METERS),
+    MAP_LAYER_RESOLUTION_LADDER[MAP_LAYER_RESOLUTION_LADDER.length - 1]!,
+  );
+}
+
+/**
+ * The raster plan for the HYDROLOGY-FLOW slot: the shared map-layer plan with
+ * its resolution clamped UP to the hydrology floor. The pixel counts are
+ * recomputed at the clamped resolution so the DEM fetch is sized to what is
+ * actually requested (honest metadata: `resolutionMeters`/`widthPx`/`heightPx`
+ * always describe the fetch that happens). A no-fit (degrade) plan passes
+ * through unchanged — a coarser floor can never turn a fitting plan into a
+ * non-fitting one.
+ */
+export function resolveHydrologyRasterPlan(
+  bbox: BboxWgs84,
+  env: NodeJS.ProcessEnv = process.env,
+): MapLayerRasterPlan {
+  const plan = resolveMapLayerRasterPlan(bbox);
+  if (!plan.fit) return plan;
+  const floorMeters = resolveHydrologyMinResolutionMeters(env);
+  if (plan.resolutionMeters >= floorMeters) return plan;
+
+  // Clamp UP to the floor — but never below the DEM client's 16px minimum
+  // axis ({@link MIN_PIXELS_PER_AXIS}: `fetchUsgs3depDem` throws
+  // raster-too-small under it). For a very small viewport, relax the floor
+  // FINER along the ladder until the raster clears 16px on both axes; if even
+  // that fails, keep the shared plan unchanged (same behavior as pre-floor).
+  const finerLadderSteps = [...MAP_LAYER_RESOLUTION_LADDER]
+    .filter((step) => step < floorMeters && step >= plan.resolutionMeters)
+    .sort((a, b) => b - a);
+  for (const resolutionMeters of [floorMeters, ...finerLadderSteps]) {
+    const { widthPx, heightPx } = rasterAxisPixels(bbox, resolutionMeters);
+    if (
+      widthPx >= MIN_PIXELS_PER_AXIS &&
+      heightPx >= MIN_PIXELS_PER_AXIS
+    ) {
+      return { fit: true, resolutionMeters, widthPx, heightPx };
+    }
+  }
+  return plan;
 }
 
 /** Re-export the mesh-path cap for tests that contrast the two budgets. */

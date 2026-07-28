@@ -10,6 +10,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   runHydrologyNative,
+  ACCUMULATION_THRESHOLD_BASE_CELLS,
   type GeoJsonFeatureCollection,
   type HydrologyNativeInput,
 } from "./hydrologyNative";
@@ -82,7 +83,8 @@ async function spawnPyshedsWorker(
     pourLng: req.pourLng,
     pourLat: req.pourLat,
     rainfallDepthMm: req.rainfallDepthMm ?? 0,
-    accumulationThreshold: req.accumulationThreshold ?? 50,
+    accumulationThreshold:
+      req.accumulationThreshold ?? ACCUMULATION_THRESHOLD_BASE_CELLS,
   });
 
   return new Promise((resolve) => {
