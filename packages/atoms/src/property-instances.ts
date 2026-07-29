@@ -144,7 +144,13 @@ export type TerrainExportFormat =
    * the parcel's site-plan sheets APPENDED and renumbered. Composed from the
    * SAME SitePlanModel as pdf-site-plan; user-supplied content is rendered
    * verbatim (labeled), never verified or fabricated by the engine. */
-  | "pdf-dossier";
+  | "pdf-dossier"
+  /** Flood & Drainage report (2026-07-29, R3): parcel-scoped screening-level
+   * drainage study rendered as a Sheet-Standard PDF (drawing + summary).
+   * The companion json artifact caches the study payload the PE dock
+   * visualizes — same run, never a second computation. */
+  | "pdf-flood-drainage"
+  | "json-flood-drainage-study";
 
 /**
  * Engine overlay on published `@empressaio/atom-contract/property`
@@ -215,6 +221,15 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
         briefFactCount?: number;
         chatSummaryIncluded?: boolean;
         notesIncluded?: boolean;
+        /** pdf-flood-drainage / json-flood-drainage-study only: study record.
+         * honestEmpty=true means flat terrain / DEM void — the sheets still
+         * ship with the honest panel, never fabricated geometry. */
+        honestEmpty?: boolean;
+        honestEmptyReason?: string;
+        rainfallDepthInches?: number;
+        rainfallSource?: "noaa-atlas14" | "parameter" | "default";
+        computationLibrary?: string;
+        flowExitCount?: number;
       }
     >
   >;
