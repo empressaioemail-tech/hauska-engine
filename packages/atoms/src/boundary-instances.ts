@@ -21,6 +21,15 @@ export type BoundaryAdjacencyKind =
   | "neighbor-parcel"
   | "unmapped";
 
+/**
+ * How the front role was chosen (honesty requirement — surfaces cite it):
+ * - "situs-street-match": parcel situs street name matched exactly one
+ *   road-adjacent edge's road displayName.
+ * - "adjacency-heuristic": road-proximity heuristic (no situs / no match /
+ *   ambiguous match).
+ */
+export type BoundaryFrontBasis = "situs-street-match" | "adjacency-heuristic";
+
 export interface BoundaryFacingRoad {
   roadNodeId: string;
   classification: RoadClassification;
@@ -73,6 +82,8 @@ export interface ContractBoundaryEdgeAtomInstance {
   propId: string;
   edgeIndex: number;
   role: "front" | "side" | "rear" | "side_corner";
+  /** Present on the front edge only: which rule assigned the front role. */
+  frontBasis?: BoundaryFrontBasis;
   adjacencyKind: BoundaryAdjacencyKind;
   parcelNeighborPropId: string | null;
   facingRoad: BoundaryFacingRoad | null;

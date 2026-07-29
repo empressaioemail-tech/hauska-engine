@@ -213,6 +213,7 @@ for (const row of parcelRows) {
     descriptor,
     adjacencyIndex,
     roads,
+    situsAddress: entry.situsAddress ?? null,
     effectiveDate,
     extractedAt,
     sourceAdapter: descriptor.sourceAdapter,

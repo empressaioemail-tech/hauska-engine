@@ -13,6 +13,8 @@ export interface ParcelIndexEntry {
   countyFips: string;
   propId: string;
   parcelNodeId: string;
+  /** Tier-1 situs address (e.g. "901 PECAN ST"); null when county lacks situs data. */
+  situsAddress?: string | null;
   ring: Ring;
   westLng: number;
   southLat: number;

@@ -3,7 +3,10 @@
  *
  * Honest rules:
  * - roadClass + osmHighwayTag only when an edge is within proximity of a road centerline.
- * - At most one primary front (closest non-alley road).
+ * - At most one primary front. When the parcel's SITUS street name unambiguously
+ *   token-matches exactly one adjacent road-facing edge, that edge is front
+ *   (frontBasis "situs-street-match"). Otherwise the existing proximity
+ *   heuristic picks the front (frontBasis "adjacency-heuristic").
  * - Alley-backed edges may carry alley roadClass on rear only.
  * - Unroaded edges stay side/rear without roadClass — never fabricate setbacks.
  */
@@ -58,6 +61,9 @@ function preferRoadHit(current: EdgeRoadHit | undefined, candidate: EdgeRoadHit)
   return candidate.distanceM < current.distanceM ? candidate : current;
 }
 
+/** How the front edge was chosen — recorded on the atom body so surfaces can cite it. */
+export type FrontRoleBasis = "situs-street-match" | "adjacency-heuristic";
+
 export interface EdgeLabelDraft {
   index: number;
   label: WarmEdgeRole;
@@ -65,6 +71,106 @@ export interface EdgeLabelDraft {
   osmHighwayTag?: string;
   osmSurfaceTag?: string;
   roadProvenanceKind?: import("./types.js").WarmRoadProvenanceKind;
+  /** Present on the front edge only: which rule picked it. */
+  frontBasis?: FrontRoleBasis;
+  /** Road identity of the hit backing this label (front/rear/side_corner). */
+  osmWayId?: number;
+}
+
+/** Street-suffix tokens treated as equivalent noise for situs-vs-road matching. */
+const STREET_SUFFIX_TOKENS = new Set([
+  "ST",
+  "STREET",
+  "DR",
+  "DRIVE",
+  "RD",
+  "ROAD",
+  "AVE",
+  "AV",
+  "AVENUE",
+  "LN",
+  "LANE",
+  "CT",
+  "COURT",
+  "BLVD",
+  "BOULEVARD",
+  "HWY",
+  "HIGHWAY",
+  "PKWY",
+  "PARKWAY",
+  "CIR",
+  "CIRCLE",
+  "PL",
+  "PLACE",
+  "TRL",
+  "TRAIL",
+  "WAY",
+  "TER",
+  "TERRACE",
+  "LOOP",
+  "CV",
+  "COVE",
+  "PT",
+  "POINT",
+  "BND",
+  "BEND",
+  "XING",
+  "CROSSING",
+  "SQ",
+  "SQUARE",
+  "PASS",
+  "PATH",
+  "RUN",
+]);
+
+const DIRECTIONAL_TOKENS = new Set([
+  "N",
+  "S",
+  "E",
+  "W",
+  "NE",
+  "NW",
+  "SE",
+  "SW",
+  "NORTH",
+  "SOUTH",
+  "EAST",
+  "WEST",
+]);
+
+/** Unit designators — everything from the designator onward is dropped. */
+const UNIT_CUT_RE =
+  /\b(APT|APARTMENT|UNIT|STE|SUITE|BLDG|BUILDING|LOT|TRLR|FL|RM|BOX)\b.*$/;
+
+/**
+ * Normalize a situs address or road display name to a comparable street-name
+ * core: uppercase, punctuation stripped, leading house number + unit dropped,
+ * leading/trailing directionals dropped, trailing suffix type dropped
+ * (ST == STREET, DR == DRIVE, ...). Never strips a token when doing so would
+ * empty the name (a street literally named "West Street" keeps "WEST").
+ * Returns "" when no comparable core remains.
+ */
+export function normalizeStreetNameForMatch(raw: string): string {
+  let text = raw
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+  text = text.replace(UNIT_CUT_RE, "").trim();
+  let tokens = text.split(" ").filter(Boolean);
+  // Leading house number (901, 901A) — only ever leading, only when more remains.
+  if (tokens.length > 1 && /^\d+[A-Z]?$/.test(tokens[0]!)) tokens = tokens.slice(1);
+  // Trailing directional, then trailing suffix, then leading directional —
+  // this order keeps "West Street" as WEST and turns "N Main St" into MAIN.
+  if (tokens.length > 1 && DIRECTIONAL_TOKENS.has(tokens[tokens.length - 1]!)) {
+    tokens = tokens.slice(0, -1);
+  }
+  if (tokens.length > 1 && STREET_SUFFIX_TOKENS.has(tokens[tokens.length - 1]!)) {
+    tokens = tokens.slice(0, -1);
+  }
+  if (tokens.length > 1 && DIRECTIONAL_TOKENS.has(tokens[0]!)) tokens = tokens.slice(1);
+  return tokens.join(" ");
 }
 
 export type LabelEdgesResult =
@@ -142,6 +248,12 @@ export function labelEdgesFromRoads(input: {
   parcelRing: Ring;
   roads: ReadonlyArray<WarmRoadSource>;
   proximityThresholdM?: number;
+  /**
+   * Optional parcel situs address (e.g. "901 PECAN ST"). When its street name
+   * token-matches exactly one road-adjacent edge's road displayName, that edge
+   * is front. Absent / no match / ambiguous → adjacency heuristic, unchanged.
+   */
+  situsAddress?: string | null;
 }): LabelEdgesResult {
   const threshold = input.proximityThresholdM ?? DEFAULT_ROAD_PROXIMITY_THRESHOLD_M;
   const proj = projectRing(input.parcelRing);
@@ -192,7 +304,32 @@ export function labelEdgesFromRoads(input: {
   );
 
   let frontHit: EdgeRoadHit | null = null;
-  if (frontCandidates.length > 0) {
+  let frontBasis: FrontRoleBasis = "adjacency-heuristic";
+
+  // Situs-street preference: when the parcel's address street is among the
+  // adjacent roads and matches exactly one edge, that edge is front.
+  const situsKey = input.situsAddress
+    ? normalizeStreetNameForMatch(input.situsAddress)
+    : "";
+  if (situsKey) {
+    const situsMatchByEdge = new Map<number, EdgeRoadHit>();
+    for (const hit of hits) {
+      if (isAlleyClassification(hit.road.classification)) continue;
+      if (!isFrontEligibleRoad(hit.road)) continue;
+      const roadKey = hit.road.name ? normalizeStreetNameForMatch(hit.road.name) : "";
+      if (!roadKey || roadKey !== situsKey) continue;
+      const prior = situsMatchByEdge.get(hit.edgeIndex);
+      situsMatchByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
+    }
+    // Exactly one matching edge → unambiguous. Zero → no match. Two or more
+    // (corner lot on a curving street) → ambiguous; fall through unchanged.
+    if (situsMatchByEdge.size === 1) {
+      frontHit = [...situsMatchByEdge.values()][0]!;
+      frontBasis = "situs-street-match";
+    }
+  }
+
+  if (!frontHit && frontCandidates.length > 0) {
     frontCandidates.sort((a, b) => {
       const pref =
         frontStreetPreference(b.road.classification) -
@@ -201,6 +338,7 @@ export function labelEdgesFromRoads(input: {
       return a.distanceM - b.distanceM;
     });
     frontHit = frontCandidates[0]!;
+    frontBasis = "adjacency-heuristic";
   }
 
   let rearHit: EdgeRoadHit | null = null;
@@ -237,6 +375,8 @@ export function labelEdgesFromRoads(input: {
         osmHighwayTag: frontHit.road.osmHighwayTag,
         osmSurfaceTag: frontHit.road.surface,
         roadProvenanceKind: frontHit.road.provenanceKind ?? "osm-fallback",
+        frontBasis,
+        osmWayId: frontHit.road.osmWayId,
       });
       continue;
     }
@@ -248,6 +388,7 @@ export function labelEdgesFromRoads(input: {
         osmHighwayTag: rearHit.road.osmHighwayTag,
         osmSurfaceTag: rearHit.road.surface,
         roadProvenanceKind: rearHit.road.provenanceKind ?? "osm-fallback",
+        osmWayId: rearHit.road.osmWayId,
       });
       continue;
     }
@@ -269,6 +410,7 @@ export function labelEdgesFromRoads(input: {
         osmHighwayTag: hit.road.osmHighwayTag,
         osmSurfaceTag: hit.road.surface,
         roadProvenanceKind: hit.road.provenanceKind ?? "osm-fallback",
+        osmWayId: hit.road.osmWayId,
       });
       continue;
     }
