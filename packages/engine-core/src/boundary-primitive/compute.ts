@@ -77,6 +77,11 @@ export interface ComputeBoundaryEdgeAtomsInput {
   descriptor: JurisdictionDescriptor;
   adjacencyIndex: ParcelAdjacencyIndex;
   roads: ReadonlyArray<WarmRoadSource>;
+  /**
+   * Parcel situs address (e.g. "901 PECAN ST") from tier-1 parcel data.
+   * Optional: counties without situs data degrade to the adjacency heuristic.
+   */
+  situsAddress?: string | null;
   effectiveDate: string;
   extractedAt: string;
   sourceAdapter: string;
@@ -152,6 +157,7 @@ export function computeBoundaryEdgeAtoms(
   const labelResult = labelEdgesFromRoads({
     parcelRing: input.parcelRing,
     roads: input.roads,
+    situsAddress: input.situsAddress ?? null,
   });
   const edgeLabels = labelResult.ok ? labelResult.edgeLabels : [];
 
@@ -185,11 +191,15 @@ export function computeBoundaryEdgeAtoms(
 
     let facingRoad: BoundaryEdgeAtomInstance["facingRoad"] = null;
     if (roadClass && label) {
-      const matchedRoad = input.roads.find(
-        (r) =>
-          r.classification === roadClass &&
-          (!label.osmHighwayTag || r.osmHighwayTag === label.osmHighwayTag),
-      );
+      const matchedRoad =
+        (typeof label.osmWayId === "number"
+          ? input.roads.find((r) => r.osmWayId === label.osmWayId)
+          : undefined) ??
+        input.roads.find(
+          (r) =>
+            r.classification === roadClass &&
+            (!label.osmHighwayTag || r.osmHighwayTag === label.osmHighwayTag),
+        );
       if (matchedRoad) {
         facingRoad = {
           roadNodeId: roadNodeIdFromParts(input.countyFips, matchedRoad.osmWayId),
@@ -215,6 +225,9 @@ export function computeBoundaryEdgeAtoms(
       propId: input.propId,
       edgeIndex: i,
       role,
+      ...(role === "front" && label?.frontBasis
+        ? { frontBasis: label.frontBasis }
+        : {}),
       adjacencyKind,
       parcelNeighborPropId: neighborPropId,
       facingRoad,

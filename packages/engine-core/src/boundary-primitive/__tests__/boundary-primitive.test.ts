@@ -207,6 +207,83 @@ describe("boundary primitive honesty + method (U2.3–U2.5)", () => {
     expect(EXPECTED_ADJACENCY_33512[5]).toBeNull();
   });
 
+  it("situs-street front match: frontBasis recorded on the atom body (34177 defect shape)", () => {
+    // Corner lot: Pine ~5.6 m south (closest), Pecan ~7.7 m west (situs street).
+    const ring = [
+      [-97.32, 30.11],
+      [-97.3194, 30.11],
+      [-97.3194, 30.1104],
+      [-97.32, 30.1104],
+      [-97.32, 30.11],
+    ];
+    const entry = {
+      countyFips: COUNTY_FIPS,
+      propId: "SITUS",
+      parcelNodeId: `${COUNTY_FIPS}:SITUS`,
+      situsAddress: "901 PECAN ST",
+      ring,
+      westLng: -97.32,
+      southLat: 30.11,
+      eastLng: -97.3194,
+      northLat: 30.1104,
+    };
+    const roads = [
+      {
+        osmWayId: 1001,
+        osmHighwayTag: "residential",
+        name: "Pecan Street",
+        classification: "residential" as const,
+        polyline: [
+          [-97.32008, 30.1098],
+          [-97.32008, 30.1106],
+        ] as [number, number][],
+      },
+      {
+        osmWayId: 1002,
+        osmHighwayTag: "residential",
+        name: "Pine Street",
+        classification: "residential" as const,
+        polyline: [
+          [-97.3202, 30.10995],
+          [-97.3192, 30.10995],
+        ] as [number, number][],
+      },
+    ];
+    const index = buildParcelAdjacencyIndex(COUNTY_FIPS, [entry]);
+    const extractedAt = new Date().toISOString();
+    const base = {
+      parcelNodeId: entry.parcelNodeId,
+      countyFips: COUNTY_FIPS,
+      propId: "SITUS",
+      district: "P-5",
+      parcelRing: ring,
+      descriptor: bastropDescriptor,
+      adjacencyIndex: index,
+      roads,
+      effectiveDate: extractedAt.slice(0, 10),
+      extractedAt,
+      sourceAdapter: "test",
+      sourceUrl: "test://",
+    };
+
+    const withSitus = computeBoundaryEdgeAtoms({
+      ...base,
+      situsAddress: entry.situsAddress,
+    });
+    const frontSitus = withSitus.find((a) => a.role === "front");
+    expect(frontSitus).toBeDefined();
+    expect(frontSitus!.edgeIndex).toBe(3); // west (Pecan) edge
+    expect(frontSitus!.frontBasis).toBe("situs-street-match");
+    expect(frontSitus!.facingRoad?.roadNodeId).toContain("1001");
+
+    const withoutSitus = computeBoundaryEdgeAtoms({ ...base, situsAddress: null });
+    const frontHeuristic = withoutSitus.find((a) => a.role === "front");
+    expect(frontHeuristic).toBeDefined();
+    expect(frontHeuristic!.edgeIndex).toBe(0); // south (Pine) edge — closest road
+    expect(frontHeuristic!.frontBasis).toBe("adjacency-heuristic");
+    expect(frontHeuristic!.facingRoad?.roadNodeId).toContain("1002");
+  });
+
   it("persist round-trip via in-memory storage", async () => {
     const storage = new InMemoryStorage();
     const ring = [
