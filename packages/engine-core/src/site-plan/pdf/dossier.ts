@@ -17,8 +17,8 @@ import {
   MarkRegistry,
   PAGE_HEIGHT,
   PAGE_WIDTH,
-  TOTAL_SHEETS,
   cityFromAddress,
+  countSitePlanSheets,
   drawChipOnLineBox,
   drawFinePrint,
   drawHairlineRule,
@@ -53,11 +53,12 @@ import { SPACE, STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js"
  *   3. AI RESEARCH SUMMARY (when present) — user-saved AI content, visually
  *      distinct via a muted rule + suppressed label; no new colors.
  *   4. OWNER NOTES (when present) — plain wrapped text.
- *   5. APPENDED SITE-PLAN SHEETS — the SAME 3-sheet site plan
- *      `emitPdfSitePlan` produces, renumbered "Sheet N of TOTAL" across the
- *      whole document via the render.ts numbering seam. A missing site-plan
- *      capability NEVER fails the export — the dossier pages still emit with
- *      an honest note.
+ *   5. APPENDED SITE-PLAN SHEETS — the SAME site-plan sheet set
+ *      `emitPdfSitePlan` produces (3+ sheets; overflow pagination may insert
+ *      summary continuation sheets, sized via `countSitePlanSheets`),
+ *      renumbered "Sheet N of TOTAL" across the whole document via the
+ *      render.ts numbering seam. A missing site-plan capability NEVER fails
+ *      the export — the dossier pages still emit with an honest note.
  *
  * All user-supplied text is sanitized server-side (control characters
  * stripped, lengths capped, glyphs outside the embedded Barlow coverage
@@ -624,7 +625,10 @@ export async function emitPdfDossier(
     plannedPages.push(...planTextPages("notes", notesLines));
   }
   const dossierPageCount = plannedPages.length;
-  const sitePlanSheets = options.sitePlan ? TOTAL_SHEETS : 0;
+  // Overflow pagination (2026-07-29): the site plan's sheet count is model-
+  // specific (summary continuation sheets may be inserted) — measure it,
+  // never assume TOTAL_SHEETS.
+  const sitePlanSheets = options.sitePlan ? await countSitePlanSheets(options.sitePlan.model) : 0;
   const total = dossierPageCount + sitePlanSheets;
 
   // Kick off the appended site plan (renumbered) now that totals are known.
@@ -888,6 +892,7 @@ export async function emitPdfDossier(
             marks: sitePlanResult.marks,
             rhythm: sitePlanResult.rhythm,
             page1Frame: sitePlanResult.page1Frame,
+            summarySheets: sitePlanResult.summarySheets,
           },
         }
       : {}),

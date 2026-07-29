@@ -203,6 +203,7 @@ export {
 } from "./pdf/provenance.js";
 
 export {
+  countSitePlanSheets,
   emitPdfSitePlan,
   TOTAL_SHEETS,
   type EmitPdfSitePlanOptions,
