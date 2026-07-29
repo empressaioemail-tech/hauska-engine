@@ -114,6 +114,21 @@ describe("labelEdgesFromRoads situs-street front preference", () => {
     expect(withSitus.osmWayId).toBe(PECAN_ROAD.osmWayId);
   });
 
+  it("FULL-address situs (txgio form, comma tail) still matches — the live restamp regression", () => {
+    // txgio situs_address is a full address; the county-wide restamp silently
+    // fell back to the heuristic because the city/state/zip tail survived
+    // normalization. The street segment before the first comma must match.
+    const withFullSitus = frontOf(
+      labelEdgesFromRoads({
+        parcelRing: CORNER_RING,
+        roads: [PECAN_ROAD, PINE_ROAD],
+        situsAddress: "901 PECAN ST , BASTROP, TX 78602",
+      }),
+    );
+    expect(withFullSitus.index).toBe(WEST_EDGE);
+    expect(withFullSitus.frontBasis).toBe("situs-street-match");
+  });
+
   it("901-Pecan corner: the Pine edge loses front under situs match", () => {
     const result = labelEdgesFromRoads({
       parcelRing: CORNER_RING,
