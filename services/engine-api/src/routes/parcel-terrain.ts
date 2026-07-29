@@ -15,7 +15,10 @@ import {
   type ParcelGeometryResolver,
   type TerrainArtifactStore,
 } from "@hauska-engine/engine-core/parcel-terrain";
-import { authorParcelSitePlanExport } from "@hauska-engine/engine-core/site-plan";
+import {
+  authorParcelPropertyDossierExport,
+  authorParcelSitePlanExport,
+} from "@hauska-engine/engine-core/site-plan";
 import {
   GcsTerrainArtifactStore,
 } from "../terrain/gcs-artifact-store.js";
@@ -87,6 +90,66 @@ const sitePlanRefreshBody = z.object({
   // fabricated by the engine. Omitted fields render as honest "not on file".
   address: z.string().optional(),
   countyName: z.string().optional(),
+});
+
+/**
+ * Property-dossier request contract (2026-07-29, pinned with the PE BFF/MCP
+ * leg). Everything is optional and caller-supplied; the engine renders
+ * exactly what the request carries (verbatim, labeled) and honest-degrades
+ * on anything absent — never fabricates. Server-side caps mirror
+ * `DOSSIER_CAPS`; the assembler sanitizes again (control chars, glyphs).
+ */
+const dossierRefreshBody = z.object({
+  // Site-plan geometry seams (same as site-plan-export/refresh).
+  bboxOverride: bbox.optional(),
+  ringOverride: z.array(z.tuple([z.number(), z.number()])).optional(),
+  resolutionMeters: z.number().positive().optional(),
+  contourIntervalMeters: z.number().positive().optional(),
+  frontEdgeIndex: z.number().int().nonnegative().optional(),
+  skirtDepthFeet: z.number().positive().optional(),
+  streetAnchors: z
+    .array(
+      z.object({
+        name: z.string(),
+        points: z.array(z.tuple([z.number(), z.number()])).min(2),
+        sourceRef: z.string().optional(),
+      }),
+    )
+    .optional(),
+  // Dossier content — caller-supplied only.
+  address: z.string().max(200).optional(),
+  countyName: z.string().max(120).optional(),
+  verdictLine: z.string().max(400).optional(),
+  brief: z
+    .object({
+      sections: z
+        .array(
+          z.object({
+            id: z.string().max(64),
+            title: z.string().max(160),
+            facts: z
+              .array(
+                z.object({
+                  label: z.string().max(160),
+                  value: z.string().max(400).optional(),
+                  source: z.string().max(240).optional(),
+                  vintage: z.string().max(80).optional(),
+                }),
+              )
+              .max(60),
+          }),
+        )
+        .max(16),
+    })
+    .optional(),
+  chatSummary: z
+    .object({
+      summary: z.string().max(12000),
+      savedAt: z.string().max(64),
+      disclaimer: z.string().max(600).optional(),
+    })
+    .optional(),
+  notes: z.string().max(4000).optional(),
 });
 
 interface ReadableArtifactStore extends TerrainArtifactStore {
@@ -352,6 +415,100 @@ export function buildParcelTerrainRoutes(
       "Content-Disposition",
       `attachment; filename="${safeNodeId}.${format}.${SITE_PLAN_EXTENSIONS[format]}"`,
     );
+    return c.body(Buffer.from(bytes));
+  });
+
+  // Property-dossier export (2026-07-29): ONE hand-to-client PDF — cover
+  // (verdict) + cited brief facts + AI chat summary + owner notes in the
+  // Sheet Standard's design language, with the parcel's site-plan sheets
+  // APPENDED and renumbered. Honest-degrade throughout: absent content takes
+  // honest chips, a missing site-plan capability never fails the export.
+  app.post("/:parcelNodeId/dossier-export/refresh", async (c) => {
+    const parsed = dossierRefreshBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: "invalid_request", details: parsed.error.flatten() }, 400);
+    const parcelNodeId = c.req.param("parcelNodeId");
+    const setbackCandidate = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
+      (candidate) => candidate.entityType === "setback-rule",
+    );
+    const setback =
+      setbackCandidate && setbackCandidate.entityType === "setback-rule"
+        ? setbackCandidate
+        : undefined;
+    try {
+      const result = await authorParcelPropertyDossierExport({
+        parcelNodeId,
+        bboxOverride: parsed.data.bboxOverride,
+        ringOverride: parsed.data.ringOverride,
+        resolutionMeters: parsed.data.resolutionMeters,
+        contourIntervalMeters: parsed.data.contourIntervalMeters,
+        frontEdgeIndex: parsed.data.frontEdgeIndex,
+        skirtDepthFeet: parsed.data.skirtDepthFeet,
+        streetAnchors: parsed.data.streetAnchors,
+        content: {
+          address: parsed.data.address,
+          countyName: parsed.data.countyName,
+          verdictLine: parsed.data.verdictLine,
+          brief: parsed.data.brief,
+          chatSummary: parsed.data.chatSummary,
+          notes: parsed.data.notes,
+        },
+        resolver,
+        setback,
+        storage,
+        artifactStore,
+      });
+      return c.json({
+        atom: result.atom,
+        artifacts: { "pdf-dossier": result.atom.artifacts["pdf-dossier"] },
+        pageCount: result.pageCount,
+        dossierPageCount: result.dossierPageCount,
+        sitePlanAppended: result.sitePlanAppended,
+        sitePlanUnavailableReason: result.sitePlanUnavailableReason,
+        verdictIncluded: result.verdictIncluded,
+        briefSectionCount: result.briefSectionCount,
+        briefFactCount: result.briefFactCount,
+        chatSummaryIncluded: result.chatSummaryIncluded,
+        notesIncluded: result.notesIncluded,
+        setbackDegenerate: result.setbackDegenerate,
+        setbackHonestAbsence: result.setbackHonestAbsence,
+        streetHonestAbsence: result.streetHonestAbsence,
+        zoningHonestAbsence: result.zoningHonestAbsence,
+        floodZoneHonestUnavailable: result.floodZoneHonestUnavailable,
+      }, 201);
+    } catch (error) {
+      return c.json({
+        error: "dossier_export_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }, 422);
+    }
+  });
+  app.get("/:parcelNodeId/dossier-export", async (c) => {
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+      .find((candidate) => candidate.entityType === "parcel-terrain-model");
+    if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
+    return c.json({ atom, artifacts: { "pdf-dossier": atom.artifacts["pdf-dossier"] } });
+  });
+  app.get("/:parcelNodeId/dossier-export/download", async (c) => {
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+      .find((candidate) => candidate.entityType === "parcel-terrain-model");
+    if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
+    const artifact = atom.artifacts["pdf-dossier"];
+    if (!artifact || artifact.deferred) {
+      return c.json({
+        error: "artifact_unavailable",
+        message: artifact?.deferredReason ?? "No pdf-dossier artifact for this parcel",
+      }, 404);
+    }
+    const bytes = await artifactStore.get(artifact.ref);
+    if (!bytes) {
+      return c.json({
+        error: "artifact_evicted",
+        message: "Artifact bytes are no longer on this instance; call dossier-export/refresh again",
+      }, 410);
+    }
+    const safeNodeId = c.req.param("parcelNodeId").replace(/[^a-zA-Z0-9._-]/g, "_");
+    c.header("Content-Type", "application/pdf");
+    c.header("Content-Disposition", `attachment; filename="${safeNodeId}.pdf-dossier.pdf"`);
     return c.body(Buffer.from(bytes));
   });
 

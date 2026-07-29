@@ -190,7 +190,10 @@ export interface MarkBbox {
 
 /** §14 draw-once ledger entry: one row per mark actually drawn. */
 export interface SheetMark {
-  page: 1 | 2 | 3;
+  /** Page number within the emitting document. The site plan uses its local
+   * 1–3 regardless of dossier renumbering (printed strings renumber; the
+   * mark ledger stays in local sheet space so gates keep their meaning). */
+  page: number;
   kind: string;
   key: string;
   /**
@@ -234,6 +237,19 @@ export interface PdfSitePlanResult {
   page1Frame: MarkBbox;
 }
 
+/**
+ * Sheet-numbering seam (dossier append, 2026-07-29): when the 3 site-plan
+ * sheets ride inside a larger document (the property dossier), every printed
+ * "SHEET N OF TOTAL" — eyebrows and the fine-print trailer — renumbers to the
+ * host document's sequence. Marks/rhythm stay in local sheet space (1–3).
+ */
+export interface SheetNumbering {
+  /** Absolute sheet number of the FIRST site-plan sheet in the document. */
+  startAt: number;
+  /** Total sheet count of the whole document. */
+  total: number;
+}
+
 export interface EmitPdfSitePlanOptions {
   /** Aerial-context page (sheet 3) imagery seam. Tests MUST stub `fetchImage`
    * so no test hits the network; production uses the default Esri fetcher. */
@@ -241,6 +257,9 @@ export interface EmitPdfSitePlanOptions {
     fetchImage?: AerialImageFetcher;
     timeoutMs?: number;
   };
+  /** Renumber printed sheet labels for a host document (dossier append).
+   * Default: standalone `{ startAt: 1, total: TOTAL_SHEETS }`. */
+  numbering?: SheetNumbering;
 }
 
 /** §14: keyed mark registry — a duplicate (page, kind, key) is never drawn twice. */
@@ -250,7 +269,7 @@ class MarkRegistry {
 
   /** Returns true when the mark is new (caller may draw); false = duplicate, skip.
    * `bbox` (§3 v1.2) records the mark's page-space extent for the frame gate. */
-  once(page: 1 | 2 | 3, kind: string, key: string, bbox?: MarkBbox): boolean {
+  once(page: number, kind: string, key: string, bbox?: MarkBbox): boolean {
     const id = `${page}:${kind}:${key}`;
     if (this.seen.has(id)) return false;
     this.seen.add(id);
@@ -874,7 +893,7 @@ interface LegendRow {
   empty?: boolean;
 }
 
-function legendRows(layout: SitePlanDrawingLayout, model: SitePlanModel): LegendRow[] {
+function legendRows(layout: SitePlanDrawingLayout, model: SitePlanModel, sheet2No: number): LegendRow[] {
   const rows: LegendRow[] = [{ label: "Property line", swatch: "line-heavy", color: PROPERTY_COLOR }];
 
   if (layout.setback.drawEnvelope) {
@@ -940,7 +959,7 @@ function legendRows(layout: SitePlanDrawingLayout, model: SitePlanModel): Legend
   );
 
   if (layout.segmentLeaders.length > 0) {
-    rows.push({ label: "Margin leader · segment keyed to sheet 2", swatch: "leader", color: LEADER_COLOR });
+    rows.push({ label: `Margin leader · segment keyed to sheet ${sheet2No}`, swatch: "leader", color: LEADER_COLOR });
   }
   return rows;
 }
@@ -986,10 +1005,11 @@ function drawLegend(
   ruleY: number,
   marks: MarkRegistry,
   rhythm: RhythmCapture,
+  numbering?: SheetNumbering,
 ): void {
   if (!marks.once(1, "legend", "legend")) return;
   const left = MARGIN_X;
-  const rows = legendRows(layout, model);
+  const rows = legendRows(layout, model, sheetLabel(2, numbering).no);
   const size = TYPE.legend;
   // §21: rows hang from the footer rule — space-2 pad, then line boxes on a
   // uniform pitch (line box + space-2 row gap).
@@ -1139,20 +1159,31 @@ interface FinePrintContext {
   registrationSentence?: string;
   imagery?: AerialImageryResult;
   imageryAgeMonths?: number | null;
+  /** Dossier renumbering: the printed sheet label for this page. Defaults to
+   * the standalone `Sheet {page} of TOTAL_SHEETS`. */
+  numbering?: SheetNumbering;
+}
+
+/** Printed sheet label under (optional) host-document renumbering. */
+function sheetLabel(localPage: 1 | 2 | 3, numbering?: SheetNumbering): { no: number; total: number } {
+  const n = numbering ?? { startAt: 1, total: TOTAL_SHEETS };
+  return { no: n.startAt + localPage - 1, total: n.total };
 }
 
 function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, ctx: FinePrintContext): string {
   const sentences: string[] = [];
+  const label = sheetLabel(page, ctx.numbering);
   if (page === 3) {
+    const s1 = sheetLabel(1, ctx.numbering).no;
     sentences.push(SITE_PLAN_HONESTY_LINE);
     sentences.push(
       "Aerial imagery is an illustrative backdrop, not a measurement source.",
-      "All dimensions, areas and setbacks come from the parcel geometry on sheet 1; where the imagery and the overlay disagree, sheet 1 governs.",
+      `All dimensions, areas and setbacks come from the parcel geometry on sheet ${s1}; where the imagery and the overlay disagree, sheet ${s1} governs.`,
     );
     if (ctx.registrationSentence) sentences.push(ctx.registrationSentence);
     sentences.push(AERIAL_NOT_A_SURVEY_LINE);
     if (ctx.imagery && !ctx.imagery.ok) {
-      sentences.push(`${AERIAL_UNAVAILABLE_NOTE}: ${ctx.imagery.reason}. Site geometry is on sheet 1.`);
+      sentences.push(`${AERIAL_UNAVAILABLE_NOTE}: ${ctx.imagery.reason}. Site geometry is on sheet ${s1}.`);
     }
     if (typeof ctx.imageryAgeMonths === "number" && ctx.imageryAgeMonths > 24) {
       sentences.push(
@@ -1160,14 +1191,16 @@ function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, ctx: FinePrintCon
       );
     }
     sentences.push(AERIAL_IMAGERY_ATTRIBUTION);
-    sentences.push(`· Sheet 3 of ${TOTAL_SHEETS}`);
+    sentences.push(`· Sheet ${label.no} of ${label.total}`);
     return sentences.join(" ");
   }
 
   sentences.push(SITE_PLAN_HONESTY_LINE, PROPERTY_LINE_TAGS_HONESTY);
   if (ctx.movedSegs.length > 0) {
+    const s1 = sheetLabel(1, ctx.numbering).no;
+    const s2 = sheetLabel(2, ctx.numbering).no;
     sentences.push(
-      `Tags for segments ${joinSegList(ctx.movedSegs)} were shortened, moved or dropped on sheet 1 and are tabulated in the sheet-2 segment table.`,
+      `Tags for segments ${joinSegList(ctx.movedSegs)} were shortened, moved or dropped on sheet ${s1} and are tabulated in the sheet-${s2} segment table.`,
     );
   }
   if (page === 1) {
@@ -1186,11 +1219,11 @@ function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, ctx: FinePrintCon
       "Buildable area is provisional pending front-edge resolution; treat it as a planning estimate, not a permit-ready boundary.",
     );
   }
-  sentences.push(`· Sheet ${page} of ${TOTAL_SHEETS}`);
+  sentences.push(`· Sheet ${label.no} of ${label.total}`);
   return sentences.join(" ");
 }
 
-function drawFinePrint(page: PDFPage, pageNo: 1 | 2 | 3, text: string, F: Fonts, marks: MarkRegistry): void {
+function drawFinePrint(page: PDFPage, pageNo: number, text: string, F: Fonts, marks: MarkRegistry): void {
   if (!marks.once(pageNo, "fine-print", "paragraph")) return;
   const left = MARGIN_X;
   const size = TYPE.finePrint;
@@ -1211,11 +1244,12 @@ function drawPage1Footer(
   marks: MarkRegistry,
   finePrint: string,
   rhythm: RhythmCapture,
+  numbering?: SheetNumbering,
 ): void {
   const ruleY = page1FooterRuleY();
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
 
-  drawLegend(page, layout, model, F, ruleY, marks, rhythm);
+  drawLegend(page, layout, model, F, ruleY, marks, rhythm, numbering);
   drawScaleBar(page, layout, model, F, ruleY - pt(8), marks);
 
   drawFinePrint(page, 1, finePrint, F, marks);
@@ -1373,7 +1407,7 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
  */
 function drawSectionHeading(
   page: PDFPage,
-  pageNo: 1 | 2 | 3,
+  pageNo: number,
   text: string,
   prevBottomY: number,
   F: Fonts,
@@ -1495,6 +1529,7 @@ function drawSegmentTable(
   startY: number,
   marks: MarkRegistry,
   rhythm: RhythmCapture,
+  numbering?: SheetNumbering,
 ): number {
   if (layout.segmentTable.length === 0) return startY;
   if (!marks.once(2, "segment-table", "table")) return startY;
@@ -1529,8 +1564,8 @@ function drawSegmentTable(
       ["SEG", segX],
       ["BEARING", bearingX],
       ["DIST.", distX],
-      ["ON SHEET 1", dispX],
-    ] as const) {
+      [`ON SHEET ${sheetLabel(1, numbering).no}`, dispX],
+    ] as [string, number][]) {
       drawTrackedText(page, text, {
         x,
         y: head.baselines[0]!,
@@ -1953,14 +1988,16 @@ function drawAerialFooter(
   marks: MarkRegistry,
   finePrint: string,
   rhythm: RhythmCapture,
+  numbering?: SheetNumbering,
 ): void {
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
 
+  const s1 = sheetLabel(1, numbering).no;
   // Legend (§5 applied to this sheet): fixed rows, empty states inline.
   const drawsEnvelope =
     !!model.setback.offsetRingLocal && !model.setback.honestAbsence && !model.setback.degenerate;
   const rows: AerialLegendRow[] = [
-    { label: "Property line — same geometry as sheet 1", swatch: "line-heavy", color: PROPERTY_COLOR },
+    { label: `Property line — same geometry as sheet ${s1}`, swatch: "line-heavy", color: PROPERTY_COLOR },
     drawsEnvelope
       ? { label: "Buildable envelope", swatch: "line-dashed", color: SETBACK_DASH_COLOR }
       : {
@@ -1974,7 +2011,7 @@ function drawAerialFooter(
     imagery.ok
       ? { label: "Aerial imagery — backdrop only, not a measurement source", swatch: "imagery", color: SUPPRESSED, empty: true }
       : { label: "Aerial imagery — unavailable · overlay on paper ground", swatch: "imagery", color: SUPPRESSED, empty: true },
-    { label: "Contour — not shown here · see sheet 1", swatch: "line-dotted", color: SUPPRESSED, empty: true },
+    { label: `Contour — not shown here · see sheet ${s1}`, swatch: "line-dotted", color: SUPPRESSED, empty: true },
   ];
   if (marks.once(3, "legend", "legend")) {
     const perCol = Math.ceil(rows.length / 2);
@@ -2085,6 +2122,7 @@ function drawAerialPage(
   F: Fonts,
   marks: MarkRegistry,
   rhythm: RhythmCapture,
+  numbering?: SheetNumbering,
 ): void {
   const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
@@ -2094,11 +2132,12 @@ function drawAerialPage(
     tolFeet != null
       ? { label: "REGISTER", value: `±${tolFeet.toFixed(1)} FT`, color: ACCENT_TYPE }
       : { label: "REGISTER", chip: CHIP_UNAVAILABLE };
+  const aerialLabel = sheetLabel(3, numbering);
   drawSheetHeader(
     page,
     model,
     F,
-    `AERIAL · SHEET 3 OF ${TOTAL_SHEETS}`,
+    `AERIAL · SHEET ${aerialLabel.no} OF ${aerialLabel.total}`,
     [{ label: "IMAGERY", value: "ESRI" }, { label: "CAPTURED", chip: CHIP_UNAVAILABLE }, registerStat],
     null,
   );
@@ -2173,8 +2212,10 @@ function drawAerialPage(
       // Esri's export publishes NO capture date — age is unknown, so the
       // §19 imagery-age disclosure never fires from an inferred date.
       imageryAgeMonths: null,
+      numbering,
     }),
     rhythm,
+    numbering,
   );
 }
 
@@ -2202,6 +2243,9 @@ export async function emitPdfSitePlan(
   };
   const marks = new MarkRegistry();
   const rhythm = new RhythmCapture();
+  const numbering = options.numbering;
+  const label1 = sheetLabel(1, numbering);
+  const label2 = sheetLabel(2, numbering);
 
   // AERIAL (sheet 3) imagery fetch — started first so the bounded network
   // wait (default 8s cap) overlaps the vector rendering of sheets 1–2.
@@ -2226,7 +2270,7 @@ export async function emitPdfSitePlan(
     page1,
     model,
     F,
-    `SITE PLAN · SHEET 1 OF ${TOTAL_SHEETS}`,
+    `SITE PLAN · SHEET ${label1.no} OF ${label1.total}`,
     page1HeaderStats(model),
     null,
   );
@@ -2254,18 +2298,18 @@ export async function emitPdfSitePlan(
   });
   drawSitePlanDrawing(page1, layout, F, marks);
   const movedSegs = layout.segmentTable.map((r) => r.seg);
-  drawPage1Footer(page1, layout, model, F, marks, buildFinePrint(model, 1, { movedSegs }), rhythm);
+  drawPage1Footer(page1, layout, model, F, marks, buildFinePrint(model, 1, { movedSegs, numbering }), rhythm, numbering);
 
   // PAGE 2 — summary.
   const page2 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  const page2RuleY = drawSheetHeader(page2, model, F, `SUMMARY · SHEET 2 OF ${TOTAL_SHEETS}`, null, [
+  const page2RuleY = drawSheetHeader(page2, model, F, `SUMMARY · SHEET ${label2.no} OF ${label2.total}`, null, [
     `SP-${model.parcelNodeId.replace(/:/g, "-")}`,
     model.parcelNodeId,
   ]);
   const afterSummaryY = drawSummaryTable(page2, model, F, page2RuleY, rhythm);
-  const afterSegmentsY = drawSegmentTable(page2, layout, F, afterSummaryY, marks, rhythm);
+  const afterSegmentsY = drawSegmentTable(page2, layout, F, afterSummaryY, marks, rhythm, numbering);
   drawProvenanceTable(page2, model, F, afterSegmentsY, rhythm);
-  drawFinePrint(page2, 2, buildFinePrint(model, 2, { movedSegs }), F, marks);
+  drawFinePrint(page2, 2, buildFinePrint(model, 2, { movedSegs, numbering }), F, marks);
 
   // PAGE 3 — aerial context. The fetch is bounded and never throws; §20
   // (v1.2) embeds the orthophoto in NATURAL COLOR — no duotone tint, no
@@ -2285,7 +2329,7 @@ export async function emitPdfSitePlan(
       };
     }
   }
-  drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks, rhythm);
+  drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks, rhythm, numbering);
 
   const bytes = await doc.save({ useObjectStreams: false });
   return {
@@ -2303,3 +2347,32 @@ export async function emitPdfSitePlan(
 
 /** @internal exported for checklist tests (fine-print composition). */
 export { buildFinePrint, headerRuleY };
+
+/**
+ * @internal shared sheet primitives for sibling assemblers in this directory
+ * (the property-dossier assembler, dossier.ts). These are the Standard's
+ * building blocks — tokens ride in template-tokens.ts; these are the drawing
+ * and rhythm helpers that keep a sibling document in the SAME design
+ * language instead of re-inventing it. Not part of the public package API.
+ */
+export {
+  LB,
+  METRICS,
+  MarkRegistry,
+  PAGE_HEIGHT,
+  PAGE_WIDTH,
+  MARGIN_BOTTOM,
+  MARGIN_TOP,
+  MARGIN_X,
+  drawChipOnLineBox,
+  drawFinePrint,
+  drawHairlineRule,
+  drawSectionHeading,
+  drawTrackedText,
+  loadFont,
+  streetOnly,
+  cityFromAddress,
+  trackedWidth,
+  wrapTextToWidth,
+  type Fonts,
+};

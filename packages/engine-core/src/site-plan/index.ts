@@ -72,9 +72,31 @@ export {
 
 export {
   authorParcelSitePlanExport,
+  composeSitePlanModelForParcel,
   type AuthorParcelSitePlanExportOptions,
   type AuthorParcelSitePlanExportResult,
+  type ComposeSitePlanModelForParcelResult,
 } from "./author.js";
+
+export {
+  authorParcelPropertyDossierExport,
+  type AuthorParcelPropertyDossierExportOptions,
+  type AuthorParcelPropertyDossierExportResult,
+} from "./dossier-author.js";
+
+export {
+  DOSSIER_CAPS,
+  DOSSIER_NOT_LEGAL_ADVICE,
+  DOSSIER_USER_CONTENT_DISCLOSURE,
+  emitPdfDossier,
+  sanitizeDossierContent,
+  sanitizeDossierText,
+  type DossierBriefFactInput,
+  type DossierBriefSectionInput,
+  type DossierContentInput,
+  type EmitPdfDossierOptions,
+  type PdfDossierResult,
+} from "./pdf/dossier.js";
 
 export {
   buildSitePlanDrawingLayout,
@@ -117,6 +139,7 @@ export {
   TOTAL_SHEETS,
   type EmitPdfSitePlanOptions,
   type PdfSitePlanResult,
+  type SheetNumbering,
 } from "./pdf/render.js";
 
 export {

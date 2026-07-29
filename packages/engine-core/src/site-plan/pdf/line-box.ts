@@ -142,7 +142,9 @@ export function placeRowBelowRule(
  * assert the invariants numerically without rasterizing.
  */
 export interface RhythmRow {
-  page: 1 | 2 | 3;
+  /** Absolute page number within the emitting document (1-based). The 3-sheet
+   * site plan uses 1–3; the dossier assembler records its own page numbers. */
+  page: number;
   /** e.g. "group-heading" | "kv-row" | "segment-head" | "segment-row" |
    * "provenance-head" | "provenance-row" | "legend-row" | "strip-cell". */
   kind: string;
@@ -165,7 +167,7 @@ export class RhythmCapture {
   readonly rows: RhythmRow[] = [];
 
   row(
-    page: 1 | 2 | 3,
+    page: number,
     kind: string,
     placed: PlacedRowBoxes,
     lb: LineBox,
