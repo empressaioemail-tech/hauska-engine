@@ -150,7 +150,13 @@ function mockWorkerResult(): HydrologyWorkerResult {
   };
   const rainfall: GeoJsonFeatureCollection = {
     type: "FeatureCollection",
-    features: [quad(-97.3192, 30.1008, 0.0002, { rainfallDepthMm: 241 })],
+    features: [
+      // Fully inside the parcel ring → counts toward the headline stat.
+      quad(-97.3192, 30.1008, 0.0002, { rainfallDepthMm: 241 }),
+      // Far-field ponding (well outside the ring) → context only; must
+      // NEVER inflate the parcel headline (the 2026-07-29 canary defect).
+      quad(-97.325, 30.105, 0.001, { rainfallDepthMm: 241 }),
+    ],
   };
   return {
     status: "ok",
@@ -204,7 +210,7 @@ describe("runFloodDrainageStudy", () => {
       (f) => (f.properties as { concentration: number }).concentration,
     );
     expect(Math.max(...concentrations)).toBeGreaterThanOrEqual(1);
-    expect(study.rainfallResultGeoJson?.features.length).toBe(1);
+    expect(study.rainfallResultGeoJson?.features.length).toBe(2);
     expect(study.flowLinesGeoJson.features.length).toBe(1);
     // The traced line leaves the ring eastward → exactly one exit.
     expect(study.stats.flowExitCount).toBe(1);
@@ -212,7 +218,20 @@ describe("runFloodDrainageStudy", () => {
     expect(study.flowExits[0]!.bearingDeg).toBeLessThan(135);
     // Areas derive from the real polygons, in square feet.
     expect(study.stats.catchmentAreaSqFt).toBeGreaterThan(0);
+    // HEADLINE ponding = PARCEL-CLIPPED only. The in-ring quad is ~0.0002°
+    // square (~470 sq ft-ish at this latitude); the far-field quad is 25x
+    // larger and must NOT count toward the headline.
     expect(study.stats.pondedAreaSqFt).toBeGreaterThan(0);
+    expect(study.stats.pondedAreaSqFt!).toBeLessThan(6_000);
+    expect(study.stats.pondedAreaModeledRegionSqFt!).toBeGreaterThan(
+      study.stats.pondedAreaSqFt! * 10,
+    );
+    // Every rainfall feature is tagged with the clip verdict for the
+    // drawing/PE viz: in-ring true, far-field false.
+    const tags = study.rainfallResultGeoJson!.features.map(
+      (f) => (f.properties as { onParcel: boolean }).onParcel,
+    );
+    expect(tags).toEqual([true, false]);
     // Briefing is deterministic layman prose from the real values — §11
     // clean: no colons, no machine identifiers.
     expect(study.briefing).toContain("catchment");
@@ -342,6 +361,7 @@ describe("runFloodDrainageStudy", () => {
     expect(study.rainfallResultGeoJson).toBeNull();
     expect(study.stats.catchmentAreaSqFt).toBe(0);
     expect(study.stats.pondedAreaSqFt).toBeNull();
+    expect(study.stats.pondedAreaModeledRegionSqFt).toBeNull();
     expect(study.stats.flowExitCount).toBe(0);
     expect(study.briefing).toContain(HONEST_EMPTY_FLAT_TERRAIN);
   });
@@ -408,6 +428,36 @@ describe("resolveFlowExits", () => {
     };
     const exits = resolveFlowExits(insideOnly, ringWgs84);
     expect(exits.length).toBe(1);
+  });
+});
+
+describe("clipPondingToParcel", () => {
+  it("clips a straddling ponding cell exactly: only the in-ring fraction counts toward the headline", async () => {
+    const { clipPondingToParcel } = await import("../flood-drainage-study.js");
+    // Quad straddling the ring's east edge (-97.3184): exactly half its
+    // longitude span lies inside.
+    const straddling: GeoJsonFeatureCollection = {
+      type: "FeatureCollection",
+      features: [quad(-97.3186, 30.1008, 0.0004, { rainfallDepthMm: 241 })],
+    };
+    const clip = clipPondingToParcel(straddling, ringWgs84);
+    expect(clip.modeledRegionAreaSqFt).toBeGreaterThan(0);
+    const fraction = clip.onParcelAreaSqFt / clip.modeledRegionAreaSqFt;
+    expect(fraction).toBeGreaterThan(0.45);
+    expect(fraction).toBeLessThan(0.55);
+    expect((clip.taggedGeoJson.features[0]!.properties as { onParcel: boolean }).onParcel).toBe(true);
+  });
+
+  it("reports 0 on-parcel (never a guessed positive) when nothing intersects the ring", async () => {
+    const { clipPondingToParcel } = await import("../flood-drainage-study.js");
+    const farField: GeoJsonFeatureCollection = {
+      type: "FeatureCollection",
+      features: [quad(-97.33, 30.11, 0.001, {})],
+    };
+    const clip = clipPondingToParcel(farField, ringWgs84);
+    expect(clip.onParcelAreaSqFt).toBe(0);
+    expect(clip.modeledRegionAreaSqFt).toBeGreaterThan(0);
+    expect((clip.taggedGeoJson.features[0]!.properties as { onParcel: boolean }).onParcel).toBe(false);
   });
 });
 

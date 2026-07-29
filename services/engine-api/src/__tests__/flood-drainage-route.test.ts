@@ -17,7 +17,13 @@ const FAKE_STUDY = {
   demProvenance: { source: "USGS 3DEP", resolutionMeters: 10 },
   briefing: "The modeled upstream catchment delivers runoff toward the parcel.",
   flowExits: [],
-  stats: { catchmentAreaSqFt: 100, pondedAreaSqFt: null, flowExitCount: 0, pourPoint: { lng: 0, lat: 0 } },
+  stats: {
+    catchmentAreaSqFt: 100,
+    pondedAreaSqFt: null,
+    pondedAreaModeledRegionSqFt: null,
+    flowExitCount: 0,
+    pourPoint: { lng: 0, lat: 0 },
+  },
   computation: { library: "native-d8", routing: "d8", accumulationThreshold: 50 },
 };
 
