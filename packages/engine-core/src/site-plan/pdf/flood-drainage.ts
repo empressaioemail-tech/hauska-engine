@@ -1,9 +1,38 @@
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, PDFPage, type RGB } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFPage,
+  clip,
+  closePath,
+  endPath,
+  lineTo,
+  moveTo,
+  popGraphicsState,
+  pushGraphicsState,
+  rgb,
+  type PDFImage,
+  type RGB,
+} from "pdf-lib";
 
 import type { GeoJsonFeatureCollection } from "@hauska-engine/adapters/hydrology";
+import polygonClipping from "polygon-clipping";
 
+import { gradientRampColor } from "../drainage-gradient.js";
 import type { FloodDrainageStudy } from "../flood-drainage-study.js";
+import {
+  AERIAL_IMAGERY_ATTRIBUTION,
+  AERIAL_UNAVAILABLE_NOTE,
+  aerialImagePixelSize,
+  aerialPagePointsPerGroundMeter,
+  buildAerialExportUrl,
+  computeMercatorBboxFromWgs84Ring,
+  fetchAerialImagery,
+  makeWgs84PageTransform,
+  type AerialImageFetcher,
+  type AerialImageryResult,
+  type MercatorBbox,
+  type PageRect,
+} from "./aerial.js";
 import { clipPolylineToAabb } from "./annotation-placement.js";
 import {
   CHIP_UNAVAILABLE,
@@ -31,7 +60,6 @@ import {
   PAGE_WIDTH,
   cityFromAddress,
   drawChipOnLineBox,
-  drawFilledRing,
   drawFinePrint,
   drawHairlineRule,
   drawHeaderStats,
@@ -53,25 +81,38 @@ import {
 import { SETBACK_DASH, SPACE, STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js";
 
 /**
- * FLOOD & DRAINAGE assembler (2026-07-29, R3 — the FIRST paid report
- * document). Sits beside dossier.ts on the SAME binding SHEET_STANDARD
- * (v1.3): tokens, Barlow faces, §21 line-box rhythm, §6 chips, §12 number
- * form, §11 prose hygiene, §8 fine print, §14 draw-once, §3 frame-clip.
- * ONE document pattern — this reuses the dossier scaffolding style and the
- * render.ts sibling primitives; it never invents a second visual system.
+ * FLOOD & DRAINAGE assembler (v2, 2026-07-29 — operator-directed redesign
+ * of the FIRST paid report document). Sits beside dossier.ts on the SAME
+ * binding SHEET_STANDARD (v1.3): tokens, Barlow faces, §21 line-box rhythm,
+ * §6 chips, §12 number form, §11 prose hygiene, §8 fine print, §14
+ * draw-once, §3 frame-clip. ONE document pattern — this reuses the dossier
+ * scaffolding style, the render.ts sibling primitives, AND the aerial-page
+ * machinery (§17–§20); it never invents a second visual system.
  *
- *   SHEET 1 · DRAWING — parcel ring (heaviest stroke) over the modeled
- *     catchment, drainage-concentration zones and rainfall ponding (subtle
- *     graded fills inside the ONE accent ramp), traced flow lines, flow-exit
- *     arrows, legend / scale bar / north arrow, fine print.
+ *   SHEET 1 · DRAWING (v2, imagery + water gradient) — composition order:
+ *     1. Esri World Imagery backdrop (the SAME imagery the map uses),
+ *        fetched through the aerial machinery (LOD floor, 3857 alignment);
+ *        honest-unavailable → the paper ground, never a dropped sheet.
+ *     2. The WATER GRADIENT raster composited over it (same bbox
+ *        transform) — the study's transparent blue ramp of modeled flow +
+ *        ponding, clipped to the drawing frame.
+ *     3. Catchment boundary as a clean dashed overlay (union of the
+ *        modeled cells), paper-haloed.
+ *     4. Traced flow lines, bold water-blue with paper halos, with
+ *        direction arrows along the paths.
+ *     5. Parcel ring, paper-haloed, heaviest stroke on the sheet.
+ *     6. PROMINENT flow-exit arrows at each traced exit.
+ *     7. North arrow (halo disc), legend, ground-true scale bar, fine
+ *        print with imagery attribution + backdrop-not-a-measurement
+ *        language (§17–§19).
  *   SHEET 2 · SUMMARY — modeled results + rainfall forcing (source honestly
  *     labeled) + the layman briefing + a three-column provenance table +
  *     fine print with the not-an-engineering-study disclaimer.
  *
  * HONEST-EMPTY: a flat-terrain / DEM-void study still ships BOTH sheets —
- * the drawing carries the parcel ring and a centred honest panel (aerial-
- * page pattern), the summary carries UNAVAILABLE chips with the reason.
- * Nothing geometric is ever fabricated.
+ * the drawing carries the parcel ring over the backdrop and a centred
+ * honest panel (aerial-page pattern), the summary carries UNAVAILABLE chips
+ * with the reason. Nothing geometric is ever fabricated.
  */
 
 export const FLOOD_DRAINAGE_TOTAL_SHEETS = 2;
@@ -89,6 +130,9 @@ export const FLOOD_DRAINAGE_DEFAULT_RAINFALL_NOTE =
 export const FLOOD_DRAINAGE_EMPTY_TITLE = "NO DRAINAGE CONCENTRATION MODELED";
 export const FLOOD_DRAINAGE_PONDING_NOT_MODELED_REASON =
   "Rainfall response was not modeled on this run.";
+/** §17–§19: imagery + gradient are a backdrop, never a measurement source. */
+export const FLOOD_DRAINAGE_BACKDROP_LINE =
+  "Aerial imagery and the water gradient are a visual backdrop, not a measurement source; imagery capture date is not verified.";
 
 export interface FloodDrainageDescriptor {
   address?: string;
@@ -98,6 +142,11 @@ export interface FloodDrainageDescriptor {
 export interface EmitPdfFloodDrainageOptions {
   /** Test seam for a stable generated stamp. Defaults to now. */
   generatedAtIso?: string;
+  /** Sheet-1 aerial imagery fetch seams — same as the site-plan export. */
+  aerial?: {
+    fetchImage?: AerialImageFetcher;
+    timeoutMs?: number;
+  };
 }
 
 export interface PdfFloodDrainageResult {
@@ -110,21 +159,37 @@ export interface PdfFloodDrainageResult {
   rhythm: ReadonlyArray<RhythmRow>;
   /** §3 sheet-1 drawing frame — every drawing mark bbox stays inside. */
   page1Frame: MarkBbox;
+  /** §17 imagery outcome — embedded or the honest reason it was not. */
+  aerial: { imageryEmbedded: boolean; sourceUrl: string; unavailableReason?: string };
+  /** True when the study's water gradient composited onto sheet 1. */
+  gradientComposited: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Colour roles — the ONE accent ramp, graded subtle → strong (§3/§5).
+// Colour roles — water-blue strokes inside the ONE accent family; the
+// raster water ramp itself lives in drainage-gradient.ts (documented stops).
 // ─────────────────────────────────────────────────────────────────────────
 const INK = TOKENS.text;
-const CATCHMENT_FILL = TOKENS.accent100;
-const ZONE_FILL_LOW = TOKENS.accent200;
-const ZONE_FILL_HIGH = TOKENS.accent300;
-const PONDING_FILL = TOKENS.accent400;
-const FLOW_LINE_COLOR = TOKENS.accent500;
-const EXIT_ARROW_COLOR = TOKENS.accent700;
+const PAPER = TOKENS.neutral100;
+const FLOW_LINE_COLOR = TOKENS.accent600;
+const EXIT_ARROW_COLOR = TOKENS.accent800;
+const CATCHMENT_BOUNDARY_COLOR = TOKENS.accent700;
 const SUPPRESSED = TOKENS.neutral500;
 
-const METERS_PER_DEG_LAT = 110_574;
+/** Context pad around the parcel's mercator extent on sheet 1 — the
+ * upstream catchment reads around the parcel without losing the parcel. */
+export const FD_CONTEXT_PAD_FRACTION = 0.9;
+
+/** Property-line stroke over imagery (heaviest on the sheet, §20-style). */
+const FD_PROPERTY_STROKE = 1.8;
+
+/** Paper halo width added behind rings/lines so they read over imagery. */
+const FD_HALO_EXTRA = 1.8;
+
+/** Flow-exit arrow geometry — sized to read at arm's length. */
+const EXIT_ARROW_LEN = pt(34);
+const EXIT_ARROW_HEAD = pt(11);
+const EXIT_ARROW_STROKE = 2.2;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Frame + footer geometry (§21): legend runs 3 rows per column (2 columns),
@@ -149,60 +214,21 @@ function drawingFrame(): MarkBbox {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Projection: WGS84 → local ENU metres (parcel centroid origin) → page.
-// Fit is PARCEL-PRIMARY (like the site plan): the ring plus a context pad
+// Projection (v2): WGS84 → EPSG:3857 → page, the SAME transform family the
+// aerial page uses — imagery pixels, gradient raster, and vector overlay
+// all share one linear mercator-bbox→rect mapping, so they register.
+// Fit is PARCEL-PRIMARY: the ring's mercator extent plus the context pad
 // governs scale; catchment context beyond the frame is clipped, never
 // allowed to shrink the parcel to a dot.
 // ─────────────────────────────────────────────────────────────────────────
-interface FdTransform {
-  lng0: number;
-  lat0: number;
-  mLng: number;
-  /** Page points per metre. */
-  scale: number;
-  offsetX: number;
-  offsetY: number;
-}
+type FdToPage = (lng: number, lat: number) => { x: number; y: number };
 
-function buildTransform(ring: ReadonlyArray<[number, number]>, frame: MarkBbox): FdTransform {
-  const lng0 = ring.reduce((s, p) => s + p[0], 0) / ring.length;
-  const lat0 = ring.reduce((s, p) => s + p[1], 0) / ring.length;
-  const mLng = METERS_PER_DEG_LAT * Math.cos((lat0 * Math.PI) / 180);
-  const local = ring.map(([lng, lat]) => ({
-    x: (lng - lng0) * mLng,
-    y: (lat - lat0) * METERS_PER_DEG_LAT,
-  }));
-  const xs = local.map((p) => p.x);
-  const ys = local.map((p) => p.y);
-  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1);
-  // Context pad: 0.9× the parcel span each side — the upstream catchment
-  // reads around the parcel without the fit losing the parcel itself.
-  const pad = span * 0.9;
-  const minX = Math.min(...xs) - pad;
-  const maxX = Math.max(...xs) + pad;
-  const minY = Math.min(...ys) - pad;
-  const maxY = Math.max(...ys) + pad;
-  const spanX = Math.max(maxX - minX, 1e-6);
-  const spanY = Math.max(maxY - minY, 1e-6);
-  const frameW = frame.maxX - frame.minX;
-  const frameH = frame.maxY - frame.minY;
-  const scale = Math.min(frameW / spanX, frameH / spanY) * 0.98;
-  const drawnW = spanX * scale;
-  const drawnH = spanY * scale;
+function frameRect(frame: MarkBbox): PageRect {
   return {
-    lng0,
-    lat0,
-    mLng,
-    scale,
-    offsetX: frame.minX + (frameW - drawnW) / 2 - minX * scale,
-    offsetY: frame.minY + (frameH - drawnH) / 2 - minY * scale,
-  };
-}
-
-function project(t: FdTransform, lng: number, lat: number): { x: number; y: number } {
-  return {
-    x: t.offsetX + (lng - t.lng0) * t.mLng * t.scale,
-    y: t.offsetY + (lat - t.lat0) * METERS_PER_DEG_LAT * t.scale,
+    x: frame.minX,
+    y: frame.minY,
+    width: frame.maxX - frame.minX,
+    height: frame.maxY - frame.minY,
   };
 }
 
@@ -227,21 +253,104 @@ function bboxOf(points: ReadonlyArray<{ x: number; y: number }>): MarkBbox {
   return { minX, minY, maxX, maxY };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// §20-style paper halos: paper-coloured underdraw behind rings/lines/text
+// so vectors read over the imagery + gradient on any tone.
+// ─────────────────────────────────────────────────────────────────────────
+function drawHaloedRingFd(
+  page: PDFPage,
+  ring: Array<{ x: number; y: number }>,
+  color: RGB,
+  thickness: number,
+  dashArray?: number[],
+): void {
+  drawRing(page, ring, PAPER, thickness + FD_HALO_EXTRA);
+  drawRing(page, ring, color, thickness, dashArray);
+}
+
+function drawHaloedPolylineFd(
+  page: PDFPage,
+  points: Array<{ x: number; y: number }>,
+  color: RGB,
+  thickness: number,
+  dashArray?: number[],
+): void {
+  drawPolyline(page, points, PAPER, thickness + FD_HALO_EXTRA);
+  drawPolyline(page, points, color, thickness, dashArray);
+}
+
+/** Filled triangle arrowhead with a paper halo behind it. */
+function drawHaloedArrowHead(
+  page: PDFPage,
+  tip: { x: number; y: number },
+  ux: number,
+  uy: number,
+  headLen: number,
+  color: RGB,
+): void {
+  const px = -uy;
+  const py = ux;
+  const draw = (len: number, fill: RGB, tipExtend: number): void => {
+    const t = { x: tip.x + ux * tipExtend, y: tip.y + uy * tipExtend };
+    const base = { x: t.x - ux * len, y: t.y - uy * len };
+    const leftPt = { x: base.x + px * len * 0.45, y: base.y + py * len * 0.45 };
+    const rightPt = { x: base.x - px * len * 0.45, y: base.y - py * len * 0.45 };
+    const path =
+      `M ${t.x.toFixed(2)} ${t.y.toFixed(2)} ` +
+      `L ${leftPt.x.toFixed(2)} ${leftPt.y.toFixed(2)} ` +
+      `L ${rightPt.x.toFixed(2)} ${rightPt.y.toFixed(2)} Z`;
+    page.drawSvgPath(path, { color: fill, borderWidth: 0 });
+  };
+  draw(headLen + FD_HALO_EXTRA, PAPER, FD_HALO_EXTRA * 0.6);
+  draw(headLen, color, 0);
+}
+
 /** Project a GeoJSON Polygon exterior ring, clamped to the frame. Returns
  * null when the polygon lies entirely outside the frame. */
 function projectPolygon(
-  t: FdTransform,
+  toPage: FdToPage,
   frame: MarkBbox,
   coordinates: unknown,
 ): Array<{ x: number; y: number }> | null {
   const exterior = Array.isArray(coordinates) ? (coordinates as unknown[])[0] : null;
   if (!Array.isArray(exterior) || exterior.length < 3) return null;
-  const projected = (exterior as Array<[number, number]>).map(([lng, lat]) => project(t, lng, lat));
+  const projected = (exterior as Array<[number, number]>).map(([lng, lat]) => toPage(lng, lat));
   const inside = projected.some(
     (p) => p.x >= frame.minX && p.x <= frame.maxX && p.y >= frame.minY && p.y <= frame.maxY,
   );
   if (!inside) return null;
   return projected.map((p) => clampToFrame(p, frame));
+}
+
+/**
+ * Union the modeled catchment cells into their outline rings — the CLEAN
+ * dashed catchment boundary. Exact boolean union via polygon-clipping (the
+ * repo's standing polygon-ops dependency); a degenerate input yields no
+ * boundary rather than a guessed one.
+ */
+export function catchmentBoundaryRings(
+  catchment: GeoJsonFeatureCollection,
+): Array<Array<[number, number]>> {
+  const polys: Array<[number, number][][]> = [];
+  for (const feature of catchment.features) {
+    if (feature.geometry.type !== "Polygon") continue;
+    const exterior = (feature.geometry.coordinates as [number, number][][])[0];
+    if (!Array.isArray(exterior) || exterior.length < 3) continue;
+    polys.push([exterior.map((p) => [p[0], p[1]] as [number, number])]);
+  }
+  if (polys.length === 0) return [];
+  try {
+    const unioned = polygonClipping.union(polys[0]!, ...polys.slice(1));
+    const rings: Array<Array<[number, number]>> = [];
+    for (const poly of unioned) {
+      for (const ring of poly) {
+        if (ring.length >= 3) rings.push(ring.map((p) => [p[0], p[1]] as [number, number]));
+      }
+    }
+    return rings;
+  } catch {
+    return [];
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -355,141 +464,194 @@ function headerStats(study: FloodDrainageStudy): HeaderStat[] {
   ];
 }
 
-/** True when a rainfall feature intersects the parcel (study-side clip tag). */
-function pondingFeatureOnParcel(feature: GeoJsonFeatureCollection["features"][number]): boolean {
-  return (feature.properties as { onParcel?: boolean } | undefined)?.onParcel === true;
+// ─────────────────────────────────────────────────────────────────────────
+// Sheet-1 drawing (v2): imagery backdrop → water gradient → catchment
+// boundary → flow lines → parcel ring → exit arrows → furniture.
+// ─────────────────────────────────────────────────────────────────────────
+interface FdSheet1Layers {
+  imagery: AerialImageryResult;
+  imageryPng: PDFImage | undefined;
+  gradientPng: PDFImage | undefined;
 }
 
-/** True when the zones layer carries at least one graded cell to draw. */
-function hasGradedZones(study: FloodDrainageStudy): boolean {
-  return study.drainageZonesGeoJson.features.some(
-    (f) => Number((f.properties as { concentration?: number } | undefined)?.concentration ?? 0) >= 1,
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Sheet-1 drawing.
-// ─────────────────────────────────────────────────────────────────────────
 function drawStudyDrawing(
   page: PDFPage,
   study: FloodDrainageStudy,
   F: Fonts,
   frame: MarkBbox,
   marks: MarkRegistry,
-): FdTransform {
-  const t = buildTransform(study.parcelRingWgs84, frame);
+  toPage: FdToPage,
+  layers: FdSheet1Layers,
+): void {
+  const rect = frameRect(frame);
+
+  // 1) BACKDROP — the SAME Esri World Imagery the map uses; honest paper
+  // ground when the fetch failed (§17: never a dropped sheet).
+  if (layers.imagery.ok && layers.imageryPng) {
+    if (marks.once(1, "imagery", "raster", frame)) {
+      page.drawImage(layers.imageryPng, {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      });
+    }
+  } else {
+    page.drawRectangle({
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      color: PAPER,
+      borderColor: TOKENS.neutral300,
+      borderWidth: 0.7,
+    });
+  }
+
+  // 2) THE WATER GRADIENT — composited over the backdrop by the SAME bbox
+  // transform (gradient bbox corners → mercator → page), clipped hard to
+  // the drawing frame (§3). The raster's row-0 edge is its bbox's north.
+  if (layers.gradientPng && study.gradient) {
+    const sw = toPage(study.gradient.bbox.westLng, study.gradient.bbox.southLat);
+    const ne = toPage(study.gradient.bbox.eastLng, study.gradient.bbox.northLat);
+    if (marks.once(1, "water-gradient", "raster", frame)) {
+      page.pushOperators(
+        pushGraphicsState(),
+        moveTo(frame.minX, frame.minY),
+        lineTo(frame.maxX, frame.minY),
+        lineTo(frame.maxX, frame.maxY),
+        lineTo(frame.minX, frame.maxY),
+        closePath(),
+        clip(),
+        endPath(),
+      );
+      page.drawImage(layers.gradientPng, {
+        x: sw.x,
+        y: sw.y,
+        width: ne.x - sw.x,
+        height: ne.y - sw.y,
+      });
+      page.pushOperators(popGraphicsState());
+    }
+  }
 
   if (!study.honestEmpty) {
-    // 1) CATCHMENT — faintest ramp step, behind everything.
+    // 3) CATCHMENT BOUNDARY — clean dashed outline of the modeled cells'
+    // union, paper-haloed so it reads over imagery.
     {
       const drawn: Array<{ x: number; y: number }> = [];
-      for (const feature of study.catchmentGeoJson.features) {
-        if (feature.geometry.type !== "Polygon") continue;
-        const ring = projectPolygon(t, frame, feature.geometry.coordinates);
-        if (!ring) continue;
-        drawFilledRing(page, ring, CATCHMENT_FILL);
-        drawn.push(...ring);
-      }
-      if (drawn.length > 0) marks.once(1, "catchment-fill", "mask", bboxOf(drawn));
+      catchmentBoundaryRings(study.catchmentGeoJson).forEach((ring) => {
+        const closed = [...ring, ring[0]!];
+        const projected = closed.map(([lng, lat]) => {
+          const p = toPage(lng, lat);
+          return [p.x, p.y] as [number, number];
+        });
+        for (const part of clipPolylineToAabb(projected, frame)) {
+          const line = part.map(([x, y]) => ({ x, y }));
+          if (line.length < 2) continue;
+          drawHaloedPolylineFd(page, line, CATCHMENT_BOUNDARY_COLOR, 0.9, SETBACK_DASH);
+          drawn.push(...line);
+        }
+      });
+      if (drawn.length > 0) marks.once(1, "catchment-boundary", "outline", bboxOf(drawn));
     }
 
-    // 2) DRAINAGE CONCENTRATION — graded by the real flow-vertex density.
-    {
-      const drawn: Array<{ x: number; y: number }> = [];
-      for (const feature of study.drainageZonesGeoJson.features) {
-        const concentration = Number(
-          (feature.properties as { concentration?: number } | undefined)?.concentration ?? 0,
-        );
-        if (concentration < 1 || feature.geometry.type !== "Polygon") continue;
-        const ring = projectPolygon(t, frame, feature.geometry.coordinates);
-        if (!ring) continue;
-        drawFilledRing(page, ring, concentration >= 2 ? ZONE_FILL_HIGH : ZONE_FILL_LOW);
-        drawn.push(...ring);
-      }
-      if (drawn.length > 0) marks.once(1, "drainage-zones", "graded", bboxOf(drawn));
-    }
-
-    // 3) RAINFALL PONDING — ON-PARCEL FEATURES ONLY (2026-07-29 canary
-    // fix). DESIGN CHOICE: far-field ponding across the padded modeled
-    // region is NOT drawn at all — at parcel scale it reads as noise, the
-    // catchment fill already carries the regional context, and the wider
-    // area is disclosed as a labeled qualifier on the summary sheet. The
-    // drawing answers "where does water pool HERE".
-    if (study.rainfallResultGeoJson) {
-      const drawn: Array<{ x: number; y: number }> = [];
-      for (const feature of study.rainfallResultGeoJson.features) {
-        if (feature.geometry.type !== "Polygon") continue;
-        if (!pondingFeatureOnParcel(feature)) continue;
-        const ring = projectPolygon(t, frame, feature.geometry.coordinates);
-        if (!ring) continue;
-        drawFilledRing(page, ring, PONDING_FILL);
-        drawn.push(...ring);
-      }
-      if (drawn.length > 0) marks.once(1, "rainfall-ponding", "mask", bboxOf(drawn));
-    }
-
-    // 4) FLOW LINES — clipped hard to the frame (§3 frame-clip).
+    // 4) FLOW LINES — bold water-blue with paper halos, clipped hard to the
+    // frame (§3), with a direction arrow along each path.
     study.flowLinesGeoJson.features.forEach((feature, i) => {
       if (feature.geometry.type !== "LineString") return;
       const projected = (feature.geometry.coordinates as Array<[number, number]>).map(
         ([lng, lat]) => {
-          const p = project(t, lng, lat);
+          const p = toPage(lng, lat);
           return [p.x, p.y] as [number, number];
         },
       );
       const clips = clipPolylineToAabb(projected, frame);
       const pts: Array<{ x: number; y: number }> = [];
-      for (const clip of clips) {
-        const line = clip.map(([x, y]) => ({ x, y }));
-        drawPolyline(page, line, FLOW_LINE_COLOR, 0.7, SETBACK_DASH);
+      for (const part of clips) {
+        const line = part.map(([x, y]) => ({ x, y }));
+        if (line.length < 2) continue;
+        drawHaloedPolylineFd(page, line, FLOW_LINE_COLOR, 1.6);
         pts.push(...line);
+        // Direction arrow ~60% along the clipped part, inset from the frame.
+        const k = Math.max(1, Math.floor(line.length * 0.6));
+        const a = line[k - 1]!;
+        const b = line[Math.min(k, line.length - 1)]!;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 1e-6) {
+          const ux = dx / len;
+          const uy = dy / len;
+          const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          if (
+            mid.x > frame.minX + pt(10) &&
+            mid.x < frame.maxX - pt(10) &&
+            mid.y > frame.minY + pt(10) &&
+            mid.y < frame.maxY - pt(10)
+          ) {
+            drawHaloedArrowHead(page, mid, ux, uy, pt(7), FLOW_LINE_COLOR);
+          }
+        }
       }
       if (pts.length > 0) marks.once(1, "flow-line", String(i), bboxOf(pts));
     });
   }
 
-  // 5) PROPERTY LINE — heaviest stroke on the sheet, always drawn (§3).
+  // 5) PROPERTY LINE — heaviest stroke on the sheet, paper-haloed, always
+  // drawn (§3/§20).
   const ringPage = study.parcelRingWgs84.map(([lng, lat]) =>
-    clampToFrame(project(t, lng, lat), frame),
+    clampToFrame(toPage(lng, lat), frame),
   );
   if (marks.once(1, "property-line", "ring", bboxOf(ringPage))) {
-    drawRing(page, ringPage, INK, STROKE.property);
+    drawHaloedRingFd(page, ringPage, INK, FD_PROPERTY_STROKE);
   }
 
-  // 6) FLOW EXIT ARROWS — outbound bearing at each traced exit (§14 keyed).
+  // 6) FLOW EXIT ARROWS — PROMINENT, water-blue with paper halos, outbound
+  // bearing at each traced exit (§14 keyed), sized to read at arm's length.
   if (!study.honestEmpty) {
     study.flowExits.forEach((exit, i) => {
-      const at = project(t, exit.lng, exit.lat);
-      if (
-        at.x < frame.minX + pt(8) ||
-        at.x > frame.maxX - pt(8) ||
-        at.y < frame.minY + pt(8) ||
-        at.y > frame.maxY - pt(8)
-      ) {
-        return; // an arrow that would cross the frame is dropped, not clipped ugly
-      }
+      const at = toPage(exit.lng, exit.lat);
       const rad = (exit.bearingDeg * Math.PI) / 180;
       const ux = Math.sin(rad);
       const uy = Math.cos(rad);
-      const len = pt(18);
-      const tip = { x: at.x + ux * len, y: at.y + uy * len };
+      const tip = { x: at.x + ux * EXIT_ARROW_LEN, y: at.y + uy * EXIT_ARROW_LEN };
+      const inset = pt(8);
+      const insideFrame = (p: { x: number; y: number }): boolean =>
+        p.x > frame.minX + inset &&
+        p.x < frame.maxX - inset &&
+        p.y > frame.minY + inset &&
+        p.y < frame.maxY - inset;
+      if (!insideFrame(at) || !insideFrame(tip)) {
+        return; // an arrow that would cross the frame is dropped, not clipped ugly
+      }
+      const shaftEnd = {
+        x: tip.x - ux * EXIT_ARROW_HEAD,
+        y: tip.y - uy * EXIT_ARROW_HEAD,
+      };
       const px = -uy;
       const py = ux;
-      const headLen = pt(6);
-      const base = { x: tip.x - ux * headLen, y: tip.y - uy * headLen };
-      const leftPt = { x: base.x + px * headLen * 0.45, y: base.y + py * headLen * 0.45 };
-      const rightPt = { x: base.x - px * headLen * 0.45, y: base.y - py * headLen * 0.45 };
-      if (!marks.once(1, "flow-exit-arrow", String(i), bboxOf([at, tip, leftPt, rightPt]))) return;
-      page.drawLine({ start: at, end: base, thickness: 1.1, color: EXIT_ARROW_COLOR });
-      const path =
-        `M ${tip.x.toFixed(2)} ${tip.y.toFixed(2)} ` +
-        `L ${leftPt.x.toFixed(2)} ${leftPt.y.toFixed(2)} ` +
-        `L ${rightPt.x.toFixed(2)} ${rightPt.y.toFixed(2)} Z`;
-      page.drawSvgPath(path, { color: EXIT_ARROW_COLOR, borderWidth: 0 });
+      const headHalf = EXIT_ARROW_HEAD * 0.45;
+      const headBboxPts = [
+        at,
+        tip,
+        { x: shaftEnd.x + px * headHalf, y: shaftEnd.y + py * headHalf },
+        { x: shaftEnd.x - px * headHalf, y: shaftEnd.y - py * headHalf },
+      ];
+      if (!marks.once(1, "flow-exit-arrow", String(i), bboxOf(headBboxPts))) return;
+      page.drawLine({
+        start: at,
+        end: shaftEnd,
+        thickness: EXIT_ARROW_STROKE + FD_HALO_EXTRA,
+        color: PAPER,
+      });
+      page.drawLine({ start: at, end: shaftEnd, thickness: EXIT_ARROW_STROKE, color: EXIT_ARROW_COLOR });
+      drawHaloedArrowHead(page, tip, ux, uy, EXIT_ARROW_HEAD, EXIT_ARROW_COLOR);
     });
   }
 
-  // 7) HONEST PANEL (aerial-page pattern): centred title + ONE sentence.
+  // 7) HONEST PANEL (aerial-page pattern): centred title + ONE sentence on
+  // a translucent paper panel so it reads over the backdrop.
   if (study.honestEmpty) {
     const cx = (frame.minX + frame.maxX) / 2;
     const cy = (frame.minY + frame.maxY) / 2 + pt(60);
@@ -507,6 +669,14 @@ function drawStudyDrawing(
         maxY: cy + titleSize,
       })
     ) {
+      page.drawRectangle({
+        x: cx - w / 2 - pt(14),
+        y: cy - titleSize - pt(4) - sentenceSize - pt(10),
+        width: w + pt(28),
+        height: titleSize * 2 + sentenceSize + pt(22),
+        color: PAPER,
+        opacity: 0.88,
+      });
       page.drawText(FLOOD_DRAINAGE_EMPTY_TITLE, {
         x: cx - F.display.widthOfTextAtSize(FLOOD_DRAINAGE_EMPTY_TITLE, titleSize) / 2,
         y: cy,
@@ -524,7 +694,19 @@ function drawStudyDrawing(
     }
   }
 
-  // 8) NORTH ARROW — exactly one, top-right inside the frame (§9/§14).
+  // 8) FRAME — a quiet border keeps the imagery composition bound (§3).
+  page.drawRectangle({
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    borderColor: TOKENS.neutral300,
+    borderWidth: 0.7,
+    color: undefined,
+  });
+
+  // 9) NORTH ARROW — exactly one, top-right inside the frame (§9/§14),
+  // halo disc behind it so it reads over any imagery tone.
   {
     const x = frame.maxX - pt(22);
     const origin = { x, y: frame.maxY - pt(52) };
@@ -537,11 +719,16 @@ function drawStudyDrawing(
         maxY: tip.y + pt(6) + pt(11),
       })
     ) {
+      page.drawCircle({
+        x,
+        y: (origin.y + tip.y) / 2 + pt(2),
+        size: pt(22),
+        color: PAPER,
+        opacity: 0.55,
+      });
       drawNorthArrow(page, { origin, tip }, F.display);
     }
   }
-
-  return t;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -550,52 +737,39 @@ function drawStudyDrawing(
 // ─────────────────────────────────────────────────────────────────────────
 interface FdLegendRow {
   label: string;
-  swatch: "line-heavy" | "fill" | "line-dashed" | "arrow";
+  swatch: "line-heavy" | "gradient" | "line-dashed" | "line-solid" | "arrow" | "imagery";
   color: RGB;
   empty?: boolean;
 }
 
-function fdLegendRows(study: FloodDrainageStudy): FdLegendRow[] {
+function fdLegendRows(
+  study: FloodDrainageStudy,
+  imagery: AerialImageryResult,
+  gradientComposited: boolean,
+): FdLegendRow[] {
   const empty = !!study.honestEmpty;
   // §5: an empty layer stays LISTED, greys to neutral-500, and carries its
   // reason INLINE on the same row — a populated-looking legend row over a
   // layer that drew nothing (the 2026-07-29 canary smoke) is a defect.
-  const zonesEmpty = empty || !hasGradedZones(study);
-  const pondingOnParcel =
-    !empty &&
-    !!study.rainfallResultGeoJson &&
-    study.rainfallResultGeoJson.features.some(pondingFeatureOnParcel);
   return [
     { label: "Property line", swatch: "line-heavy", color: INK },
     {
-      label: empty ? "Catchment — none modeled" : "Modeled catchment",
-      swatch: "fill",
-      color: CATCHMENT_FILL,
+      label: gradientComposited
+        ? `Water gradient — modeled flow and ponding at ${study.rainfallDepthInches}" storm`
+        : "Water gradient — not modeled",
+      swatch: "gradient",
+      color: FLOW_LINE_COLOR,
+      empty: !gradientComposited,
+    },
+    {
+      label: empty ? "Catchment boundary — none modeled" : "Catchment boundary",
+      swatch: "line-dashed",
+      color: CATCHMENT_BOUNDARY_COLOR,
       empty,
     },
     {
-      label: zonesEmpty
-        ? empty
-          ? "Drainage concentration — none modeled"
-          : "Drainage concentration — none at this resolution"
-        : "Drainage concentration",
-      swatch: "fill",
-      color: ZONE_FILL_HIGH,
-      empty: zonesEmpty,
-    },
-    {
-      label: pondingOnParcel
-        ? `Ponding on parcel at ${study.rainfallDepthInches}" storm`
-        : empty || !study.rainfallResultGeoJson
-          ? "Ponding — not modeled"
-          : "Ponding — none modeled on parcel",
-      swatch: "fill",
-      color: PONDING_FILL,
-      empty: !pondingOnParcel,
-    },
-    {
       label: empty ? "Flow lines — none traced" : "Traced flow line",
-      swatch: "line-dashed",
+      swatch: "line-solid",
       color: FLOW_LINE_COLOR,
       empty,
     },
@@ -606,6 +780,19 @@ function fdLegendRows(study: FloodDrainageStudy): FdLegendRow[] {
       color: EXIT_ARROW_COLOR,
       empty: empty || study.stats.flowExitCount === 0,
     },
+    imagery.ok
+      ? {
+          label: "Aerial imagery — backdrop only, not a measurement source",
+          swatch: "imagery",
+          color: SUPPRESSED,
+          empty: true,
+        }
+      : {
+          label: "Aerial imagery — unavailable · overlay on paper ground",
+          swatch: "imagery",
+          color: SUPPRESSED,
+          empty: true,
+        },
   ];
 }
 
@@ -614,14 +801,39 @@ function drawFdLegendSwatch(page: PDFPage, row: FdLegendRow, x: number, y: numbe
   const midY = y + pt(3);
   if (row.swatch === "line-heavy") {
     page.drawLine({ start: { x, y: midY }, end: { x: x + w, y: midY }, thickness: STROKE.property, color: row.color });
-  } else if (row.swatch === "fill") {
+  } else if (row.swatch === "gradient") {
+    // Three steps of THE water ramp (drainage-gradient.ts documented stops).
+    const steps = [0.25, 0.6, 0.95];
+    const stepW = w / steps.length;
+    steps.forEach((t, i) => {
+      const c = gradientRampColor(t);
+      page.drawRectangle({
+        x: x + i * stepW,
+        y: y - pt(1),
+        width: stepW,
+        height: pt(8),
+        color: rgb(c.r / 255, c.g / 255, c.b / 255),
+        opacity: row.empty ? 0.35 : Math.max(0.25, c.a),
+        borderWidth: 0,
+      });
+    });
     page.drawRectangle({
       x,
       y: y - pt(1),
       width: w,
       height: pt(8),
-      color: row.color,
       borderColor: row.empty ? SUPPRESSED : TOKENS.accent400,
+      borderWidth: 0.5,
+      color: undefined,
+    });
+  } else if (row.swatch === "imagery") {
+    page.drawRectangle({
+      x,
+      y: y - pt(1),
+      width: w,
+      height: pt(8),
+      color: TOKENS.accent200,
+      borderColor: TOKENS.neutral300,
       borderWidth: 0.5,
     });
   } else if (row.swatch === "line-dashed") {
@@ -632,6 +844,8 @@ function drawFdLegendSwatch(page: PDFPage, row: FdLegendRow, x: number, y: numbe
       color: row.color,
       dashArray: SETBACK_DASH,
     });
+  } else if (row.swatch === "line-solid") {
+    page.drawLine({ start: { x, y: midY }, end: { x: x + w, y: midY }, thickness: 1.6, color: row.color });
   } else {
     page.drawLine({ start: { x, y: midY }, end: { x: x + w - pt(6), y: midY }, thickness: 1.1, color: row.color });
     const path =
@@ -645,18 +859,20 @@ function drawFdLegendSwatch(page: PDFPage, row: FdLegendRow, x: number, y: numbe
 function drawFdFooter(
   page: PDFPage,
   study: FloodDrainageStudy,
-  t: FdTransform,
+  ptsPerMeter: number,
   F: Fonts,
   marks: MarkRegistry,
   rhythm: RhythmCapture,
   generatedAtIso: string,
+  imagery: AerialImageryResult,
+  gradientComposited: boolean,
 ): void {
   const ruleY = page1FooterRuleYFd();
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
 
   // Legend — column-major, 3 rows per column (§5 fixed order).
   if (marks.once(1, "legend", "legend")) {
-    const rows = fdLegendRows(study);
+    const rows = fdLegendRows(study, imagery, gradientComposited);
     const size = TYPE.legend;
     const pitch = LB.legend.lineBoxHeight + pt(SPACE.s2);
     const perCol = 3;
@@ -688,11 +904,13 @@ function drawFdFooter(
     });
   }
 
-  // Scale bar (§9): three segments, unit on the LAST label only.
+  // Scale bar (§9): three segments, unit on the LAST label only. Ground-
+  // true through the mercator transform (mercator-plane inflation divided
+  // back out by aerialPagePointsPerGroundMeter upstream).
   if (marks.once(1, "scale-bar", "scale")) {
     const right = PAGE_WIDTH - MARGIN_X;
     const barWidth = pt(120);
-    const ptPerFoot = t.scale * 0.3048;
+    const ptPerFoot = ptsPerMeter * 0.3048;
     const lengthFeet = ptPerFoot > 0 ? barWidth / ptPerFoot : 0;
     const barTop = ruleY - pt(8);
     const blockW = barWidth / 3;
@@ -837,6 +1055,15 @@ function fdProvenanceRows(study: FloodDrainageStudy): FdProvenanceRow[] {
           source: `D8 flow accumulation · ${study.computation.library}`,
           confidence: confidenceCell(CONFIDENCE.asserted, "screening model"),
         },
+    ...(study.gradient
+      ? [
+          {
+            layer: "Water gradient",
+            source: "derived raster · D8 flow accumulation + modeled ponding",
+            confidence: confidenceCell(CONFIDENCE.asserted, "visual aid"),
+          },
+        ]
+      : []),
     {
       layer: "Parcel geometry",
       source: study.geometrySourceRef,
@@ -897,12 +1124,29 @@ function drawFdProvenanceTable(
 // ─────────────────────────────────────────────────────────────────────────
 // Fine print (§8 family).
 // ─────────────────────────────────────────────────────────────────────────
-function fdFinePrint(study: FloodDrainageStudy, sheetNo: number): string {
+function fdFinePrint(
+  study: FloodDrainageStudy,
+  sheetNo: number,
+  imagery?: AerialImageryResult | null,
+): string {
   const sentences: string[] = [
     FLOOD_DRAINAGE_DISCLAIMER,
     FLOOD_DRAINAGE_MODEL_BASIS_LINE,
     SITE_PLAN_HONESTY_LINE,
   ];
+  if (sheetNo === 1 && imagery) {
+    // §17–§19: backdrop language + verbatim provider attribution; the
+    // honest unavailable note when the fetch failed (gradient still ships
+    // on the paper ground).
+    sentences.push(FLOOD_DRAINAGE_BACKDROP_LINE);
+    if (imagery.ok) {
+      sentences.push(AERIAL_IMAGERY_ATTRIBUTION);
+    } else {
+      sentences.push(
+        `${AERIAL_UNAVAILABLE_NOTE}: ${imagery.reason}. The drawing renders on the paper ground.`,
+      );
+    }
+  }
   if (study.rainfallSource === "default") {
     sentences.push(FLOOD_DRAINAGE_DEFAULT_RAINFALL_NOTE);
   }
@@ -934,9 +1178,52 @@ export async function emitPdfFloodDrainage(
   const rhythm = new RhythmCapture();
   const generatedAt = options.generatedAtIso ?? new Date().toISOString();
   const frame = drawingFrame();
+  const rect = frameRect(frame);
   const docId = `FD-${study.parcelNodeId.replace(/:/g, "-")}`;
 
-  // ── SHEET 1 · DRAWING ──────────────────────────────────────────────────
+  // Sheet-1 imagery fetch — started FIRST (aerial-page pattern) so the
+  // bounded network wait overlaps the vector work; bounded and never
+  // throwing, so a dead endpoint degrades to the honest paper ground.
+  const mercBbox: MercatorBbox = computeMercatorBboxFromWgs84Ring(
+    study.parcelRingWgs84,
+    rect.width / rect.height,
+    FD_CONTEXT_PAD_FRACTION,
+  );
+  const aerialUrl = buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox));
+  const aerialPromise = fetchAerialImagery(aerialUrl, {
+    fetchImage: options.aerial?.fetchImage,
+    timeoutMs: options.aerial?.timeoutMs,
+  });
+  const toPage = makeWgs84PageTransform(mercBbox, rect);
+  const ptsPerMeter = aerialPagePointsPerGroundMeter(mercBbox, rect, study.catchmentBbox);
+
+  let imagery = await aerialPromise;
+  let imageryPng: PDFImage | undefined;
+  if (imagery.ok) {
+    try {
+      imageryPng = await doc.embedPng(imagery.bytes);
+    } catch (error) {
+      imagery = {
+        ok: false,
+        reason: `imagery decode failed: ${error instanceof Error ? error.message : String(error)}`,
+        url: imagery.url,
+      };
+    }
+  }
+
+  // The study's water gradient — decoded from the pinned-contract payload;
+  // a decode failure degrades honestly (no gradient composited), never a
+  // failed export.
+  let gradientPng: PDFImage | undefined;
+  if (study.gradient?.pngBase64) {
+    try {
+      gradientPng = await doc.embedPng(Buffer.from(study.gradient.pngBase64, "base64"));
+    } catch {
+      gradientPng = undefined;
+    }
+  }
+
+  // ── SHEET 1 · DRAWING (imagery + water gradient) ───────────────────────
   {
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
     drawFdHeader(
@@ -949,9 +1236,23 @@ export async function emitPdfFloodDrainage(
       null,
     );
     marks.once(1, "fd-header", "drawing");
-    const t = drawStudyDrawing(page, study, F, frame, marks);
-    drawFdFooter(page, study, t, F, marks, rhythm, generatedAt);
-    drawFinePrint(page, 1, fdFinePrint(study, 1), F, marks);
+    drawStudyDrawing(page, study, F, frame, marks, toPage, {
+      imagery,
+      imageryPng,
+      gradientPng,
+    });
+    drawFdFooter(
+      page,
+      study,
+      ptsPerMeter,
+      F,
+      marks,
+      rhythm,
+      generatedAt,
+      imagery,
+      gradientPng !== undefined,
+    );
+    drawFinePrint(page, 1, fdFinePrint(study, 1, imagery), F, marks);
   }
 
   // ── SHEET 2 · SUMMARY ──────────────────────────────────────────────────
@@ -1102,5 +1403,9 @@ export async function emitPdfFloodDrainage(
     marks: marks.marks,
     rhythm: rhythm.rows,
     page1Frame: frame,
+    aerial: imagery.ok
+      ? { imageryEmbedded: true, sourceUrl: imagery.url }
+      : { imageryEmbedded: false, sourceUrl: imagery.url, unavailableReason: imagery.reason },
+    gradientComposited: gradientPng !== undefined,
   };
 }

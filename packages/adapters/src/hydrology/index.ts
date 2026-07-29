@@ -1,9 +1,11 @@
 export {
   runHydrologyNative,
+  computeD8Field,
   accumulationThresholdForResolution,
   ACCUMULATION_THRESHOLD_BASE_CELLS,
   ACCUMULATION_THRESHOLD_REFERENCE_RESOLUTION_METERS,
   type BboxWgs84,
+  type D8Field,
   type GeoJsonFeatureCollection,
   type HydrologyNativeInput,
   type HydrologyNativeResult,

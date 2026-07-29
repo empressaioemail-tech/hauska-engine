@@ -93,10 +93,12 @@ export {
   HONEST_EMPTY_DEM_VOID,
   HONEST_EMPTY_FLAT_TERRAIN,
   MIN_DRAINAGE_RESOLUTION_METERS,
+  NEGLIGIBLE_CATCHMENT_CELLS,
   buildFloodDrainageBriefing,
   clipPondingToParcel,
   deriveDrainageZones,
   featureCollectionAreaSqFt,
+  negligibleCatchmentThresholdSqFt,
   paddedCatchmentBbox,
   pointInRing,
   resolveFlowExits,
@@ -107,10 +109,26 @@ export {
   type FloodDrainageStudy,
   type FloodDrainageStudyStats,
   type PondingClipResult,
+  type PourPointMethod,
+  type PourPointResolution,
   type RainfallSource,
   type RunFloodDrainageStudyOptions,
   type RunFloodDrainageStudyResult,
 } from "./flood-drainage-study.js";
+
+export {
+  GRADIENT_INTENSITY_FLOOR,
+  GRADIENT_MAX_AXIS_PX,
+  GRADIENT_POND_WEIGHT,
+  GRADIENT_RAMP_STOPS,
+  buildDrainageGradient,
+  computeGradientIntensity,
+  downsampleIntensity,
+  featherIntensity,
+  gradientRampColor,
+  type BuildDrainageGradientOptions,
+  type FloodDrainageGradient,
+} from "./drainage-gradient.js";
 
 export {
   authorParcelFloodDrainageReport,
@@ -119,12 +137,15 @@ export {
 } from "./flood-drainage-author.js";
 
 export {
+  FD_CONTEXT_PAD_FRACTION,
+  FLOOD_DRAINAGE_BACKDROP_LINE,
   FLOOD_DRAINAGE_DEFAULT_RAINFALL_NOTE,
   FLOOD_DRAINAGE_DISCLAIMER,
   FLOOD_DRAINAGE_EMPTY_TITLE,
   FLOOD_DRAINAGE_KICKER,
   FLOOD_DRAINAGE_MODEL_BASIS_LINE,
   FLOOD_DRAINAGE_TOTAL_SHEETS,
+  catchmentBoundaryRings,
   emitPdfFloodDrainage,
   type EmitPdfFloodDrainageOptions,
   type FloodDrainageDescriptor,
@@ -193,7 +214,9 @@ export {
   AERIAL_IMAGERY_ATTRIBUTION,
   AERIAL_NOT_A_SURVEY_LINE,
   AERIAL_UNAVAILABLE_NOTE,
+  computeMercatorBboxFromWgs84Ring,
   fetchAerialImagery,
+  makeWgs84PageTransform,
   type AerialImageFetcher,
   type AerialImageryResult,
 } from "./pdf/aerial.js";

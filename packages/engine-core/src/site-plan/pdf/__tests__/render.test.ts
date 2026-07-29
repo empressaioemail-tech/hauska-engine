@@ -86,7 +86,10 @@ function buildModel() {
   });
 }
 
-describe("emitPdfSitePlan", () => {
+// 60s ceiling matches the sibling PDF suites (dossier, flood-drainage):
+// four embedded fonts per emit run well past vitest's 5s default under
+// full-suite parallel load.
+describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
   it("emits a well-formed 3-page PDF (drawing, summary, aerial context) from the shared site model", async () => {
     const model = buildModel();
     const result = await emitPdfSitePlan(model, aerialStubDown);

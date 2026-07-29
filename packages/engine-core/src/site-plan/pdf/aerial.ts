@@ -103,10 +103,35 @@ export function computeAerialMercatorBbox(
   if (ringLocal.length < 3) {
     throw new Error(`Aerial bbox requires a parcel ring (>=3 points); got ${ringLocal.length}.`);
   }
+  const merc = ringLocal.map((p) => localEnuToWebMercator(p, bbox));
+  return padAndAspectMercatorBbox(merc, aspect, padFraction);
+}
+
+/**
+ * Same pad + aspect-expand construction, from a WGS84 parcel ring directly —
+ * for sibling assemblers (the flood-drainage sheet) whose model carries the
+ * ring in WGS84 rather than local-ENU. ONE bbox recipe, two entry points.
+ */
+export function computeMercatorBboxFromWgs84Ring(
+  ringWgs84: ReadonlyArray<[number, number]>,
+  aspect: number,
+  padFraction: number = AERIAL_CONTEXT_PAD_FRACTION,
+): MercatorBbox {
+  if (ringWgs84.length < 3) {
+    throw new Error(`Mercator bbox requires a parcel ring (>=3 points); got ${ringWgs84.length}.`);
+  }
+  const merc = ringWgs84.map(([lng, lat]) => lngLatToWebMercator(lng, lat));
+  return padAndAspectMercatorBbox(merc, aspect, padFraction);
+}
+
+function padAndAspectMercatorBbox(
+  merc: MercatorXY[],
+  aspect: number,
+  padFraction: number,
+): MercatorBbox {
   if (!(aspect > 0) || !Number.isFinite(aspect)) {
     throw new Error(`Aerial bbox requires a positive finite aspect; got ${aspect}.`);
   }
-  const merc = ringLocal.map((p) => localEnuToWebMercator(p, bbox));
   const xs = merc.map((p) => p.x);
   const ys = merc.map((p) => p.y);
   let xmin = Math.min(...xs);
@@ -193,6 +218,26 @@ export interface PageRect {
  * requested mercator bbox onto the page image rect. Mercator y increases
  * north and PDF page y increases up, so the mapping is direct (no flip).
  */
+/**
+ * WGS84 lng/lat -> page points, via EPSG:3857 and the linear mapping of the
+ * requested mercator bbox onto the page image rect — the flood-drainage
+ * sheet's overlay transform (its model coordinates are WGS84, not local-ENU).
+ */
+export function makeWgs84PageTransform(
+  mercBbox: MercatorBbox,
+  imageRect: PageRect,
+): (lng: number, lat: number) => PageXY {
+  const sx = imageRect.width / (mercBbox.xmax - mercBbox.xmin);
+  const sy = imageRect.height / (mercBbox.ymax - mercBbox.ymin);
+  return (lng: number, lat: number): PageXY => {
+    const merc = lngLatToWebMercator(lng, lat);
+    return {
+      x: imageRect.x + (merc.x - mercBbox.xmin) * sx,
+      y: imageRect.y + (merc.y - mercBbox.ymin) * sy,
+    };
+  };
+}
+
 export function makeAerialOverlayTransform(
   mercBbox: MercatorBbox,
   imageRect: PageRect,

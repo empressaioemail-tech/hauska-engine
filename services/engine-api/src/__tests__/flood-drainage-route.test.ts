@@ -16,6 +16,12 @@ const FAKE_STUDY = {
   rainfallSource: "default",
   demProvenance: { source: "USGS 3DEP", resolutionMeters: 10 },
   briefing: "The modeled upstream catchment delivers runoff toward the parcel.",
+  // v2 PINNED gradient contract (the PE leg codes to this shape).
+  gradient: {
+    pngBase64: "aGVsbG8tZ3JhZGllbnQ=",
+    bbox: { westLng: -97.325, southLat: 30.095, eastLng: -97.313, northLat: 30.107 },
+    note: "Modeled water gradient derived from D8 flow accumulation with modeled ponding, blended and alpha graded, over the USGS 3DEP elevation model at 10 m per pixel. Design storm 9.5 inch, 100-yr 24-hr. Visualization aid, not a measurement source.",
+  },
   flowExits: [],
   stats: {
     catchmentAreaSqFt: 100,
@@ -23,6 +29,7 @@ const FAKE_STUDY = {
     pondedAreaModeledRegionSqFt: null,
     flowExitCount: 0,
     pourPoint: { lng: 0, lat: 0 },
+    pourPointMethod: "max-accumulation-on-parcel",
   },
   computation: { library: "native-d8", routing: "d8", accumulationThreshold: 50 },
 };
@@ -152,6 +159,14 @@ describe("flood-drainage routes (PINNED contract)", () => {
     expect(body.data.study.flowLinesGeoJson).toBeDefined();
     expect("rainfallResultGeoJson" in body.data.study).toBe(true);
     expect(typeof body.data.study.briefing).toBe("string");
+    // v2 PINNED gradient contract passes through VERBATIM:
+    //   gradient: { pngBase64: string,
+    //     bbox: { westLng, southLat, eastLng, northLat }, note: string }
+    expect(body.data.study.gradient).toEqual({
+      pngBase64: "aGVsbG8tZ3JhZGllbnQ=",
+      bbox: { westLng: -97.325, southLat: 30.095, eastLng: -97.313, northLat: 30.107 },
+      note: expect.stringContaining("10 m per pixel"),
+    });
     expect(body.data.artifact.format).toBe("pdf-flood-drainage");
     expect(body.data.artifact.pageCount).toBe(2);
 
@@ -213,6 +228,10 @@ describe("flood-drainage routes (PINNED contract)", () => {
     expect(body.data.parcelNodeId).toBe(parcelNodeId);
     expect(body.data.study.rainfallSource).toBe("default");
     expect(body.data.study.briefing).toContain("catchment");
+    // The cached study serves the gradient to the PE dock unchanged.
+    expect((body.data.study.gradient as { pngBase64: string }).pngBase64).toBe(
+      "aGVsbG8tZ3JhZGllbnQ=",
+    );
   });
 
   it("GET download: 400 on wrong format, 404 before refresh, then streams application/pdf", async () => {
