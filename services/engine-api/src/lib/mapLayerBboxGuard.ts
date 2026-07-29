@@ -86,6 +86,24 @@ export const TOPOGRAPHY_1FT_MAX_AREA_KM2 = 4;
  */
 export const TOPOGRAPHY_1FT_MAP_MAX_FEATURES = 20_000;
 
+/**
+ * Area (km²) above which the county-mapped `hydrography` slot honestly
+ * degrades to "zoom in" instead of querying the county layer. Bastrop maps
+ * ~9,083 creek/stream features over the ~2,300 km² county with a 1,000-feature
+ * transfer limit and NO pagination, so a large viewport would truncate hard
+ * (and pull an unbounded polyline set into memory on a denser county). ~100 km²
+ * ≈ a 10 km × 10 km viewport — far beyond parcel scale, and small enough that
+ * the 1,000-feature transfer limit is rarely the binding constraint.
+ */
+export const HYDROGRAPHY_MAX_AREA_KM2 = 100;
+
+/**
+ * Client-side cap on county hydrography features kept per map response —
+ * belt-and-suspenders above the server transfer limit so a pathologically
+ * dense source still cannot pull an unbounded feature set into the response.
+ */
+export const HYDROGRAPHY_MAP_MAX_FEATURES = 5_000;
+
 /** Meters-per-degree constant matching the DEM client's sizing math. */
 const METERS_PER_DEG_LAT = 111_320;
 

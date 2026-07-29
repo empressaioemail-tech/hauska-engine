@@ -59,6 +59,7 @@ export function buildMapLayersRoutes(): Hono {
           "topography",
           "topography-1ft",
           "hydrology-flow",
+          "hydrography",
           "opportunity-zone-tract",
           "zoning",
         ],

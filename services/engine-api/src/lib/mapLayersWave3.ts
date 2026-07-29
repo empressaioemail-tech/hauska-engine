@@ -19,6 +19,10 @@ import {
   accumulationThresholdForResolution,
 } from "@hauska-engine/adapters/hydrology";
 import {
+  fetchCountyHydrography,
+  resolveCountyHydrographySource,
+} from "@hauska-engine/adapters/hydrography";
+import {
   deriveContoursGeoJson,
   parseDemBytes,
 } from "@hauska-engine/engine-core/site-topography";
@@ -44,6 +48,8 @@ import {
   mapLayerBboxAreaKm2,
   TOPOGRAPHY_1FT_MAX_AREA_KM2,
   TOPOGRAPHY_1FT_MAP_MAX_FEATURES,
+  HYDROGRAPHY_MAX_AREA_KM2,
+  HYDROGRAPHY_MAP_MAX_FEATURES,
 } from "./mapLayerBboxGuard.js";
 
 const FEMA_NFHL_FLOOD_ZONES =
@@ -767,6 +773,143 @@ async function resolveHydrologyFlowSlot(
   }
 }
 
+/**
+ * SLOT 3 — COUNTY-MAPPED HYDROGRAPHY SLOT (`hydrography`, bbox -> GeoJSON).
+ *
+ * AUTHORITATIVE-OVER-DERIVED: serves the county's MAPPED water features
+ * (creek/stream polylines, waterbody polygons) for a viewport bbox from a
+ * COUNTY-CONFIGURED ArcGIS source (registry-driven, county-agnostic — see
+ * `@hauska-engine/adapters/hydrography`). This is the customer map layer for
+ * water features; the D8-derived `hydrology-flow` slot stays in the engine as
+ * report input but is no longer the thing PE shows.
+ *
+ * HONESTY CONTRACT:
+ *  - county WITHOUT a configured source -> honest-unavailable ok-slot ("no
+ *    hydrography source configured for this county"), NEVER an error and NEVER
+ *    an OSM/D8-derived substitution;
+ *  - viewport too large -> honest-empty BEFORE any fetch (bbox guard, same
+ *    posture as the terrain slots — no unbounded feature pull);
+ *  - configured county, no mapped features in bbox -> honest-empty ("no
+ *    county-mapped streams in this viewport") with ok coverage (genuine,
+ *    checked absence);
+ *  - county fetch failure -> pending with the real reason.
+ *
+ * Every ok payload stamps a `provenance` block:
+ *   { source: <county layer URL>, layerName, vintage (null when the county
+ *     publishes none), kind: "county-mapped-hydrography" }.
+ */
+async function resolveHydrographySlot(
+  request: MapLayersAssembleRequest,
+): Promise<MapLayerSlot> {
+  const bbox = resolveBbox(request);
+  const source = resolveCountyHydrographySource(bbox);
+
+  if (!source) {
+    const reason = "no hydrography source configured for this county";
+    return okWave3Slot(
+      "hydrography",
+      "county-hydrography:unconfigured",
+      {
+        kind: "hydrography",
+        geojson: { type: "FeatureCollection", features: [] },
+        attributes: {
+          honestUnavailableReason: reason,
+          honestEmptyReason: reason,
+          sourceConfigured: false,
+        },
+        note: `hydrography honest-unavailable: ${reason}`,
+      } as unknown as MapLayerGeometryPayload,
+      null,
+      degradedCoverage(reason, true),
+    );
+  }
+
+  const provenance = {
+    source: source.serviceUrl,
+    layerName: source.layerName,
+    vintage: source.vintage,
+    kind: "county-mapped-hydrography" as const,
+    sourceKey: source.sourceKey,
+    countyKey: source.countyKey,
+  };
+
+  try {
+    // BBOX GUARD (pre-fetch): a zoomed-out viewport must not pull an unbounded
+    // county feature set (Bastrop: no pagination, 1,000-feature transfer
+    // limit). Honest-empty with the real reason, never a huge fetch.
+    const areaKm2 = mapLayerBboxAreaKm2(bbox);
+    if (areaKm2 > HYDROGRAPHY_MAX_AREA_KM2) {
+      return honestEmptyGeojsonSlot(
+        "hydrography",
+        source.sourceKey,
+        "hydrography",
+        `viewport ~${Math.round(areaKm2)} km² over the ${HYDROGRAPHY_MAX_AREA_KM2} km² ` +
+          `county-hydrography threshold — zoom in for mapped streams`,
+        { provenance, featureCount: 0 },
+      );
+    }
+
+    const result = await fetchCountyHydrography(source, bbox, {
+      maxFeatures: HYDROGRAPHY_MAP_MAX_FEATURES,
+    });
+
+    if (result.features.length === 0) {
+      // Genuine, checked absence — the county source answered and maps no
+      // water feature in this viewport. Ok coverage, honest note.
+      return okWave3Slot(
+        "hydrography",
+        source.sourceKey,
+        {
+          kind: "hydrography",
+          geojson: { type: "FeatureCollection", features: [] },
+          attributes: {
+            provenance,
+            honestEmptyReason: "no county-mapped streams in this viewport",
+            featureCount: 0,
+            sourceConfigured: true,
+          },
+          provider: source.provider,
+          note: "no county-mapped streams in this viewport",
+        },
+        source.vintage,
+      );
+    }
+
+    const coverage = result.truncated
+      ? degradedCoverage(
+          `county transfer limit reached — showing ${result.featureCount} mapped ` +
+            `features (partial); zoom in for the full picture`,
+          true,
+        )
+      : okCoverage();
+
+    return okWave3Slot(
+      "hydrography",
+      source.sourceKey,
+      {
+        kind: "hydrography",
+        geojson: { type: "FeatureCollection", features: result.features },
+        attributes: {
+          provenance,
+          featureCount: result.featureCount,
+          truncated: result.truncated,
+          sourceConfigured: true,
+        },
+        provider: source.provider,
+      },
+      source.vintage,
+      coverage,
+    );
+  } catch (err) {
+    return pendingWave3Slot(
+      "hydrography",
+      err instanceof Error
+        ? `county hydrography fetch failed: ${err.message}`
+        : "county hydrography fetch failed",
+    );
+  }
+}
+
 function resolveOzTractSlot(request: MapLayersAssembleRequest): MapLayerSlot {
   const lookup = lookupOpportunityZoneTract({
     latitude: request.parcel.latitude,
@@ -826,6 +969,8 @@ export async function resolveWave3MapLayerSlot(
       return resolveTopography1ftSlot(request);
     case "hydrology-flow":
       return resolveHydrologyFlowSlot(request);
+    case "hydrography":
+      return resolveHydrographySlot(request);
     case "opportunity-zone-tract":
       return resolveOzTractSlot(request);
     default:
@@ -839,5 +984,6 @@ export const WAVE3_LAYER_KEYS: readonly MapLayerKey[] = [
   "topography",
   "topography-1ft",
   "hydrology-flow",
+  "hydrography",
   "opportunity-zone-tract",
 ] as const;
