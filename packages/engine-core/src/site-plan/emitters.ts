@@ -35,15 +35,16 @@ export function buildDxfSitePlanRequest(model: SitePlanModel, mesh: TerrainMeshG
   const silentAxes = anyNotSpecified(model.setback.notSpecified);
   const setbackSegments = model.setback.segments.map((segment, index) => {
     const notSpecified = !!segment.notSpecified;
+    const roleText = segment.role === "side_corner" ? "SIDE (CORNER)" : segment.role.toUpperCase();
     let label: string;
     if (notSpecified) {
-      label = `${segment.role.toUpperCase()} not specified — build-to-line governs`;
+      label = `${roleText} not specified — build-to-line governs`;
     } else if (segment.role === "unassigned" && silentAxes) {
-      // Uniform-min geometry may inset every edge by the min specified axis;
-      // do not print "UNASSIGNED 15 ft" as if S/R were also 15. One legend line.
+      // Unresolved/honest-absent geometry never insets unassigned edges; do
+      // not print "UNASSIGNED 0 ft" as a real rule. One legend line.
       label = index === 0 ? model.setback.displayLine : "";
     } else {
-      label = `${segment.role.toUpperCase()} ${segment.distanceFt} ft`;
+      label = `${roleText} ${segment.distanceFt} ft`;
     }
     return {
       midpoint: [(segment.a.x + segment.b.x) / 2, (segment.a.y + segment.b.y) / 2, gradeZ],

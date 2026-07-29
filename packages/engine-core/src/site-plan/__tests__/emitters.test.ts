@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildTerrainMeshGeometry } from "../../parcel-terrain/mesh.js";
 import { composeSitePlanModel } from "../site-model.js";
 import { buildDxfSitePlanRequest, emitDxfSitePlan, emitIfcSitePlan } from "../emitters.js";
+import { boundaryEdgesForRing } from "./boundary-edge-fixture.js";
 
 // Same fixture shape as site-model.test.ts: a ~70x110 ft lot inside a 4x4 DEM,
 // San Antonio R-6 setback (front=10, side=5, rear=20 ft) for 48029:105129.
@@ -36,6 +37,15 @@ const setback = {
   sourceCodeAtomRef: { atomDid: "san_antonio_tx/udc/35-310.01/35-310.01", role: "rule", entityType: "code-section" },
 };
 
+// The export CONSUMES the boundary primitive (2026-07-28): DXF/IFC fixtures
+// exercise the primitive-consuming geometry path, same as production.
+const boundaryEdges = boundaryEdgesForRing(ringWgs84, [
+  { role: "front", feet: 10 },
+  { role: "side", feet: 5 },
+  { role: "rear", feet: 20 },
+  { role: "side", feet: 5 },
+]);
+
 function buildModel() {
   return composeSitePlanModel({
     parcelNodeId: "48029:105129",
@@ -44,6 +54,7 @@ function buildModel() {
     dem,
     contourIntervalMeters: 0.5,
     setback,
+    boundaryEdges,
     geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
   });
 }
@@ -56,6 +67,7 @@ function buildModelWithStreet() {
     dem,
     contourIntervalMeters: 0.5,
     setback,
+    boundaryEdges,
     geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
     streetAnchors: [{ name: "N PINE ST", points: [[-98.4999, 29.4002], [-98.4995, 29.4002]], sourceRef: "osm:way/123" }],
   });

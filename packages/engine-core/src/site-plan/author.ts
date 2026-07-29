@@ -6,6 +6,7 @@ import {
 } from "@hauska-engine/adapters";
 import { femaNfhlAdapter } from "@hauska-engine/adapters/federal/fema-nfhl";
 import type {
+  BoundaryEdgeAtomInstance,
   BuildableEnvelopeAtomInstance,
   ParcelTerrainModelAtomInstance,
   SetbackRuleAtomInstance,
@@ -35,6 +36,28 @@ import {
   notSpecifiedAxesFromSetbackTable,
   resolveNotSpecifiedAxes,
 } from "./setback-display.js";
+import type { BoundaryEdgeGeometryInput } from "./ring-geometry.js";
+
+/**
+ * Map persisted property-boundary-edge atoms → the export's primitive-consuming
+ * geometry input. Setback truth is the STORED per-edge resolved setback; an
+ * absence (`no-setback-row` / `unmapped-adjacency`) maps to zero inset +
+ * `setbackAbsent` (provisional label) — mirrors depth-warm's
+ * `setbackFeetFromBoundaryAtom` exactly, never fabricates.
+ */
+export function boundaryEdgesToGeometryInput(
+  atoms: ReadonlyArray<BoundaryEdgeAtomInstance>,
+): BoundaryEdgeGeometryInput[] {
+  return [...atoms]
+    .sort((a, b) => a.edgeIndex - b.edgeIndex)
+    .map((atom) => ({
+      edgeIndex: atom.edgeIndex,
+      role: atom.role,
+      insetFeet: "kind" in atom.setback ? 0 : atom.setback.feet,
+      setbackAbsent: "kind" in atom.setback,
+      inwardNormal: atom.interior.inwardNormal,
+    }));
+}
 
 /**
  * Best-effort live FEMA NFHL read for the PDF summary block. Any failure
@@ -156,6 +179,13 @@ export interface AuthorParcelSitePlanExportOptions {
   artifactStore: TerrainArtifactStore;
   resolutionMeters?: number;
   contourIntervalMeters?: number;
+  /**
+   * Test seam for the parcel's boundary primitive. Production path loads the
+   * parcel's property-boundary-edge atoms from storage; when the store has
+   * none, the export falls back to `frontEdgeIndex` (resolved anchor) or the
+   * honest unresolved-front-edge treatment — never a per-edge guess.
+   */
+  boundaryEdgesOverride?: ReadonlyArray<BoundaryEdgeAtomInstance>;
   frontEdgeIndex?: number;
   streetAnchors?: StreetAnchorInput[];
   /**
@@ -288,6 +318,24 @@ export async function authorParcelSitePlanExport(
         tableAxes,
       });
 
+  // Architecture directive (2026-07-28): the export CONSUMES the stored
+  // boundary primitive when the parcel has one — same per-edge truth
+  // depth-warm consumes. Loading failure or absence is NOT an error: the
+  // composer applies the honest fallback (front-edge anchor or unresolved).
+  let boundaryEdgeAtoms: ReadonlyArray<BoundaryEdgeAtomInstance> =
+    options.boundaryEdgesOverride ?? [];
+  if (!options.boundaryEdgesOverride) {
+    try {
+      boundaryEdgeAtoms = await options.storage.listBoundaryEdgesByParcelNodeId(
+        options.parcelNodeId,
+      );
+    } catch {
+      boundaryEdgeAtoms = [];
+    }
+  }
+  const boundaryEdges =
+    boundaryEdgeAtoms.length > 0 ? boundaryEdgesToGeometryInput(boundaryEdgeAtoms) : undefined;
+
   // Track B1: STREET from attaching road-nodes (centerline + ROW edges).
   // Caller-supplied streetAnchors win; otherwise resolve from ledger.
   let streetAnchors = options.streetAnchors;
@@ -330,6 +378,7 @@ export async function authorParcelSitePlanExport(
           sourceCodeAtomRef: options.setback!.sourceCodeAtomRef,
           notSpecified,
         },
+    boundaryEdges,
     frontEdgeIndex: options.frontEdgeIndex,
     streetAnchors,
     geometrySourceRef: resolved.sourceRef,

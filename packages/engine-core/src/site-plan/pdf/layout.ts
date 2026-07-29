@@ -142,6 +142,8 @@ export interface SitePlanDrawingLayout {
     labels: PlacedLabel[];
     degenerate: boolean;
     degenerateReason?: string;
+    /** Rule on file, front edge unresolved: nothing drawn, provisional (not degenerate). */
+    frontEdgeUnresolved?: boolean;
   };
   /** §15 centred degenerate callout (title over ONE plain sentence), else null. */
   degenerateCallout: { anchor: PageXY; title: string; sentence: string; titleSize: number; sentenceSize: number } | null;
@@ -682,7 +684,8 @@ export function buildSitePlanDrawingLayout(
   if (drawEnvelope) {
     const seenRoleValue = new Set<string>();
     for (const segment of model.setback.segments) {
-      const roleUpper = segment.role.toUpperCase();
+      // §11: no machine tokens on the sheet — side_corner reads "SIDE (CORNER)".
+      const roleUpper = segment.role === "side_corner" ? "SIDE (CORNER)" : segment.role.toUpperCase();
       let text: string;
       if (segment.notSpecified) {
         const key = `ns:${segment.role}`;
@@ -761,6 +764,49 @@ export function buildSitePlanDrawingLayout(
   const decluttered = declutterContours(model, transform, frameLocal);
   const streetsRaw = declutterStreets(model, transform, frameLocal);
 
+  // ── §15 degenerate / unresolved callout — reserved BEFORE street and
+  // contour labels so the centred honest statement is never overprinted ────
+  const ringCentroid = ringCentroidLocalPts(model.ringLocal);
+  const calloutTitleSize = Math.min(Math.max(5.6 * ptPerFoot, 11), 16);
+  // §13 type band + §3 frame clip (v1.2): the qualifier/sentence is CAPPED at
+  // a 13px body size — on a tiny high-scale parcel the uncapped 3.1·ptPerFoot
+  // grew past 30 pt and the centred §15 sentence bled through both margins.
+  const calloutQualifierSize = Math.min(Math.max(3.1 * ptPerFoot, TYPE.drawingContour), pt(13));
+
+  let degenerateCallout: SitePlanDrawingLayout["degenerateCallout"] = null;
+  let envelopeCallout: SitePlanDrawingLayout["envelopeCallout"] = null;
+  let lotAreaCallout: PlacedLabel | null = null;
+
+  const frontEdgeUnresolved = model.setback.frontEdgeUnresolved === true;
+  if (degenerate || frontEdgeUnresolved) {
+    const anchor = projectPoint(transform, ringCentroid);
+    // §15 family: nothing envelope-shaped is drawn; the centred callout says
+    // why in ONE plain sentence. Degenerate (offset collapsed) and unresolved
+    // (front edge not resolved; nothing guessed) are distinct honest states.
+    const title = degenerate ? "NO BUILDABLE ENVELOPE" : "SETBACKS NOT DRAWN";
+    degenerateCallout = {
+      anchor,
+      title,
+      sentence: degenerate ? REASON.setbacksConsumeLot : REASON.frontEdgeUnresolved,
+      titleSize: calloutTitleSize,
+      sentenceSize: calloutQualifierSize,
+    };
+    const titleWidth = measureText(title, calloutTitleSize);
+    occupied.push({
+      text: title,
+      anchor,
+      drawAt: { x: anchor.x - titleWidth / 2, y: anchor.y - calloutTitleSize },
+      box: {
+        x: anchor.x - titleWidth / 2,
+        y: anchor.y - calloutTitleSize - calloutQualifierSize - 6,
+        width: titleWidth,
+        height: calloutTitleSize + calloutQualifierSize + 10,
+      },
+      fontSize: calloutTitleSize,
+      textWidth: titleWidth,
+    });
+  }
+
   // Street labels through the same collision set (never bypass). §11 (v1.2):
   // the label anchors along the VISIBLE (frame-clipped) portion of the
   // centerline — candidate points at fractions of the clipped polyline, so a
@@ -779,6 +825,23 @@ export function buildSitePlanDrawingLayout(
       );
       if (placed[0]) return { ...rest, label: placed[0] };
     }
+    // Last resort before dropping a NAMED road's label (a named road with an
+    // in-frame stub must label): widen the spiral search around the visible
+    // run's midpoint. The label rides a paper halo at draw time, and streets
+    // place before contour labels in the shared collision set — dropping is
+    // the final fallback only.
+    const lastResort = placeNonCollidingPointLabels(
+      [{ point: pointAlongPolyline(rest.points, 0.5), text: labelText, fontSize: TYPE.drawingStreet }],
+      {
+        measureText,
+        occupied,
+        pageScale: transform.scale,
+        bounds,
+        minFontSize: TYPE.drawingStreet,
+        maxNudgeIterations: 28,
+      },
+    );
+    if (lastResort[0]) return { ...rest, label: lastResort[0] };
     return rest;
   });
 
@@ -802,43 +865,8 @@ export function buildSitePlanDrawingLayout(
     minFontSize: contourFont,
   });
 
-  // ── §15 degenerate callout / §9 envelope callout ────────────────────────
-  const ringCentroid = ringCentroidLocalPts(model.ringLocal);
-  const calloutTitleSize = Math.min(Math.max(5.6 * ptPerFoot, 11), 16);
-  // §13 type band + §3 frame clip (v1.2): the qualifier/sentence is CAPPED at
-  // a 13px body size — on a tiny high-scale parcel the uncapped 3.1·ptPerFoot
-  // grew past 30 pt and the centred §15 sentence bled through both margins.
-  const calloutQualifierSize = Math.min(Math.max(3.1 * ptPerFoot, TYPE.drawingContour), pt(13));
-
-  let degenerateCallout: SitePlanDrawingLayout["degenerateCallout"] = null;
-  let envelopeCallout: SitePlanDrawingLayout["envelopeCallout"] = null;
-  let lotAreaCallout: PlacedLabel | null = null;
-
-  if (degenerate) {
-    const anchor = projectPoint(transform, ringCentroid);
-    const title = "NO BUILDABLE ENVELOPE";
-    degenerateCallout = {
-      anchor,
-      title,
-      sentence: REASON.setbacksConsumeLot,
-      titleSize: calloutTitleSize,
-      sentenceSize: calloutQualifierSize,
-    };
-    const titleWidth = measureText(title, calloutTitleSize);
-    occupied.push({
-      text: title,
-      anchor,
-      drawAt: { x: anchor.x - titleWidth / 2, y: anchor.y - calloutTitleSize },
-      box: {
-        x: anchor.x - titleWidth / 2,
-        y: anchor.y - calloutTitleSize - calloutQualifierSize - 6,
-        width: titleWidth,
-        height: calloutTitleSize + calloutQualifierSize + 10,
-      },
-      fontSize: calloutTitleSize,
-      textWidth: titleWidth,
-    });
-  } else if (includeLotAreaCallout && drawEnvelope && model.setback.offsetRingLocal!.length >= 3) {
+  // ── §9 envelope callout (drawable case; §15 callout reserved above) ─────
+  if (!degenerateCallout && includeLotAreaCallout && drawEnvelope && model.setback.offsetRingLocal!.length >= 3) {
     const offsetRingLocal = model.setback.offsetRingLocal!;
     const envCentroid = ringCentroidLocalPts(offsetRingLocal);
     const anchor = projectPoint(transform, envCentroid);
@@ -902,6 +930,7 @@ export function buildSitePlanDrawingLayout(
       labels: setbackLabels,
       degenerate,
       degenerateReason: model.setback.degenerateReason,
+      frontEdgeUnresolved,
     },
     degenerateCallout,
     contours: decluttered.contours,

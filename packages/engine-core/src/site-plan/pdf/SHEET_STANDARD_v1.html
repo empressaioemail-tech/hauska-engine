@@ -24,11 +24,12 @@
   <div style="font-family:var(--font-body); color:var(--color-text); font-size:10.5pt; line-height:1.55;">
 
     <div style="display:flex; flex-direction:column; gap:6px; padding-bottom:14px; border-bottom:2px solid var(--color-text);">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; font-family:var(--font-heading); font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--color-accent);"><span>Renderer standard · binding · v1.2</span><span style="color:var(--color-neutral-600);">Hauska engine · 2026-07-28</span></div>
+      <div style="display:flex; justify-content:space-between; align-items:baseline; font-family:var(--font-heading); font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--color-accent);"><span>Renderer standard · binding · v1.3</span><span style="color:var(--color-neutral-600);">Hauska engine · 2026-07-28</span></div>
       <h1 style="margin:0; font-family:var(--font-heading); font-size:32pt; font-weight:600; letter-spacing:0.01em; line-height:1.05;">SITE PLAN SHEET STANDARD</h1>
       <p style="margin:0; font-size:11pt; color:var(--color-neutral-700); max-width:46em;">Twenty-one rules, a token map and an acceptance checklist for the generated three-page site-plan PDF. Written against the output of 2026-07-27 (parcels 48021:34785 and qa2:dense-small); every rule below exists because that output broke it.</p>
       <p style="margin:0; font-size:9pt; color:var(--color-neutral-600); max-width:46em;">v1.1 (2026-07-28): adds §21 · VERTICAL RHYTHM — the metrics-driven line-box model that keeps type off the rules above it.</p>
       <p style="margin:0; font-size:9pt; color:var(--color-neutral-600); max-width:46em;">v1.2 (2026-07-28): §3 gains the FRAME CLIP sub-rule — context layers clip to the drawing frame, nothing draws over header or furniture, roads label by display name only; §20 revised per operator — the aerial backdrop embeds in NATURAL COLOR (duotone tint removed), legibility via paper outlines. Written against the live output on parcel 48021:47719 (806 Pine St).</p>
+      <p style="margin:0; font-size:9pt; color:var(--color-neutral-600); max-width:46em;">v1.3 (2026-07-28): geometry consumes the BOUNDARY PRIMITIVE — envelope, setback lines, and edge-role labels derive from the stored per-edge boundary truth (one computation with depth-warm; the vertex-count front-edge heuristic and uniform-min fabrication are retired). §15 gains the SETBACKS NOT DRAWN state (front edge unresolved — provisional, distinct from degenerate; legend and summary say so). The header BUILDABLE stat reads the drawing's model value or NONE (warm-number regex fallback removed; warm-vs-local wording lives on sheet 2 only). Street names draw with a paper halo and drop only as a last resort; side_corner edges read SIDE (CORNER). Silent side/rear axes inset ZERO and mark the envelope PROVISIONAL — no value is ever fabricated.</p>
     </div>
 
     <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:22px 0 6px;">1 · SCOPE AND SHEET ORDER</h2>
@@ -166,7 +167,7 @@
 
     <h2 style="font-family:var(--font-heading); font-size:16pt; font-weight:600; letter-spacing:0.02em; margin:26px 0 6px;">6 · REFERENCE SHEETS</h2>
     <p style="margin:0;">Pixel references accompany this standard: <strong>48021:34785</strong> as the three-page gold set (drawing, summary, aerial), and <strong>qa2:dense-small</strong> as the degenerate case — eight segments, no buildable envelope, cascade tiers (a) and (b) both exercised, overflow tabulated on sheet 2. Where the standard and a reference sheet disagree, the standard governs and the reference is the defect.</p>
-    <p style="margin:14px 0 0; padding-top:8px; border-top:1px solid var(--color-neutral-300); font-size:8.5pt; color:var(--color-neutral-600);">Site plan sheet standard v1.2 (v1.0 + §21 vertical rhythm + §3 frame clip / §20 natural-color aerial) · Hauska engine, site-plan renderer · reference sheets 48021:34785 (three-page gold) and qa2:dense-small (degenerate) · 2026-07-28</p>
+    <p style="margin:14px 0 0; padding-top:8px; border-top:1px solid var(--color-neutral-300); font-size:8.5pt; color:var(--color-neutral-600);">Site plan sheet standard v1.3 (v1.0 + §21 vertical rhythm + §3 frame clip / §20 natural-color aerial + boundary-primitive geometry / §15 unresolved state) · Hauska engine, site-plan renderer · reference sheets 48021:34785 (three-page gold) and qa2:dense-small (degenerate) · 2026-07-28</p>
 
   </div>
 </doc-page>

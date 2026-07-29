@@ -354,6 +354,44 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
   });
 
+  it("loads the parcel's boundary primitive from storage and routes the export through it (basis boundary-primitive)", async () => {
+    const { boundaryAtomInstancesForRing } = await import("./boundary-edge-fixture.js");
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+    const atoms = boundaryAtomInstancesForRing("48029", "105129", ringWgs84, [
+      { role: "front", adjacencyKind: "ROW", setbackFeet: 10 },
+      { role: "side", adjacencyKind: "neighbor-parcel", setbackFeet: 5 },
+      { role: "rear", adjacencyKind: "neighbor-parcel", setbackFeet: 20 },
+      { role: "side", adjacencyKind: "neighbor-parcel", setbackFeet: 5 },
+    ]);
+    await storage.writeBoundaryEdgeAtomsBatch(atoms);
+
+    const result = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchAerialImage: stubAerialFetch,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
+    });
+
+    // The primitive resolved the geometry: envelope drawn, not degenerate,
+    // not honest-absent — and the artifact records a real setback layer.
+    expect(result.setbackDegenerate).toBe(false);
+    expect(result.setbackHonestAbsence).toBe(false);
+    expect(result.atom.artifacts["pdf-site-plan"]?.byteCount).toBeGreaterThan(0);
+
+    const pdfRef = result.atom.artifacts["pdf-site-plan"]!.ref;
+    const decoded = decodeAllContentStreams(artifactStore.data.get(pdfRef)!);
+    // Sheet-2 provenance SOURCE column carries the primitive basis wording.
+    expect(decoded).toContain("basis: stored boundary edges");
+    // A numeric buildable area rides the header (drawable envelope).
+    expect(decoded).not.toContain("SETBACKS NOT DRAWN");
+  }, 20_000);
+
   it("fails closed rather than approximating PROPERTY_LINE when the resolver has no ring", async () => {
     const storage = new InMemoryStorage();
     const artifactStore = fakeArtifactStore();

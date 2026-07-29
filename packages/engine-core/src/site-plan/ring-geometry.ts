@@ -1,4 +1,4 @@
-import { insetPerEdge } from "../depth-warm/geometry.js";
+import { insetPerEdge, insetPerEdgeFromPrimitive } from "../depth-warm/geometry.js";
 import {
   ensureCcwRing,
   insetRingMeters,
@@ -41,7 +41,30 @@ export function ringSegments(ring: LocalPoint[]): RingSegment[] {
   return segments;
 }
 
-export type SetbackRole = "front" | "side" | "rear" | "unassigned";
+export type SetbackRole = "front" | "side" | "rear" | "side_corner" | "unassigned";
+
+/**
+ * Minimal structural view of a persisted property-boundary-edge atom — the
+ * fields the site-plan export consumes from the boundary primitive (S2-U2/U3).
+ * `insetFeet` is the STORED resolved setback (0 when the atom carries an
+ * honest absence — no-setback-row / unmapped-adjacency — never a fabricated
+ * number), and `inwardNormal` is the STORED interior frame computed once at
+ * bake time. The export never re-derives either.
+ */
+export interface BoundaryEdgeGeometryInput {
+  edgeIndex: number;
+  role: "front" | "side" | "rear" | "side_corner";
+  /** Stored resolved setback feet; 0 when the atom's setback is an absence. */
+  insetFeet: number;
+  /**
+   * True when the stored setback is an honest absence (`no-setback-row`,
+   * `unmapped-adjacency`) — zero inset on this edge and the envelope is
+   * labeled PROVISIONAL (operator ruling 2026-07-28: build-to-line governs;
+   * never fabricate a side/rear value the code doesn't state).
+   */
+  setbackAbsent: boolean;
+  inwardNormal: { x: number; y: number };
+}
 
 export interface SetbackAssignment {
   role: SetbackRole;
@@ -75,23 +98,21 @@ function insetForRole(
   return { role, distanceFt: silent ? 0 : setback.side, notSpecified: silent || undefined };
 }
 
-/** Min of specified axes only — silent 0s must not collapse a real front setback to uniform 0. */
-function uniformSpecifiedMin(
+/** True when the rule would inset at least one edge if the front edge were known. */
+function anySpecifiedNonZeroAxis(
   setback: { front: number; side: number; rear: number },
   notSpecified?: NotSpecifiedAxesInput | null,
-): number {
-  const candidates: number[] = [];
-  if (!notSpecified?.front) candidates.push(setback.front);
-  if (!notSpecified?.side) candidates.push(setback.side);
-  if (!notSpecified?.rear) candidates.push(setback.rear);
-  if (candidates.length === 0) return 0;
-  return Math.min(...candidates);
+): boolean {
+  if (!notSpecified?.front && setback.front > 0) return true;
+  if (!notSpecified?.side && setback.side > 0) return true;
+  if (!notSpecified?.rear && setback.rear > 0) return true;
+  return false;
 }
 
 export type FrontEdgeBasis =
+  | "boundary-primitive"
   | "front-edge-hint"
-  | "geometric-heuristic:shortest-edge-pair-south-most"
-  | "unresolved-uniform-min";
+  | "unresolved-front-edge";
 
 export interface SetbackOffsetResult {
   basis: FrontEdgeBasis;
@@ -102,6 +123,18 @@ export interface SetbackOffsetResult {
   offsetRing: LocalPoint[] | null;
   offsetDegenerate: boolean;
   offsetDegenerateReason?: string;
+  /**
+   * True when a setback rule exists but there is no boundary primitive and no
+   * resolved front-edge anchor: NOTHING is drawn (offsetRing null, not
+   * degenerate) rather than a per-edge guess. The envelope is provisional.
+   */
+  frontEdgeUnresolved?: boolean;
+  /**
+   * Boundary-primitive path only: true when any consumed edge carried a
+   * stored setback ABSENCE (zero inset applied there) — the envelope draws
+   * but is labeled PROVISIONAL per the 2026-07-28 build-to-line ruling.
+   */
+  primitiveEdgeAbsence?: boolean;
 }
 
 /** When `ringWgs84` + `bbox` are supplied, offset geometry uses depth-warm
@@ -114,25 +147,21 @@ export interface ComputeSetbackOffsetOptions {
 }
 
 /**
- * Assigns front/side/rear to a 4-edge ring's segments. Front-edge is a
- * genuinely unresolved reasoning question in this engine today (the
- * buildable-envelope atom itself ships `provisional-front-edge` for this
- * exact reason — see `emit-buildable-envelope.ts`). Two disclosed bases:
+ * Assigns front/side/rear to a ring's segments. Front-edge truth lives in the
+ * BOUNDARY PRIMITIVE (property-boundary-edge atoms — see
+ * `computeSetbackOffsetFromPrimitive`); this function only covers the two
+ * remaining honest cases:
  *
  * 1. `frontEdgeIndex` hint supplied by the caller (e.g. a resolved
  *    front-edge-anchor atom) -> that segment is front, its opposite is rear,
  *    the remaining two are side.
- * 2. No hint, exactly 4 edges: apply the common suburban-platting
- *    convention that the street-facing (front) edge is the shorter of the
- *    two roughly-parallel edge pairs, breaking the front/rear tie by
- *    picking the south-most of the pair. This is a disclosed geometric
- *    heuristic, not a street-verified determination — callers must carry
- *    `basis` through to CAD/PDF provenance rather than presenting it as
- *    certain.
- * 3. Otherwise (irregular ring, no hint): apply the MINIMUM of
- *    front/side/rear uniformly to every edge — a conservative under-
- *    estimate of the buildable area (safe direction), not an invented
- *    directional claim.
+ * 2. Otherwise: `unresolved-front-edge`. NO inset is fabricated on any edge —
+ *    every assignment is `unassigned` at 0 ft and the caller draws nothing
+ *    envelope-shaped, labeled provisional. The retired
+ *    vertex-count fork (n==4 geometric front guess / n!=4 uniform-min
+ *    fabrication) is deliberately gone: two independent per-edge computations
+ *    "patched to agree" drift on the next county's ring shape (2026-07-28
+ *    master review; THE BASTROP MOLD, PART 3 GEOMETRY).
  */
 export function assignSetbackRoles(
   ring: LocalPoint[],
@@ -153,30 +182,17 @@ export function assignSetbackRoles(
     return { basis: "front-edge-hint", assignments };
   }
 
-  if (n === 4) {
-    const lengths = segments.map((s) => s.lengthMeters);
-    const pairA = [0, 2];
-    const pairB = [1, 3];
-    const avgA = (lengths[0]! + lengths[2]!) / 2;
-    const avgB = (lengths[1]! + lengths[3]!) / 2;
-    const frontRearPair = avgA <= avgB ? pairA : pairB;
-    const sidePair = avgA <= avgB ? pairB : pairA;
-    const midY = (i: number) => (segments[i]!.a.y + segments[i]!.b.y) / 2;
-    const frontIndex = midY(frontRearPair[0]!) <= midY(frontRearPair[1]!) ? frontRearPair[0]! : frontRearPair[1]!;
-    const rearIndex = frontRearPair.find((i) => i !== frontIndex)!;
-    const assignments: SetbackAssignment[] = segments.map((_, i) => {
-      if (i === frontIndex) return insetForRole("front", setback, notSpecified);
-      if (i === rearIndex) return insetForRole("rear", setback, notSpecified);
-      if (sidePair.includes(i)) return insetForRole("side", setback, notSpecified);
-      return insetForRole("unassigned", setback, notSpecified);
-    });
-    return { basis: "geometric-heuristic:shortest-edge-pair-south-most", assignments };
-  }
-
-  const uniformFt = uniformSpecifiedMin(setback, notSpecified);
+  // Honest-absent rule (every axis silent): zero inset everywhere is the
+  // CORRECT geometry (no setback to draw), not a guess — keep the roles
+  // unassigned and let the all-zero branch in computeSetbackOffset return the
+  // property ring itself.
   return {
-    basis: "unresolved-uniform-min",
-    assignments: segments.map(() => ({ role: "unassigned", distanceFt: uniformFt })),
+    basis: "unresolved-front-edge",
+    assignments: segments.map(() => {
+      const a = insetForRole("unassigned", setback, notSpecified);
+      // Never fabricate a directional inset without a resolved front edge.
+      return { ...a, distanceFt: 0 };
+    }),
   };
 }
 
@@ -203,6 +219,20 @@ export function computeSetbackOffset(
   const { basis, assignments } = assignSetbackRoles(ring, setback, frontEdgeIndex, notSpecified);
   const segments = ringSegments(ring);
   const withAssignment = segments.map((segment, i) => ({ ...segment, ...assignments[i]! }));
+
+  // Unresolved front edge with a real (non-silent) rule on file: draw NOTHING
+  // envelope-shaped rather than guess a per-edge assignment. Not degenerate —
+  // the geometry did not collapse; the reasoning input (front edge) is simply
+  // not resolved. Callers label the envelope provisional.
+  if (basis === "unresolved-front-edge" && anySpecifiedNonZeroAxis(setback, notSpecified)) {
+    return {
+      basis,
+      segments: withAssignment,
+      offsetRing: null,
+      offsetDegenerate: false,
+      frontEdgeUnresolved: true,
+    };
+  }
 
   const insetFeetPerEdge = assignments.map((a) => Math.max(0, a.distanceFt));
   // All-zero inset (every axis silent / honest-absent — no setback to draw):
@@ -323,4 +353,110 @@ export function computeSetbackOffset(
   }
 
   return { basis, segments: withAssignment, offsetRing, offsetDegenerate: false };
+}
+
+/**
+ * THE primitive-consuming offset (2026-07-28 architecture directive): the
+ * site-plan export derives its envelope, setback lines, and edge-role labels
+ * from the STORED boundary primitive — per-edge role + resolved setback +
+ * interior inward normal baked once per parcel (S2-U2) — through the SAME
+ * `insetPerEdgeFromPrimitive` engine depth-warm consumes (S2-U3,
+ * `boundary-primitive/consume.ts`). One geometry, one truth, by construction:
+ * the reconciliation gate (export area == depth-warm area on the same
+ * ring+edges) passes because they are literally one computation, not two
+ * per-edge paths patched to agree.
+ *
+ * Zero-inset edges (stored setback absence — build-to-line governs, or
+ * unmapped adjacency) apply ZERO inset and flag `primitiveEdgeAbsence` so the
+ * envelope is labeled PROVISIONAL; a value is never fabricated (operator
+ * ruling 2026-07-28).
+ */
+export function computeSetbackOffsetFromPrimitive(input: {
+  ringLocal: LocalPoint[];
+  ringWgs84: Array<[number, number]>;
+  bbox: BboxWgs84;
+  boundaryEdges: ReadonlyArray<BoundaryEdgeGeometryInput>;
+}): SetbackOffsetResult {
+  const { ringLocal, ringWgs84, bbox, boundaryEdges } = input;
+  const segments = ringSegments(ringLocal);
+  const n = ringLocal.length;
+
+  const byIndex = new Map(boundaryEdges.map((e) => [e.edgeIndex, e]));
+  const withAssignment = segments.map((segment, i) => {
+    const edge = byIndex.get(i);
+    if (!edge) {
+      return {
+        ...segment,
+        role: "unassigned" as SetbackRole,
+        distanceFt: 0,
+        notSpecified: true as const,
+      };
+    }
+    return {
+      ...segment,
+      role: edge.role as SetbackRole,
+      distanceFt: edge.setbackAbsent ? 0 : edge.insetFeet,
+      notSpecified: edge.setbackAbsent || undefined,
+    };
+  });
+
+  // A primitive that does not cover this ring's edges (baked against a
+  // different ring vintage, or indices out of range) is NOT served by
+  // guessing: fall back to the honest unresolved treatment.
+  const outOfRange = boundaryEdges.some((e) => e.edgeIndex < 0 || e.edgeIndex >= n);
+  if (outOfRange || boundaryEdges.length !== n) {
+    return {
+      basis: "unresolved-front-edge",
+      segments: segments.map((segment) => ({
+        ...segment,
+        role: "unassigned" as SetbackRole,
+        distanceFt: 0,
+      })),
+      offsetRing: null,
+      offsetDegenerate: false,
+      frontEdgeUnresolved: true,
+    };
+  }
+
+  const primitiveEdgeAbsence = boundaryEdges.some((e) => e.setbackAbsent);
+  const storedInset = boundaryEdges.map((e) => ({
+    edgeIndex: e.edgeIndex,
+    insetFeet: e.setbackAbsent ? 0 : e.insetFeet,
+    inwardNormal: e.inwardNormal,
+  }));
+
+  // Same engine + same inputs as depth-warm's computeWarmCandidateFromBoundary.
+  const inset = insetPerEdgeFromPrimitive(ringWgs84, storedInset);
+  if (inset.empty || !inset.ring) {
+    return {
+      basis: "boundary-primitive",
+      segments: withAssignment,
+      offsetRing: null,
+      offsetDegenerate: true,
+      offsetDegenerateReason: setbackConsumesLotReason(inset.emptyReason),
+      primitiveEdgeAbsence,
+    };
+  }
+
+  const offsetRing = dedupeClosingVertex(
+    inset.ring.map(([lng, lat]) => projectWgs84ToLocalEnu(lng, lat, bbox)),
+  );
+  if (offsetRing.length < 3) {
+    return {
+      basis: "boundary-primitive",
+      segments: withAssignment,
+      offsetRing: null,
+      offsetDegenerate: true,
+      offsetDegenerateReason: setbackConsumesLotReason("projected offset ring is degenerate"),
+      primitiveEdgeAbsence,
+    };
+  }
+
+  return {
+    basis: "boundary-primitive",
+    segments: withAssignment,
+    offsetRing,
+    offsetDegenerate: false,
+    primitiveEdgeAbsence,
+  };
 }

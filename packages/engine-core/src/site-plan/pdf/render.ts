@@ -477,14 +477,17 @@ function cityFromAddress(address: string | undefined): string | null {
   return null;
 }
 
-/** BUILDABLE header stat (§2/§15): number, or NONE in neutral-500. */
+/**
+ * BUILDABLE header stat (§2/§15): the header reads the SAME model value the
+ * drawing draws — `summary.buildableAreaSqFt` — or NONE. The old regex
+ * fallback that scraped a warm number out of `buildablePdfLabel` is gone
+ * (2026-07-28): it printed a warm figure over a drawing that honestly drew
+ * nothing. A warm-vs-local discrepancy belongs in the sheet-2 buildable row
+ * wording (shared vocab), never in the header.
+ */
 function buildableHeaderStat(s: SitePlanModel["summary"]): { value: string; none: boolean } {
   if (typeof s.buildableAreaSqFt === "number") {
     return { value: formatSf(s.buildableAreaSqFt), none: false };
-  }
-  const warm = /([\d,]+)\s*sq ?ft/i.exec(s.buildablePdfLabel ?? "");
-  if (warm && s.buildableDisplayKind !== "declined-consume" && s.buildableDisplayKind !== "absent") {
-    return { value: `${warm[1]} SF`, none: false };
   }
   return { value: "NONE", none: true };
 }
@@ -711,7 +714,26 @@ function drawSitePlanDrawing(
       if (anchor.rightEdge && anchor.rightEdge.length >= 2)
         drawPolyline(page, anchor.rightEdge, TOKENS.neutral400, 0.5, [1.4, 1.1]);
       drawPolyline(page, anchor.points, STREET_COLOR, 0.9, [3.4, 2.3]);
-      if (anchor.label) drawPlacedLabel(page, anchor.label, F.body, TOKENS.neutral600);
+      // Street name rides a paper halo (§20 paint-order) so it stays legible
+      // over its own dashed centerline / contours.
+      if (anchor.label) {
+        if (anchor.label.leader) {
+          page.drawLine({
+            start: anchor.label.leader.from,
+            end: anchor.label.leader.to,
+            thickness: 0.4,
+            color: LEADER_COLOR,
+          });
+        }
+        drawHaloedText(page, anchor.label.text, {
+          x: anchor.label.drawAt.x,
+          y: anchor.label.drawAt.y,
+          size: anchor.label.fontSize,
+          font: F.body,
+          color: TOKENS.neutral600,
+          rotationDeg: anchor.label.rotationDeg,
+        });
+      }
     });
   }
 
@@ -867,6 +889,19 @@ function legendRows(layout: SitePlanDrawingLayout, model: SitePlanModel): Legend
     });
     rows.push({
       label: "Setback line — not drawn · no offset survives",
+      swatch: "line-dashed",
+      color: SUPPRESSED,
+      empty: true,
+    });
+  } else if (layout.setback.frontEdgeUnresolved) {
+    rows.push({
+      label: "Buildable envelope — not drawn · front edge unresolved",
+      swatch: "line-dashed",
+      color: SUPPRESSED,
+      empty: true,
+    });
+    rows.push({
+      label: "Setback line — not drawn · front edge unresolved",
       swatch: "line-dashed",
       color: SUPPRESSED,
       empty: true,
@@ -1258,7 +1293,19 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
               ? `(${pct}% of lot)`
               : undefined,
         }
-      : { label: "Buildable area", chip: "unavailable", chipReason: REASON.setbacksConsumeLot };
+      : model.setback.frontEdgeUnresolved
+        ? {
+            label: "Buildable area",
+            chip: "unavailable",
+            // Warm-vs-local discrepancies live in THIS row's wording (shared
+            // vocab), never in the header stat — the header reads the model
+            // value or NONE (§2/§15).
+            chipReason:
+              s.buildableDisplayKind === "provisional"
+                ? "Front edge unresolved; a provisional warm estimate is on file."
+                : REASON.frontEdgeUnresolved,
+          }
+        : { label: "Buildable area", chip: "unavailable", chipReason: REASON.setbacksConsumeLot };
 
   const flood: SummaryRow =
     "zone" in s.floodZone

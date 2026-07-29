@@ -3,6 +3,7 @@ import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 import { composeSitePlanModel } from "../../site-model.js";
+import { boundaryEdgesForRing } from "../../__tests__/boundary-edge-fixture.js";
 import { AERIAL_UNAVAILABLE_NOTE } from "../aerial.js";
 import { REASON } from "../format.js";
 import { emitPdfSitePlan, type EmitPdfSitePlanOptions } from "../render.js";
@@ -60,6 +61,15 @@ const setback = {
   sourceCodeAtomRef: { atomDid: "san_antonio_tx/udc/35-310.01/35-310.01", role: "rule", entityType: "code-section" },
 };
 
+// The export CONSUMES the boundary primitive (2026-07-28 directive) — the
+// default render fixture exercises the primitive-consuming path.
+const boundaryEdges = boundaryEdgesForRing(ringWgs84, [
+  { role: "front", feet: 10 },
+  { role: "side", feet: 5 },
+  { role: "rear", feet: 20 },
+  { role: "side", feet: 5 },
+]);
+
 function buildModel() {
   return composeSitePlanModel({
     parcelNodeId: "48029:105129",
@@ -68,6 +78,7 @@ function buildModel() {
     dem,
     contourIntervalMeters: 0.5,
     setback,
+    boundaryEdges,
     descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
     zoning: { district: "R-6" },
     floodZone: { honestUnavailable: true, reason: "sandbox has no network egress" },
@@ -149,6 +160,25 @@ describe("emitPdfSitePlan", () => {
     expect(fontNote).toContain("Barlow");
   });
 
+  it("labels a named attaching street on the drawing (paper-haloed name, never silently dropped)", async () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      boundaryEdges,
+      streetAnchors: [
+        { name: "N PINE ST", points: [[-98.4999, 29.4002], [-98.4995, 29.4002]], sourceRef: "osm:way/123" },
+      ],
+      geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
+    });
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
+    const decoded = decodeAllContentStreams(bytes);
+    expect(decoded).toContain("N PINE ST");
+  });
+
   it("centers a BUILDABLE ENVELOPE callout with the buildable sq ft + percent-of-lot qualifier", async () => {
     const model = buildModel();
     const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
@@ -158,14 +188,31 @@ describe("emitPdfSitePlan", () => {
     expect(decoded).toMatch(/% of lot/);
   });
 
-  // Planner HOLD-1 (2026-07-25): buildModel() above uses the default 4-edge
-  // ring with no frontEdgeIndex hint, so its own basis is already the
-  // geometric heuristic — the PDF summary must print the provisional
-  // honesty note ALONGSIDE the numeric buildable area, not only when the
-  // area itself is unavailable.
+  // Planner HOLD-1 (2026-07-25) + 2026-07-28 build-to-line ruling: a
+  // primitive-consuming envelope whose edges include a stored setback
+  // ABSENCE draws a numeric buildable area AND prints the provisional
+  // honesty note — zero inset on the silent edges, nothing fabricated.
   it("prints the provisional honesty note on the summary page even though a numeric buildable area is also drawn", async () => {
-    const model = buildModel();
-    expect(model.setback.basis).toBe("geometric-heuristic:shortest-edge-pair-south-most");
+    const provisionalEdges = boundaryEdgesForRing(ringWgs84, [
+      { role: "front", feet: 15 },
+      { role: "side", absent: true },
+      { role: "rear", absent: true },
+      { role: "side", feet: 5 },
+    ]);
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback: { ...setback, front: 15, side: 0, rear: 0, notSpecified: { side: true, rear: true } },
+      boundaryEdges: provisionalEdges,
+      descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
+      zoning: { district: "R-6" },
+      floodZone: { honestUnavailable: true, reason: "sandbox has no network egress" },
+      geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
+    });
+    expect(model.setback.basis).toBe("boundary-primitive");
     expect(model.summary.buildableAreaSqFt).not.toBeNull();
     const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
@@ -174,6 +221,35 @@ describe("emitPdfSitePlan", () => {
     expect(decoded).toContain("provisional planning estimate");
     expect(decoded).toContain("planning estimate, not a permit-ready boundary");
     expect(decoded).toContain("sq ft");
+  });
+
+  // HEADER = DRAWING (2026-07-28): the live defect printed a warm number in
+  // the header while the drawing honestly drew nothing. The header now reads
+  // the SAME model value as the drawing — degenerate local offset -> NONE,
+  // even when a warm envelope number is on file; the warm figure moves to
+  // sheet-2 wording only.
+  it("header reads NONE when the local offset is degenerate, even with a warm envelope number on file", async () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback: { ...setback, front: 100, side: 100, rear: 100 },
+      frontEdgeIndex: 0,
+      envelopeOutcome: { kind: "buildable", areaSqFt: 16_046 },
+      descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
+      zoning: { district: "R-6" },
+      floodZone: { honestUnavailable: true, reason: "sandbox has no network egress" },
+      geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
+    });
+    expect(model.setback.degenerate).toBe(true);
+    expect(model.summary.buildableAreaSqFt).toBeNull();
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
+    const decoded = decodeAllContentStreams(bytes);
+    expect(decoded).toContain("NONE");
+    // The warm figure never rides the header stat cluster.
+    expect(decoded).not.toContain("16,046 SF");
   });
 
   // §11 (v1.2): the county reads by NAME only. A FIPS-shaped countyName (the

@@ -50,6 +50,31 @@ if (!substrateUrl) {
   process.exit(1);
 }
 
+// GUARD (2026-07-28): fixture input (ROAD_INTAKE_FIXTURE, or the default
+// pilot fixture when Overpass is skipped) never writes to a non-local
+// database unless ALLOW_FIXTURE_INGEST=1 — a fixture road seeded into the
+// production store once poisoned frontage/front-edge anchors
+// (the 2026-07 fixture "Spring Street" incident).
+function isLocalDatabaseUrl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+if (
+  process.env.ROAD_INTAKE_FIXTURE?.trim() &&
+  !isLocalDatabaseUrl(substrateUrl) &&
+  process.env.ALLOW_FIXTURE_INGEST !== "1"
+) {
+  console.error(
+    "FATAL: refusing to ingest FIXTURE road data (ROAD_INTAKE_FIXTURE) into a non-local database. " +
+      "Set ALLOW_FIXTURE_INGEST=1 only if you are deliberately seeding a non-local sandbox.",
+  );
+  process.exit(1);
+}
+
 const writeBatch = Math.max(1, Number(process.env.ROAD_INGEST_BATCH || 100));
 const ingestLimit = Number(process.env.ROAD_INGEST_LIMIT || 0);
 
