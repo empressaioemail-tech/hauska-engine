@@ -1,7 +1,10 @@
+import { inflateSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
 import { composeSitePlanModel } from "../../site-model.js";
 import { AERIAL_UNAVAILABLE_NOTE } from "../aerial.js";
+import { REASON } from "../format.js";
 import { emitPdfSitePlan, type EmitPdfSitePlanOptions } from "../render.js";
 import { SITE_PLAN_HONESTY_LINE } from "../provenance.js";
 import { decodeAllContentStreams } from "./decode-pdf-text.js";
@@ -173,6 +176,35 @@ describe("emitPdfSitePlan", () => {
     expect(decoded).toContain("sq ft");
   });
 
+  // §11 (v1.2): the county reads by NAME only. A FIPS-shaped countyName (the
+  // 2026-07-28 live defect: "Parcel 48021:47719 · 48021") is omitted from
+  // the header meta line, and the County summary row takes the honest chip.
+  it("omits a FIPS-shaped county from the header meta line and gives the County row the honest chip (§11 v1.2)", async () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48021:47719",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      descriptor: { address: "806 Pine St, Bastrop, TX", countyName: "48021" },
+      geometrySourceRef: "fips-meta-fixture",
+    });
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
+    const decoded = decodeAllContentStreams(bytes);
+    expect(decoded).toContain("Parcel 48021:47719");
+    // Never "Parcel 48021:47719 · 48021" — the raw code is omitted entirely.
+    expect(decoded).not.toMatch(/47719\s*·\s*48021(?!:)/);
+    expect(decoded).toContain(REASON.noCountyName);
+  });
+
+  it("prints the county NAME in the header meta line when one is on file", async () => {
+    const model = buildModel(); // descriptor carries "Bexar County"
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
+    const decoded = decodeAllContentStreams(bytes);
+    expect(decoded).toContain("Bexar County");
+  });
+
   // ── AERIAL CONTEXT (sheet 3) ─────────────────────────────────────────────
   describe("aerial context page", () => {
     it("embeds the imagery, draws the sheet chrome + attribution + not-a-survey honesty, and reports the outcome", async () => {
@@ -229,6 +261,30 @@ describe("emitPdfSitePlan", () => {
       expect(decoded).toContain(AERIAL_UNAVAILABLE_NOTE);
       // Attribution + honesty fine print still present on the honest page.
       expect(decoded).toContain("Earthstar");
+    });
+
+    // §20 (v1.2): the orthophoto embeds in NATURAL COLOR — the duotone tint
+    // is retired. The stubbed 1x1 PNG is pure red; if any tint pass ran, the
+    // embedded samples would be accent-hued, never (255, 0, 0).
+    it("embeds the orthophoto in natural color — no duotone tint on the raster samples (§20 v1.2)", async () => {
+      const model = buildModel();
+      const result = await emitPdfSitePlan(model, aerialStubOk);
+      expect(result.aerial.imageryEmbedded).toBe(true);
+
+      const raw = Buffer.from(result.bytes);
+      const text = raw.toString("latin1");
+      const dictAt = text.indexOf("/Subtype /Image");
+      expect(dictAt).toBeGreaterThan(-1);
+      const streamRe = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+      streamRe.lastIndex = dictAt;
+      const m = streamRe.exec(text);
+      expect(m).not.toBeNull();
+      const start = m!.index + m![0].indexOf(m![1]!);
+      const pixels = inflateSync(raw.subarray(start, start + m![1]!.length));
+      // 1x1 RGB sample (with or without a leading PNG filter byte): the last
+      // three bytes are the pixel — still pure red, untinted.
+      const px = pixels.subarray(pixels.length - 3);
+      expect([px[0], px[1], px[2]]).toEqual([255, 0, 0]);
     });
 
     it("degrades to the honest path when the endpoint returns a non-PNG body (Esri JSON error with HTTP 200)", async () => {

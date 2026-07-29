@@ -17,7 +17,8 @@ import { decodeAllContentStreams } from "./decode-pdf-text.js";
  * renderer. Any single failure fails the sheet.
  */
 
-// 1x1 red PNG — real, decodable; exercises the §20 duotone + embed path.
+// 1x1 red PNG — real, decodable; exercises the §20 (v1.2) natural-color
+// embed path (no duotone pass — the raster embeds as fetched).
 const TINY_PNG = new Uint8Array(
   Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -126,6 +127,76 @@ function buildDenseModel(): SitePlanModel {
   });
 }
 
+/**
+ * WIDE-CONTEXT fixture (§3 v1.2 frame-clip gate) — mirrors the 2026-07-28
+ * live defect on 48021:47719 (806 Pine St): a small parcel with LONG road
+ * ways (one named, one carrying only a machine road-node id) and a DEM far
+ * wider than the parcel. Without the frame clip, the road centerlines / ROW
+ * edges project hundreds of points past the drawing frame — over the header
+ * and into the furniture band — and the machine id printed as a label.
+ */
+function buildWideContextModel(): SitePlanModel {
+  const ringWgs84: Array<[number, number]> = [
+    [-97.32, 30.11],
+    [-97.3198, 30.11],
+    [-97.3198, 30.1103],
+    [-97.32, 30.1103],
+    [-97.32, 30.11],
+  ];
+  return composeSitePlanModel({
+    parcelNodeId: "48021:47719",
+    // Bbox ~1 km across: context sources extend far beyond the parcel.
+    bbox: { westLng: -97.325, eastLng: -97.315, southLat: 30.106, northLat: 30.1145 },
+    ringWgs84,
+    dem: syntheticDem(8, 100, 4),
+    contourIntervalMeters: 0.5,
+    setback: {
+      front: 15,
+      side: 5,
+      rear: 15,
+      sourceCodeAtomRef: { atomDid: "bastrop_tx/udc:residential-front-setback", role: "rule", entityType: "code-section" },
+    },
+    frontEdgeIndex: 0,
+    geometrySourceRef: "wide-context-synthetic-ring",
+    demSourceCitation: "synthetic-fixture DEM (frame-clip gate sample; not live 3DEP)",
+    // Live-defect descriptor shape: FIPS-shaped countyName, never a name.
+    descriptor: { address: "806 Pine St, Bastrop, TX", countyName: "48021" },
+    zoning: { district: "R-1", fixture: true },
+    floodZone: { honestUnavailable: true, reason: "FEMA NFHL not queried on this run." },
+    streetAnchors: [
+      {
+        // Named frontage road: a ~1 km way just south of the parcel. Draws
+        // AND labels — by display name alone (§11 v1.2).
+        name: "Pecan Street",
+        points: [
+          [-97.3245, 30.10992],
+          [-97.3155, 30.10992],
+        ],
+        sourceRef: "osm:way/pecan-wide",
+      },
+      {
+        // Machine-id road: a ~1 km way just west of the parcel with assumed
+        // ROW edges. Draws as honest context, NEVER labels, id never prints.
+        name: "48021:ROAD:323692301",
+        points: [
+          [-97.32012, 30.1065],
+          [-97.32012, 30.114],
+        ],
+        leftEdgePoints: [
+          [-97.32016, 30.1065],
+          [-97.32016, 30.114],
+        ],
+        rightEdgePoints: [
+          [-97.32008, 30.1065],
+          [-97.32008, 30.114],
+        ],
+        rowProvenanceKind: "approximate-assumed-per-class",
+        assumedWidthFt: 25,
+      },
+    ],
+  });
+}
+
 /** Drawn-text sections only (TIGHT + SPACED joins) — skips binary streams.
  * The decoder's section markers carry a control byte before the word, so we
  * locate the words themselves. Neither word occurs in drawn sheet text. */
@@ -173,6 +244,7 @@ async function render(model: SitePlanModel, opts: EmitPdfSitePlanOptions): Promi
 // Render each fixture once and share across the checklist items.
 const goldP = render(buildGoldModel(), aerialStubOk);
 const denseP = render(buildDenseModel(), aerialStubDown);
+const wideP = render(buildWideContextModel(), aerialStubOk);
 
 describe("SHEET STANDARD v1.0 acceptance checklist", () => {
   it("three pages, in order, none omitted — on both fixtures and on the aerial-down path (§1)", async () => {
@@ -378,5 +450,89 @@ describe("SHEET STANDARD v1.0 acceptance checklist", () => {
     expect(dense.text).toContain(REASON.setbacksConsumeLot);
     expect(dense.model.summary.buildableAreaSqFt).toBeNull();
     expect(dense.model.setback.degenerate).toBe(true);
+  });
+});
+
+describe("SHEET STANDARD v1.2 — §3 frame clip, §11 street naming, §11 county display", () => {
+  const EPS_PT = 0.5;
+
+  it("FRAME-CLIP GATE: no drawn point or label of any sheet-1 drawing layer falls outside the frame rect — gold, dense, and wide-context fixtures", async () => {
+    for (const { result } of [await goldP, await denseP, await wideP]) {
+      const frame = result.page1Frame;
+      const page1Marks = result.marks.filter((m) => m.page === 1);
+      const gated = page1Marks.filter((m) => m.bbox);
+      // The gate must not be vacuous: every sheet-1 drawing-layer mark
+      // carries a bbox (only the furniture marks — legend, scale bar, fine
+      // print — legitimately draw outside the frame and carry none).
+      const furniture = new Set(["legend", "scale-bar", "fine-print"]);
+      for (const m of page1Marks) {
+        if (furniture.has(m.kind)) continue;
+        expect(m.bbox, `mark ${m.kind}:${m.key} missing frame-gate bbox`).toBeDefined();
+      }
+      expect(gated.length).toBeGreaterThan(0);
+      for (const m of gated) {
+        const b = m.bbox!;
+        expect(b.minX, `${m.kind}:${m.key} left of frame`).toBeGreaterThanOrEqual(frame.minX - EPS_PT);
+        expect(b.maxX, `${m.kind}:${m.key} right of frame`).toBeLessThanOrEqual(frame.maxX + EPS_PT);
+        expect(b.minY, `${m.kind}:${m.key} below frame (into furniture)`).toBeGreaterThanOrEqual(frame.minY - EPS_PT);
+        expect(b.maxY, `${m.kind}:${m.key} above frame (into header)`).toBeLessThanOrEqual(frame.maxY + EPS_PT);
+      }
+    }
+  });
+
+  it("the wide-context fixture actually exercises the clip: both ~1 km ways survive as context and span the frame, cut at its edges", async () => {
+    const wide = await wideP;
+    const frame = wide.result.page1Frame;
+    const streetMarks = wide.result.marks.filter((m) => m.page === 1 && m.kind === "street");
+    // Both roads draw (named AND machine-id — geometry is honest context).
+    expect(streetMarks.length).toBe(2);
+    const pecan = streetMarks.find((m) => m.key.startsWith("Pecan Street"))!;
+    const machine = streetMarks.find((m) => m.key.startsWith("48021:ROAD:"))!;
+    expect(pecan).toBeDefined();
+    expect(machine).toBeDefined();
+    // The raw ways are ~1 km — far wider/taller than the frame. Post-clip
+    // they span (nearly) the full frame axis: proof the clip engaged rather
+    // than the roads being naturally small.
+    expect(pecan.bbox!.maxX - pecan.bbox!.minX).toBeGreaterThan((frame.maxX - frame.minX) * 0.9);
+    expect(machine.bbox!.maxY - machine.bbox!.minY).toBeGreaterThan((frame.maxY - frame.minY) * 0.9);
+  });
+
+  it("§11: machine road-node ids NEVER appear in any drawn sheet text (forbidden /\\d{5}:ROAD:/i), on every fixture", async () => {
+    for (const { decoded } of [await goldP, await denseP, await wideP]) {
+      expect(decoded).not.toMatch(/\d{5}:ROAD:/i);
+      expect(decoded).not.toContain("323692301");
+    }
+  });
+
+  it("§11: a road labels by display name ALONE — no per-road CENTERLINE / ROW qualifier (that lives in the legend row)", async () => {
+    const wide = await wideP;
+    // The named road reads on the sheet (drawing label + sheet-2 frontage).
+    expect(wide.text).toContain("PECAN STREET");
+    // The old per-road qualifier suffix is retired from labels.
+    expect(wide.decoded).not.toContain("· CENTERLINE");
+    expect(wide.decoded).not.toContain("ROW EDGES ASSUMED");
+    // The legend still carries the layer-level qualifier row.
+    expect(wide.text).toContain("Street centerline & ROW edges");
+    // The machine-id road's provenance source reads as the ledger, not the id.
+    expect(wide.text).toContain("road-node ledger");
+  });
+
+  it("§11: a FIPS-shaped county is OMITTED from the header meta line and the County row takes the honest chip — never a raw code", async () => {
+    const wide = await wideP;
+    // Live defect shape: "Parcel 48021:47719 · 48021" must not recur.
+    expect(wide.decoded).not.toMatch(/47719\s*·\s*48021(?!:)/);
+    expect(wide.text).toContain("Parcel 48021:47719");
+    expect(wide.text).toContain(REASON.noCountyName);
+    // A real county name still prints (gold: Bastrop County).
+    const gold = await goldP;
+    expect(gold.text).toContain("Bastrop County");
+  });
+
+  it("v1.2 keeps the approved sheet shape on the wide-context fixture: 3 pages, honest chips, no duplicate marks", async () => {
+    const wide = await wideP;
+    expect(wide.result.pageCount).toBe(3);
+    const ids = wide.result.marks.map((m) => `${m.page}:${m.kind}:${m.key}`);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(wide.text).not.toContain("N/A");
   });
 });
