@@ -232,15 +232,31 @@ export interface AuthorParcelSitePlanExportResult {
 }
 
 /**
- * Authors dxf-site-plan / ifc-site-plan artifacts and merges them additively
- * into the parcel's `parcel-terrain-model` atom (creating one if absent).
- * This intentionally does not touch the existing glb/ifc/dxf-3dface/
- * dxf-contour artifacts — Wave 1 extends the terrain-export path, it does
- * not replace it.
+ * The model-composition phase of the site-plan export, extracted (2026-07-29,
+ * dossier sprint) so the property-dossier export can compose the SAME
+ * `SitePlanModel` — same resolver, DEM, atoms, streets, honest-absence
+ * treatment — without paying for the DXF/IFC emissions it does not ship.
+ * `authorParcelSitePlanExport` consumes this verbatim; there is exactly one
+ * composition path (WDLL 5/6: one geometry truth, never a second source).
  */
-export async function authorParcelSitePlanExport(
-  options: AuthorParcelSitePlanExportOptions,
-): Promise<AuthorParcelSitePlanExportResult> {
+export interface ComposeSitePlanModelForParcelResult {
+  model: ReturnType<typeof composeSitePlanModel>;
+  mesh: ReturnType<typeof buildTerrainMeshGeometry>;
+  dem: ParsedDem;
+  demFetch: Awaited<ReturnType<typeof fetchUsgs3depDem>>;
+  resolvedSourceRef: string;
+  contourSource: Awaited<ReturnType<typeof resolveContourSource>>;
+  setbackHonestAbsence: boolean;
+  zoning: ZoningSummaryInput;
+  floodZone: FloodZoneSummaryInput;
+  resolutionMetersRequested: number;
+  resolutionMetersAdapted: number;
+  contourIntervalMeters: number;
+}
+
+export async function composeSitePlanModelForParcel(
+  options: Omit<AuthorParcelSitePlanExportOptions, "artifactStore">,
+): Promise<ComposeSitePlanModelForParcelResult> {
   const resolved = options.bboxOverride
     ? { bbox: options.bboxOverride, sourceRef: "request:bbox-override", ring: options.ringOverride }
     : await options.resolver.resolve(options.parcelNodeId);
@@ -394,6 +410,47 @@ export async function authorParcelSitePlanExport(
     envelopeOutcome,
   });
 
+  return {
+    model,
+    mesh,
+    dem,
+    demFetch,
+    resolvedSourceRef: resolved.sourceRef,
+    contourSource,
+    setbackHonestAbsence,
+    zoning,
+    floodZone,
+    resolutionMetersRequested,
+    resolutionMetersAdapted,
+    contourIntervalMeters,
+  };
+}
+
+/**
+ * Authors dxf-site-plan / ifc-site-plan artifacts and merges them additively
+ * into the parcel's `parcel-terrain-model` atom (creating one if absent).
+ * This intentionally does not touch the existing glb/ifc/dxf-3dface/
+ * dxf-contour artifacts — Wave 1 extends the terrain-export path, it does
+ * not replace it.
+ */
+export async function authorParcelSitePlanExport(
+  options: AuthorParcelSitePlanExportOptions,
+): Promise<AuthorParcelSitePlanExportResult> {
+  const composed = await composeSitePlanModelForParcel(options);
+  const {
+    model,
+    mesh,
+    dem,
+    demFetch,
+    contourSource,
+    setbackHonestAbsence,
+    zoning,
+    floodZone,
+    resolutionMetersRequested,
+    resolutionMetersAdapted,
+    contourIntervalMeters,
+  } = composed;
+
   const solidMassOptions: BuildTerrainSolidMassOptions = {
     skirtDepthFeet: options.skirtDepthFeet ?? DEFAULT_SKIRT_DEPTH_FEET,
   };
@@ -433,7 +490,7 @@ export async function authorParcelSitePlanExport(
     reasoningChain: {
       reasoningKind: "derived",
       derivationMethod: "parcel-terrain-mesh-ifc-v1",
-      inputAtomRefs: [{ atomDid: resolved.sourceRef, role: "reference-field", citationLabel: "usgs-3dep-dem" }],
+      inputAtomRefs: [{ atomDid: composed.resolvedSourceRef, role: "reference-field", citationLabel: "usgs-3dep-dem" }],
     },
     artifacts: {},
     coverage: {

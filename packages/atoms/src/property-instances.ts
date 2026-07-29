@@ -138,7 +138,13 @@ export type TerrainExportFormat =
    * as dxf-site-plan/ifc-site-plan (WDLL 5/6) — drawing + summary block +
    * provenance panel + honesty line. Additive, never a second geometry
    * source. */
-  | "pdf-site-plan";
+  | "pdf-site-plan"
+  /** Property dossier (2026-07-29): one hand-to-client PDF — Standard-styled
+   * cover (verdict) + cited brief facts + AI chat summary + owner notes, with
+   * the parcel's site-plan sheets APPENDED and renumbered. Composed from the
+   * SAME SitePlanModel as pdf-site-plan; user-supplied content is rendered
+   * verbatim (labeled), never verified or fabricated by the engine. */
+  | "pdf-dossier";
 
 /**
  * Engine overlay on published `@empressaio/atom-contract/property`
@@ -197,6 +203,18 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
          * (bounded fetch failed/timed out) instead of Esri World Imagery. */
         aerialImageryEmbedded?: boolean;
         aerialImageryUnavailableReason?: string;
+        /** pdf-dossier only: dossier composition record. Site-plan sheets are
+         * appended when authorable; a missing site-plan capability NEVER
+         * fails the dossier — `sitePlanAppended: false` plus the honest
+         * reason instead. */
+        dossierPageCount?: number;
+        sitePlanAppended?: boolean;
+        sitePlanUnavailableReason?: string;
+        verdictIncluded?: boolean;
+        briefSectionCount?: number;
+        briefFactCount?: number;
+        chatSummaryIncluded?: boolean;
+        notesIncluded?: boolean;
       }
     >
   >;

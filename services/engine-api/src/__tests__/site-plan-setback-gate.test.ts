@@ -3,6 +3,9 @@ import { InMemoryStorage } from "@hauska-engine/storage";
 import type { SetbackRuleAtomInstance } from "@hauska-engine/atoms";
 
 vi.mock("@hauska-engine/engine-core/site-plan", () => ({
+  // parcel-terrain.ts also imports the dossier author; the mock must define
+  // it or Vitest refuses the import (unused in these tests).
+  authorParcelPropertyDossierExport: vi.fn(),
   authorParcelSitePlanExport: vi.fn(
     async (opts: { parcelNodeId: string; setback?: { front: number } }) => ({
       atom: {
