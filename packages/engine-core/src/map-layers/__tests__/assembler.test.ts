@@ -119,7 +119,7 @@ describe("assembleMapLayers", () => {
       },
     );
 
-    expect(resolveWave3Slot).toHaveBeenCalledTimes(6);
+    expect(resolveWave3Slot).toHaveBeenCalledTimes(7);
     const wave3 = payload.layers.filter((l) =>
       [
         "dem",
@@ -128,6 +128,7 @@ describe("assembleMapLayers", () => {
         "topography",
         "topography-1ft",
         "hydrology-flow",
+        "hydrography",
       ].includes(l.layerKey),
     );
     expect(wave3.every((s) => s.status === "ok")).toBe(true);

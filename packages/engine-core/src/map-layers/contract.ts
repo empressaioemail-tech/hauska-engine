@@ -17,7 +17,14 @@ export const MAP_LAYER_KEYS = [
   // label the true interval/source per bbox and never mislabel 3DEP as 1-ft.
   "topography-1ft",
   // Live D8 flow channels for a viewport bbox (bbox -> GeoJSON LineStrings).
+  // DERIVED tier — stays in the engine as report input; the customer map layer
+  // for water features is `hydrography` (county-mapped, authoritative).
   "hydrology-flow",
+  // County-MAPPED water features (creeks/streams) for a viewport bbox, from a
+  // county-configured ArcGIS source (registry-driven, county-agnostic).
+  // Counties without a configured source get honest-unavailable, never an
+  // OSM-derived or D8-derived substitution.
+  "hydrography",
   "opportunity-zone-tract",
   "zoning",
 ] as const;

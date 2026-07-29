@@ -103,6 +103,10 @@
       "types": "./src/hydrology/index.ts",
       "import": "./src/hydrology/index.ts"
     },
+    "./hydrography": {
+      "types": "./src/hydrography/index.ts",
+      "import": "./src/hydrography/index.ts"
+    },
     "./topography": {
       "types": "./src/topography/index.ts",
       "import": "./src/topography/index.ts"
