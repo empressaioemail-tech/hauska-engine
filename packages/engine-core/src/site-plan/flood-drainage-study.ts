@@ -1,0 +1,649 @@
+import {
+  fetchUsgs3depDem,
+  selectAdaptiveResolutionMeters,
+  type BboxWgs84,
+} from "@hauska-engine/adapters";
+import {
+  accumulationThresholdForResolution,
+  fetchNoaaAtlas14PointEstimate,
+  inchesToMm,
+  runHydrologyWorker,
+  type GeoJsonFeatureCollection,
+  type HydrologyWorkerRequest,
+  type HydrologyWorkerResult,
+  type NoaaAtlas14PointEstimate,
+} from "@hauska-engine/adapters/hydrology";
+
+import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
+import type { ParcelGeometryResolver } from "../parcel-terrain/author.js";
+
+/**
+ * FLOOD & DRAINAGE study service (2026-07-29, R3 — the first PAID report).
+ *
+ * Parcel-scoped drainage study: resolves the parcel ring, fetches a PADDED
+ * catchment DEM at a drainage-calibrated resolution, and runs the EXISTING
+ * hydrology computation (pysheds worker / native D8 fallback) — catchment,
+ * drainage zones, rainfall ponding, flow lines. This module produces the
+ * study payload the PDF assembler renders and the PE dock visualizes; it
+ * never computes geometry twice and never fabricates a result.
+ *
+ * DEM RESOLUTION (hydrology-resolution-floor, the mold's PART 3 lesson):
+ * the drainage default is 10 m/px — the resolution the long-standing D8
+ * accumulation threshold (50 cells) was calibrated against — NOT the 1 m
+ * terrain default. A 1 m DEM over a catchment-scale extent explodes flow
+ * seeding ~100x for no screening-level gain. Explicit finer requests are
+ * clamped at {@link MIN_DRAINAGE_RESOLUTION_METERS}; the accumulation
+ * threshold rescales with the resolution actually used
+ * (`accumulationThresholdForResolution`) so channel density stays
+ * resolution-invariant either way.
+ *
+ * RAINFALL FORCING (LOCK decision, implemented as): `rainfallDepthInches`
+ * is a PARAMETER first. When omitted, the in-repo NOAA Atlas 14 PFDS
+ * client (`fetchNoaaAtlas14PointEstimate`) is tried for the 100-yr 24-hr
+ * point depth at the parcel centroid; when that fetch fails or carries no
+ * 100-yr row, the study falls back to {@link DEFAULT_RAINFALL_DEPTH_INCHES}
+ * and says so — `rainfallSource` records "parameter" | "noaa-atlas14" |
+ * "default" honestly, never a silently invented number.
+ */
+
+// ─────────────────────────────────────────────────────────────────────────
+// Constants (each carries its provenance).
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Default drainage DEM resolution: 10 m/px — the calibration reference of
+ * the D8 accumulation threshold (`ACCUMULATION_THRESHOLD_REFERENCE_
+ * RESOLUTION_METERS`, the historical 3DEP 1/3 arc-second tier). Screening-
+ * level drainage delineation, not terrain-contour fidelity.
+ */
+export const DEFAULT_DRAINAGE_RESOLUTION_METERS = 10;
+
+/**
+ * Hard floor for explicit resolution requests (hydrology-resolution-floor):
+ * the study never feeds the D8/pysheds worker a DEM finer than 3 m/px, no
+ * matter what the caller asks for. 1 m stays a terrain-export resolution.
+ */
+export const MIN_DRAINAGE_RESOLUTION_METERS = 3;
+
+/**
+ * Documented fallback design-storm depth when no parameter is supplied and
+ * the live NOAA fetch fails: 9.5 inches ≈ the 100-year 24-hour point
+ * precipitation for the Bastrop / Central Texas area per NOAA Atlas 14,
+ * Volume 11 Version 2.0 (Texas; Perica et al., 2018 — PFDS point estimates
+ * for Bastrop County run ~9–10 in for the 100-yr 24-hr event). Used ONLY
+ * with `rainfallSource: "default"` and surfaced on the sheet as a
+ * documented regional default, never presented as a live estimate.
+ */
+export const DEFAULT_RAINFALL_DEPTH_INCHES = 9.5;
+
+export const DEFAULT_RAINFALL_CITATION =
+  "NOAA Atlas 14 Volume 11 (Texas), 100-yr 24-hr regional default";
+
+/** Design-storm return period for the study (100-yr, 24-hr). */
+export const DESIGN_STORM_RETURN_PERIOD_YEARS = 100;
+
+/**
+ * Catchment padding: the DEM bbox extends the parcel bbox by
+ * `CATCHMENT_PAD_FACTOR × max(parcel span)` on every side, clamped to
+ * [{@link CATCHMENT_PAD_MIN_METERS}, {@link CATCHMENT_PAD_MAX_METERS}] so a
+ * tiny lot still sees its upstream watershed and a ranch parcel does not
+ * request a county-sized raster.
+ */
+export const CATCHMENT_PAD_FACTOR = 2.5;
+export const CATCHMENT_PAD_MIN_METERS = 250;
+export const CATCHMENT_PAD_MAX_METERS = 1500;
+
+const METERS_PER_DEG_LAT = 110_574;
+const SQFT_PER_SQM = 10.7639;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Study payload (the PINNED route contract's `study` object).
+// ─────────────────────────────────────────────────────────────────────────
+
+export type RainfallSource = "noaa-atlas14" | "parameter" | "default";
+
+export interface FloodDrainageDemProvenance {
+  source: string;
+  resolutionMeters: number;
+}
+
+export interface FloodDrainageFlowExit {
+  /** WGS84 exit point (first traced vertex outside the parcel ring). */
+  lng: number;
+  lat: number;
+  /** Outbound bearing (degrees clockwise from north) at the crossing. */
+  bearingDeg: number;
+}
+
+export interface FloodDrainageStudyStats {
+  /** Modeled upstream catchment area (mask-cell sum), square feet. */
+  catchmentAreaSqFt: number;
+  /** Modeled ponded area at the design storm, square feet; null when the
+   * rainfall result was not computed. */
+  pondedAreaSqFt: number | null;
+  flowExitCount: number;
+  pourPoint: { lng: number; lat: number };
+}
+
+export interface FloodDrainageStudy {
+  parcelNodeId: string;
+  catchmentGeoJson: GeoJsonFeatureCollection;
+  drainageZonesGeoJson: GeoJsonFeatureCollection;
+  rainfallResultGeoJson: GeoJsonFeatureCollection | null;
+  flowLinesGeoJson: GeoJsonFeatureCollection;
+  rainfallDepthInches: number;
+  rainfallSource: RainfallSource;
+  demProvenance: FloodDrainageDemProvenance;
+  /** Layman briefing — deterministic sentences from real study values. */
+  briefing: string;
+  honestEmpty?: { reason: string };
+  /** Additive detail beyond the pinned contract (PE viz + PDF arrows). */
+  flowExits: FloodDrainageFlowExit[];
+  stats: FloodDrainageStudyStats;
+  computation: {
+    library: string;
+    routing: string;
+    accumulationThreshold: number;
+    fallbackUsed?: boolean;
+    fallbackReason?: string;
+  };
+  parcelRingWgs84: Array<[number, number]>;
+  catchmentBbox: BboxWgs84;
+  geometrySourceRef: string;
+  generatedAt: string;
+}
+
+export interface RunFloodDrainageStudyOptions {
+  parcelNodeId: string;
+  resolver: ParcelGeometryResolver;
+  /** Test/operator overrides — same seams as the site-plan export. */
+  bboxOverride?: BboxWgs84;
+  ringOverride?: Array<[number, number]>;
+  /** Design-storm depth parameter. When set → rainfallSource "parameter". */
+  rainfallDepthInches?: number;
+  /** Drainage DEM resolution request; clamped to the drainage floor. */
+  resolutionMeters?: number;
+  fetchDem?: typeof fetchUsgs3depDem;
+  parseDem?: (bytes: Uint8Array) => Promise<ParsedDem>;
+  runWorker?: (req: HydrologyWorkerRequest) => Promise<HydrologyWorkerResult>;
+  fetchRainfall?: typeof fetchNoaaAtlas14PointEstimate;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Geometry helpers (WGS84 → local meters; deterministic, no invention).
+// ─────────────────────────────────────────────────────────────────────────
+
+function metersPerDegLng(lat: number): number {
+  return METERS_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
+}
+
+export function paddedCatchmentBbox(parcelBbox: BboxWgs84): BboxWgs84 {
+  const meanLat = (parcelBbox.southLat + parcelBbox.northLat) / 2;
+  const mLng = metersPerDegLng(meanLat);
+  const spanM = Math.max(
+    (parcelBbox.eastLng - parcelBbox.westLng) * mLng,
+    (parcelBbox.northLat - parcelBbox.southLat) * METERS_PER_DEG_LAT,
+  );
+  const padM = Math.min(
+    CATCHMENT_PAD_MAX_METERS,
+    Math.max(CATCHMENT_PAD_MIN_METERS, spanM * CATCHMENT_PAD_FACTOR),
+  );
+  return {
+    westLng: parcelBbox.westLng - padM / mLng,
+    eastLng: parcelBbox.eastLng + padM / mLng,
+    southLat: parcelBbox.southLat - padM / METERS_PER_DEG_LAT,
+    northLat: parcelBbox.northLat + padM / METERS_PER_DEG_LAT,
+  };
+}
+
+/** Ray-cast point-in-ring test on WGS84 [lng, lat] pairs. */
+export function pointInRing(lng: number, lat: number, ring: ReadonlyArray<[number, number]>): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]!;
+    const [xj, yj] = ring[j]!;
+    const intersects =
+      yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function ringCentroid(ring: ReadonlyArray<[number, number]>): { lng: number; lat: number } {
+  let sumLng = 0;
+  let sumLat = 0;
+  for (const [lng, lat] of ring) {
+    sumLng += lng;
+    sumLat += lat;
+  }
+  return { lng: sumLng / ring.length, lat: sumLat / ring.length };
+}
+
+/**
+ * Pour point = the LOWEST finite DEM cell whose center lies inside the
+ * parcel ring (the parcel's natural low point); when no cell center falls
+ * inside (very small parcels vs the drainage grid), the lowest cell inside
+ * the parcel bbox; last resort the ring centroid. Deterministic — never a
+ * guessed "outfall".
+ */
+export function resolvePourPoint(
+  dem: ParsedDem,
+  catchmentBbox: BboxWgs84,
+  parcelBbox: BboxWgs84,
+  ring: ReadonlyArray<[number, number]>,
+): { lng: number; lat: number } {
+  const { width, height, values } = dem;
+  let bestInRing: { lng: number; lat: number; z: number } | null = null;
+  let bestInBbox: { lng: number; lat: number; z: number } | null = null;
+  for (let row = 0; row < height; row++) {
+    const lat =
+      catchmentBbox.northLat -
+      ((row + 0.5) / Math.max(height, 1)) * (catchmentBbox.northLat - catchmentBbox.southLat);
+    if (lat < parcelBbox.southLat || lat > parcelBbox.northLat) continue;
+    for (let col = 0; col < width; col++) {
+      const lng =
+        catchmentBbox.westLng +
+        ((col + 0.5) / Math.max(width, 1)) * (catchmentBbox.eastLng - catchmentBbox.westLng);
+      if (lng < parcelBbox.westLng || lng > parcelBbox.eastLng) continue;
+      const z = values[row * width + col]!;
+      if (!Number.isFinite(z)) continue;
+      if (!bestInBbox || z < bestInBbox.z) bestInBbox = { lng, lat, z };
+      if (pointInRing(lng, lat, ring) && (!bestInRing || z < bestInRing.z)) {
+        bestInRing = { lng, lat, z };
+      }
+    }
+  }
+  const best = bestInRing ?? bestInBbox;
+  if (best) return { lng: best.lng, lat: best.lat };
+  return ringCentroid(ring);
+}
+
+/** Shoelace area of one GeoJSON Polygon exterior ring, in square feet. */
+function polygonAreaSqFt(coordinates: unknown): number {
+  const exterior = Array.isArray(coordinates) ? (coordinates as unknown[])[0] : null;
+  if (!Array.isArray(exterior) || exterior.length < 3) return 0;
+  const pts = exterior as Array<[number, number]>;
+  const lat0 = pts[0]![1];
+  const mLng = metersPerDegLng(lat0);
+  let sum = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i]![0] * mLng;
+    const yi = pts[i]![1] * METERS_PER_DEG_LAT;
+    const xj = pts[j]![0] * mLng;
+    const yj = pts[j]![1] * METERS_PER_DEG_LAT;
+    sum += xj * yi - xi * yj;
+  }
+  return Math.abs(sum / 2) * SQFT_PER_SQM;
+}
+
+export function featureCollectionAreaSqFt(fc: GeoJsonFeatureCollection | null): number {
+  if (!fc) return 0;
+  let total = 0;
+  for (const feature of fc.features) {
+    if (feature.geometry.type !== "Polygon") continue;
+    total += polygonAreaSqFt(feature.geometry.coordinates);
+  }
+  return total;
+}
+
+/**
+ * Flow exits: traced flow lines that START inside the parcel ring (or enter
+ * it) and leave it — the first vertex outside following an inside vertex is
+ * the exit point. Exits within ~15 m of an already-recorded exit are merged
+ * (they are the same channel at grid resolution).
+ */
+export function resolveFlowExits(
+  flowLines: GeoJsonFeatureCollection,
+  ring: ReadonlyArray<[number, number]>,
+): FloodDrainageFlowExit[] {
+  const exits: FloodDrainageFlowExit[] = [];
+  const mergeMeters = 15;
+  for (const feature of flowLines.features) {
+    if (feature.geometry.type !== "LineString") continue;
+    const coords = feature.geometry.coordinates as Array<[number, number]>;
+    if (!Array.isArray(coords) || coords.length < 2) continue;
+    for (let i = 1; i < coords.length; i++) {
+      const prev = coords[i - 1]!;
+      const curr = coords[i]!;
+      const prevIn = pointInRing(prev[0], prev[1], ring);
+      const currIn = pointInRing(curr[0], curr[1], ring);
+      if (!prevIn || currIn) continue;
+      const mLng = metersPerDegLng(curr[1]);
+      const dxM = (curr[0] - prev[0]) * mLng;
+      const dyM = (curr[1] - prev[1]) * METERS_PER_DEG_LAT;
+      const bearingDeg = ((Math.atan2(dxM, dyM) * 180) / Math.PI + 360) % 360;
+      const duplicate = exits.some((e) => {
+        const ddx = (e.lng - curr[0]) * mLng;
+        const ddy = (e.lat - curr[1]) * METERS_PER_DEG_LAT;
+        return Math.hypot(ddx, ddy) < mergeMeters;
+      });
+      if (!duplicate) {
+        exits.push({ lng: curr[0], lat: curr[1], bearingDeg });
+      }
+      break; // one exit per traced line
+    }
+  }
+  return exits;
+}
+
+/**
+ * Drainage zones: the catchment mask cells RE-GRADED by real flow-line
+ * vertex density (`concentration` 0 | 1 | 2). This derives entirely from
+ * the worker's own outputs — cells crossed by more traced flow carry higher
+ * concentration — a deterministic spatial join, not an invented gradient.
+ */
+export function deriveDrainageZones(
+  catchment: GeoJsonFeatureCollection,
+  flowLines: GeoJsonFeatureCollection,
+): GeoJsonFeatureCollection {
+  const flowPoints: Array<[number, number]> = [];
+  for (const feature of flowLines.features) {
+    if (feature.geometry.type !== "LineString") continue;
+    for (const pt of feature.geometry.coordinates as Array<[number, number]>) {
+      flowPoints.push(pt);
+    }
+  }
+  const features = catchment.features.map((feature) => {
+    let count = 0;
+    if (feature.geometry.type === "Polygon") {
+      const exterior = (feature.geometry.coordinates as Array<Array<[number, number]>>)[0];
+      if (Array.isArray(exterior) && exterior.length >= 3) {
+        const lngs = exterior.map((p) => p[0]);
+        const lats = exterior.map((p) => p[1]);
+        const minLng = Math.min(...lngs);
+        const maxLng = Math.max(...lngs);
+        const minLat = Math.min(...lats);
+        const maxLat = Math.max(...lats);
+        for (const [lng, lat] of flowPoints) {
+          if (lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat) count++;
+        }
+      }
+    }
+    const concentration = count >= 3 ? 2 : count >= 1 ? 1 : 0;
+    return {
+      ...feature,
+      properties: { ...feature.properties, concentration, flowVertexCount: count },
+    };
+  });
+  return { type: "FeatureCollection", features };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Rainfall forcing (honest source labeling).
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ResolvedRainfall {
+  depthInches: number;
+  source: RainfallSource;
+  /** Provenance detail for the sheet's SOURCE column / study payload. */
+  detail: string;
+}
+
+export async function resolveStudyRainfall(
+  centroid: { lng: number; lat: number },
+  parameterDepthInches: number | undefined,
+  fetchRainfall: typeof fetchNoaaAtlas14PointEstimate,
+): Promise<ResolvedRainfall> {
+  if (
+    typeof parameterDepthInches === "number" &&
+    Number.isFinite(parameterDepthInches) &&
+    parameterDepthInches > 0
+  ) {
+    return {
+      depthInches: parameterDepthInches,
+      source: "parameter",
+      detail: "depth supplied by the requesting application",
+    };
+  }
+  let estimate: NoaaAtlas14PointEstimate | null = null;
+  try {
+    estimate = await fetchRainfall({ lat: centroid.lat, lng: centroid.lng });
+  } catch {
+    estimate = null;
+  }
+  const storm = estimate?.designStorms.find(
+    (s) => s.returnPeriodYears === DESIGN_STORM_RETURN_PERIOD_YEARS,
+  );
+  if (storm) {
+    return {
+      depthInches: storm.depthInches,
+      source: "noaa-atlas14",
+      detail: `NOAA Atlas 14 PFDS point estimate (${DESIGN_STORM_RETURN_PERIOD_YEARS}-yr 24-hr)`,
+    };
+  }
+  return {
+    depthInches: DEFAULT_RAINFALL_DEPTH_INCHES,
+    source: "default",
+    detail: DEFAULT_RAINFALL_CITATION,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Briefing (deterministic layman sentences from real values; §11-clean —
+// no colons, no machine identifiers).
+// ─────────────────────────────────────────────────────────────────────────
+
+function acresPhrase(sqFt: number): string {
+  const acres = sqFt / 43_560;
+  if (acres >= 0.1) return `about ${acres.toFixed(1)} acres`;
+  return `about ${Math.round(sqFt).toLocaleString("en-US")} square feet`;
+}
+
+export function buildFloodDrainageBriefing(study: {
+  stats: FloodDrainageStudyStats;
+  rainfallDepthInches: number;
+  honestEmpty?: { reason: string };
+}): string {
+  if (study.honestEmpty) {
+    return `${study.honestEmpty.reason} This is a screening-level model of surface flow, and a flat or unresolved terrain signal means no concentrated drainage path could be traced for this parcel. Verify site drainage with a licensed engineer before design or permitting.`;
+  }
+  const sentences: string[] = [];
+  sentences.push(
+    `The modeled upstream catchment of ${acresPhrase(study.stats.catchmentAreaSqFt)} delivers runoff toward the parcel's low point.`,
+  );
+  if (study.stats.pondedAreaSqFt != null && study.stats.pondedAreaSqFt > 0) {
+    sentences.push(
+      `At a ${study.rainfallDepthInches} inch design storm, modeled ponding covers ${acresPhrase(study.stats.pondedAreaSqFt)} in and around the parcel.`,
+    );
+  } else {
+    sentences.push(
+      `At a ${study.rainfallDepthInches} inch design storm, the model shows no significant ponding concentration on this parcel.`,
+    );
+  }
+  if (study.stats.flowExitCount > 0) {
+    const n = study.stats.flowExitCount;
+    sentences.push(
+      `${n === 1 ? "One modeled flow path exits" : `${n} modeled flow paths exit`} the parcel boundary.`,
+    );
+  } else {
+    sentences.push("No concentrated flow path crossing the parcel boundary was traced.");
+  }
+  sentences.push(
+    "Verify finished-floor elevation against the ponding scenario before locking a building envelope.",
+  );
+  return sentences.join(" ");
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Honest-empty reasons (§11 form — one plain sentence each).
+// ─────────────────────────────────────────────────────────────────────────
+
+export const HONEST_EMPTY_FLAT_TERRAIN =
+  "No significant drainage concentration modeled here.";
+export const HONEST_EMPTY_DEM_VOID =
+  "Terrain elevation data did not resolve for this parcel.";
+export const HONEST_EMPTY_COMPUTATION =
+  "The drainage computation did not complete for this parcel.";
+
+function honestEmptyReasonForWorkerError(code: string | undefined): string {
+  if (code === "flat-terrain") return HONEST_EMPTY_FLAT_TERRAIN;
+  if (code === "nodata-dem") return HONEST_EMPTY_DEM_VOID;
+  return HONEST_EMPTY_COMPUTATION;
+}
+
+const EMPTY_FC: GeoJsonFeatureCollection = { type: "FeatureCollection", features: [] };
+
+// ─────────────────────────────────────────────────────────────────────────
+// The study runner.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface RunFloodDrainageStudyResult {
+  study: FloodDrainageStudy;
+  dem: ParsedDem;
+  demFetch: Awaited<ReturnType<typeof fetchUsgs3depDem>>;
+  resolutionMetersRequested: number;
+  resolutionMetersAdapted: number;
+  resolvedSourceRef: string;
+}
+
+export async function runFloodDrainageStudy(
+  options: RunFloodDrainageStudyOptions,
+): Promise<RunFloodDrainageStudyResult> {
+  const resolved = options.bboxOverride
+    ? { bbox: options.bboxOverride, sourceRef: "request:bbox-override", ring: options.ringOverride }
+    : await options.resolver.resolve(options.parcelNodeId);
+  if (!resolved) {
+    throw new Error(
+      `Parcel geometry unavailable for ${options.parcelNodeId}; configure a spine resolver or supply bboxOverride+ringOverride for a test.`,
+    );
+  }
+  const ringWgs84 = options.ringOverride ?? resolved.ring;
+  if (!ringWgs84 || ringWgs84.length < 3) {
+    throw new Error(
+      `Parcel ${options.parcelNodeId} resolver returned no boundary ring; the flood-drainage study refuses to approximate a ring from the bbox rectangle.`,
+    );
+  }
+
+  // Drainage resolution: clamp the request at the drainage floor, then let
+  // the adaptive selector relax coarser if the padded bbox demands it.
+  const requestedRaw = options.resolutionMeters ?? DEFAULT_DRAINAGE_RESOLUTION_METERS;
+  const resolutionMetersRequested = Math.max(requestedRaw, MIN_DRAINAGE_RESOLUTION_METERS);
+  const catchmentBbox = paddedCatchmentBbox(resolved.bbox);
+  const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(
+    catchmentBbox,
+    resolutionMetersRequested,
+  );
+
+  const fetchDem = options.fetchDem ?? fetchUsgs3depDem;
+  const demFetch = await fetchDem(catchmentBbox, {
+    resolutionMeters: resolutionMetersAdapted,
+  });
+  const dem = await (options.parseDem ?? parseDemBytes)(demFetch.bytes);
+
+  const centroid = ringCentroid(ringWgs84);
+  const rainfall = await resolveStudyRainfall(
+    centroid,
+    options.rainfallDepthInches,
+    options.fetchRainfall ?? fetchNoaaAtlas14PointEstimate,
+  );
+
+  const pourPoint = resolvePourPoint(dem, catchmentBbox, resolved.bbox, ringWgs84);
+  const accumulationThreshold = accumulationThresholdForResolution(resolutionMetersAdapted);
+
+  const runWorker = options.runWorker ?? runHydrologyWorker;
+  const result = await runWorker({
+    demBytes: demFetch.bytes.buffer.slice(
+      demFetch.bytes.byteOffset,
+      demFetch.bytes.byteOffset + demFetch.bytes.byteLength,
+    ) as ArrayBuffer,
+    pourLng: pourPoint.lng,
+    pourLat: pourPoint.lat,
+    catchmentBbox,
+    width: dem.width,
+    height: dem.height,
+    elevation: dem.values,
+    rainfallDepthMm: inchesToMm(rainfall.depthInches),
+    accumulationThreshold,
+  });
+
+  const generatedAt = new Date().toISOString();
+  const demProvenance: FloodDrainageDemProvenance = {
+    source: "USGS 3DEP",
+    resolutionMeters: resolutionMetersAdapted,
+  };
+
+  const base = {
+    parcelNodeId: options.parcelNodeId,
+    rainfallDepthInches: rainfall.depthInches,
+    rainfallSource: rainfall.source,
+    demProvenance,
+    parcelRingWgs84: ringWgs84,
+    catchmentBbox,
+    geometrySourceRef: resolved.sourceRef,
+    generatedAt,
+  };
+
+  if (result.status === "error") {
+    const reason = honestEmptyReasonForWorkerError(result.code);
+    const stats: FloodDrainageStudyStats = {
+      catchmentAreaSqFt: 0,
+      pondedAreaSqFt: null,
+      flowExitCount: 0,
+      pourPoint,
+    };
+    const study: FloodDrainageStudy = {
+      ...base,
+      catchmentGeoJson: EMPTY_FC,
+      drainageZonesGeoJson: EMPTY_FC,
+      rainfallResultGeoJson: null,
+      flowLinesGeoJson: EMPTY_FC,
+      honestEmpty: { reason },
+      flowExits: [],
+      stats,
+      computation: {
+        library: "unavailable",
+        routing: "d8",
+        accumulationThreshold,
+      },
+      briefing: "",
+    };
+    study.briefing = buildFloodDrainageBriefing(study);
+    return {
+      study,
+      dem,
+      demFetch,
+      resolutionMetersRequested,
+      resolutionMetersAdapted,
+      resolvedSourceRef: resolved.sourceRef,
+    };
+  }
+
+  const catchmentGeoJson = result.drainageZonesGeoJson;
+  const drainageZonesGeoJson = deriveDrainageZones(catchmentGeoJson, result.flowLinesGeoJson);
+  const flowExits = resolveFlowExits(result.flowLinesGeoJson, ringWgs84);
+  const stats: FloodDrainageStudyStats = {
+    catchmentAreaSqFt: featureCollectionAreaSqFt(catchmentGeoJson),
+    pondedAreaSqFt: result.rainfallResultGeoJson
+      ? featureCollectionAreaSqFt(result.rainfallResultGeoJson)
+      : null,
+    flowExitCount: flowExits.length,
+    pourPoint: result.pourPoint,
+  };
+
+  const study: FloodDrainageStudy = {
+    ...base,
+    catchmentGeoJson,
+    drainageZonesGeoJson,
+    rainfallResultGeoJson: result.rainfallResultGeoJson,
+    flowLinesGeoJson: result.flowLinesGeoJson,
+    flowExits,
+    stats,
+    computation: {
+      library: result.library,
+      routing: result.routing,
+      accumulationThreshold: result.accumulationThreshold,
+      ...(result.fallbackUsed ? { fallbackUsed: true, fallbackReason: result.fallbackReason } : {}),
+    },
+    briefing: "",
+  };
+  study.briefing = buildFloodDrainageBriefing(study);
+
+  return {
+    study,
+    dem,
+    demFetch,
+    resolutionMetersRequested,
+    resolutionMetersAdapted,
+    resolvedSourceRef: resolved.sourceRef,
+  };
+}

@@ -85,6 +85,51 @@ export {
 } from "./dossier-author.js";
 
 export {
+  DEFAULT_DRAINAGE_RESOLUTION_METERS,
+  DEFAULT_RAINFALL_CITATION,
+  DEFAULT_RAINFALL_DEPTH_INCHES,
+  DESIGN_STORM_RETURN_PERIOD_YEARS,
+  HONEST_EMPTY_COMPUTATION,
+  HONEST_EMPTY_DEM_VOID,
+  HONEST_EMPTY_FLAT_TERRAIN,
+  MIN_DRAINAGE_RESOLUTION_METERS,
+  buildFloodDrainageBriefing,
+  deriveDrainageZones,
+  featureCollectionAreaSqFt,
+  paddedCatchmentBbox,
+  pointInRing,
+  resolveFlowExits,
+  resolvePourPoint,
+  resolveStudyRainfall,
+  runFloodDrainageStudy,
+  type FloodDrainageFlowExit,
+  type FloodDrainageStudy,
+  type FloodDrainageStudyStats,
+  type RainfallSource,
+  type RunFloodDrainageStudyOptions,
+  type RunFloodDrainageStudyResult,
+} from "./flood-drainage-study.js";
+
+export {
+  authorParcelFloodDrainageReport,
+  type AuthorParcelFloodDrainageReportOptions,
+  type AuthorParcelFloodDrainageReportResult,
+} from "./flood-drainage-author.js";
+
+export {
+  FLOOD_DRAINAGE_DEFAULT_RAINFALL_NOTE,
+  FLOOD_DRAINAGE_DISCLAIMER,
+  FLOOD_DRAINAGE_EMPTY_TITLE,
+  FLOOD_DRAINAGE_KICKER,
+  FLOOD_DRAINAGE_MODEL_BASIS_LINE,
+  FLOOD_DRAINAGE_TOTAL_SHEETS,
+  emitPdfFloodDrainage,
+  type EmitPdfFloodDrainageOptions,
+  type FloodDrainageDescriptor,
+  type PdfFloodDrainageResult,
+} from "./pdf/flood-drainage.js";
+
+export {
   DOSSIER_CAPS,
   DOSSIER_NOT_LEGAL_ADVICE,
   DOSSIER_USER_CONTENT_DISCLOSURE,
