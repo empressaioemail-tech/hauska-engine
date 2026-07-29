@@ -78,6 +78,15 @@ const failingRainfall = (async () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 }) as any;
 
+// 1x1 red PNG — hermetic sheet-1 imagery stub (never hits the network).
+const TINY_PNG = new Uint8Array(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+);
+const fetchAerialImage = async () => TINY_PNG;
+
 describe("authorParcelFloodDrainageReport", { timeout: 60_000 }, () => {
   it("runs the study once, records pdf-flood-drainage + json-flood-drainage-study on the terrain atom", async () => {
     const storage = new InMemoryStorage();
@@ -93,6 +102,7 @@ describe("authorParcelFloodDrainageReport", { timeout: 60_000 }, () => {
       fetchDem: fakeFetchDem,
       parseDem: async () => slopedDem(),
       fetchRainfall: failingRainfall,
+      fetchAerialImage,
       rainfallDepthInches: 8,
       descriptor: { address: "141 Old Antioch Rd, Smithville, TX", countyName: "Bastrop County" },
       generatedAtIso: "2026-07-29T12:00:00.000Z",
@@ -111,6 +121,20 @@ describe("authorParcelFloodDrainageReport", { timeout: 60_000 }, () => {
     expect(pdfArtifact!.rainfallSource).toBe("parameter");
     expect(pdfArtifact!.computationLibrary).toBe("native-d8");
     expect(pdfArtifact!.honestEmpty).toBeUndefined();
+    // v2: sheet-1 imagery + gradient outcomes recorded on the artifact.
+    expect(pdfArtifact!.aerialImageryEmbedded).toBe(true);
+    expect(pdfArtifact!.gradientIncluded).toBe(true);
+    // The cached study carries THE PINNED gradient contract.
+    expect(result.study.gradient).toMatchObject({
+      pngBase64: expect.any(String),
+      bbox: {
+        westLng: expect.any(Number),
+        southLat: expect.any(Number),
+        eastLng: expect.any(Number),
+        northLat: expect.any(Number),
+      },
+      note: expect.any(String),
+    });
 
     const jsonArtifact = result.atom.artifacts["json-flood-drainage-study"];
     expect(jsonArtifact).toBeDefined();
@@ -151,6 +175,7 @@ describe("authorParcelFloodDrainageReport", { timeout: 60_000 }, () => {
       fetchDem: fakeFetchDem,
       parseDem: async () => flatDem(),
       fetchRainfall: failingRainfall,
+      fetchAerialImage,
       rainfallDepthInches: 8,
     });
 
@@ -161,6 +186,9 @@ describe("authorParcelFloodDrainageReport", { timeout: 60_000 }, () => {
     const pdfArtifact = result.atom.artifacts["pdf-flood-drainage"];
     expect(pdfArtifact!.honestEmpty).toBe(true);
     expect(pdfArtifact!.honestEmptyReason).toBe(HONEST_EMPTY_FLAT_TERRAIN);
+    // No gradient is fabricated for a flat-terrain study.
+    expect(pdfArtifact!.gradientIncluded).toBe(false);
+    expect(result.study.gradient).toBeUndefined();
     const jsonArtifact = result.atom.artifacts["json-flood-drainage-study"];
     expect(jsonArtifact!.honestEmpty).toBe(true);
 
@@ -216,6 +244,7 @@ describe("authorParcelFloodDrainageReport", { timeout: 60_000 }, () => {
       fetchDem: fakeFetchDem,
       parseDem: async () => slopedDem(),
       fetchRainfall: failingRainfall,
+      fetchAerialImage,
       rainfallDepthInches: 8,
     });
     expect(result.atom.atomDid).toBe(existingDid);

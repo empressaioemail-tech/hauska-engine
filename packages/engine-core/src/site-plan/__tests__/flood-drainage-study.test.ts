@@ -7,16 +7,22 @@ import type {
 } from "@hauska-engine/adapters/hydrology";
 import { accumulationThresholdForResolution } from "@hauska-engine/adapters/hydrology";
 
+import { computeD8Field } from "@hauska-engine/adapters/hydrology";
+
 import {
   DEFAULT_DRAINAGE_RESOLUTION_METERS,
   DEFAULT_RAINFALL_DEPTH_INCHES,
   HONEST_EMPTY_FLAT_TERRAIN,
   MIN_DRAINAGE_RESOLUTION_METERS,
+  buildFloodDrainageBriefing,
   deriveDrainageZones,
+  negligibleCatchmentThresholdSqFt,
   paddedCatchmentBbox,
   pointInRing,
   resolveFlowExits,
+  resolvePourPoint,
   runFloodDrainageStudy,
+  type FloodDrainageStudyStats,
 } from "../flood-drainage-study.js";
 import type { ParcelGeometryResolver } from "../../parcel-terrain/author.js";
 
@@ -325,10 +331,10 @@ describe("runFloodDrainageStudy", () => {
     expect(dflt.study.rainfallDepthInches).toBe(DEFAULT_RAINFALL_DEPTH_INCHES);
   });
 
-  it("feeds the worker a pour point inside the parcel ring (the parcel's low cell)", async () => {
+  it("feeds the worker a PARCEL-AWARE pour point: max-accumulation cell touching the parcel, never the bbox center", async () => {
     const dem = slopedDem();
     const workerCalls: HydrologyWorkerRequest[] = [];
-    await runFloodDrainageStudy({
+    const { study } = await runFloodDrainageStudy({
       parcelNodeId,
       resolver,
       fetchDem: fakeFetchDem().fn,
@@ -340,7 +346,54 @@ describe("runFloodDrainageStudy", () => {
       fetchRainfall: failingRainfall,
       rainfallDepthInches: 8,
     });
-    expect(pointInRing(workerCalls[0]!.pourLng, workerCalls[0]!.pourLat, ringWgs84)).toBe(true);
+    const pour = { lng: workerCalls[0]!.pourLng, lat: workerCalls[0]!.pourLat };
+    // The pour point sits ON or immediately ADJACENT to the parcel (within
+    // ~1.5 drainage cells of the ring bbox), never the padded-bbox centre.
+    const padded = workerCalls[0]!.catchmentBbox;
+    const cellLng = (padded.eastLng - padded.westLng) / GRID;
+    const cellLat = (padded.northLat - padded.southLat) / GRID;
+    expect(pour.lng).toBeGreaterThan(parcelBbox.westLng - 1.5 * cellLng);
+    expect(pour.lng).toBeLessThan(parcelBbox.eastLng + 1.5 * cellLng);
+    expect(pour.lat).toBeGreaterThan(parcelBbox.southLat - 1.5 * cellLat);
+    expect(pour.lat).toBeLessThan(parcelBbox.northLat + 1.5 * cellLat);
+    const bboxCenter = {
+      lng: (padded.westLng + padded.eastLng) / 2,
+      lat: (padded.southLat + padded.northLat) / 2,
+    };
+    expect(pour.lng === bboxCenter.lng && pour.lat === bboxCenter.lat).toBe(false);
+    // The method used is disclosed on the study stats.
+    expect(study.stats.pourPointMethod).toBe("max-accumulation-on-parcel");
+  });
+
+  it("carries the WATER GRADIENT on the study (the PINNED contract the PE leg codes to)", async () => {
+    const dem = slopedDem();
+    const { study } = await runFloodDrainageStudy({
+      parcelNodeId,
+      resolver,
+      fetchDem: fakeFetchDem().fn,
+      parseDem: async () => dem,
+      runWorker: async () => mockWorkerResult(),
+      fetchRainfall: failingRainfall,
+      rainfallDepthInches: 8,
+    });
+    // PINNED CONTRACT:
+    //   gradient: { pngBase64: string,
+    //     bbox: { westLng, southLat, eastLng, northLat }, note: string }
+    expect(study.gradient).toMatchObject({
+      pngBase64: expect.any(String),
+      bbox: {
+        westLng: expect.any(Number),
+        southLat: expect.any(Number),
+        eastLng: expect.any(Number),
+        northLat: expect.any(Number),
+      },
+      note: expect.any(String),
+    });
+    // The raster drapes the padded catchment bbox exactly.
+    expect(study.gradient!.bbox).toEqual(study.catchmentBbox);
+    // The note records DEM resolution + design storm.
+    expect(study.gradient!.note).toContain(`${DEFAULT_DRAINAGE_RESOLUTION_METERS} m per pixel`);
+    expect(study.gradient!.note).toContain("8 inch");
   });
 
   it("honest-empty on flat terrain (real native D8 run): reason recorded, geometry EMPTY, never fabricated", async () => {
@@ -364,6 +417,8 @@ describe("runFloodDrainageStudy", () => {
     expect(study.stats.pondedAreaModeledRegionSqFt).toBeNull();
     expect(study.stats.flowExitCount).toBe(0);
     expect(study.briefing).toContain(HONEST_EMPTY_FLAT_TERRAIN);
+    // No gradient is fabricated for an honest-empty study.
+    expect(study.gradient).toBeUndefined();
   });
 
   it("refuses a ringless parcel — no ring approximated from the bbox", async () => {
@@ -458,6 +513,120 @@ describe("clipPondingToParcel", () => {
     expect(clip.onParcelAreaSqFt).toBe(0);
     expect(clip.modeledRegionAreaSqFt).toBeGreaterThan(0);
     expect((clip.taggedGeoJson.features[0]!.properties as { onParcel: boolean }).onParcel).toBe(false);
+  });
+});
+
+describe("resolvePourPoint (parcel-aware, fixture DEM matrix)", () => {
+  // 40×40 grid over a 0.04°×0.04° box; a deep valley at column 30 drains
+  // south and carries the GLOBAL max accumulation + the LOWEST cell in the
+  // bbox — both far from the parcel. The parcel sits around columns 8–12,
+  // rows 18–22. Parcel-awareness means the pour point lands at the parcel's
+  // own flow concentration, never at the valley and never the bbox centre.
+  const W = 40;
+  const H = 40;
+  const box = { westLng: -97.34, southLat: 30.09, eastLng: -97.3, northLat: 30.13 };
+  const cellLng = (box.eastLng - box.westLng) / W;
+  const cellLat = (box.northLat - box.southLat) / H;
+  const lngOfCol = (col: number) => box.westLng + (col + 0.5) * cellLng;
+  const latOfRow = (row: number) => box.northLat - (row + 0.5) * cellLat;
+  // Parcel ring: cols 8..12, rows 18..22.
+  const fixtureRing: Array<[number, number]> = [
+    [lngOfCol(8) - cellLng / 2, latOfRow(22) - cellLat / 2],
+    [lngOfCol(12) + cellLng / 2, latOfRow(22) - cellLat / 2],
+    [lngOfCol(12) + cellLng / 2, latOfRow(18) + cellLat / 2],
+    [lngOfCol(8) - cellLng / 2, latOfRow(18) + cellLat / 2],
+    [lngOfCol(8) - cellLng / 2, latOfRow(22) - cellLat / 2],
+  ];
+
+  function valleyDem(): { width: number; height: number; values: Float32Array } {
+    const values = new Float32Array(W * H);
+    for (let row = 0; row < H; row++) {
+      for (let col = 0; col < W; col++) {
+        values[row * W + col] = Math.abs(col - 30) * 3 + (H - row) * 0.2;
+      }
+    }
+    return { width: W, height: H, values };
+  }
+
+  it("picks the max-accumulation cell on/adjacent to the parcel — not the global max, the lowest bbox cell, or the bbox centre", () => {
+    const dem = valleyDem();
+    const d8 = computeD8Field(dem.values, W, H);
+    const pour = resolvePourPoint(dem, box, fixtureRing, d8.accumulation);
+    expect(pour.method).toBe("max-accumulation-on-parcel");
+    // On or immediately adjacent to the parcel (cols 8..12 ± 1 cell).
+    expect(pour.lng).toBeGreaterThanOrEqual(lngOfCol(7) - cellLng / 2);
+    expect(pour.lng).toBeLessThanOrEqual(lngOfCol(13) + cellLng / 2);
+    expect(pour.lat).toBeGreaterThanOrEqual(latOfRow(23) - cellLat / 2);
+    expect(pour.lat).toBeLessThanOrEqual(latOfRow(17) + cellLat / 2);
+    // Far from the valley column (the global max-accumulation channel).
+    expect(Math.abs(pour.lng - lngOfCol(30))).toBeGreaterThan(10 * cellLng);
+    // Not the bbox centre.
+    expect(pour.lng).not.toBeCloseTo((box.westLng + box.eastLng) / 2, 6);
+  });
+
+  it("falls back to the parcel's LOWEST BOUNDARY CELL when no accumulated flow touches the parcel", () => {
+    const dem = valleyDem();
+    const zeroAcc = new Uint32Array(W * H); // no modeled flow anywhere
+    const pour = resolvePourPoint(dem, box, fixtureRing, zeroAcc);
+    expect(pour.method).toBe("lowest-boundary-cell");
+    // The fixture slopes down toward the EAST (toward the valley) and the
+    // SOUTH within the parcel band — the lowest boundary cell is the ring's
+    // south-east corner region (the ring edge itself may land in the cell
+    // one over, so allow 1.5 cells of grid snap).
+    expect(Math.abs(pour.lng - lngOfCol(12))).toBeLessThan(cellLng * 1.5);
+    expect(Math.abs(pour.lat - latOfRow(22))).toBeLessThan(cellLat * 1.5);
+  });
+
+  it("last-resorts to the ring centroid on an all-nodata grid — deterministic, never a guessed outfall", () => {
+    const values = new Float32Array(W * H).fill(Number.NaN);
+    const pour = resolvePourPoint({ width: W, height: H, values }, box, fixtureRing, new Uint32Array(W * H));
+    expect(pour.method).toBe("ring-centroid");
+  });
+});
+
+describe("buildFloodDrainageBriefing (narration honesty)", () => {
+  const baseStats: FloodDrainageStudyStats = {
+    catchmentAreaSqFt: 0,
+    pondedAreaSqFt: 0,
+    pondedAreaModeledRegionSqFt: 0,
+    flowExitCount: 0,
+    pourPoint: { lng: -97.319, lat: 30.101 },
+    pourPointMethod: "max-accumulation-on-parcel",
+  };
+
+  it("says the parcel sits near a local high point on a ~0 catchment — NEVER '0 square feet delivers runoff toward'", () => {
+    const briefing = buildFloodDrainageBriefing({
+      stats: baseStats,
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    expect(briefing).toContain("local high point");
+    expect(briefing).toContain("negligible upstream catchment");
+    // The 2026-07-29 operator canary (live 1408 Chestnut): incoherent
+    // "catchment of about 0 square feet delivers runoff toward the parcel".
+    expect(briefing).not.toMatch(/about 0 (square feet|acres)/);
+    expect(briefing).not.toContain("delivers runoff toward the parcel's low point");
+    // §11 hygiene holds.
+    expect(briefing).not.toContain(":");
+  });
+
+  it("uses the resolution-scaled negligible threshold: a few cells is negligible, a real catchment is not", () => {
+    const threshold = negligibleCatchmentThresholdSqFt(10);
+    expect(threshold).toBeGreaterThan(4_000);
+    expect(threshold).toBeLessThan(5_000);
+    const negligible = buildFloodDrainageBriefing({
+      stats: { ...baseStats, catchmentAreaSqFt: threshold - 1 },
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    expect(negligible).toContain("negligible upstream catchment");
+    const real = buildFloodDrainageBriefing({
+      stats: { ...baseStats, catchmentAreaSqFt: 250_000 },
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    expect(real).toContain("delivers runoff toward the parcel's low point");
+    expect(real).not.toContain("negligible upstream catchment");
   });
 });
 

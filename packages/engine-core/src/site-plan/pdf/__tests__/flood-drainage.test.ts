@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
 
+import { computeD8Field } from "@hauska-engine/adapters/hydrology";
+
+import { buildDrainageGradient } from "../../drainage-gradient.js";
 import {
   buildFloodDrainageBriefing,
   HONEST_EMPTY_FLAT_TERRAIN,
   type FloodDrainageStudy,
 } from "../../flood-drainage-study.js";
+import { AERIAL_IMAGERY_ATTRIBUTION, AERIAL_UNAVAILABLE_NOTE } from "../aerial.js";
 import {
+  FLOOD_DRAINAGE_BACKDROP_LINE,
   FLOOD_DRAINAGE_DEFAULT_RAINFALL_NOTE,
   FLOOD_DRAINAGE_DISCLAIMER,
   FLOOD_DRAINAGE_EMPTY_TITLE,
   FLOOD_DRAINAGE_TOTAL_SHEETS,
   emitPdfFloodDrainage,
+  type EmitPdfFloodDrainageOptions,
 } from "../flood-drainage.js";
 import { decodeAllContentStreams } from "./decode-pdf-text.js";
 
@@ -22,6 +28,53 @@ const ringWgs84: Array<[number, number]> = [
   [-97.3196, 30.1016],
   [-97.3196, 30.1004],
 ];
+
+const catchmentBbox = { westLng: -97.325, southLat: 30.095, eastLng: -97.313, northLat: 30.107 };
+
+// 1x1 red PNG — a real, decodable PNG so the imagery success path exercises
+// the actual embedPng pipeline without any network.
+const TINY_PNG = new Uint8Array(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+);
+
+/** Hermetic default: the sheet-1 imagery fetch NEVER hits the network. */
+const aerialStubOk: EmitPdfFloodDrainageOptions["aerial"] = {
+  fetchImage: async () => TINY_PNG,
+};
+const aerialStubDown: EmitPdfFloodDrainageOptions["aerial"] = {
+  fetchImage: async () => {
+    throw new Error("test stub: aerial endpoint unreachable");
+  },
+};
+
+/** A REAL water gradient from a synthetic valley DEM (never a fake string —
+ * the compositing path decodes and embeds it). */
+function realGradient() {
+  const W = 32;
+  const H = 32;
+  const elevation = new Float32Array(W * H);
+  for (let row = 0; row < H; row++) {
+    for (let col = 0; col < W; col++) {
+      elevation[row * W + col] = Math.abs(col - 16) * 2 + (H - row) * 0.5;
+    }
+  }
+  const d8 = computeD8Field(elevation, W, H);
+  const gradient = buildDrainageGradient({
+    elevation,
+    width: W,
+    height: H,
+    accumulation: d8.accumulation,
+    bbox: catchmentBbox,
+    rainfallDepthMm: 241,
+    demResolutionMeters: 10,
+    rainfallDepthInches: 9.5,
+  });
+  if (!gradient) throw new Error("fixture gradient must build");
+  return gradient;
+}
 
 function quad(lng: number, lat: number, d: number, properties: Record<string, unknown> = {}) {
   return {
@@ -64,9 +117,9 @@ function fullStudy(overrides: Partial<FloodDrainageStudy> = {}): FloodDrainageSt
     rainfallResultGeoJson: {
       type: "FeatureCollection",
       features: [
-        // On-parcel ponding (clip-tagged by the study) → drawn prominent.
+        // On-parcel ponding (clip-tagged by the study).
         quad(-97.3192, 30.1008, 0.0003, { rainfallDepthMm: 241, onParcel: true }),
-        // Far-field ponding → context only, NOT drawn (stated choice).
+        // Far-field ponding → context only (summary qualifier).
         quad(-97.324, 30.104, 0.001, { rainfallDepthMm: 241, onParcel: false }),
       ],
     },
@@ -91,6 +144,7 @@ function fullStudy(overrides: Partial<FloodDrainageStudy> = {}): FloodDrainageSt
     rainfallSource: "noaa-atlas14",
     demProvenance: { source: "USGS 3DEP", resolutionMeters: 10 },
     briefing: "",
+    gradient: realGradient(),
     flowExits: [{ lng: -97.3184, lat: 30.1009, bearingDeg: 95 }],
     stats: {
       catchmentAreaSqFt: 538_000,
@@ -99,10 +153,11 @@ function fullStudy(overrides: Partial<FloodDrainageStudy> = {}): FloodDrainageSt
       pondedAreaModeledRegionSqFt: 3_472_049,
       flowExitCount: 1,
       pourPoint: { lng: -97.319, lat: 30.101 },
+      pourPointMethod: "max-accumulation-on-parcel",
     },
     computation: { library: "native-d8", routing: "d8", accumulationThreshold: 50 },
     parcelRingWgs84: ringWgs84,
-    catchmentBbox: { westLng: -97.325, southLat: 30.095, eastLng: -97.313, northLat: 30.107 },
+    catchmentBbox,
     geometrySourceRef: "txgio-parcel:48021:47595:stratmap25",
     generatedAt: "2026-07-29T12:00:00.000Z",
     ...overrides,
@@ -124,10 +179,12 @@ function emptyStudy(): FloodDrainageStudy {
       pondedAreaModeledRegionSqFt: null,
       flowExitCount: 0,
       pourPoint: { lng: -97.319, lat: 30.101 },
+      pourPointMethod: "ring-centroid",
     },
     honestEmpty: { reason: HONEST_EMPTY_FLAT_TERRAIN },
     computation: { library: "unavailable", routing: "d8", accumulationThreshold: 50 },
   });
+  delete study.gradient;
   study.briefing = buildFloodDrainageBriefing(study);
   return study;
 }
@@ -138,9 +195,12 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
   it("emits the two-sheet document: Standard header/kicker, stat columns, summary sections, provenance, disclaimer", async () => {
     const result = await emitPdfFloodDrainage(fullStudy(), descriptor, {
       generatedAtIso: "2026-07-29T12:00:00.000Z",
+      aerial: aerialStubOk,
     });
     expect(result.pageCount).toBe(FLOOD_DRAINAGE_TOTAL_SHEETS);
     expect(result.honestEmpty).toBe(false);
+    expect(result.aerial.imageryEmbedded).toBe(true);
+    expect(result.gradientComposited).toBe(true);
 
     const decoded = decodeAllContentStreams(result.bytes);
     // §2 kickers with sheet numbering.
@@ -169,22 +229,79 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     expect(decoded).toContain("NOAA Atlas 14 point estimate");
     // Briefing paragraph (the layman text).
     expect(decoded).toContain("delivers runoff toward the parcel");
-    // Provenance table (§7/§13): three columns, computation basis named.
+    // Provenance table (§7/§13): three columns, computation basis named,
+    // and the v2 water-gradient row.
     expect(decoded).toContain("PROVENANCE");
     expect(decoded).toContain("USGS 3DEP DEM · 10 m per pixel");
     expect(decoded).toContain("D8 flow accumulation · native-d8");
     expect(decoded).toContain("screening model");
-    // §8 fine print: the not-an-engineering-study disclaimer on the sheet.
+    expect(decoded).toContain("Water gradient");
+    // §8 fine print: the not-an-engineering-study disclaimer on the sheet,
+    // plus §17-§19 backdrop language + verbatim imagery attribution.
     expect(decoded).toContain("not a drainage study or engineering determination");
+    expect(decoded).toContain(FLOOD_DRAINAGE_BACKDROP_LINE);
+    expect(decoded).toContain(AERIAL_IMAGERY_ATTRIBUTION);
     expect(decoded).toContain("Sheet 1 of 2");
     expect(decoded).toContain("Sheet 2 of 2");
+  });
+
+  it("composes sheet 1 in the v2 order: imagery → water gradient → catchment boundary → flow line → property line → exit arrow", async () => {
+    const result = await emitPdfFloodDrainage(fullStudy(), descriptor, { aerial: aerialStubOk });
+    const kinds = result.marks.filter((m) => m.page === 1).map((m) => m.kind);
+    const order = [
+      "imagery",
+      "water-gradient",
+      "catchment-boundary",
+      "flow-line",
+      "property-line",
+      "flow-exit-arrow",
+    ];
+    const indices = order.map((kind) => kinds.indexOf(kind));
+    for (const [i, idx] of indices.entries()) {
+      expect(idx, `${order[i]} must be drawn on sheet 1`).toBeGreaterThanOrEqual(0);
+      if (i > 0) {
+        expect(idx, `${order[i]} must draw after ${order[i - 1]}`).toBeGreaterThan(indices[i - 1]!);
+      }
+    }
+    // §5 legend names the gradient + backdrop honestly.
+    const decoded = decodeAllContentStreams(result.bytes);
+    expect(decoded).toContain("Water gradient — modeled flow and ponding at 9.5\" storm");
+    expect(decoded).toContain("Catchment boundary");
+    expect(decoded).toContain("Aerial imagery — backdrop only, not a measurement source");
+  });
+
+  it("imagery unavailable: sheet still ships — gradient composites on the paper ground, honest note + legend row", async () => {
+    const result = await emitPdfFloodDrainage(fullStudy(), descriptor, { aerial: aerialStubDown });
+    expect(result.aerial.imageryEmbedded).toBe(false);
+    expect(result.aerial.unavailableReason).toContain("unreachable");
+    expect(result.gradientComposited).toBe(true);
+    expect(result.pageCount).toBe(2);
+    // No imagery mark; the gradient still draws.
+    const kinds = new Set(result.marks.filter((m) => m.page === 1).map((m) => m.kind));
+    expect(kinds.has("imagery")).toBe(false);
+    expect(kinds.has("water-gradient")).toBe(true);
+    expect(kinds.has("property-line")).toBe(true);
+    const decoded = decodeAllContentStreams(result.bytes);
+    expect(decoded).toContain(AERIAL_UNAVAILABLE_NOTE);
+    expect(decoded).toContain("Aerial imagery — unavailable · overlay on paper ground");
+  });
+
+  it("study without a gradient: honest legend row, nothing composited, never a fabricated raster", async () => {
+    const study = fullStudy();
+    delete study.gradient;
+    const result = await emitPdfFloodDrainage(study, descriptor, { aerial: aerialStubOk });
+    expect(result.gradientComposited).toBe(false);
+    const kinds = new Set(result.marks.filter((m) => m.page === 1).map((m) => m.kind));
+    expect(kinds.has("water-gradient")).toBe(false);
+    const decoded = decodeAllContentStreams(result.bytes);
+    expect(decoded).toContain("Water gradient — not modeled");
   });
 
   it("keeps §11 prose hygiene on the briefing text: no colons, no machine identifiers", async () => {
     const study = fullStudy();
     expect(study.briefing).not.toContain(":");
     expect(study.briefing).not.toMatch(/[A-Za-z0-9]+[_/][A-Za-z0-9]+/);
-    const result = await emitPdfFloodDrainage(study, descriptor);
+    const result = await emitPdfFloodDrainage(study, descriptor, { aerial: aerialStubOk });
     const decoded = decodeAllContentStreams(result.bytes);
     // The machine geometry ref appears ONLY as a provenance SOURCE cell —
     // never inside the briefing paragraph (which is drawn verbatim).
@@ -192,10 +309,11 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
   });
 
   it("honest-empty still ships BOTH sheets: honest panel + UNAVAILABLE chips, never fabricated geometry", async () => {
-    const result = await emitPdfFloodDrainage(emptyStudy(), {}, {});
+    const result = await emitPdfFloodDrainage(emptyStudy(), {}, { aerial: aerialStubOk });
     expect(result.pageCount).toBe(2);
     expect(result.honestEmpty).toBe(true);
     expect(result.honestEmptyReason).toBe(HONEST_EMPTY_FLAT_TERRAIN);
+    expect(result.gradientComposited).toBe(false);
 
     const decoded = decodeAllContentStreams(result.bytes);
     expect(decoded).toContain(FLOOD_DRAINAGE_EMPTY_TITLE);
@@ -206,13 +324,14 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     expect(decoded).toContain("NO ADDRESS");
     // No drainage geometry marks were drawn.
     const kinds = new Set(result.marks.map((m) => m.kind));
-    expect(kinds.has("catchment-fill")).toBe(false);
+    expect(kinds.has("catchment-boundary")).toBe(false);
+    expect(kinds.has("water-gradient")).toBe(false);
     expect(kinds.has("flow-line")).toBe(false);
     expect(kinds.has("property-line")).toBe(true);
     expect(kinds.has("honest-empty-callout")).toBe(true);
   });
 
-  it("ponding modeled but NONE on the parcel: honest NONE MODELED headline, no ponding drawn, legend reason inline", async () => {
+  it("ponding modeled but NONE on the parcel: honest NONE MODELED headline + labeled qualifier only", async () => {
     const study = fullStudy({
       rainfallResultGeoJson: {
         type: "FeatureCollection",
@@ -222,7 +341,7 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     });
     study.stats = { ...study.stats, pondedAreaSqFt: 0, pondedAreaModeledRegionSqFt: 3_472_049 };
     study.briefing = buildFloodDrainageBriefing(study);
-    const result = await emitPdfFloodDrainage(study, descriptor);
+    const result = await emitPdfFloodDrainage(study, descriptor, { aerial: aerialStubOk });
 
     const decoded = decodeAllContentStreams(result.bytes);
     // §15-style honest headline — never the whole-region sum.
@@ -232,45 +351,23 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     expect(decoded).toContain("no modeled ponding intersects the parcel");
     // The wider figure survives ONLY as the labeled qualifier.
     expect(decoded).toContain("wider modeled area 79.7 acres");
-    // §5 legend: the ponding row is listed, greyed, reason inline.
-    expect(decoded).toContain("Ponding — none modeled on parcel");
-    // Far-field ponding is NOT drawn (stated choice: context lives in the
-    // catchment fill + the summary qualifier, not as far-field fills).
-    expect(result.marks.some((m) => m.kind === "rainfall-ponding")).toBe(false);
-  });
-
-  it("drainage zones with nothing graded: no zones drawn AND the legend row carries the honest inline reason (§5)", async () => {
-    const study = fullStudy({
-      drainageZonesGeoJson: {
-        type: "FeatureCollection",
-        features: [
-          quad(-97.3193, 30.1008, 0.0006, { zone: "catchment", concentration: 0 }),
-          quad(-97.3199, 30.1002, 0.0006, { zone: "catchment", concentration: 0 }),
-        ],
-      },
-    });
-    study.briefing = buildFloodDrainageBriefing(study);
-    const result = await emitPdfFloodDrainage(study, descriptor);
-    expect(result.marks.some((m) => m.kind === "drainage-zones")).toBe(false);
-    const decoded = decodeAllContentStreams(result.bytes);
-    expect(decoded).toContain("Drainage concentration — none at this resolution");
   });
 
   it("discloses the documented rainfall default in the fine print when the source is 'default'", async () => {
     const study = fullStudy({ rainfallSource: "default" });
     study.briefing = buildFloodDrainageBriefing(study);
-    const result = await emitPdfFloodDrainage(study, descriptor);
+    const result = await emitPdfFloodDrainage(study, descriptor, { aerial: aerialStubOk });
     const decoded = decodeAllContentStreams(result.bytes);
     expect(decoded).toContain(FLOOD_DRAINAGE_DEFAULT_RAINFALL_NOTE);
     expect(decoded).toContain("documented regional default");
   });
 
   it("frame-clip (§3): every sheet-1 drawing mark bbox stays inside page1Frame", async () => {
-    const result = await emitPdfFloodDrainage(fullStudy(), descriptor);
+    const result = await emitPdfFloodDrainage(fullStudy(), descriptor, { aerial: aerialStubOk });
     const drawingKinds = new Set([
-      "catchment-fill",
-      "drainage-zones",
-      "rainfall-ponding",
+      "imagery",
+      "water-gradient",
+      "catchment-boundary",
       "flow-line",
       "property-line",
       "flow-exit-arrow",
@@ -291,17 +388,19 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
   });
 
   it("draw-once (§14): every keyed mark unique; furniture drawn exactly once per page", async () => {
-    const result = await emitPdfFloodDrainage(fullStudy(), descriptor);
+    const result = await emitPdfFloodDrainage(fullStudy(), descriptor, { aerial: aerialStubOk });
     const ids = new Set(result.marks.map((m) => `${m.page}:${m.kind}:${m.key}`));
     expect(ids.size).toBe(result.marks.length);
     expect(result.marks.filter((m) => m.kind === "fine-print").length).toBe(2);
     expect(result.marks.filter((m) => m.kind === "north-arrow").length).toBe(1);
     expect(result.marks.filter((m) => m.kind === "legend").length).toBe(1);
     expect(result.marks.filter((m) => m.kind === "scale-bar").length).toBe(1);
+    expect(result.marks.filter((m) => m.kind === "imagery").length).toBe(1);
+    expect(result.marks.filter((m) => m.kind === "water-gradient").length).toBe(1);
   });
 
   it("keeps §21 vertical rhythm on every summary row (line-box invariants hold numerically)", async () => {
-    const result = await emitPdfFloodDrainage(fullStudy(), descriptor);
+    const result = await emitPdfFloodDrainage(fullStudy(), descriptor, { aerial: aerialStubOk });
     expect(result.rhythm.length).toBeGreaterThan(6);
     for (const row of result.rhythm) {
       if (row.ruleY != null) {
@@ -318,7 +417,7 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
   });
 
   it("never re-spells the disclaimer: one standing string on both sheets", async () => {
-    const result = await emitPdfFloodDrainage(fullStudy(), descriptor);
+    const result = await emitPdfFloodDrainage(fullStudy(), descriptor, { aerial: aerialStubOk });
     const decoded = decodeAllContentStreams(result.bytes);
     const firstSentence = FLOOD_DRAINAGE_DISCLAIMER.split(".")[0]!;
     const occurrences = decoded.split(firstSentence).length - 1;

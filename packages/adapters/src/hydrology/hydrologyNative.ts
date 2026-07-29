@@ -370,6 +370,33 @@ function flowLinesFromAccumulation(
   return { type: "FeatureCollection", features: features.slice(0, 40) };
 }
 
+export interface D8Field {
+  /** Depression-filled elevation grid (same shape as the input DEM). */
+  filled: Float32Array;
+  /** D8 flow direction per cell (0 = no downslope neighbor). */
+  fdir: Int8Array;
+  /** D8 flow accumulation per cell, in CELLS of upstream flow. */
+  accumulation: Uint32Array;
+}
+
+/**
+ * Compute the raw D8 field (filled DEM, flow directions, accumulation) on an
+ * in-memory elevation grid WITHOUT tracing catchments or emitting GeoJSON.
+ * Exposed for consumers that need the accumulation raster itself — the
+ * flood-drainage parcel-aware pour point and the water-gradient raster both
+ * read this field directly. Deterministic; same math as `runHydrologyNative`.
+ */
+export function computeD8Field(
+  elevation: Float32Array,
+  width: number,
+  height: number,
+): D8Field {
+  const filled = fillDepressions(elevation, width, height);
+  const fdir = flowDirection(filled, width, height);
+  const acc = accumulation(filled, fdir, width, height);
+  return { filled, fdir, accumulation: acc };
+}
+
 /** Run D8 hydrology on an in-memory elevation grid. */
 export function runHydrologyNative(
   input: HydrologyNativeInput,

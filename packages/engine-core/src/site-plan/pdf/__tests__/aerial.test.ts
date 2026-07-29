@@ -6,12 +6,14 @@ import {
   aerialImagePixelSize,
   buildAerialExportUrl,
   computeAerialMercatorBbox,
+  computeMercatorBboxFromWgs84Ring,
   fetchAerialImagery,
   lngLatToWebMercator,
   localEnuToWgs84,
   localEnuToWebMercator,
   looksLikePng,
   makeAerialOverlayTransform,
+  makeWgs84PageTransform,
 } from "../aerial.js";
 
 const bbox = { westLng: -98.5, southLat: 29.4, eastLng: -98.4995, northLat: 29.4004 };
@@ -76,6 +78,44 @@ describe("computeAerialMercatorBbox", () => {
   it("refuses degenerate input", () => {
     expect(() => computeAerialMercatorBbox(ringLocal.slice(0, 2), bbox, 1.4)).toThrow(/>=3 points/);
     expect(() => computeAerialMercatorBbox(ringLocal, bbox, 0)).toThrow(/aspect/);
+  });
+
+  it("computeMercatorBboxFromWgs84Ring is the SAME recipe from WGS84 input (one bbox construction, two entry points)", () => {
+    const aspect = 1.4;
+    const ringWgs84 = ringLocal.map((p) => {
+      const wgs = localEnuToWgs84(p, bbox);
+      return [wgs.lng, wgs.lat] as [number, number];
+    });
+    const fromLocal = computeAerialMercatorBbox(ringLocal, bbox, aspect);
+    const fromWgs = computeMercatorBboxFromWgs84Ring(ringWgs84, aspect);
+    expect(fromWgs.xmin).toBeCloseTo(fromLocal.xmin, 4);
+    expect(fromWgs.xmax).toBeCloseTo(fromLocal.xmax, 4);
+    expect(fromWgs.ymin).toBeCloseTo(fromLocal.ymin, 4);
+    expect(fromWgs.ymax).toBeCloseTo(fromLocal.ymax, 4);
+    expect(() => computeMercatorBboxFromWgs84Ring(ringWgs84.slice(0, 2), aspect)).toThrow(/>=3 points/);
+  });
+});
+
+describe("makeWgs84PageTransform (flood-drainage overlay alignment)", () => {
+  const rect = { x: 34.5, y: 120, width: 543, height: 388 };
+
+  it("maps the mercator bbox corners onto the image rect corners from WGS84 input", () => {
+    const ringWgs84 = ringLocal.map((p) => {
+      const wgs = localEnuToWgs84(p, bbox);
+      return [wgs.lng, wgs.lat] as [number, number];
+    });
+    const box = computeMercatorBboxFromWgs84Ring(ringWgs84, rect.width / rect.height);
+    const toPage = makeWgs84PageTransform(box, rect);
+    const R = 6378137;
+    const mercToLng = (x: number): number => ((x / R) * 180) / Math.PI;
+    const mercToLat = (y: number): number =>
+      ((2 * Math.atan(Math.exp(y / R)) - Math.PI / 2) * 180) / Math.PI;
+    const sw = toPage(mercToLng(box.xmin), mercToLat(box.ymin));
+    const ne = toPage(mercToLng(box.xmax), mercToLat(box.ymax));
+    expect(sw.x).toBeCloseTo(rect.x, 4);
+    expect(sw.y).toBeCloseTo(rect.y, 4);
+    expect(ne.x).toBeCloseTo(rect.x + rect.width, 4);
+    expect(ne.y).toBeCloseTo(rect.y + rect.height, 4);
   });
 });
 

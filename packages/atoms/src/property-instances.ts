@@ -230,6 +230,10 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
         rainfallSource?: "noaa-atlas14" | "parameter" | "default";
         computationLibrary?: string;
         flowExitCount?: number;
+        /** pdf-flood-drainage / json-flood-drainage-study only (v2): the
+         * water-gradient raster shipped in the study payload / composited
+         * onto sheet 1. False = degenerate field, honestly absent. */
+        gradientIncluded?: boolean;
       }
     >
   >;

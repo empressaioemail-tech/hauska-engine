@@ -15,7 +15,8 @@ import {
 } from "./parcel-terrain.js";
 
 /**
- * FLOOD & DRAINAGE routes (2026-07-29, R3 — the first PAID report).
+ * FLOOD & DRAINAGE routes (2026-07-29, R3 — the first PAID report; v2
+ * adds the WATER GRADIENT to the study payload).
  *
  * PINNED CONTRACT (verbatim; the MCP/PE legs build against this):
  *
@@ -24,8 +25,14 @@ import {
  *     201 → { data: { parcelNodeId, study: { catchmentGeoJson,
  *       drainageZonesGeoJson, rainfallResultGeoJson, flowLinesGeoJson,
  *       rainfallDepthInches, rainfallSource, demProvenance, briefing,
+ *       gradient?: { pngBase64: string, bbox: { westLng, southLat,
+ *         eastLng, northLat }, note: string },
  *       honestEmpty? }, artifact: { format: "pdf-flood-drainage",
  *       pageCount, ... } } }
+ *
+ *   The gradient is the transparent-background water-ramp PNG (longest
+ *   axis <= 640 px) the PE leg drapes on the map by its WGS84 bbox —
+ *   absent only when the drainage field is degenerate or honest-empty.
  *   GET  /v1/property-nodes/:parcelNodeId/flood-drainage/download
  *     ?format=pdf-flood-drainage → application/pdf
  *   GET  /v1/property-nodes/:parcelNodeId/flood-drainage/study

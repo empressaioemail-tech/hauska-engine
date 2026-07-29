@@ -5,6 +5,7 @@ import {
 } from "@hauska-engine/adapters";
 import {
   accumulationThresholdForResolution,
+  computeD8Field,
   fetchNoaaAtlas14PointEstimate,
   inchesToMm,
   runHydrologyWorker,
@@ -18,6 +19,7 @@ import polygonClipping from "polygon-clipping";
 
 import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
 import type { ParcelGeometryResolver } from "../parcel-terrain/author.js";
+import { buildDrainageGradient, type FloodDrainageGradient } from "./drainage-gradient.js";
 
 /**
  * FLOOD & DRAINAGE study service (2026-07-29, R3 — the first PAID report).
@@ -136,6 +138,8 @@ export interface FloodDrainageStudyStats {
   pondedAreaModeledRegionSqFt: number | null;
   flowExitCount: number;
   pourPoint: { lng: number; lat: number };
+  /** How the parcel-aware pour point was resolved (disclosed, never guessed). */
+  pourPointMethod: PourPointMethod;
 }
 
 export interface FloodDrainageStudy {
@@ -149,6 +153,14 @@ export interface FloodDrainageStudy {
   demProvenance: FloodDrainageDemProvenance;
   /** Layman briefing — deterministic sentences from real study values. */
   briefing: string;
+  /**
+   * THE WATER GRADIENT (PINNED CONTRACT — the PE leg codes to this):
+   * transparent-background PNG colorizing the drainage field into a blue
+   * water ramp, with its WGS84 bbox and a provenance note (DEM resolution +
+   * design storm). Absent when the field is degenerate or honest-empty —
+   * never fabricated.
+   */
+  gradient?: FloodDrainageGradient;
   honestEmpty?: { reason: string };
   /** Additive detail beyond the pinned contract (PE viz + PDF arrows). */
   flowExits: FloodDrainageFlowExit[];
@@ -232,43 +244,135 @@ function ringCentroid(ring: ReadonlyArray<[number, number]>): { lng: number; lat
   return { lng: sumLng / ring.length, lat: sumLat / ring.length };
 }
 
+export type PourPointMethod =
+  | "max-accumulation-on-parcel"
+  | "lowest-boundary-cell"
+  | "ring-centroid";
+
+export interface PourPointResolution {
+  lng: number;
+  lat: number;
+  method: PourPointMethod;
+}
+
 /**
- * Pour point = the LOWEST finite DEM cell whose center lies inside the
- * parcel ring (the parcel's natural low point); when no cell center falls
- * inside (very small parcels vs the drainage grid), the lowest cell inside
- * the parcel bbox; last resort the ring centroid. Deterministic — never a
- * guessed "outfall".
+ * PARCEL-AWARE pour point (2026-07-29 v2 — operator-directed redesign).
+ *
+ * The pour point is where the parcel's water actually concentrates, never a
+ * bbox-center guess:
+ *
+ *   1. The MAX-ACCUMULATION cell whose center lies ON the parcel (inside the
+ *      ring) or ADJACENT to it (any 8-neighbor center inside the ring) — the
+ *      strongest modeled flow that touches this parcel.
+ *   2. When no candidate carries flow (or the grid is too coarse to land a
+ *      center in the ring), the parcel's LOWEST BOUNDARY CELL — ring edges
+ *      sampled onto the grid, lowest finite elevation wins.
+ *   3. Last resort, the ring centroid.
+ *
+ * Deterministic on the same DEM + ring; the method used is recorded so the
+ * study can disclose it.
  */
 export function resolvePourPoint(
-  dem: ParsedDem,
+  dem: Pick<ParsedDem, "width" | "height" | "values">,
   catchmentBbox: BboxWgs84,
-  parcelBbox: BboxWgs84,
   ring: ReadonlyArray<[number, number]>,
-): { lng: number; lat: number } {
+  accumulation: Uint32Array,
+): PourPointResolution {
   const { width, height, values } = dem;
-  let bestInRing: { lng: number; lat: number; z: number } | null = null;
-  let bestInBbox: { lng: number; lat: number; z: number } | null = null;
+  const lngSpan = catchmentBbox.eastLng - catchmentBbox.westLng;
+  const latSpan = catchmentBbox.northLat - catchmentBbox.southLat;
+  const cellLng = lngSpan / Math.max(width, 1);
+  const cellLat = latSpan / Math.max(height, 1);
+  const cellCenter = (col: number, row: number): [number, number] => [
+    catchmentBbox.westLng + (col + 0.5) * cellLng,
+    catchmentBbox.northLat - (row + 0.5) * cellLat,
+  ];
+
+  // Restrict the scan to the ring bbox padded by one cell (candidates must
+  // be on or adjacent to the parcel; nothing farther can qualify).
+  const ringLngs = ring.map((p) => p[0]);
+  const ringLats = ring.map((p) => p[1]);
+  const minLng = Math.min(...ringLngs) - Math.abs(cellLng) * 1.5;
+  const maxLng = Math.max(...ringLngs) + Math.abs(cellLng) * 1.5;
+  const minLat = Math.min(...ringLats) - Math.abs(cellLat) * 1.5;
+  const maxLat = Math.max(...ringLats) + Math.abs(cellLat) * 1.5;
+
+  const inRingCache = new Map<number, boolean>();
+  const centerInRing = (col: number, row: number): boolean => {
+    if (col < 0 || row < 0 || col >= width || row >= height) return false;
+    const key = row * width + col;
+    const cached = inRingCache.get(key);
+    if (cached !== undefined) return cached;
+    const [lng, lat] = cellCenter(col, row);
+    const inside = pointInRing(lng, lat, ring);
+    inRingCache.set(key, inside);
+    return inside;
+  };
+
+  let best: { col: number; row: number; acc: number } | null = null;
   for (let row = 0; row < height; row++) {
-    const lat =
-      catchmentBbox.northLat -
-      ((row + 0.5) / Math.max(height, 1)) * (catchmentBbox.northLat - catchmentBbox.southLat);
-    if (lat < parcelBbox.southLat || lat > parcelBbox.northLat) continue;
+    const [, lat] = cellCenter(0, row);
+    if (lat < minLat || lat > maxLat) continue;
     for (let col = 0; col < width; col++) {
-      const lng =
-        catchmentBbox.westLng +
-        ((col + 0.5) / Math.max(width, 1)) * (catchmentBbox.eastLng - catchmentBbox.westLng);
-      if (lng < parcelBbox.westLng || lng > parcelBbox.eastLng) continue;
-      const z = values[row * width + col]!;
-      if (!Number.isFinite(z)) continue;
-      if (!bestInBbox || z < bestInBbox.z) bestInBbox = { lng, lat, z };
-      if (pointInRing(lng, lat, ring) && (!bestInRing || z < bestInRing.z)) {
-        bestInRing = { lng, lat, z };
+      const [lng] = cellCenter(col, row);
+      if (lng < minLng || lng > maxLng) continue;
+      const i = row * width + col;
+      if (!Number.isFinite(values[i]!)) continue;
+      // ON the parcel, or ADJACENT to it (an 8-neighbor center in the ring).
+      let touchesParcel = centerInRing(col, row);
+      if (!touchesParcel) {
+        neighborScan: for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            if (centerInRing(col + dc, row + dr)) {
+              touchesParcel = true;
+              break neighborScan;
+            }
+          }
+        }
       }
+      if (!touchesParcel) continue;
+      const acc = accumulation[i]!;
+      if (!best || acc > best.acc) best = { col, row, acc };
     }
   }
-  const best = bestInRing ?? bestInBbox;
-  if (best) return { lng: best.lng, lat: best.lat };
-  return ringCentroid(ring);
+  if (best && best.acc > 0) {
+    const [lng, lat] = cellCenter(best.col, best.row);
+    return { lng, lat, method: "max-accumulation-on-parcel" };
+  }
+
+  // Fallback: the parcel's lowest boundary cell — sample every ring edge at
+  // sub-cell steps, collect the traversed cells, take the lowest elevation.
+  let lowest: { col: number; row: number; z: number } | null = null;
+  const visitBoundaryCell = (lng: number, lat: number): void => {
+    const col = Math.floor((lng - catchmentBbox.westLng) / (cellLng || 1));
+    const row = Math.floor((catchmentBbox.northLat - lat) / (cellLat || 1));
+    if (col < 0 || row < 0 || col >= width || row >= height) return;
+    const z = values[row * width + col]!;
+    if (!Number.isFinite(z)) return;
+    if (!lowest || z < lowest.z) lowest = { col, row, z };
+  };
+  for (let i = 1; i < ring.length; i++) {
+    const [lngA, latA] = ring[i - 1]!;
+    const [lngB, latB] = ring[i]!;
+    const steps = Math.max(
+      1,
+      Math.ceil(Math.abs(lngB - lngA) / (Math.abs(cellLng) || 1)) +
+        Math.ceil(Math.abs(latB - latA) / (Math.abs(cellLat) || 1)),
+    );
+    for (let s = 0; s <= steps; s++) {
+      const f = s / steps;
+      visitBoundaryCell(lngA + (lngB - lngA) * f, latA + (latB - latA) * f);
+    }
+  }
+  if (lowest) {
+    const found = lowest as { col: number; row: number; z: number };
+    const [lng, lat] = cellCenter(found.col, found.row);
+    return { lng, lat, method: "lowest-boundary-cell" };
+  }
+
+  const centroid = ringCentroid(ring);
+  return { ...centroid, method: "ring-centroid" };
 }
 
 /** Shoelace area of one GeoJSON Polygon exterior ring, in square feet. */
@@ -520,18 +624,48 @@ function acresPhrase(sqFt: number): string {
   return `about ${Math.round(sqFt).toLocaleString("en-US")} square feet`;
 }
 
+/**
+ * Below this many DEM cells of modeled catchment, the upstream contribution
+ * is NEGLIGIBLE at screening resolution and the briefing says so plainly —
+ * it never emits the incoherent "catchment of about 0 square feet delivers
+ * runoff toward the parcel" (the 2026-07-29 operator canary on the live
+ * 1408 Chestnut run).
+ */
+export const NEGLIGIBLE_CATCHMENT_CELLS = 4;
+
+export function negligibleCatchmentThresholdSqFt(resolutionMeters: number): number {
+  const res =
+    Number.isFinite(resolutionMeters) && resolutionMeters > 0
+      ? resolutionMeters
+      : DEFAULT_DRAINAGE_RESOLUTION_METERS;
+  return NEGLIGIBLE_CATCHMENT_CELLS * res * res * SQFT_PER_SQM;
+}
+
 export function buildFloodDrainageBriefing(study: {
   stats: FloodDrainageStudyStats;
   rainfallDepthInches: number;
   honestEmpty?: { reason: string };
+  demProvenance?: { resolutionMeters: number };
 }): string {
   if (study.honestEmpty) {
     return `${study.honestEmpty.reason} This is a screening-level model of surface flow, and a flat or unresolved terrain signal means no concentrated drainage path could be traced for this parcel. Verify site drainage with a licensed engineer before design or permitting.`;
   }
   const sentences: string[] = [];
-  sentences.push(
-    `The modeled upstream catchment of ${acresPhrase(study.stats.catchmentAreaSqFt)} delivers runoff toward the parcel's low point.`,
+  const negligibleSqFt = negligibleCatchmentThresholdSqFt(
+    study.demProvenance?.resolutionMeters ?? DEFAULT_DRAINAGE_RESOLUTION_METERS,
   );
+  if (study.stats.catchmentAreaSqFt < negligibleSqFt) {
+    // HONEST near-zero catchment. A "catchment of about 0 square feet
+    // delivers runoff toward the parcel" is incoherent; the true reading is
+    // that the parcel sheds rather than receives.
+    sentences.push(
+      "The parcel sits at or near a local high point, so negligible upstream catchment delivers runoff onto it and rainfall landing on the parcel drains away from it.",
+    );
+  } else {
+    sentences.push(
+      `The modeled upstream catchment of ${acresPhrase(study.stats.catchmentAreaSqFt)} delivers runoff toward the parcel's low point.`,
+    );
+  }
   if (study.stats.pondedAreaSqFt != null && study.stats.pondedAreaSqFt > 0) {
     sentences.push(
       `At a ${study.rainfallDepthInches} inch design storm, modeled ponding covers ${acresPhrase(study.stats.pondedAreaSqFt)} on the parcel.`,
@@ -639,7 +773,14 @@ export async function runFloodDrainageStudy(
   const dem = await (options.parseDem ?? parseDemBytes)(demFetch.bytes);
   const rainfall = await rainfallPromise;
 
-  const pourPoint = resolvePourPoint(dem, catchmentBbox, resolved.bbox, ringWgs84);
+  // In-process D8 field over the SAME parsed DEM: feeds the PARCEL-AWARE
+  // pour point (max-accumulation cell touching the parcel) and the water-
+  // gradient raster. Cheap at drainage resolution (≤ ~640² cells) and
+  // deterministic; the worker re-derives its own routing for the vector
+  // outputs, so neither result is guessed from the other.
+  const d8 = computeD8Field(dem.values, dem.width, dem.height);
+  const pourResolution = resolvePourPoint(dem, catchmentBbox, ringWgs84, d8.accumulation);
+  const pourPoint = { lng: pourResolution.lng, lat: pourResolution.lat };
   const accumulationThreshold = accumulationThresholdForResolution(resolutionMetersAdapted);
 
   const runWorker = options.runWorker ?? runHydrologyWorker;
@@ -683,6 +824,7 @@ export async function runFloodDrainageStudy(
       pondedAreaModeledRegionSqFt: null,
       flowExitCount: 0,
       pourPoint,
+      pourPointMethod: pourResolution.method,
     };
     const study: FloodDrainageStudy = {
       ...base,
@@ -725,7 +867,21 @@ export async function runFloodDrainageStudy(
     pondedAreaModeledRegionSqFt: pondingClip ? pondingClip.modeledRegionAreaSqFt : null,
     flowExitCount: flowExits.length,
     pourPoint: result.pourPoint,
+    pourPointMethod: pourResolution.method,
   };
+
+  // THE WATER GRADIENT (v2 pinned contract): built from the in-process D8
+  // field over the same DEM; null (omitted) when the field is degenerate.
+  const gradient = buildDrainageGradient({
+    elevation: dem.values,
+    width: dem.width,
+    height: dem.height,
+    accumulation: d8.accumulation,
+    bbox: catchmentBbox,
+    rainfallDepthMm: inchesToMm(rainfall.depthInches),
+    demResolutionMeters: resolutionMetersAdapted,
+    rainfallDepthInches: rainfall.depthInches,
+  });
 
   const study: FloodDrainageStudy = {
     ...base,
@@ -735,6 +891,7 @@ export async function runFloodDrainageStudy(
     flowLinesGeoJson: result.flowLinesGeoJson,
     flowExits,
     stats,
+    ...(gradient ? { gradient } : {}),
     computation: {
       library: result.library,
       routing: result.routing,

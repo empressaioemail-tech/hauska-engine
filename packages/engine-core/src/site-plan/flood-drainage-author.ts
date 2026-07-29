@@ -7,6 +7,7 @@ import {
   type FloodDrainageStudy,
   type RunFloodDrainageStudyOptions,
 } from "./flood-drainage-study.js";
+import type { AerialImageFetcher } from "./pdf/aerial.js";
 import {
   emitPdfFloodDrainage,
   type FloodDrainageDescriptor,
@@ -40,6 +41,10 @@ export interface AuthorParcelFloodDrainageReportOptions
   descriptor?: FloodDrainageDescriptor;
   /** Test seam for a stable generated stamp. */
   generatedAtIso?: string;
+  /** Sheet-1 aerial imagery fetch seam (production path uses global fetch;
+   * bounded, never throwing — failure degrades to the paper ground). */
+  fetchAerialImage?: AerialImageFetcher;
+  aerialTimeoutMs?: number;
 }
 
 export interface AuthorParcelFloodDrainageReportResult {
@@ -59,6 +64,10 @@ export async function authorParcelFloodDrainageReport(
 
   const pdf = await emitPdfFloodDrainage(study, options.descriptor ?? {}, {
     generatedAtIso: options.generatedAtIso,
+    aerial: {
+      fetchImage: options.fetchAerialImage,
+      timeoutMs: options.aerialTimeoutMs,
+    },
   });
 
   const pdfRef = await options.artifactStore.put({
@@ -129,12 +138,17 @@ export async function authorParcelFloodDrainageReport(
     rainfallSource: study.rainfallSource,
     computationLibrary: study.computation.library,
     flowExitCount: study.stats.flowExitCount,
+    gradientIncluded: !!study.gradient,
   };
   atom.artifacts["pdf-flood-drainage"] = {
     format: "pdf-flood-drainage",
     ref: pdfRef,
     byteCount: pdf.bytes.byteLength,
     pageCount: pdf.pageCount,
+    aerialImageryEmbedded: pdf.aerial.imageryEmbedded,
+    ...(pdf.aerial.unavailableReason
+      ? { aerialImageryUnavailableReason: pdf.aerial.unavailableReason }
+      : {}),
     ...sharedArtifactFields,
   };
   atom.artifacts["json-flood-drainage-study"] = {
