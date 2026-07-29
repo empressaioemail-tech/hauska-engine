@@ -150,6 +150,16 @@ const UNIT_CUT_RE =
  * empty the name (a street literally named "West Street" keeps "WEST").
  * Returns "" when no comparable core remains.
  */
+/**
+ * The street segment of a situs address: everything before the first comma
+ * ("901 PECAN ST , BASTROP, TX 78602" → "901 PECAN ST"). A bare street name
+ * (no comma) passes through unchanged.
+ */
+export function situsStreetSegment(raw: string): string {
+  const i = raw.indexOf(",");
+  return i >= 0 ? raw.slice(0, i) : raw;
+}
+
 export function normalizeStreetNameForMatch(raw: string): string {
   let text = raw
     .toUpperCase()
@@ -308,8 +318,14 @@ export function labelEdgesFromRoads(input: {
 
   // Situs-street preference: when the parcel's address street is among the
   // adjacent roads and matches exactly one edge, that edge is front.
+  // The situs is often a FULL address ("901 PECAN ST , BASTROP, TX 78602") —
+  // the normalizer's punctuation strip turns the comma into a space, so the
+  // city/state/zip tail would survive into the key and never match a road
+  // name. Cut at the first comma (the street segment) BEFORE normalizing.
+  // (Live-caught 2026-07-29: txgio situs is 100%-populated full addresses;
+  // the county-wide restamp silently fell back to the heuristic without this.)
   const situsKey = input.situsAddress
-    ? normalizeStreetNameForMatch(input.situsAddress)
+    ? normalizeStreetNameForMatch(situsStreetSegment(input.situsAddress))
     : "";
   if (situsKey) {
     const situsMatchByEdge = new Map<number, EdgeRoadHit>();
