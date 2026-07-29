@@ -23,13 +23,14 @@ import {
   type PageRect,
 } from "./aerial.js";
 import { clipPolylineToAabb, feetFromMeters, type PlacedLabel } from "./annotation-placement.js";
-import { duotonePngIntoAccent } from "./duotone.js";
 import {
   CHIP_FIXTURE_LABEL,
   CHIP_NO_ADDRESS,
   CHIP_UNAVAILABLE,
   REASON,
+  countyDisplayName,
   describeSetbackBasis,
+  streetDisplayName,
   formatAcresQualifier,
   formatFeetPrime,
   formatMetersRange,
@@ -56,12 +57,15 @@ import { anyNotSpecified } from "../setback-display.js";
 
 /**
  * Site-plan PDF renderer, reworked 2026-07-28 to the operator's binding
- * SITE PLAN SHEET STANDARD v1.1. The standard is committed alongside this
+ * SITE PLAN SHEET STANDARD v1.2. The standard is committed alongside this
  * module as `SHEET_STANDARD_v1.html` — twenty-one rules (§1–§21), a token
  * map, the 2026-07-27 defect audit and a 15-item acceptance checklist.
  * Where any other reference and the standard disagree, the standard
  * governs. §21 (v1.1) is the vertical-rhythm rule: every text row against a
  * rule is a metrics-driven line box (line-box.ts), never a bare baseline.
+ * v1.2 (2026-07-28): §3 frame clip (context layers confined to the drawing
+ * frame; roads label by display name only) and §20 natural-color aerial
+ * (duotone tint removed; legibility via paper outlines).
  *
  * Geometry still comes exclusively from the shared `SitePlanModel` (WDLL 5/6);
  * this module maps model geometry to the three Letter sheets: drawing,
@@ -176,11 +180,27 @@ const LEADER_COLOR = TOKENS.neutral500;
 /** The sheet set is always exactly this size: drawing, summary, aerial context (§1). */
 export const TOTAL_SHEETS = 3;
 
+/** Page-space axis-aligned extent of a drawn mark (PDF points). */
+export interface MarkBbox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
 /** §14 draw-once ledger entry: one row per mark actually drawn. */
 export interface SheetMark {
   page: 1 | 2 | 3;
   kind: string;
   key: string;
+  /**
+   * §3 (v1.2) frame-clip gate seam: the page-space AABB of everything this
+   * mark draws (polyline points, label boxes incl. leaders, callout text
+   * extents). Recorded for every sheet-1 drawing-layer mark; tests assert
+   * each bbox sits inside `page1Frame` — no contour, street, label or any
+   * other drawing mark may cross the header rule or the furniture band.
+   */
+  bbox?: MarkBbox;
 }
 
 export interface PdfSitePlanResult {
@@ -206,6 +226,12 @@ export interface PdfSitePlanResult {
    * asserts the line-box invariants numerically against this.
    */
   rhythm: ReadonlyArray<RhythmRow>;
+  /**
+   * §3 (v1.2) sheet-1 drawing frame: the rect between the header rule and
+   * the furniture band that every drawing-layer mark must stay inside. The
+   * frame-clip gate asserts each sheet-1 mark bbox against this rect.
+   */
+  page1Frame: MarkBbox;
 }
 
 export interface EmitPdfSitePlanOptions {
@@ -222,14 +248,60 @@ class MarkRegistry {
   readonly marks: SheetMark[] = [];
   private readonly seen = new Set<string>();
 
-  /** Returns true when the mark is new (caller may draw); false = duplicate, skip. */
-  once(page: 1 | 2 | 3, kind: string, key: string): boolean {
+  /** Returns true when the mark is new (caller may draw); false = duplicate, skip.
+   * `bbox` (§3 v1.2) records the mark's page-space extent for the frame gate. */
+  once(page: 1 | 2 | 3, kind: string, key: string, bbox?: MarkBbox): boolean {
     const id = `${page}:${kind}:${key}`;
     if (this.seen.has(id)) return false;
     this.seen.add(id);
-    this.marks.push({ page, kind, key });
+    this.marks.push(bbox ? { page, kind, key, bbox } : { page, kind, key });
     return true;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// §3 (v1.2) bbox helpers for the frame-clip gate.
+// ─────────────────────────────────────────────────────────────────────────
+function bboxOfPoints(points: ReadonlyArray<PageXY>): MarkBbox | undefined {
+  if (points.length === 0) return undefined;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function unionBbox(...boxes: Array<MarkBbox | undefined>): MarkBbox | undefined {
+  let out: MarkBbox | undefined;
+  for (const b of boxes) {
+    if (!b) continue;
+    out = out
+      ? {
+          minX: Math.min(out.minX, b.minX),
+          minY: Math.min(out.minY, b.minY),
+          maxX: Math.max(out.maxX, b.maxX),
+          maxY: Math.max(out.maxY, b.maxY),
+        }
+      : { ...b };
+  }
+  return out;
+}
+
+/** A placed label's extent: its collision box (rotated AABB) plus any leader. */
+function labelBbox(label: PlacedLabel): MarkBbox {
+  const box: MarkBbox = {
+    minX: label.box.x,
+    minY: label.box.y,
+    maxX: label.box.x + label.box.width,
+    maxY: label.box.y + label.box.height,
+  };
+  return label.leader ? unionBbox(box, bboxOfPoints([label.leader.from, label.leader.to]))! : box;
 }
 
 interface Fonts {
@@ -455,9 +527,11 @@ function drawSheetHeader(
     drawChipOnLineBox(page, CHIP_NO_ADDRESS, left + bigW + pt(10), titleBoxTop, LB.address, "solid", F);
   }
 
-  // One meta line — only fields that exist (§2: omit absent fields).
+  // One meta line — only fields that exist (§2: omit absent fields). §11
+  // (v1.2): the county appears by NAME only; a FIPS-shaped countyName is
+  // omitted entirely — a raw code never prints in the meta line.
   const metaBoxTop = titleBoxTop - LB.address.lineBoxHeight - pt(2);
-  const metaParts = [cityFromAddress(s.address), `Parcel ${s.parcelNodeId}`, s.countyName].filter(
+  const metaParts = [cityFromAddress(s.address), `Parcel ${s.parcelNodeId}`, countyDisplayName(s.countyName)].filter(
     (p): p is string => !!p,
   );
   page.drawText(metaParts.join("  ·  "), {
@@ -611,20 +685,27 @@ function drawSitePlanDrawing(
 ): void {
   // 1) CONTOUR — faint, behind everything (§3).
   layout.contours.forEach((contour, i) => {
-    if (!marks.once(1, "contour", `${contour.elevation}:${i}`)) return;
+    if (!marks.once(1, "contour", `${contour.elevation}:${i}`, bboxOfPoints(contour.points))) return;
     drawPolyline(page, contour.points, CONTOUR_COLOR, STROKE.contour);
   });
 
   // 2) CONTOUR LABELS — left margin (§4).
   for (const label of layout.elevationLabels) {
-    if (!marks.once(1, "contour-label", label.text)) continue;
+    if (!marks.once(1, "contour-label", label.text, labelBbox(label))) continue;
     drawPlacedLabel(page, label, F.body, CONTOUR_LABEL_COLOR);
   }
 
-  // 3) STREET (context, beneath the parcel linework).
+  // 3) STREET (context, beneath the parcel linework). §11 (v1.2): the label
+  // (when present) is the display name alone — unnamed roads draw unlabeled.
   if (!layout.streets.honestAbsence) {
     layout.streets.anchors.forEach((anchor, i) => {
-      if (!marks.once(1, "street", `${anchor.name}:${i}`)) return;
+      const streetBbox = unionBbox(
+        bboxOfPoints(anchor.points),
+        anchor.leftEdge ? bboxOfPoints(anchor.leftEdge) : undefined,
+        anchor.rightEdge ? bboxOfPoints(anchor.rightEdge) : undefined,
+        anchor.label ? labelBbox(anchor.label) : undefined,
+      );
+      if (!marks.once(1, "street", `${anchor.name}:${i}`, streetBbox)) return;
       if (anchor.leftEdge && anchor.leftEdge.length >= 2)
         drawPolyline(page, anchor.leftEdge, TOKENS.neutral400, 0.5, [1.4, 1.1]);
       if (anchor.rightEdge && anchor.rightEdge.length >= 2)
@@ -637,43 +718,56 @@ function drawSitePlanDrawing(
   // 4+5) BUILDABLE ENVELOPE fill + SETBACK dash — only when honestly drawable
   // (§15: a degenerate or honest-absent offset draws NOTHING envelope-shaped).
   if (layout.setback.drawEnvelope && layout.setback.offsetRing) {
-    if (marks.once(1, "envelope-fill", "envelope")) {
+    const envBbox = bboxOfPoints(layout.setback.offsetRing);
+    if (marks.once(1, "envelope-fill", "envelope", envBbox)) {
       drawFilledRing(page, layout.setback.offsetRing, ENVELOPE_FILL);
     }
-    if (marks.once(1, "setback-dash", "envelope")) {
+    if (marks.once(1, "setback-dash", "envelope", envBbox)) {
       drawRing(page, layout.setback.offsetRing, SETBACK_DASH_COLOR, STROKE.setbackDash, SETBACK_DASH);
     }
   }
 
   // 6) PROPERTY LINE — heaviest stroke on the sheet (§3).
-  if (marks.once(1, "property-line", "ring")) {
+  if (marks.once(1, "property-line", "ring", bboxOfPoints(layout.propertyLine))) {
     drawRing(page, layout.propertyLine, PROPERTY_COLOR, STROKE.property);
   }
 
   // 7) DIMENSION TAGS — one per segment, keyed by segment id (§14).
   for (const tag of layout.propertyLineTags) {
-    if (!marks.once(1, "tag", `S${tag.seg ?? tag.text}`)) continue;
+    if (!marks.once(1, "tag", `S${tag.seg ?? tag.text}`, labelBbox(tag))) continue;
     drawPlacedLabel(page, tag, F.body, DIM_TAG_COLOR);
   }
 
   // 7b) MARGIN LEADERS (§16) — 0.13-unit neutral-500, keyed by segment.
   for (const leader of layout.segmentLeaders) {
-    if (!marks.once(1, "margin-leader", `S${leader.seg}`)) continue;
+    const leaderBbox = unionBbox(bboxOfPoints([leader.from, leader.to]), labelBbox(leader.label));
+    if (!marks.once(1, "margin-leader", `S${leader.seg}`, leaderBbox)) continue;
     page.drawLine({ start: leader.from, end: leader.to, thickness: STROKE.marginLeader, color: LEADER_COLOR });
     drawPlacedLabel(page, leader.label, F.body, DIM_TAG_COLOR);
   }
 
   // 8) SETBACK role labels (accent-700; §4 collapse rules applied upstream).
   for (const label of layout.setback.labels) {
-    if (!marks.once(1, "setback-label", label.text)) continue;
+    if (!marks.once(1, "setback-label", label.text, labelBbox(label))) continue;
     drawPlacedLabel(page, label, F.body, SETBACK_LABEL_COLOR);
   }
 
   // 9) Centred callout: BUILDABLE ENVELOPE (§9/§12) or the §15 degenerate
   // statement — title over ONE plain sentence, nothing else on the drawing.
   if (layout.degenerateCallout) {
-    if (marks.once(1, "degenerate-callout", "callout")) {
-      const c = layout.degenerateCallout;
+    const c0 = layout.degenerateCallout;
+    const degW = Math.max(
+      F.display.widthOfTextAtSize(c0.title, c0.titleSize),
+      F.body.widthOfTextAtSize(c0.sentence, c0.sentenceSize),
+    );
+    const degBbox: MarkBbox = {
+      minX: c0.anchor.x - degW / 2,
+      maxX: c0.anchor.x + degW / 2,
+      minY: c0.anchor.y - c0.titleSize - pt(3) - c0.sentenceSize * 0.25,
+      maxY: c0.anchor.y + c0.titleSize,
+    };
+    if (marks.once(1, "degenerate-callout", "callout", degBbox)) {
+      const c = c0;
       page.drawText(c.title, {
         x: c.anchor.x - F.display.widthOfTextAtSize(c.title, c.titleSize) / 2,
         y: c.anchor.y,
@@ -690,9 +784,21 @@ function drawSitePlanDrawing(
       });
     }
   } else if (layout.envelopeCallout) {
-    if (marks.once(1, "envelope-callout", "callout")) {
-      const c = layout.envelopeCallout;
-      const title = "BUILDABLE ENVELOPE";
+    const c1 = layout.envelopeCallout;
+    const envTitle = "BUILDABLE ENVELOPE";
+    const envW = Math.max(
+      F.display.widthOfTextAtSize(envTitle, c1.titleSize),
+      c1.qualifier ? F.body.widthOfTextAtSize(c1.qualifier, c1.qualifierSize) : 0,
+    );
+    const envCalloutBbox: MarkBbox = {
+      minX: c1.anchor.x - envW / 2,
+      maxX: c1.anchor.x + envW / 2,
+      minY: c1.anchor.y - c1.titleSize - pt(2) - c1.qualifierSize * 0.25,
+      maxY: c1.anchor.y + c1.titleSize,
+    };
+    if (marks.once(1, "envelope-callout", "callout", envCalloutBbox)) {
+      const c = c1;
+      const title = envTitle;
       page.drawText(title, {
         x: c.anchor.x - F.display.widthOfTextAtSize(title, c.titleSize) / 2,
         y: c.anchor.y,
@@ -711,14 +817,27 @@ function drawSitePlanDrawing(
       }
     }
   } else if (layout.lotAreaCallout) {
-    if (marks.once(1, "lot-area-callout", "callout")) {
+    if (marks.once(1, "lot-area-callout", "callout", labelBbox(layout.lotAreaCallout))) {
       drawPlacedLabel(page, layout.lotAreaCallout, F.body, TOKENS.neutral600);
     }
   }
 
-  // 10) NORTH arrow — exactly one (§9/§14).
-  if (marks.once(1, "north-arrow", "north")) {
-    drawNorthArrow(page, layout.north, F.display);
+  // 10) NORTH arrow — exactly one (§9/§14). Bbox covers shaft, head, and the
+  // "N" glyph above the tip (see drawNorthArrow geometry).
+  {
+    const { origin, tip } = layout.north;
+    const len = Math.hypot(tip.x - origin.x, tip.y - origin.y) || 1;
+    const headHalf = Math.min(11, len * 0.4) * 0.5;
+    const nSize = pt(11);
+    const northBbox = unionBbox(bboxOfPoints([origin, tip]), {
+      minX: tip.x - Math.max(headHalf, nSize / 2),
+      maxX: tip.x + Math.max(headHalf, nSize / 2),
+      minY: tip.y - Math.min(11, len * 0.4),
+      maxY: tip.y + pt(6) + nSize,
+    });
+    if (marks.once(1, "north-arrow", "north", northBbox)) {
+      drawNorthArrow(page, layout.north, F.display);
+    }
   }
 }
 
@@ -1089,8 +1208,11 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
     ? { label: "Address", value: s.address }
     : { label: "Address", chip: "unavailable", chipReason: REASON.noAddress };
 
-  const county: SummaryRow = s.countyName
-    ? { label: "County", value: s.countyName }
+  // §11 (v1.2): FIPS-shaped countyName is NOT a county name — the row takes
+  // the honest chip rather than printing a raw code.
+  const countyName = countyDisplayName(s.countyName);
+  const county: SummaryRow = countyName
+    ? { label: "County", value: countyName }
     : { label: "County", chip: "unavailable", chipReason: REASON.noCountyName };
 
   const zoning: SummaryRow = s.zoningDistrict
@@ -1153,12 +1275,17 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
           chipReason: sheetReason(s.floodZone.reason, REASON.floodNotQueried),
         };
 
+  // §11 (v1.2): the frontage row reads display names only — machine
+  // road-node ids never print; an unnamed attaching road reads "unnamed road".
   const streetHasEdges = model.streets.anchors.some((a) => a.leftEdgeLocal || a.rightEdgeLocal);
+  const streetNames = model.streets.anchors
+    .map((a) => streetDisplayName(a.name))
+    .filter((n): n is string => !!n);
   const street: SummaryRow = model.streets.honestAbsence
     ? { label: "Street frontage", chip: "unavailable", chipReason: REASON.noStreet }
     : {
         label: "Street frontage",
-        value: model.streets.anchors.map((a) => a.name).join(", ") || "attached",
+        value: [...new Set(streetNames)].join(", ") || "unnamed road",
         qualifier: streetHasEdges ? "centerline accurate, ROW edges assumed" : "centerline accurate",
       };
 
@@ -1450,9 +1577,10 @@ function drawProvenanceTable(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// PAGE 3 — AERIAL (§17–§20): duotone Esri World Imagery backdrop, vector
-// overlay from the SAME model coordinates, paper-coloured outlines behind
-// type/ring, 4-cell imagery provenance strip, registration tolerance stat.
+// PAGE 3 — AERIAL (§17–§20): natural-color Esri World Imagery backdrop
+// (§20 v1.2 — no duotone tint), vector overlay from the SAME model
+// coordinates, paper-coloured outlines behind type/ring, 4-cell imagery
+// provenance strip, registration tolerance stat.
 // ─────────────────────────────────────────────────────────────────────────
 const AERIAL_PROPERTY_STROKE = 1.8; // heaviest on the aerial sheet
 
@@ -2006,7 +2134,7 @@ function drawAerialPage(
 /**
  * Renders the PDF site-plan sheet from the SAME `SitePlanModel` the DXF/IFC
  * emitters read (WDLL 5) — sheet 1 drawing, sheet 2 summary + provenance,
- * sheet 3 duotone aerial context. Governed by SHEET_STANDARD_v1.html.
+ * sheet 3 natural-color aerial context. Governed by SHEET_STANDARD_v1.html.
  */
 export async function emitPdfSitePlan(
   model: SitePlanModel,
@@ -2063,14 +2191,19 @@ export async function emitPdfSitePlan(
     width: PAGE_WIDTH - MARGIN_X * 2,
     height: page1RuleY - pt(18) - footerBandTop,
   };
+  // §3 (v1.2) drawing frame: the rect between the header rule and the
+  // furniture band. The layout clips every context layer and confines every
+  // label to this rect; the frame-clip gate asserts sheet-1 mark bboxes
+  // against it via `result.page1Frame`.
+  const page1Frame: MarkBbox = {
+    minX: MARGIN_X,
+    minY: footerBandTop,
+    maxX: PAGE_WIDTH - MARGIN_X,
+    maxY: page1RuleY - pt(4),
+  };
   const layout = buildSitePlanDrawingLayout(model, drawingBox, {
     measureText: (text, size) => F.body.widthOfTextAtSize(text, size),
-    sheetBounds: {
-      minX: MARGIN_X,
-      minY: footerBandTop,
-      maxX: PAGE_WIDTH - MARGIN_X,
-      maxY: page1RuleY - pt(4),
-    },
+    sheetBounds: page1Frame,
   });
   drawSitePlanDrawing(page1, layout, F, marks);
   const movedSegs = layout.segmentTable.map((r) => r.seg);
@@ -2088,36 +2221,21 @@ export async function emitPdfSitePlan(
   drawFinePrint(page2, 2, buildFinePrint(model, 2, { movedSegs }), F, marks);
 
   // PAGE 3 — aerial context. The fetch is bounded and never throws; §20
-  // duotones the raster into the accent before embedding; a decode failure
-  // degrades to the honest §17 path, never a failed export.
+  // (v1.2) embeds the orthophoto in NATURAL COLOR — no duotone tint, no
+  // processing pass; legibility over full colour comes from the paper
+  // outlines behind ring/type. A decode failure degrades to the honest §17
+  // path, never a failed export.
   let imagery = await aerialPromise;
   let aerialPng: PDFImage | undefined;
   if (imagery.ok) {
-    let bytesToEmbed = imagery.bytes;
     try {
-      // §20: duotone into the ONE accent hue (token map: --color-accent).
-      bytesToEmbed = duotonePngIntoAccent(imagery.bytes, {
-        r: TOKENS.accent.red,
-        g: TOKENS.accent.green,
-        b: TOKENS.accent.blue,
-      });
-    } catch {
-      // Duotone decode failed — embed the original rather than dropping the
-      // backdrop (flagged in the strip as normal; geometry is unaffected).
-      bytesToEmbed = imagery.bytes;
-    }
-    try {
-      aerialPng = await doc.embedPng(bytesToEmbed);
+      aerialPng = await doc.embedPng(imagery.bytes);
     } catch (error) {
-      try {
-        aerialPng = await doc.embedPng(imagery.bytes);
-      } catch {
-        imagery = {
-          ok: false,
-          reason: `imagery decode failed: ${error instanceof Error ? error.message : String(error)}`,
-          url: imagery.url,
-        };
-      }
+      imagery = {
+        ok: false,
+        reason: `imagery decode failed: ${error instanceof Error ? error.message : String(error)}`,
+        url: imagery.url,
+      };
     }
   }
   drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks, rhythm);
@@ -2132,6 +2250,7 @@ export async function emitPdfSitePlan(
       : { imageryEmbedded: false, sourceUrl: imagery.url, unavailableReason: imagery.reason },
     marks: marks.marks,
     rhythm: rhythm.rows,
+    page1Frame,
   };
 }
 

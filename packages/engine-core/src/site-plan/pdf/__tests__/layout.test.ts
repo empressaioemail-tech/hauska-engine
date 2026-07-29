@@ -320,13 +320,15 @@ describe("buildSitePlanDrawingLayout", () => {
   });
 
   it("keeps a frontage street just outside the parcel ring (not only on-ring geometry)", () => {
-    // ~25 m south of the lot — typical centerline offset past the ROW.
+    // ~5 m south of the lot — a centerline just past the boundary, inside the
+    // drawing frame. (§3 v1.2: a road further out than the frame allows now
+    // clips away instead of bleeding — see the frame-clip test below.)
     const model = buildModel([
       {
         name: "WILSON ST",
         points: [
-          [-98.4999, 29.39985],
-          [-98.4995, 29.39985],
+          [-98.4999, 29.40005],
+          [-98.4995, 29.40005],
         ],
         sourceRef: "osm:way/wilson",
       },
@@ -347,6 +349,74 @@ describe("buildSitePlanDrawingLayout", () => {
     // Street must not expand the fit.
     expect(parcelSpan / baselineSpan).toBeGreaterThan(0.95);
     expect(parcelSpan / baselineSpan).toBeLessThan(1.05);
+  });
+
+  // §3 (v1.2) FRAME CLIP: context geometry is confined to the frame
+  // (sheetBounds); a road wholly outside it clips away entirely rather than
+  // bleeding over the header or into the furniture band.
+  it("FRAME-CLIP (§3 v1.2): street and contour geometry never leaves the sheetBounds; a road outside the frame clips away", () => {
+    const sheetBounds = { minX: box.x, minY: box.y, maxX: box.x + box.width, maxY: box.y + box.height };
+    const model = buildModel([
+      {
+        name: "NEAR ST",
+        points: [
+          [-98.4999, 29.40005],
+          [-98.4995, 29.40005],
+        ],
+        sourceRef: "osm:way/near",
+      },
+      {
+        // ~25 m south — inside the old 40 m ROW buffer, OUTSIDE the frame.
+        name: "FAR AWAY RD",
+        points: [
+          [-98.4999, 29.39985],
+          [-98.4995, 29.39985],
+        ],
+        sourceRef: "osm:way/far",
+      },
+    ]);
+    const layout = buildSitePlanDrawingLayout(model, box, { sheetBounds });
+    const names = layout.streets.anchors.map((a) => a.name);
+    expect(names).toContain("NEAR ST");
+    expect(names).not.toContain("FAR AWAY RD");
+    for (const anchor of layout.streets.anchors) {
+      for (const p of [...anchor.points, ...(anchor.leftEdge ?? []), ...(anchor.rightEdge ?? [])]) {
+        expect(p.x).toBeGreaterThanOrEqual(sheetBounds.minX - 1e-6);
+        expect(p.x).toBeLessThanOrEqual(sheetBounds.maxX + 1e-6);
+        expect(p.y).toBeGreaterThanOrEqual(sheetBounds.minY - 1e-6);
+        expect(p.y).toBeLessThanOrEqual(sheetBounds.maxY + 1e-6);
+      }
+    }
+    for (const contour of layout.contours) {
+      for (const p of contour.points) {
+        expect(p.x).toBeGreaterThanOrEqual(sheetBounds.minX - 1e-6);
+        expect(p.x).toBeLessThanOrEqual(sheetBounds.maxX + 1e-6);
+        expect(p.y).toBeGreaterThanOrEqual(sheetBounds.minY - 1e-6);
+        expect(p.y).toBeLessThanOrEqual(sheetBounds.maxY + 1e-6);
+      }
+    }
+  });
+
+  // §11 (v1.2): roads label by display name only — the name ALONE, no
+  // CENTERLINE / ROW qualifier suffix; a machine road-node id never labels
+  // (the road still draws as honest context); one label per named road.
+  it("labels roads by display name only; machine-id roads draw unlabeled; at most one label per named road", () => {
+    const model = buildModel([
+      { name: "N PINE ST", points: [[-98.4999, 29.4002], [-98.4995, 29.4002]], sourceRef: "osm:way/123" },
+      { name: "N PINE ST", points: [[-98.4999, 29.40025], [-98.4995, 29.40025]], sourceRef: "osm:way/123b" },
+      { name: "48029:ROAD:555555", points: [[-98.4999, 29.40015], [-98.4995, 29.40015]] },
+    ]);
+    const layout = buildSitePlanDrawingLayout(model, box);
+    // All three draw as context geometry.
+    expect(layout.streets.anchors).toHaveLength(3);
+    const machine = layout.streets.anchors.find((a) => a.name.includes(":ROAD:"))!;
+    expect(machine).toBeDefined();
+    expect(machine.points.length).toBeGreaterThanOrEqual(2);
+    expect(machine.label).toBeUndefined();
+    // Exactly one label, name alone, for the named road.
+    const labels = layout.streets.anchors.filter((a) => a.label).map((a) => a.label!.text);
+    expect(labels).toEqual(["N PINE ST"]);
+    expect(labels[0]).not.toMatch(/CENTERLINE|ROW|\d{5}:ROAD:/i);
   });
 
   // Site-plan road regression: streets must not expand the fit bbox (B1+B2

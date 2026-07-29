@@ -13,8 +13,8 @@ import {
   type MeasureTextFn,
   type PlacedLabel,
 } from "./annotation-placement.js";
-import { REASON, formatFeetPrime, formatMeters, formatSqFt } from "./format.js";
-import { TYPE } from "./template-tokens.js";
+import { REASON, formatFeetPrime, formatMeters, formatSqFt, streetDisplayName } from "./format.js";
+import { TYPE, pt } from "./template-tokens.js";
 
 /**
  * Page-space projection derived purely from the shared `SitePlanModel` — the
@@ -205,6 +205,40 @@ function streetContextClipBox(model: SitePlanModel): {
   return expandRingAabb(model.ringLocal, Math.max(span * 0.5, 40));
 }
 
+interface LocalClipBox {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/**
+ * §3 (v1.2) frame clip: context layers are confined to the drawing frame.
+ * The page transform is affine and axis-aligned (positive scale, no
+ * rotation), so the page-space frame rect maps EXACTLY to a local-ENU AABB —
+ * intersecting each context layer's local clip box with that AABB guarantees
+ * every projected point lands inside the frame, with no page-space pass.
+ * Returns null when the boxes do not overlap (nothing survives the clip).
+ */
+function intersectClipBoxes(a: LocalClipBox, b: LocalClipBox): LocalClipBox | null {
+  const minX = Math.max(a.minX, b.minX);
+  const maxX = Math.min(a.maxX, b.maxX);
+  const minY = Math.max(a.minY, b.minY);
+  const maxY = Math.min(a.maxY, b.maxY);
+  if (minX >= maxX || minY >= maxY) return null;
+  return { minX, maxX, minY, maxY };
+}
+
+/** The page-space frame (label bounds) inverted into local-ENU metres. */
+function frameToLocal(bounds: LabelBounds, transform: PdfTransform): LocalClipBox {
+  return {
+    minX: (bounds.minX - transform.offsetX) / transform.scale,
+    maxX: (bounds.maxX - transform.offsetX) / transform.scale,
+    minY: (bounds.minY - transform.offsetY) / transform.scale,
+    maxY: (bounds.maxY - transform.offsetY) / transform.scale,
+  };
+}
+
 function longestClippedPart(parts: Array<Array<[number, number]>>): Array<[number, number]> | null {
   let best: Array<[number, number]> | null = null;
   let bestLen = 0;
@@ -246,15 +280,21 @@ function projectStreetPolylineClipped(
 }
 
 /**
- * Streets are context clipped to a parcel+ROW local buffer — never fit drivers.
- * Frontage centerlines (outside the ring, inside ~40 m) survive; distant bad
- * attaches and multi-block OSM tails clip away. §11: the on-sheet street label
- * never carries a machine provenance code — the row-provenance kind maps to
- * plain words; the code itself stays in the provenance table's source column.
+ * Streets are context clipped to a parcel+ROW local buffer INTERSECTED with
+ * the drawing frame (§3 v1.2) — never fit drivers, never over the header or
+ * furniture. Frontage centerlines (outside the ring, inside ~40 m) survive;
+ * distant bad attaches, multi-block OSM tails, and any portion outside the
+ * frame clip away. §11 (v1.2): a road labels ONLY when it has a display name,
+ * and the label is the NAME ALONE — the centerline / ROW-assumed qualifier
+ * lives in the legend row, and machine road-node ids never print. At most
+ * one label per named road, anchored on the visible (in-frame) portion of
+ * its centerline, so a label can never sit outside the frame. Unnamed roads
+ * still draw — honest context geometry, no label.
  */
 function declutterStreets(
   model: SitePlanModel,
   transform: PdfTransform,
+  frameLocal: LocalClipBox,
 ): {
   honestAbsence: boolean;
   reason?: string;
@@ -262,23 +302,24 @@ function declutterStreets(
     SitePlanDrawingLayout["streets"]["anchors"][number] & { _labelPoint?: PageXY; _labelText?: string }
   >;
 } {
-  const localClip = streetContextClipBox(model);
+  const localClip = intersectClipBoxes(streetContextClipBox(model), frameLocal);
   const anchors: Array<
     SitePlanDrawingLayout["streets"]["anchors"][number] & { _labelPoint?: PageXY; _labelText?: string }
   > = [];
+  const labeledNames = new Set<string>();
   for (const anchor of model.streets.anchors) {
+    if (!localClip) continue;
     const points = projectStreetPolylineClipped(transform, anchor.pointsLocal, localClip);
     if (!points || points.length < 2) continue;
     const leftEdge = projectStreetPolylineClipped(transform, anchor.leftEdgeLocal, localClip);
     const rightEdge = projectStreetPolylineClipped(transform, anchor.rightEdgeLocal, localClip);
-    const name = (anchor.name ?? "").trim();
+    // §11 (v1.2): display name or NO label. The visible-midpoint anchor keeps
+    // the label on the in-frame portion of the centerline.
+    const displayName = streetDisplayName(anchor.name);
+    const labelKey = displayName?.toUpperCase();
+    const wantsLabel = !!labelKey && !labeledNames.has(labelKey);
     const mid = points[Math.floor(points.length / 2)];
-    const hasEdges = !!(leftEdge || rightEdge);
-    const rowNote = hasEdges
-      ? anchor.rowProvenanceKind && /assum/i.test(anchor.rowProvenanceKind)
-        ? " · CENTERLINE · ROW EDGES ASSUMED"
-        : " · CENTERLINE · ROW EDGES ASSERTED"
-      : " · CENTERLINE";
+    if (wantsLabel && mid) labeledNames.add(labelKey!);
     anchors.push({
       name: anchor.name,
       points,
@@ -286,8 +327,8 @@ function declutterStreets(
       rightEdge,
       rowProvenanceKind: anchor.rowProvenanceKind,
       assumedWidthFt: anchor.assumedWidthFt,
-      _labelPoint: mid && name ? mid : undefined,
-      _labelText: mid && name ? `${name.toUpperCase()}${rowNote}` : undefined,
+      _labelPoint: wantsLabel && mid ? mid : undefined,
+      _labelText: wantsLabel && mid ? labelKey : undefined,
     });
   }
   return {
@@ -300,17 +341,20 @@ function declutterStreets(
 function declutterContours(
   model: SitePlanModel,
   transform: PdfTransform,
+  frameLocal: LocalClipBox,
 ): {
   contours: Array<{ elevation: number; points: PageXY[] }>;
   /** Leftmost projected point per labeled elevation (§4: left-margin labels). */
   leftmostByElevation: Map<number, PageXY>;
 } {
-  // Clip to the same pad band the parcel-primary fit uses (~18%), so decluttered
-  // contours stay inside the drawing box rather than spilling past the sheet.
-  const clipBox = parcelVicinityClipBox(model);
+  // Clip to the parcel-vicinity pad band INTERSECTED with the drawing frame
+  // (§3 v1.2): decluttered contours can never spill past the frame into the
+  // header or the furniture band.
+  const clipBox = intersectClipBoxes(parcelVicinityClipBox(model), frameLocal);
 
   const contours: Array<{ elevation: number; points: PageXY[] }> = [];
   const leftmostByElevation = new Map<number, PageXY>();
+  if (!clipBox) return { contours, leftmostByElevation };
 
   // Prefer every-other unique elevation so labels stay sparse on the sheet.
   const uniqueElevations = [...new Set(model.contours.map((c) => c.elevation))].sort((a, b) => a - b);
@@ -711,18 +755,31 @@ export function buildSitePlanDrawingLayout(
     y: scaleBarStart.y,
   };
 
-  const decluttered = declutterContours(model, transform);
-  const streetsRaw = declutterStreets(model, transform);
+  // §3 (v1.2): every context layer clips to the drawing frame. `bounds` IS
+  // the frame (render passes the exact frame rect as sheetBounds).
+  const frameLocal = frameToLocal(bounds, transform);
+  const decluttered = declutterContours(model, transform, frameLocal);
+  const streetsRaw = declutterStreets(model, transform, frameLocal);
 
-  // Street labels through the same collision set (never bypass).
+  // Street labels through the same collision set (never bypass). §11 (v1.2):
+  // the label anchors along the VISIBLE (frame-clipped) portion of the
+  // centerline — candidate points at fractions of the clipped polyline, so a
+  // road crowded at its midpoint still labels where it has room, always
+  // inside the frame.
   const streetAnchors = streetsRaw.anchors.map((a) => {
     const { _labelPoint: labelPoint, _labelText: labelText, ...rest } = a;
     if (!labelPoint || !labelText) return rest;
-    const placed = placeNonCollidingPointLabels(
-      [{ point: labelPoint, text: labelText, fontSize: TYPE.drawingStreet }],
-      { measureText, occupied, pageScale: transform.scale, bounds, minFontSize: TYPE.drawingStreet },
+    const candidates = [0.5, 0.35, 0.65, 0.2, 0.8, 0.08, 0.92].map((f) =>
+      pointAlongPolyline(rest.points, f),
     );
-    return placed[0] ? { ...rest, label: placed[0] } : rest;
+    for (const candidate of candidates) {
+      const placed = placeNonCollidingPointLabels(
+        [{ point: candidate, text: labelText, fontSize: TYPE.drawingStreet }],
+        { measureText, occupied, pageScale: transform.scale, bounds, minFontSize: TYPE.drawingStreet },
+      );
+      if (placed[0]) return { ...rest, label: placed[0] };
+    }
+    return rest;
   });
 
   // Contour labels: one per contour, in the LEFT MARGIN (§4), formatted with
@@ -748,7 +805,10 @@ export function buildSitePlanDrawingLayout(
   // ── §15 degenerate callout / §9 envelope callout ────────────────────────
   const ringCentroid = ringCentroidLocalPts(model.ringLocal);
   const calloutTitleSize = Math.min(Math.max(5.6 * ptPerFoot, 11), 16);
-  const calloutQualifierSize = Math.max(3.1 * ptPerFoot, TYPE.drawingContour);
+  // §13 type band + §3 frame clip (v1.2): the qualifier/sentence is CAPPED at
+  // a 13px body size — on a tiny high-scale parcel the uncapped 3.1·ptPerFoot
+  // grew past 30 pt and the centred §15 sentence bled through both margins.
+  const calloutQualifierSize = Math.min(Math.max(3.1 * ptPerFoot, TYPE.drawingContour), pt(13));
 
   let degenerateCallout: SitePlanDrawingLayout["degenerateCallout"] = null;
   let envelopeCallout: SitePlanDrawingLayout["envelopeCallout"] = null;
@@ -861,6 +921,32 @@ export function buildSitePlanDrawingLayout(
     envelopeCallout,
     allPlacedLabels: [...occupied],
   };
+}
+
+/** Point at fraction `f` (0..1) of a polyline's arc length (page space). */
+function pointAlongPolyline(points: PageXY[], f: number): PageXY {
+  if (points.length === 1) return points[0]!;
+  const lengths: number[] = [];
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    lengths.push(len);
+    total += len;
+  }
+  if (total <= 0) return points[0]!;
+  let target = Math.min(Math.max(f, 0), 1) * total;
+  for (let i = 0; i < lengths.length; i++) {
+    if (target <= lengths[i]! || i === lengths.length - 1) {
+      const a = points[i]!;
+      const b = points[i + 1]!;
+      const t = lengths[i]! > 0 ? target / lengths[i]! : 0;
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+    target -= lengths[i]!;
+  }
+  return points[points.length - 1]!;
 }
 
 /** Centroid of a local-ENU ring (closing vertex tolerated). */

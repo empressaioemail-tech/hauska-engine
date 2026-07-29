@@ -1,6 +1,6 @@
 {
   "parcelNodeId": "48021:34785",
-  "generatedAt": "2026-07-28T23:22:54.816Z",
+  "generatedAt": "2026-07-29T00:34:46.549Z",
   "track": "B2",
   "wdllItems": [
     3,
@@ -17,7 +17,7 @@
   "propertySegmentCount": 4,
   "pdf": {
     "pageCount": 3,
-    "byteCount": 353082
+    "byteCount": 365007
   },
   "regenerate": "cd P:/hauska-engine/packages/engine-core && npx tsx scripts/generate-site-plan-gold-34785.mjs"
 }

@@ -143,6 +143,54 @@ export function sheetReason(raw: string | undefined | null, fallback: string): s
   return fallback;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// §11 street + county display guards (Standard v1.2). Machine road-node ids
+// ("48021:ROAD:323692301") and raw county FIPS codes never reach the sheet.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * §11 (v1.2): a road labels/reads by its DISPLAY NAME only. Returns the
+ * trimmed name, or null when the road has no display name — an empty string
+ * or any colon-delimited machine identifier (road-node ids are
+ * `{fips}:ROAD:{wayId}`). Unnamed roads still draw; they carry no name text.
+ */
+export function streetDisplayName(name: string | undefined | null): string | null {
+  const s = (name ?? "").trim();
+  if (s.length === 0) return null;
+  if (s.includes(":")) return null; // machine-shaped (§11: no colon-delimited codes)
+  return s;
+}
+
+const ROAD_NODE_ID_RE = /\d{4,6}:ROAD:\S*/gi;
+
+/**
+ * §11 (v1.2): machine road-node IDs never appear ANYWHERE on any sheet —
+ * including the provenance SOURCE column (which may carry other machine
+ * refs). A road-id-shaped ref reads as "road-node ledger" instead.
+ */
+export function sheetSafeStreetSource(ref: string | undefined | null): string {
+  const s = (ref ?? "").trim();
+  if (s.length === 0) return "road-node ledger";
+  if (ROAD_NODE_ID_RE.test(s)) {
+    ROAD_NODE_ID_RE.lastIndex = 0;
+    return "road-node ledger";
+  }
+  ROAD_NODE_ID_RE.lastIndex = 0;
+  return s;
+}
+
+/**
+ * §11 (v1.2): the county reads by NAME when known ("Bastrop County"); when
+ * only a FIPS-shaped code is available the county is OMITTED — a raw code
+ * ("48021") never prints in the header meta line or the summary County row.
+ */
+export function countyDisplayName(name: string | undefined | null): string | undefined {
+  const s = (name ?? "").trim();
+  if (s.length === 0) return undefined;
+  if (/^\d{3,6}$/.test(s)) return undefined; // raw county FIPS, not a name
+  return s;
+}
+
 /** Plain-language mapping of the front-edge basis (machine codes stay off the sheet, §11). */
 export function describeSetbackBasis(basis: string): string {
   if (basis === "front-edge-hint") return "basis: resolved road anchor";

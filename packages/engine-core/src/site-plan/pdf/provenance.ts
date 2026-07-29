@@ -1,5 +1,5 @@
 import type { SitePlanModel } from "../site-model.js";
-import { CONFIDENCE, confidenceCell, describeSetbackBasis } from "./format.js";
+import { CONFIDENCE, confidenceCell, describeSetbackBasis, sheetSafeStreetSource } from "./format.js";
 
 /**
  * The honesty line, formalized verbatim per 75o spec / WDLL item 5. Any
@@ -69,7 +69,11 @@ export function buildProvenancePanelEntries(model: SitePlanModel): ProvenancePan
         }
       : {
           layer: "Street",
-          source: model.streets.anchors.map((a) => a.sourceRef ?? a.name).join("; "),
+          // §11 (v1.2): machine road-node ids never print anywhere on the
+          // sheet — a road-id-shaped ref reads "road-node ledger" instead.
+          source: [
+            ...new Set(model.streets.anchors.map((a) => sheetSafeStreetSource(a.sourceRef ?? a.name))),
+          ].join("; "),
           confidence: streetHasAssumedEdges
             ? confidenceCell(CONFIDENCE.centerlineAccurate, "ROW assumed")
             : CONFIDENCE.centerlineAccurate,
