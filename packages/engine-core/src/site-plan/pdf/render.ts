@@ -40,7 +40,13 @@ import {
   formatSqFt,
   sheetReason,
 } from "./format.js";
-import { buildSitePlanDrawingLayout, type DrawingBox, type PageXY, type SitePlanDrawingLayout } from "./layout.js";
+import {
+  buildSitePlanDrawingLayout,
+  type DrawingBox,
+  type PageXY,
+  type SegmentTableRow,
+  type SitePlanDrawingLayout,
+} from "./layout.js";
 import {
   RhythmCapture,
   fontVerticalMetrics,
@@ -50,7 +56,7 @@ import {
   type LineBox,
   type RhythmRow,
 } from "./line-box.js";
-import { buildProvenancePanelEntries, SITE_PLAN_HONESTY_LINE } from "./provenance.js";
+import { buildProvenancePanelEntries, SITE_PLAN_HONESTY_LINE, type ProvenancePanelEntry } from "./provenance.js";
 import { PROPERTY_LINE_TAGS_HONESTY } from "../../geometry/gis-property-line-tags.js";
 import { LINE_HEIGHT, RASTER_OUTLINE_PT, SETBACK_DASH, SPACE, STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js";
 import { anyNotSpecified } from "../setback-display.js";
@@ -177,7 +183,16 @@ const ACCENT = TOKENS.accent;
 const ACCENT_TYPE = TOKENS.accent700;
 const LEADER_COLOR = TOKENS.neutral500;
 
-/** The sheet set is always exactly this size: drawing, summary, aerial context (§1). */
+/**
+ * MINIMUM sheet set: drawing, summary, aerial context (§1). Since the
+ * overflow-pagination rework (2026-07-29) the summary flow is pagination-
+ * aware: when the flowing sections (PARCEL, ZONING & BUILDABILITY, SITE
+ * CONDITIONS, SEGMENT TABLE, PROVENANCE / CITATIONS) would cross the
+ * content-frame bottom, continuation summary sheets are INSERTED between the
+ * summary and the aerial sheet, so the actual page count is
+ * `2 + summarySheetCount` (>= TOTAL_SHEETS). Use `countSitePlanSheets` for
+ * the model-specific count; never assume 3.
+ */
 export const TOTAL_SHEETS = 3;
 
 /** Page-space axis-aligned extent of a drawn mark (PDF points). */
@@ -235,13 +250,23 @@ export interface PdfSitePlanResult {
    * frame-clip gate asserts each sheet-1 mark bbox against this rect.
    */
   page1Frame: MarkBbox;
+  /**
+   * Overflow-pagination seam (2026-07-29): one record per emitted SUMMARY
+   * sheet (>= 1). `frameTopY`/`frameBottomY` bound the flowing-section
+   * content frame on that sheet; the overflow gate asserts every rhythm row
+   * on the sheet stays inside it. `printedNo` is the renumbered "SHEET k"
+   * value actually drawn.
+   */
+  summarySheets: ReadonlyArray<{ localPage: number; printedNo: number; frameTopY: number; frameBottomY: number }>;
 }
 
 /**
- * Sheet-numbering seam (dossier append, 2026-07-29): when the 3 site-plan
+ * Sheet-numbering seam (dossier append, 2026-07-29): when the site-plan
  * sheets ride inside a larger document (the property dossier), every printed
  * "SHEET N OF TOTAL" — eyebrows and the fine-print trailer — renumbers to the
- * host document's sequence. Marks/rhythm stay in local sheet space (1–3).
+ * host document's sequence. Marks/rhythm stay in local sheet space. A host
+ * must size `total` with `countSitePlanSheets(model)` (NOT `TOTAL_SHEETS`):
+ * overflow pagination can insert summary continuation sheets.
  */
 export interface SheetNumbering {
   /** Absolute sheet number of the FIRST site-plan sheet in the document. */
@@ -1005,11 +1030,11 @@ function drawLegend(
   ruleY: number,
   marks: MarkRegistry,
   rhythm: RhythmCapture,
-  numbering?: SheetNumbering,
+  segmentTableSheetNo: number,
 ): void {
   if (!marks.once(1, "legend", "legend")) return;
   const left = MARGIN_X;
-  const rows = legendRows(layout, model, sheetLabel(2, numbering).no);
+  const rows = legendRows(layout, model, segmentTableSheetNo);
   const size = TYPE.legend;
   // §21: rows hang from the footer rule — space-2 pad, then line boxes on a
   // uniform pitch (line box + space-2 row gap).
@@ -1162,6 +1187,12 @@ interface FinePrintContext {
   /** Dossier renumbering: the printed sheet label for this page. Defaults to
    * the standalone `Sheet {page} of TOTAL_SHEETS`. */
   numbering?: SheetNumbering;
+  /** Overflow pagination: the exact printed label of THIS sheet (a summary
+   * continuation sheet is not addressable via the local 1|2|3 `page` arg). */
+  label?: { no: number; total: number };
+  /** Printed sheet number where the SEGMENT TABLE section starts (it may sit
+   * on a continuation sheet). Defaults to the first summary sheet. */
+  segmentTableSheetNo?: number;
 }
 
 /** Printed sheet label under (optional) host-document renumbering. */
@@ -1172,7 +1203,7 @@ function sheetLabel(localPage: 1 | 2 | 3, numbering?: SheetNumbering): { no: num
 
 function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, ctx: FinePrintContext): string {
   const sentences: string[] = [];
-  const label = sheetLabel(page, ctx.numbering);
+  const label = ctx.label ?? sheetLabel(page, ctx.numbering);
   if (page === 3) {
     const s1 = sheetLabel(1, ctx.numbering).no;
     sentences.push(SITE_PLAN_HONESTY_LINE);
@@ -1198,7 +1229,7 @@ function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, ctx: FinePrintCon
   sentences.push(SITE_PLAN_HONESTY_LINE, PROPERTY_LINE_TAGS_HONESTY);
   if (ctx.movedSegs.length > 0) {
     const s1 = sheetLabel(1, ctx.numbering).no;
-    const s2 = sheetLabel(2, ctx.numbering).no;
+    const s2 = ctx.segmentTableSheetNo ?? sheetLabel(2, ctx.numbering).no;
     sentences.push(
       `Tags for segments ${joinSegList(ctx.movedSegs)} were shortened, moved or dropped on sheet ${s1} and are tabulated in the sheet-${s2} segment table.`,
     );
@@ -1244,12 +1275,12 @@ function drawPage1Footer(
   marks: MarkRegistry,
   finePrint: string,
   rhythm: RhythmCapture,
-  numbering?: SheetNumbering,
+  segmentTableSheetNo: number,
 ): void {
   const ruleY = page1FooterRuleY();
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
 
-  drawLegend(page, layout, model, F, ruleY, marks, rhythm, numbering);
+  drawLegend(page, layout, model, F, ruleY, marks, rhythm, segmentTableSheetNo);
   drawScaleBar(page, layout, model, F, ruleY - pt(8), marks);
 
   drawFinePrint(page, 1, finePrint, F, marks);
@@ -1430,100 +1461,124 @@ function drawSectionHeading(
   return placed.nextRuleY;
 }
 
-function drawSummaryTable(
+/** Pre-composed trailing grey text of a K/V row — the SAME numbers drive the
+ * measure pass (pagination) and the draw pass, so a block's planned height is
+ * exactly its drawn height (never a second measurement system). */
+interface KvRowComposition {
+  greyLines: string[];
+  greySize: number;
+  greyColor: RGB;
+  lines: number;
+}
+
+function composeKvRow(row: SummaryRow, F: Fonts): KvRowComposition {
+  const left = MARGIN_X;
+  const right = PAGE_WIDTH - MARGIN_X;
+  const valueX = left + pt(200);
+  let vx = valueX;
+  const chipPadX = pt(7);
+  if (row.chip === "unavailable") {
+    vx += trackedWidth(F.displayMedium, CHIP_UNAVAILABLE, TYPE.chip, TRACKING.chip) + chipPadX * 2 + pt(8);
+  }
+  if (row.value) {
+    vx += F.body.widthOfTextAtSize(row.value, TYPE.rowValue) + pt(8);
+  }
+  if (row.chip === "fixture") {
+    vx += trackedWidth(F.displayMedium, CHIP_FIXTURE_LABEL, TYPE.chip, TRACKING.chip) + chipPadX * 2 + pt(8);
+  }
+  const grey = row.chipReason ?? row.qualifier;
+  const greySize = row.chipReason ? pt(12) : TYPE.rowQualifier;
+  const greyColor = row.chipReason ? TOKENS.neutral700 : TOKENS.neutral600;
+  const greyLines = grey
+    ? wrapTextToWidth(grey, F.body, greySize, Math.max(right - vx, row.chipReason ? pt(120) : pt(90)))
+    : [];
+  return { greyLines, greySize, greyColor, lines: Math.max(1, greyLines.length) };
+}
+
+/** Draws ONE summary K/V row hanging from `ruleY` (§7/§21) and returns the
+ * next rule y. Extracted from the former drawSummaryTable so the paginated
+ * flow driver can place rows sheet by sheet with identical geometry. */
+function drawSummaryKvRow(
   page: PDFPage,
-  model: SitePlanModel,
+  pageNo: number,
+  row: SummaryRow,
+  opensGroup: boolean,
+  ruleY: number,
   F: Fonts,
-  headerRule: number,
   rhythm: RhythmCapture,
 ): number {
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
-  const labelColWidth = pt(200);
-  const valueX = left + labelColWidth;
-  const groups = buildSummaryGroups(model);
+  const valueX = left + pt(200);
   const padRow = pt(SPACE.s2);
-  let bottom = headerRule;
+  const { greyLines, greySize, greyColor, lines } = composeKvRow(row, F);
 
-  for (const group of groups) {
-    let ruleY = drawSectionHeading(page, 2, group.heading, bottom, F, rhythm);
-    group.rows.forEach((row, ri) => {
-      // Pre-compose the trailing grey text (chip reason or qualifier) so the
-      // row's line count — and therefore its box — is known before drawing.
-      let vx = valueX;
-      const chipPadX = pt(7);
-      if (row.chip === "unavailable") {
-        vx += trackedWidth(F.displayMedium, CHIP_UNAVAILABLE, TYPE.chip, TRACKING.chip) + chipPadX * 2 + pt(8);
-      }
-      if (row.value) {
-        vx += F.body.widthOfTextAtSize(row.value, TYPE.rowValue) + pt(8);
-      }
-      if (row.chip === "fixture") {
-        vx += trackedWidth(F.displayMedium, CHIP_FIXTURE_LABEL, TYPE.chip, TRACKING.chip) + chipPadX * 2 + pt(8);
-      }
-      const grey = row.chipReason ?? row.qualifier;
-      const greySize = row.chipReason ? pt(12) : TYPE.rowQualifier;
-      const greyColor = row.chipReason ? TOKENS.neutral700 : TOKENS.neutral600;
-      const greyLines = grey
-        ? wrapTextToWidth(grey, F.body, greySize, Math.max(right - vx, row.chipReason ? pt(120) : pt(90)))
-        : [];
-      const lines = Math.max(1, greyLines.length);
-
-      const placed = placeRowBelowRule(ruleY, LB.kvRow, { padTop: padRow, padBottom: padRow, lines });
-      // Rule above: neutral-300 opens a group, neutral-200 within it (§7/§21).
-      page.drawLine({
-        start: { x: left, y: ruleY },
-        end: { x: right, y: ruleY },
-        thickness: STROKE.rowRule,
-        color: ri === 0 ? TOKENS.neutral300 : TOKENS.neutral200,
-      });
-      const baseline = placed.baselines[0]!;
-      page.drawText(row.label, { x: left, y: baseline, size: TYPE.rowLabel, font: F.body, color: TOKENS.neutral600 });
-      let dx = valueX;
-      if (row.chip === "unavailable") {
-        dx = drawChipOnLineBox(page, CHIP_UNAVAILABLE, dx, placed.boxTopY, LB.kvRow, "solid", F) + pt(8);
-      }
-      if (row.value) {
-        page.drawText(row.value, {
-          x: dx,
-          y: baseline,
-          size: TYPE.rowValue,
-          font: row.accentValue ? F.bodyMedium : F.body,
-          color: row.accentValue ? ACCENT_TYPE : INK,
-        });
-        dx += F.body.widthOfTextAtSize(row.value, TYPE.rowValue) + pt(8);
-      }
-      if (row.chip === "fixture") {
-        dx = drawChipOnLineBox(page, CHIP_FIXTURE_LABEL, dx, placed.boxTopY, LB.kvRow, "outline", F) + pt(8);
-      }
-      greyLines.forEach((line, li) => {
-        page.drawText(line, {
-          x: li === 0 ? dx : valueX,
-          y: placed.baselines[li]!,
-          size: greySize,
-          font: F.body,
-          color: greyColor,
-        });
-      });
-      rhythm.row(2, "kv-row", placed, LB.kvRow, padRow);
-      ruleY = placed.nextRuleY;
-    });
-    bottom = ruleY;
-  }
-  // One closing rule ends the grid (mock: final border-top row).
+  const placed = placeRowBelowRule(ruleY, LB.kvRow, { padTop: padRow, padBottom: padRow, lines });
+  // Rule above: neutral-300 opens a group, neutral-200 within it (§7/§21).
   page.drawLine({
-    start: { x: left, y: bottom },
-    end: { x: right, y: bottom },
+    start: { x: left, y: ruleY },
+    end: { x: right, y: ruleY },
+    thickness: STROKE.rowRule,
+    color: opensGroup ? TOKENS.neutral300 : TOKENS.neutral200,
+  });
+  const baseline = placed.baselines[0]!;
+  page.drawText(row.label, { x: left, y: baseline, size: TYPE.rowLabel, font: F.body, color: TOKENS.neutral600 });
+  let dx = valueX;
+  if (row.chip === "unavailable") {
+    dx = drawChipOnLineBox(page, CHIP_UNAVAILABLE, dx, placed.boxTopY, LB.kvRow, "solid", F) + pt(8);
+  }
+  if (row.value) {
+    page.drawText(row.value, {
+      x: dx,
+      y: baseline,
+      size: TYPE.rowValue,
+      font: row.accentValue ? F.bodyMedium : F.body,
+      color: row.accentValue ? ACCENT_TYPE : INK,
+    });
+    dx += F.body.widthOfTextAtSize(row.value, TYPE.rowValue) + pt(8);
+  }
+  if (row.chip === "fixture") {
+    dx = drawChipOnLineBox(page, CHIP_FIXTURE_LABEL, dx, placed.boxTopY, LB.kvRow, "outline", F) + pt(8);
+  }
+  greyLines.forEach((line, li) => {
+    page.drawText(line, {
+      x: li === 0 ? dx : valueX,
+      y: placed.baselines[li]!,
+      size: greySize,
+      font: F.body,
+      color: greyColor,
+    });
+  });
+  rhythm.row(pageNo, "kv-row", placed, LB.kvRow, padRow);
+  return placed.nextRuleY;
+}
+
+/** The closing rule that ends the K/V grid (mock: final border-top row). */
+function drawSummaryClosingRule(page: PDFPage, ruleY: number): void {
+  page.drawLine({
+    start: { x: MARGIN_X, y: ruleY },
+    end: { x: PAGE_WIDTH - MARGIN_X, y: ruleY },
     thickness: STROKE.rowRule,
     color: TOKENS.neutral200,
   });
-  return bottom;
 }
 
+/** Segment-table column x offsets within a column band (single- or two-col). */
+const SEGMENT_TABLE_HEADING = "SEGMENT TABLE — TAGS MOVED OFF THE DRAWING";
+const SEGMENT_DISPOSITION_TEXT: Record<string, string> = {
+  "distance only": "distance-only tag",
+  "margin leader": "moved to margin leader",
+  dropped: "dropped · this table governs",
+};
+
 /** §16 segment table — full bearing, distance, and sheet-1 disposition.
- * §21 row model at table density: 11px cells at body 1.6, space-1 pads. */
+ * §21 row model at table density: 11px cells at body 1.6, space-1 pads.
+ * ATOMIC form: heading + whole table (two-column when > 6 rows) — used by the
+ * flow driver only when the whole table fits on the current sheet; otherwise
+ * the driver flows the single-column form row by row across sheets. */
 function drawSegmentTable(
   page: PDFPage,
+  pageNo: number,
   layout: SitePlanDrawingLayout,
   F: Fonts,
   startY: number,
@@ -1532,11 +1587,11 @@ function drawSegmentTable(
   numbering?: SheetNumbering,
 ): number {
   if (layout.segmentTable.length === 0) return startY;
-  if (!marks.once(2, "segment-table", "table")) return startY;
+  if (!marks.once(pageNo, "segment-table", "table")) return startY;
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
   const padCell = pt(SPACE.s1);
-  const headRuleY = drawSectionHeading(page, 2, "SEGMENT TABLE — TAGS MOVED OFF THE DRAWING", startY, F, rhythm);
+  const headRuleY = drawSectionHeading(page, pageNo, SEGMENT_TABLE_HEADING, startY, F, rhythm);
 
   const twoCol = layout.segmentTable.length > 6;
   const colSpan = twoCol ? (right - left - pt(24)) / 2 : right - left;
@@ -1546,11 +1601,7 @@ function drawSegmentTable(
 
   const headSize = TYPE.tableHead;
   const cellSize = TYPE.tableCell;
-  const dispositionText: Record<string, string> = {
-    "distance only": "distance-only tag",
-    "margin leader": "moved to margin leader",
-    dropped: "dropped · this table governs",
-  };
+  const dispositionText = SEGMENT_DISPOSITION_TEXT;
   let minY = headRuleY;
   columns.forEach((rows, ci) => {
     const colLeft = left + ci * (colSpan + pt(24));
@@ -1575,7 +1626,7 @@ function drawSegmentTable(
         trackingEm: TRACKING.tableHead,
       });
     }
-    if (ci === 0) rhythm.row(2, "segment-head", head, LB.tableHead, padCell, { ruleDrawn: false });
+    if (ci === 0) rhythm.row(pageNo, "segment-head", head, LB.tableHead, padCell, { ruleDrawn: false });
     let ruleY = head.nextRuleY;
     page.drawLine({ start: { x: colLeft, y: ruleY }, end: { x: colLeft + colSpan, y: ruleY }, thickness: STROKE.rowRule, color: TOKENS.neutral300 });
     for (const row of rows) {
@@ -1591,7 +1642,7 @@ function drawSegmentTable(
         font: F.body,
         color: TOKENS.neutral600,
       });
-      if (ci === 0) rhythm.row(2, "segment-row", placed, LB.tableRow, padCell);
+      if (ci === 0) rhythm.row(pageNo, "segment-row", placed, LB.tableRow, padCell);
       ruleY = placed.nextRuleY;
       page.drawLine({ start: { x: colLeft, y: ruleY }, end: { x: colLeft + colSpan, y: ruleY }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
     }
@@ -1600,26 +1651,108 @@ function drawSegmentTable(
   return minY;
 }
 
-/** Provenance (§7/§13): three columns — layer · source · confidence enum.
- * §21 row model at table density; multi-line cells grow the row's line
- * boxes, the rule always clears the deepest cell. */
-function drawProvenanceTable(
+/** FLOWING single-column segment-table header row (repeated after a sheet
+ * break). Identical geometry to the single-column branch of the atomic form. */
+function drawSegmentHeadRow(
   page: PDFPage,
-  model: SitePlanModel,
+  pageNo: number,
+  ruleY: number,
   F: Fonts,
-  startY: number,
   rhythm: RhythmCapture,
-): void {
+  sheet1No: number,
+): number {
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
   const padCell = pt(SPACE.s1);
-  const headRuleY = drawSectionHeading(page, 2, "PROVENANCE / CITATIONS", startY, F, rhythm);
+  const head = placeRowBelowRule(ruleY, LB.tableHead, { padTop: padCell, padBottom: padCell });
+  for (const [text, x] of [
+    ["SEG", left],
+    ["BEARING", left + pt(44)],
+    ["DIST.", left + pt(150)],
+    [`ON SHEET ${sheet1No}`, left + pt(210)],
+  ] as [string, number][]) {
+    drawTrackedText(page, text, {
+      x,
+      y: head.baselines[0]!,
+      size: TYPE.tableHead,
+      font: F.displayMedium,
+      color: TOKENS.neutral600,
+      trackingEm: TRACKING.tableHead,
+    });
+  }
+  rhythm.row(pageNo, "segment-head", head, LB.tableHead, padCell, { ruleDrawn: false });
+  page.drawLine({ start: { x: left, y: head.nextRuleY }, end: { x: right, y: head.nextRuleY }, thickness: STROKE.rowRule, color: TOKENS.neutral300 });
+  return head.nextRuleY;
+}
 
-  const layerX = left;
-  const sourceX = left + pt(140);
-  const confX = right - pt(150);
-  const headSize = TYPE.tableHead;
-  const head = placeRowBelowRule(headRuleY, LB.tableHead, { padTop: padCell, padBottom: padCell });
+/** FLOWING single-column segment-table data row. */
+function drawSegmentFlowRow(
+  page: PDFPage,
+  pageNo: number,
+  row: SegmentTableRow,
+  ruleY: number,
+  F: Fonts,
+  rhythm: RhythmCapture,
+): number {
+  const left = MARGIN_X;
+  const right = PAGE_WIDTH - MARGIN_X;
+  const padCell = pt(SPACE.s1);
+  const cellSize = TYPE.tableCell;
+  const placed = placeRowBelowRule(ruleY, LB.tableRow, { padTop: padCell, padBottom: padCell });
+  const cy = placed.baselines[0]!;
+  page.drawText(row.seg, { x: left, y: cy, size: cellSize, font: F.body, color: TOKENS.neutral700 });
+  page.drawText(row.bearing, { x: left + pt(44), y: cy, size: cellSize, font: F.body, color: INK });
+  page.drawText(row.distance, { x: left + pt(150), y: cy, size: cellSize, font: F.body, color: INK });
+  page.drawText(SEGMENT_DISPOSITION_TEXT[row.disposition] ?? row.disposition, {
+    x: left + pt(210),
+    y: cy,
+    size: cellSize,
+    font: F.body,
+    color: TOKENS.neutral600,
+  });
+  rhythm.row(pageNo, "segment-row", placed, LB.tableRow, padCell);
+  page.drawLine({ start: { x: left, y: placed.nextRuleY }, end: { x: right, y: placed.nextRuleY }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
+  return placed.nextRuleY;
+}
+
+/** Provenance column x offsets (§7/§13 three-column table). */
+function provenanceColumns(): { layerX: number; sourceX: number; confX: number; right: number } {
+  const left = MARGIN_X;
+  const right = PAGE_WIDTH - MARGIN_X;
+  return { layerX: left, sourceX: left + pt(140), confX: right - pt(150), right };
+}
+
+/** Per-cell wrap of a provenance entry — measure and draw share this. */
+function composeProvenanceRow(
+  entry: ProvenancePanelEntry,
+  F: Fonts,
+): { layerLines: string[]; sourceLines: string[]; confLines: string[]; lines: number } {
+  const { layerX, sourceX, confX, right } = provenanceColumns();
+  const cellSize = TYPE.tableCell;
+  const layerLines = wrapTextToWidth(entry.layer, F.body, cellSize, sourceX - layerX - pt(8));
+  const sourceLines = wrapTextToWidth(entry.source, F.body, cellSize, confX - sourceX - pt(8));
+  const confLines = wrapTextToWidth(entry.confidence, F.body, cellSize, right - confX);
+  return {
+    layerLines,
+    sourceLines,
+    confLines,
+    lines: Math.max(layerLines.length, sourceLines.length, confLines.length, 1),
+  };
+}
+
+/** Provenance header row (§7/§13) — no rule above; a neutral-300 rule closes
+ * it. Repeated after a sheet break (flow driver). */
+function drawProvenanceHeadRow(
+  page: PDFPage,
+  pageNo: number,
+  ruleY: number,
+  F: Fonts,
+  rhythm: RhythmCapture,
+): number {
+  const left = MARGIN_X;
+  const { layerX, sourceX, confX, right } = provenanceColumns();
+  const padCell = pt(SPACE.s1);
+  const head = placeRowBelowRule(ruleY, LB.tableHead, { padTop: padCell, padBottom: padCell });
   for (const [text, x] of [
     ["LAYER", layerX],
     ["SOURCE", sourceX],
@@ -1628,33 +1761,247 @@ function drawProvenanceTable(
     drawTrackedText(page, text, {
       x,
       y: head.baselines[0]!,
-      size: headSize,
+      size: TYPE.tableHead,
       font: F.displayMedium,
       color: TOKENS.neutral600,
       trackingEm: TRACKING.tableHead,
     });
   }
-  rhythm.row(2, "provenance-head", head, LB.tableHead, padCell, { ruleDrawn: false });
-  let ruleY = head.nextRuleY;
-  page.drawLine({ start: { x: left, y: ruleY }, end: { x: right, y: ruleY }, thickness: STROKE.rowRule, color: TOKENS.neutral300 });
+  rhythm.row(pageNo, "provenance-head", head, LB.tableHead, padCell, { ruleDrawn: false });
+  page.drawLine({ start: { x: left, y: head.nextRuleY }, end: { x: right, y: head.nextRuleY }, thickness: STROKE.rowRule, color: TOKENS.neutral300 });
+  return head.nextRuleY;
+}
 
-  const entries = buildProvenancePanelEntries(model);
+/** Provenance (§7/§13) data row: three columns — layer · source · confidence
+ * enum. §21 row model at table density; multi-line cells grow the row's line
+ * boxes, the rule always clears the deepest cell. */
+function drawProvenanceRow(
+  page: PDFPage,
+  pageNo: number,
+  entry: ProvenancePanelEntry,
+  ruleY: number,
+  F: Fonts,
+  rhythm: RhythmCapture,
+): number {
+  const left = MARGIN_X;
+  const { layerX, sourceX, confX, right } = provenanceColumns();
+  const padCell = pt(SPACE.s1);
   const cellSize = TYPE.tableCell;
-  for (const entry of entries) {
-    const layerLines = wrapTextToWidth(entry.layer, F.body, cellSize, sourceX - layerX - pt(8));
-    const sourceLines = wrapTextToWidth(entry.source, F.body, cellSize, confX - sourceX - pt(8));
-    const confLines = wrapTextToWidth(entry.confidence, F.body, cellSize, right - confX);
-    const lines = Math.max(layerLines.length, sourceLines.length, confLines.length);
-    const placed = placeRowBelowRule(ruleY, LB.tableRow, { padTop: padCell, padBottom: padCell, lines });
-    for (let i = 0; i < lines; i++) {
-      const ry = placed.baselines[i]!;
-      if (layerLines[i]) page.drawText(layerLines[i]!, { x: layerX, y: ry, size: cellSize, font: F.body, color: TOKENS.neutral700 });
-      if (sourceLines[i]) page.drawText(sourceLines[i]!, { x: sourceX, y: ry, size: cellSize, font: F.body, color: INK });
-      if (confLines[i]) page.drawText(confLines[i]!, { x: confX, y: ry, size: cellSize, font: F.body, color: TOKENS.neutral600 });
+  const { layerLines, sourceLines, confLines, lines } = composeProvenanceRow(entry, F);
+  const placed = placeRowBelowRule(ruleY, LB.tableRow, { padTop: padCell, padBottom: padCell, lines });
+  for (let i = 0; i < lines; i++) {
+    const ry = placed.baselines[i]!;
+    if (layerLines[i]) page.drawText(layerLines[i]!, { x: layerX, y: ry, size: cellSize, font: F.body, color: TOKENS.neutral700 });
+    if (sourceLines[i]) page.drawText(sourceLines[i]!, { x: sourceX, y: ry, size: cellSize, font: F.body, color: INK });
+    if (confLines[i]) page.drawText(confLines[i]!, { x: confX, y: ry, size: cellSize, font: F.body, color: TOKENS.neutral600 });
+  }
+  rhythm.row(pageNo, "provenance-row", placed, LB.tableRow, padCell);
+  page.drawLine({ start: { x: left, y: placed.nextRuleY }, end: { x: right, y: placed.nextRuleY }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
+  return placed.nextRuleY;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SUMMARY-FLOW PAGINATION (overflow rule, 2026-07-29). The summary sheet's
+// flowing sections — PARCEL, ZONING & BUILDABILITY, SITE CONDITIONS, SEGMENT
+// TABLE, PROVENANCE / CITATIONS — are measured with the SAME line-box math
+// that draws them (placeRowBelowRule deltas), then assigned to sheets: when
+// the next block (or table row) would cross the content-frame bottom, the
+// flow breaks to an INSERTED continuation sheet. Continuation sheets repeat
+// the standard header; a section split mid-table re-draws its heading
+// suffixed "(CONTINUED)" with the table header row repeated. Tables split
+// only BETWEEN rows. A section heading is never orphaned: it must land with
+// at least 2 content rows, else the whole section moves to the next sheet.
+// ─────────────────────────────────────────────────────────────────────────
+type SummaryFlowOp =
+  | { kind: "heading"; text: string; continued: boolean }
+  | { kind: "kv-row"; row: SummaryRow; opensGroup: boolean; closingRule: boolean }
+  | { kind: "segment-table-atomic" }
+  | { kind: "segment-head"; first: boolean }
+  | { kind: "segment-row"; row: SegmentTableRow }
+  | { kind: "provenance-head" }
+  | { kind: "provenance-row"; entry: ProvenancePanelEntry };
+
+interface SummaryFlowPlan {
+  sheets: Array<{ ops: SummaryFlowOp[] }>;
+  frameTopY: number;
+  frameBottomY: number;
+  /** 1-based summary-sheet ordinal where the segment table starts; null when absent. */
+  segmentTableSheet: number | null;
+  /** Resolved numbering (standalone default carries the dynamic total). */
+  numbering: SheetNumbering;
+}
+
+/** §21-derived block heights — EXACTLY the deltas the draw fns consume. */
+function sectionHeadingHeight(): number {
+  return pt(SPACE.s6) + LB.groupHeading.lineBoxHeight + pt(SPACE.s2);
+}
+function kvRowHeight(row: SummaryRow, F: Fonts): number {
+  return pt(SPACE.s2) * 2 + composeKvRow(row, F).lines * LB.kvRow.lineBoxHeight;
+}
+function tableHeadHeight(): number {
+  return pt(SPACE.s1) * 2 + LB.tableHead.lineBoxHeight;
+}
+function tableRowHeight(lines = 1): number {
+  return pt(SPACE.s1) * 2 + lines * LB.tableRow.lineBoxHeight;
+}
+
+/**
+ * Plans the summary flow across 1..n sheets. The fine-print band reserved at
+ * the bottom of each summary sheet depends on the sheet labels ("Sheet k of
+ * n"), and n depends on the pagination — so the plan runs to a fixpoint
+ * (converges immediately in practice; digit-width changes almost never move
+ * a wrap point).
+ */
+function planSummaryFlow(
+  model: SitePlanModel,
+  layout: SitePlanDrawingLayout,
+  F: Fonts,
+  movedSegs: string[],
+  hostNumbering: SheetNumbering | undefined,
+): SummaryFlowPlan {
+  const groups = buildSummaryGroups(model);
+  const provEntries = buildProvenancePanelEntries(model);
+  const headingH = sectionHeadingHeight();
+  const headH = tableHeadHeight();
+  const segRowH = tableRowHeight();
+  const frameTop = headerRuleY();
+
+  let m = 1;
+  let plan: SummaryFlowPlan | null = null;
+  for (let iter = 0; iter < 4; iter++) {
+    const numbering = hostNumbering ?? { startAt: 1, total: m + 2 };
+    // Reserve the worst-case fine-print band across the m summary sheets.
+    let fpLines = 1;
+    for (let k = 1; k <= m; k++) {
+      const text = buildFinePrint(model, 2, {
+        movedSegs,
+        numbering,
+        label: { no: numbering.startAt + k, total: numbering.total },
+        segmentTableSheetNo: numbering.startAt + (plan?.segmentTableSheet ?? 1),
+      });
+      fpLines = Math.max(fpLines, wrapTextToWidth(text, F.body, TYPE.finePrint, PAGE_WIDTH - MARGIN_X * 2).length);
     }
-    rhythm.row(2, "provenance-row", placed, LB.tableRow, padCell);
-    ruleY = placed.nextRuleY;
-    page.drawLine({ start: { x: left, y: ruleY }, end: { x: right, y: ruleY }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
+    const frameBottom = MARGIN_BOTTOM + fpLines * LB.finePrint.lineBoxHeight + pt(SPACE.s4);
+
+    const sheets: Array<{ ops: SummaryFlowOp[] }> = [{ ops: [] }];
+    let cursor = frameTop;
+    let segmentTableSheet: number | null = null;
+    const current = () => sheets[sheets.length - 1]!;
+    const remaining = () => cursor - frameBottom;
+    const breakSheet = () => {
+      sheets.push({ ops: [] });
+      cursor = frameTop;
+    };
+    const push = (op: SummaryFlowOp, h: number) => {
+      current().ops.push(op);
+      cursor -= h;
+    };
+    /** Orphan rule: the heading must land with >= 2 content rows (or all of a
+     * shorter section). Break first when it cannot — unless the sheet is empty
+     * (an empty sheet is the best it will ever get). */
+    const ensureSectionStart = (startUnitH: number) => {
+      if (startUnitH > remaining() && current().ops.length > 0) breakSheet();
+    };
+    /** Mid-section break: continuation heading (+ repeated table header). */
+    const continueSection = (heading: string, withTableHead: "segment" | "provenance" | null) => {
+      breakSheet();
+      push({ kind: "heading", text: heading, continued: true }, headingH);
+      if (withTableHead === "segment") push({ kind: "segment-head", first: false }, headH);
+      if (withTableHead === "provenance") push({ kind: "provenance-head" }, headH);
+    };
+
+    // ── K/V groups ──────────────────────────────────────────────────────
+    groups.forEach((group, gi) => {
+      const startRows = group.rows.slice(0, Math.min(2, group.rows.length));
+      ensureSectionStart(headingH + startRows.reduce((s, r) => s + kvRowHeight(r, F), 0));
+      push({ kind: "heading", text: group.heading, continued: false }, headingH);
+      let opensGroup = true;
+      group.rows.forEach((row, ri) => {
+        const h = kvRowHeight(row, F);
+        if (h > remaining() && current().ops.length > 0) {
+          continueSection(group.heading, null);
+          opensGroup = true;
+        }
+        const closingRule = gi === groups.length - 1 && ri === group.rows.length - 1;
+        push({ kind: "kv-row", row, opensGroup, closingRule }, h);
+        opensGroup = false;
+      });
+    });
+
+    // ── Segment table (§16) ─────────────────────────────────────────────
+    if (layout.segmentTable.length > 0) {
+      const rows = layout.segmentTable;
+      ensureSectionStart(headingH + headH + Math.min(2, rows.length) * segRowH);
+      segmentTableSheet = sheets.length;
+      const perCol = Math.ceil(rows.length / (rows.length > 6 ? 2 : 1));
+      const atomicH = headingH + headH + perCol * segRowH;
+      if (atomicH <= remaining()) {
+        // Whole table fits here: keep the standard's compact form untouched.
+        push({ kind: "segment-table-atomic" }, atomicH);
+      } else {
+        push({ kind: "heading", text: SEGMENT_TABLE_HEADING, continued: false }, headingH);
+        push({ kind: "segment-head", first: true }, headH);
+        for (const row of rows) {
+          if (segRowH > remaining()) continueSection(SEGMENT_TABLE_HEADING, "segment");
+          push({ kind: "segment-row", row }, segRowH);
+        }
+      }
+    }
+
+    // ── Provenance / citations ──────────────────────────────────────────
+    {
+      const startRows = provEntries.slice(0, Math.min(2, provEntries.length));
+      ensureSectionStart(
+        headingH + headH + startRows.reduce((s, e) => s + tableRowHeight(composeProvenanceRow(e, F).lines), 0),
+      );
+      push({ kind: "heading", text: "PROVENANCE / CITATIONS", continued: false }, headingH);
+      push({ kind: "provenance-head" }, headH);
+      for (const entry of provEntries) {
+        const h = tableRowHeight(composeProvenanceRow(entry, F).lines);
+        if (h > remaining()) continueSection("PROVENANCE / CITATIONS", "provenance");
+        push({ kind: "provenance-row", entry }, h);
+      }
+    }
+
+    plan = { sheets, frameTopY: frameTop, frameBottomY: frameBottom, segmentTableSheet, numbering };
+    if (sheets.length === m) return plan;
+    m = sheets.length;
+  }
+  return plan!;
+}
+
+/** Draws one planned flow op at `cursor`, returns the next cursor (rule y). */
+function drawSummaryFlowOp(
+  page: PDFPage,
+  pageNo: number,
+  op: SummaryFlowOp,
+  cursor: number,
+  layout: SitePlanDrawingLayout,
+  F: Fonts,
+  marks: MarkRegistry,
+  rhythm: RhythmCapture,
+  numbering: SheetNumbering,
+): number {
+  switch (op.kind) {
+    case "heading":
+      return drawSectionHeading(page, pageNo, op.continued ? `${op.text} (CONTINUED)` : op.text, cursor, F, rhythm);
+    case "kv-row": {
+      const next = drawSummaryKvRow(page, pageNo, op.row, op.opensGroup, cursor, F, rhythm);
+      if (op.closingRule) drawSummaryClosingRule(page, next);
+      return next;
+    }
+    case "segment-table-atomic":
+      return drawSegmentTable(page, pageNo, layout, F, cursor, marks, rhythm, numbering);
+    case "segment-head":
+      // First head registers the §14 mark; a repeated head is the same table.
+      if (op.first) marks.once(pageNo, "segment-table", "table");
+      return drawSegmentHeadRow(page, pageNo, cursor, F, rhythm, sheetLabel(1, numbering).no);
+    case "segment-row":
+      return drawSegmentFlowRow(page, pageNo, op.row, cursor, F, rhythm);
+    case "provenance-head":
+      return drawProvenanceHeadRow(page, pageNo, cursor, F, rhythm);
+    case "provenance-row":
+      return drawProvenanceRow(page, pageNo, op.entry, cursor, F, rhythm);
   }
 }
 
@@ -1764,6 +2111,7 @@ export function computeRegistrationToleranceFeet(
 
 function drawAerialOverlay(
   page: PDFPage,
+  pageNo: number,
   model: SitePlanModel,
   mercBbox: MercatorBbox,
   rect: PageRect,
@@ -1775,7 +2123,7 @@ function drawAerialOverlay(
   // STREET centerlines (context), clipped to the imagery rect.
   if (!model.streets.honestAbsence) {
     model.streets.anchors.forEach((anchor, i) => {
-      if (!marks.once(3, "street", `${anchor.name}:${i}`)) return;
+      if (!marks.once(pageNo, "street", `${anchor.name}:${i}`)) return;
       const projected = anchor.pointsLocal.map(toPage);
       for (const part of clipToRect(projected, rect)) {
         drawHaloedPolyline(page, part, STREET_COLOR, 1.1);
@@ -1786,13 +2134,13 @@ function drawAerialOverlay(
   // BUILDABLE ENVELOPE ring — dashed accent, no fill (§20: imagery visible).
   // Skipped when degenerate or honest-absent (§15/§18: nothing fabricated).
   if (model.setback.offsetRingLocal && !model.setback.honestAbsence && !model.setback.degenerate) {
-    if (marks.once(3, "setback-dash", "envelope")) {
+    if (marks.once(pageNo, "setback-dash", "envelope")) {
       drawHaloedRing(page, model.setback.offsetRingLocal.map(toPage), SETBACK_DASH_COLOR, STROKE.setbackDash + 0.3, SETBACK_DASH);
     }
   }
 
   // PROPERTY LINE — heaviest stroke, paper outline behind it (§20).
-  if (marks.once(3, "property-line", "ring")) {
+  if (marks.once(pageNo, "property-line", "ring")) {
     drawHaloedRing(page, model.ringLocal.map(toPage), PROPERTY_COLOR, AERIAL_PROPERTY_STROKE);
   }
 
@@ -1809,7 +2157,7 @@ function drawAerialOverlay(
     const text = formatFeetPrime(segment.lengthFeet, 1);
     const width = F.body.widthOfTextAtSize(text, size);
     if (edgeLen < width * 1.2 || edgeLen < size * 3) return;
-    if (!marks.once(3, "tag", `S${i + 1}`)) return;
+    if (!marks.once(pageNo, "tag", `S${i + 1}`)) return;
     let angle = Math.atan2(dy, dx);
     if (angle > Math.PI / 2) angle -= Math.PI;
     else if (angle <= -Math.PI / 2) angle += Math.PI;
@@ -1852,7 +2200,7 @@ function drawAerialOverlay(
 
   // NORTH arrow, top-right inside the imagery, direction through the aerial
   // transform (never assumed). Halo disc so it reads over any tone.
-  if (marks.once(3, "north-arrow", "north")) {
+  if (marks.once(pageNo, "north-arrow", "north")) {
     const pOrigin = toPage(model.north.originLocal);
     const pTip = toPage({
       x: model.north.originLocal.x + model.north.directionLocal.x,
@@ -1906,13 +2254,14 @@ function imageryStripHeight(): number {
 /** §19: four cells, always all four — source · capture date · resolution · registration. */
 function drawImageryStrip(
   page: PDFPage,
+  pageNo: number,
   cells: ImageryStripCell[],
   topY: number,
   F: Fonts,
   marks: MarkRegistry,
   rhythm: RhythmCapture,
 ): number {
-  if (!marks.once(3, "imagery-strip", "strip")) return topY;
+  if (!marks.once(pageNo, "imagery-strip", "strip")) return topY;
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
   const width = right - left;
@@ -1965,7 +2314,7 @@ function drawImageryStrip(
       }
     }
     const placed = placeRowBelowRule(topY, LB.stripLabel, { padTop: pt(SPACE.s3), padBottom: pt(2) });
-    rhythm.row(3, "strip-cell", placed, LB.stripLabel, pt(SPACE.s3), { ruleDrawn: true });
+    rhythm.row(pageNo, "strip-cell", placed, LB.stripLabel, pt(SPACE.s3), { ruleDrawn: true });
   });
   return topY - stripH;
 }
@@ -1979,6 +2328,7 @@ interface AerialLegendRow {
 
 function drawAerialFooter(
   page: PDFPage,
+  pageNo: number,
   model: SitePlanModel,
   mercBbox: MercatorBbox,
   rect: PageRect,
@@ -2013,7 +2363,7 @@ function drawAerialFooter(
       : { label: "Aerial imagery — unavailable · overlay on paper ground", swatch: "imagery", color: SUPPRESSED, empty: true },
     { label: `Contour — not shown here · see sheet ${s1}`, swatch: "line-dotted", color: SUPPRESSED, empty: true },
   ];
-  if (marks.once(3, "legend", "legend")) {
+  if (marks.once(pageNo, "legend", "legend")) {
     const perCol = Math.ceil(rows.length / 2);
     const swatchBand = pt(24) + pt(9);
     const pitch = LB.legendSmall.lineBoxHeight + pt(SPACE.s2);
@@ -2030,7 +2380,7 @@ function drawAerialFooter(
           padTop: pt(SPACE.s2),
           padBottom: pt(SPACE.s2),
         });
-        rhythm.row(3, "legend-row", placed, LB.legendSmall, pt(SPACE.s2), { ruleDrawn: line === 0 });
+        rhythm.row(pageNo, "legend-row", placed, LB.legendSmall, pt(SPACE.s2), { ruleDrawn: line === 0 });
       }
       const w = pt(24);
       const mid = y + pt(1);
@@ -2052,7 +2402,7 @@ function drawAerialFooter(
   }
 
   // Ground-true scale bar (§9 form: unit on the last label) + meta line.
-  if (marks.once(3, "scale-bar", "scale")) {
+  if (marks.once(pageNo, "scale-bar", "scale")) {
     const right = PAGE_WIDTH - MARGIN_X;
     const ptsPerMeter = aerialPagePointsPerGroundMeter(mercBbox, rect, model.bboxWgs84);
     const targetMeters = pt(120) / ptsPerMeter;
@@ -2109,7 +2459,7 @@ function drawAerialFooter(
     });
   }
 
-  drawFinePrint(page, 3, finePrint, F, marks);
+  drawFinePrint(page, pageNo, finePrint, F, marks);
 }
 
 function drawAerialPage(
@@ -2122,7 +2472,9 @@ function drawAerialPage(
   F: Fonts,
   marks: MarkRegistry,
   rhythm: RhythmCapture,
-  numbering?: SheetNumbering,
+  numbering: SheetNumbering | undefined,
+  pageNo: number,
+  aerialLabel: { no: number; total: number },
 ): void {
   const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
@@ -2132,7 +2484,6 @@ function drawAerialPage(
     tolFeet != null
       ? { label: "REGISTER", value: `±${tolFeet.toFixed(1)} FT`, color: ACCENT_TYPE }
       : { label: "REGISTER", chip: CHIP_UNAVAILABLE };
-  const aerialLabel = sheetLabel(3, numbering);
   drawSheetHeader(
     page,
     model,
@@ -2143,7 +2494,7 @@ function drawAerialPage(
   );
 
   if (imagery.ok && png) {
-    if (marks.once(3, "imagery", "raster")) {
+    if (marks.once(pageNo, "imagery", "raster")) {
       page.drawImage(png, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
     }
   } else {
@@ -2161,7 +2512,7 @@ function drawAerialPage(
   }
 
   // §18: overlay from the SAME model coordinates on both paths.
-  drawAerialOverlay(page, model, mercBbox, rect, F, marks);
+  drawAerialOverlay(page, pageNo, model, mercBbox, rect, F, marks);
 
   // Frame + §20 registration marks.
   page.drawRectangle({
@@ -2190,7 +2541,7 @@ function drawAerialPage(
       : { label: "REGISTRATION", chip: true, chipReason: REASON.registrationNotComputable },
   ];
   const stripTop = rect.y - pt(6);
-  const stripBottom = drawImageryStrip(page, cells, stripTop, F, marks, rhythm);
+  const stripBottom = drawImageryStrip(page, pageNo, cells, stripTop, F, marks, rhythm);
 
   const registrationSentence =
     tolFeet != null
@@ -2198,6 +2549,7 @@ function drawAerialPage(
       : "Overlay registration tolerance could not be computed for this export.";
   drawAerialFooter(
     page,
+    pageNo,
     model,
     mercBbox,
     rect,
@@ -2213,6 +2565,7 @@ function drawAerialPage(
       // §19 imagery-age disclosure never fires from an inferred date.
       imageryAgeMonths: null,
       numbering,
+      label: aerialLabel,
     }),
     rhythm,
     numbering,
@@ -2243,38 +2596,11 @@ export async function emitPdfSitePlan(
   };
   const marks = new MarkRegistry();
   const rhythm = new RhythmCapture();
-  const numbering = options.numbering;
-  const label1 = sheetLabel(1, numbering);
-  const label2 = sheetLabel(2, numbering);
 
-  // AERIAL (sheet 3) imagery fetch — started first so the bounded network
-  // wait (default 8s cap) overlaps the vector rendering of sheets 1–2.
-  // §21 footer stack, bottom up: fine print (6 lines) → legend band (space-3
-  // gap + two small-legend line boxes with space-2 pads) → footer rule →
-  // strip → imagery rect.
-  const aerialLegendBand =
-    pt(SPACE.s3) + pt(SPACE.s2) * 2 + 2 * LB.legendSmall.lineBoxHeight + pt(8);
-  const aerialFooterBandTop =
-    MARGIN_BOTTOM + LB.finePrint.lineBoxHeight * 6 + aerialLegendBand + imageryStripHeight() + pt(6);
-  const aerialRect = aerialImageRect(headerRuleY(), aerialFooterBandTop);
-  const mercBbox = computeAerialMercatorBbox(model.ringLocal, model.bboxWgs84, aerialRect.width / aerialRect.height);
-  const aerialUrl = buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox));
-  const aerialPromise = fetchAerialImagery(aerialUrl, {
-    fetchImage: options.aerial?.fetchImage,
-    timeoutMs: options.aerial?.timeoutMs,
-  });
-
-  // PAGE 1 — drawing.
-  const page1 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  const page1RuleY = drawSheetHeader(
-    page1,
-    model,
-    F,
-    `SITE PLAN · SHEET ${label1.no} OF ${label1.total}`,
-    page1HeaderStats(model),
-    null,
-  );
-
+  // ── Layout + overflow-pagination plan FIRST (pure geometry — nothing is
+  // drawn yet) so every printed "SHEET k OF n" reflects the post-pagination
+  // total before any header goes down. ─────────────────────────────────────
+  const page1RuleY = headerRuleY();
   const footerBandTop = page1FooterRuleY() + pt(6);
   const drawingBox: DrawingBox = {
     x: MARGIN_X,
@@ -2296,20 +2622,74 @@ export async function emitPdfSitePlan(
     measureText: (text, size) => F.body.widthOfTextAtSize(text, size),
     sheetBounds: page1Frame,
   });
-  drawSitePlanDrawing(page1, layout, F, marks);
   const movedSegs = layout.segmentTable.map((r) => r.seg);
-  drawPage1Footer(page1, layout, model, F, marks, buildFinePrint(model, 1, { movedSegs, numbering }), rhythm, numbering);
+  const flowPlan = planSummaryFlow(model, layout, F, movedSegs, options.numbering);
+  const numbering = flowPlan.numbering;
+  const summaryCount = flowPlan.sheets.length;
+  const total = numbering.total;
+  const drawingNo = numbering.startAt;
+  const aerialNo = numbering.startAt + summaryCount + 1;
+  const aerialLocalPage = summaryCount + 2;
+  const segmentTableSheetNo =
+    flowPlan.segmentTableSheet != null
+      ? numbering.startAt + flowPlan.segmentTableSheet
+      : numbering.startAt + 1;
 
-  // PAGE 2 — summary.
-  const page2 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  const page2RuleY = drawSheetHeader(page2, model, F, `SUMMARY · SHEET ${label2.no} OF ${label2.total}`, null, [
-    `SP-${model.parcelNodeId.replace(/:/g, "-")}`,
-    model.parcelNodeId,
-  ]);
-  const afterSummaryY = drawSummaryTable(page2, model, F, page2RuleY, rhythm);
-  const afterSegmentsY = drawSegmentTable(page2, layout, F, afterSummaryY, marks, rhythm, numbering);
-  drawProvenanceTable(page2, model, F, afterSegmentsY, rhythm);
-  drawFinePrint(page2, 2, buildFinePrint(model, 2, { movedSegs, numbering }), F, marks);
+  // AERIAL (sheet 3) imagery fetch — started first so the bounded network
+  // wait (default 8s cap) overlaps the vector rendering of sheets 1–2.
+  // §21 footer stack, bottom up: fine print (6 lines) → legend band (space-3
+  // gap + two small-legend line boxes with space-2 pads) → footer rule →
+  // strip → imagery rect.
+  const aerialLegendBand =
+    pt(SPACE.s3) + pt(SPACE.s2) * 2 + 2 * LB.legendSmall.lineBoxHeight + pt(8);
+  const aerialFooterBandTop =
+    MARGIN_BOTTOM + LB.finePrint.lineBoxHeight * 6 + aerialLegendBand + imageryStripHeight() + pt(6);
+  const aerialRect = aerialImageRect(headerRuleY(), aerialFooterBandTop);
+  const mercBbox = computeAerialMercatorBbox(model.ringLocal, model.bboxWgs84, aerialRect.width / aerialRect.height);
+  const aerialUrl = buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox));
+  const aerialPromise = fetchAerialImagery(aerialUrl, {
+    fetchImage: options.aerial?.fetchImage,
+    timeoutMs: options.aerial?.timeoutMs,
+  });
+
+  // PAGE 1 — drawing.
+  const page1 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  drawSheetHeader(page1, model, F, `SITE PLAN · SHEET ${drawingNo} OF ${total}`, page1HeaderStats(model), null);
+  drawSitePlanDrawing(page1, layout, F, marks);
+  drawPage1Footer(
+    page1,
+    layout,
+    model,
+    F,
+    marks,
+    buildFinePrint(model, 1, { movedSegs, numbering, label: { no: drawingNo, total }, segmentTableSheetNo }),
+    rhythm,
+    segmentTableSheetNo,
+  );
+
+  // PAGES 2..(1+m) — summary flow. Sheet 2 plus any inserted continuation
+  // sheets (overflow rule): every sheet repeats the standard header, sections
+  // flow inside the content frame, tables split only between rows with the
+  // header row repeated and the section heading suffixed "(CONTINUED)".
+  for (let j = 0; j < summaryCount; j++) {
+    const localPage = 2 + j;
+    const printedNo = numbering.startAt + 1 + j;
+    const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    let cursor = drawSheetHeader(page, model, F, `SUMMARY · SHEET ${printedNo} OF ${total}`, null, [
+      `SP-${model.parcelNodeId.replace(/:/g, "-")}`,
+      model.parcelNodeId,
+    ]);
+    for (const op of flowPlan.sheets[j]!.ops) {
+      cursor = drawSummaryFlowOp(page, localPage, op, cursor, layout, F, marks, rhythm, numbering);
+    }
+    drawFinePrint(
+      page,
+      localPage,
+      buildFinePrint(model, 2, { movedSegs, numbering, label: { no: printedNo, total }, segmentTableSheetNo }),
+      F,
+      marks,
+    );
+  }
 
   // PAGE 3 — aerial context. The fetch is bounded and never throws; §20
   // (v1.2) embeds the orthophoto in NATURAL COLOR — no duotone tint, no
@@ -2329,7 +2709,10 @@ export async function emitPdfSitePlan(
       };
     }
   }
-  drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks, rhythm, numbering);
+  drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks, rhythm, numbering, aerialLocalPage, {
+    no: aerialNo,
+    total,
+  });
 
   const bytes = await doc.save({ useObjectStreams: false });
   return {
@@ -2342,7 +2725,51 @@ export async function emitPdfSitePlan(
     marks: marks.marks,
     rhythm: rhythm.rows,
     page1Frame,
+    summarySheets: flowPlan.sheets.map((_, j) => ({
+      localPage: 2 + j,
+      printedNo: numbering.startAt + 1 + j,
+      frameTopY: flowPlan.frameTopY,
+      frameBottomY: flowPlan.frameBottomY,
+    })),
   };
+}
+
+/**
+ * Model-specific sheet count under overflow pagination: 2 (drawing + aerial)
+ * plus however many summary sheets the flowing sections need. Host documents
+ * (the property dossier) MUST size their totals with this, not TOTAL_SHEETS.
+ * Runs the same measurement pass the renderer paginates with (real embedded
+ * font metrics), draws nothing, touches no network.
+ */
+export async function countSitePlanSheets(model: SitePlanModel, numbering?: SheetNumbering): Promise<number> {
+  const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
+  const F: Fonts = {
+    body: await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false }),
+    bodyMedium: await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false }),
+    display: await doc.embedFont(loadFont("BarlowCondensed-SemiBold.ttf"), { subset: false }),
+    displayMedium: await doc.embedFont(loadFont("BarlowCondensed-Medium.ttf"), { subset: false }),
+  };
+  const page1RuleY = headerRuleY();
+  const footerBandTop = page1FooterRuleY() + pt(6);
+  const drawingBox: DrawingBox = {
+    x: MARGIN_X,
+    y: footerBandTop,
+    width: PAGE_WIDTH - MARGIN_X * 2,
+    height: page1RuleY - pt(18) - footerBandTop,
+  };
+  const page1Frame: MarkBbox = {
+    minX: MARGIN_X,
+    minY: footerBandTop,
+    maxX: PAGE_WIDTH - MARGIN_X,
+    maxY: page1RuleY - pt(4),
+  };
+  const layout = buildSitePlanDrawingLayout(model, drawingBox, {
+    measureText: (text, size) => F.body.widthOfTextAtSize(text, size),
+    sheetBounds: page1Frame,
+  });
+  const plan = planSummaryFlow(model, layout, F, layout.segmentTable.map((r) => r.seg), numbering);
+  return plan.sheets.length + 2;
 }
 
 /** @internal exported for checklist tests (fine-print composition). */
