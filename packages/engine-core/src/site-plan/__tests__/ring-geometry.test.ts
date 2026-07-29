@@ -53,43 +53,37 @@ describe("assignSetbackRoles", () => {
     expect(assignments[2]).toEqual({ role: "side", distanceFt: 5 });
   });
 
-  it("without a hint, picks the shorter south-most edge pair as front/rear (disclosed heuristic)", () => {
+  // 2026-07-28 architecture directive: the vertex-count fork is RETIRED.
+  // Without a resolved front edge (boundary primitive or hint) NOTHING is
+  // fabricated — no south-most-short-edge guess, no uniform-min inset.
+  it("without a hint, reports unresolved-front-edge and fabricates NO inset on any ring shape", () => {
     const { basis, assignments } = assignSetbackRoles(rect, setback);
-    expect(basis).toBe("geometric-heuristic:shortest-edge-pair-south-most");
-    // seg0 (y=0, width W, the shorter edge, south-most) -> front
-    expect(assignments[0]).toEqual({ role: "front", distanceFt: 10 });
-    // seg2 (y=D, width W) -> rear
-    expect(assignments[2]).toEqual({ role: "rear", distanceFt: 20 });
-    // seg1/seg3 (length D, the longer pair) -> side
-    expect(assignments[1]).toEqual({ role: "side", distanceFt: 5 });
-    expect(assignments[3]).toEqual({ role: "side", distanceFt: 5 });
-  });
+    expect(basis).toBe("unresolved-front-edge");
+    for (const a of assignments) {
+      expect(a.role).toBe("unassigned");
+      expect(a.distanceFt).toBe(0);
+    }
 
-  it("falls back to a conservative uniform-minimum for irregular (non-4-edge) rings", () => {
     const pentagon = [
       { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 12, y: 6 }, { x: 5, y: 10 }, { x: -2, y: 4 },
     ];
-    const { basis, assignments } = assignSetbackRoles(pentagon, setback);
-    expect(basis).toBe("unresolved-uniform-min");
-    for (const a of assignments) {
-      expect(a).toEqual({ role: "unassigned", distanceFt: 5 }); // min(10,5,20)
+    const irregular = assignSetbackRoles(pentagon, setback);
+    expect(irregular.basis).toBe("unresolved-front-edge");
+    for (const a of irregular.assignments) {
+      expect(a.role).toBe("unassigned");
+      expect(a.distanceFt).toBe(0);
     }
   });
 
-  it("uniform-min ignores not_specified zeros so a real front setback is not collapsed", () => {
-    const pentagon = [
-      { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 12, y: 6 }, { x: 5, y: 10 }, { x: -2, y: 4 },
-    ];
-    const { basis, assignments } = assignSetbackRoles(
-      pentagon,
-      { front: 15, side: 0, rear: 0 },
-      undefined,
-      { side: true, rear: true },
-    );
-    expect(basis).toBe("unresolved-uniform-min");
-    for (const a of assignments) {
-      expect(a.distanceFt).toBe(15);
-    }
+  it("unresolved-front-edge with a real rule draws nothing (offsetRing null, NOT degenerate, provisional)", () => {
+    const result = computeSetbackOffset(rect, { front: 15, side: 0, rear: 0 }, undefined, {
+      side: true,
+      rear: true,
+    });
+    expect(result.basis).toBe("unresolved-front-edge");
+    expect(result.frontEdgeUnresolved).toBe(true);
+    expect(result.offsetRing).toBeNull();
+    expect(result.offsetDegenerate).toBe(false);
   });
 
   it("marks silent side/rear assignments notSpecified without inventing feet", () => {
@@ -106,8 +100,9 @@ describe("assignSetbackRoles", () => {
 });
 
 describe("computeSetbackOffset", () => {
-  it("produces a smaller, correctly-inset polygon for the real 48029:105129 setback values", () => {
-    const result = computeSetbackOffset(rect, setback);
+  it("produces a smaller, correctly-inset polygon for the real 48029:105129 setback values (resolved front edge)", () => {
+    const result = computeSetbackOffset(rect, setback, 0);
+    expect(result.basis).toBe("front-edge-hint");
     expect(result.offsetDegenerate).toBe(false);
     expect(result.offsetRing).not.toBeNull();
     const ring = result.offsetRing!;
@@ -124,7 +119,7 @@ describe("computeSetbackOffset", () => {
     const tiny = [
       { x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 5 }, { x: 0, y: 5 },
     ]; // ~10x16 ft lot, setbacks 10/5/20 ft consume it entirely
-    const result = computeSetbackOffset(tiny, setback);
+    const result = computeSetbackOffset(tiny, setback, 0);
     expect(result.offsetDegenerate).toBe(true);
     expect(result.offsetRing).toBeNull();
     expect(result.offsetDegenerateReason).toMatch(/setback-consumes-lot/);

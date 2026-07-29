@@ -38,6 +38,29 @@ if (!substrateUrl) {
   process.exit(1);
 }
 
+// GUARD (2026-07-28): this script ALWAYS reads fixture input. A fixture road
+// (the fixture "Spring Street" way) was once seeded into the PRODUCTION
+// store by running this against a live DATABASE_URL, poisoning frontage /
+// front-edge anchors. Fixture input never writes to a non-local database
+// unless ALLOW_FIXTURE_INGEST=1 is set explicitly.
+function isLocalDatabaseUrl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+if (!isLocalDatabaseUrl(substrateUrl) && process.env.ALLOW_FIXTURE_INGEST !== "1") {
+  console.error(
+    "FATAL: refusing to ingest FIXTURE road data into a non-local database. " +
+      "This pilot script always reads fixture input; pointing it at a live DATABASE_URL " +
+      "seeds fake roads into production (the 2026-07 fixture Spring Street incident). " +
+      "Set ALLOW_FIXTURE_INGEST=1 only if you are deliberately seeding a non-local sandbox.",
+  );
+  process.exit(1);
+}
+
 const descriptor = bastropRoadIntakeDescriptor();
 const extractedAt = new Date().toISOString();
 const t0 = performance.now();

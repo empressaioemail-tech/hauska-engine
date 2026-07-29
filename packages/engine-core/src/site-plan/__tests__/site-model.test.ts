@@ -44,6 +44,7 @@ describe("composeSitePlanModel", () => {
       dem,
       contourIntervalMeters: 0.5,
       setback,
+      frontEdgeIndex: 0,
     });
 
     expect(model.parcelNodeId).toBe("48029:105129");
@@ -109,6 +110,7 @@ describe("composeSitePlanModel", () => {
       dem,
       contourIntervalMeters: 0.5,
       setback,
+      frontEdgeIndex: 0,
     });
 
     // ~64x73 ft rectangle once reprojected through local-ENU -> ~4600 sq ft
@@ -172,6 +174,7 @@ describe("composeSitePlanModel", () => {
       dem,
       contourIntervalMeters: 0.5,
       setback: consumingSetback,
+      frontEdgeIndex: 0,
     });
     expect(model.setback.degenerate).toBe(true);
     expect(model.summary.buildableAreaSqFt).toBeNull();
@@ -191,13 +194,11 @@ describe("composeSitePlanModel", () => {
     expect(model.setback.basis).toBe("front-edge-hint");
   });
 
-  // Planner HOLD-1 (2026-07-25): a heuristic or unresolved front-edge basis
-  // must carry the provisional honesty note on the PDF summary even when a
-  // numeric buildable area IS drawn — this was previously silent whenever
-  // the offset itself did not degenerate, which is the common case (this
-  // very fixture, with no frontEdgeIndex hint, resolves via the default
-  // geometric heuristic).
-  it("flags the buildable-area honesty note for a resolved-but-heuristic front-edge basis, not only the degenerate-offset case", () => {
+  // 2026-07-28 architecture directive: the geometric heuristic and the
+  // uniform-min fabrication are RETIRED. With a rule on file and no boundary
+  // primitive / front-edge anchor, NOTHING envelope-shaped is drawn, the
+  // state is provisional (not degenerate), and the honesty note says why.
+  it("draws nothing and flags the provisional honesty note when the front edge is unresolved (no primitive, no hint)", () => {
     const model = composeSitePlanModel({
       parcelNodeId: "48029:105129",
       bbox,
@@ -205,14 +206,17 @@ describe("composeSitePlanModel", () => {
       dem,
       contourIntervalMeters: 0.5,
       setback,
-      // No frontEdgeIndex -> falls through to the geometric heuristic.
+      // No boundaryEdges and no frontEdgeIndex -> honest unresolved.
     });
-    expect(model.setback.basis).toBe("geometric-heuristic:shortest-edge-pair-south-most");
+    expect(model.setback.basis).toBe("unresolved-front-edge");
+    expect(model.setback.frontEdgeUnresolved).toBe(true);
     expect(model.setback.degenerate).toBe(false);
-    expect(model.summary.buildableAreaSqFt).not.toBeNull();
+    expect(model.setback.offsetRingLocal).toBeNull();
+    expect(model.summary.buildableAreaSqFt).toBeNull();
     expect(model.summary.buildableAreaHonestNote).toBeTruthy();
     expect(model.summary.buildableAreaHonestNote).toMatch(/provisional/i);
-    expect(model.summary.buildableAreaHonestNote).toMatch(/geometric heuristic/i);
+    expect(model.summary.buildableAreaHonestNote).toMatch(/front-edge resolution/i);
+    expect(model.summary.buildableDisplayKind).toBe("provisional");
   });
 
   it("does not flag the honesty note when the front edge is caller-resolved and no envelope outcome contradicts it", () => {
@@ -227,6 +231,87 @@ describe("composeSitePlanModel", () => {
     });
     expect(model.setback.basis).toBe("front-edge-hint");
     expect(model.summary.buildableAreaHonestNote).toBeUndefined();
+  });
+
+  it("CONSUMES the boundary primitive when present: basis boundary-primitive, roles from stored edges, drawable envelope, no provisional note when every edge is resolved", async () => {
+    const { boundaryEdgesForRing } = await import("./boundary-edge-fixture.js");
+    const boundaryEdges = boundaryEdgesForRing(ringWgs84, [
+      { role: "front", feet: 10 },
+      { role: "side", feet: 5 },
+      { role: "rear", feet: 20 },
+      { role: "side", feet: 5 },
+    ]);
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      boundaryEdges,
+    });
+    expect(model.setback.basis).toBe("boundary-primitive");
+    expect(model.setback.degenerate).toBe(false);
+    expect(model.setback.offsetRingLocal).not.toBeNull();
+    expect(model.summary.buildableAreaSqFt).not.toBeNull();
+    expect(model.summary.buildableAreaSqFt!).toBeLessThan(model.summary.lotAreaSqFt);
+    expect(model.summary.buildableAreaHonestNote).toBeUndefined();
+    expect(model.setback.segments.map((s) => s.role)).toEqual(["front", "side", "rear", "side"]);
+    expect(model.setback.segments.map((s) => s.distanceFt)).toEqual([10, 5, 20, 5]);
+  });
+
+  // Operator ruling 2026-07-28: stored setback ABSENCE (build-to-line
+  // governs / unmapped adjacency) = ZERO inset on those edges + PROVISIONAL
+  // envelope. Never a fabricated side/rear value.
+  it("applies zero inset on stored-absence edges and labels the envelope PROVISIONAL (build-to-line ruling)", async () => {
+    const { boundaryEdgesForRing } = await import("./boundary-edge-fixture.js");
+    const boundaryEdges = boundaryEdgesForRing(ringWgs84, [
+      { role: "front", feet: 15 },
+      { role: "side", absent: true },
+      { role: "rear", absent: true },
+      { role: "side_corner", feet: 5 },
+    ]);
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback: { ...setback, front: 15, side: 0, rear: 0, notSpecified: { side: true, rear: true } },
+      boundaryEdges,
+    });
+    expect(model.setback.basis).toBe("boundary-primitive");
+    expect(model.setback.primitiveEdgeAbsence).toBe(true);
+    expect(model.setback.offsetRingLocal).not.toBeNull();
+    expect(model.setback.segments.map((s) => s.distanceFt)).toEqual([15, 0, 0, 5]);
+    expect(model.setback.segments[1]!.notSpecified).toBe(true);
+    expect(model.summary.buildableAreaSqFt).not.toBeNull();
+    expect(model.summary.buildableAreaHonestNote).toMatch(/provisional/i);
+    expect(model.summary.buildableAreaHonestNote).toMatch(/no value was fabricated/i);
+    expect(model.summary.buildableDisplayKind).toBe("provisional");
+  });
+
+  it("falls back to the honest unresolved treatment when the primitive does not cover the ring (edge-count mismatch)", async () => {
+    const { boundaryEdgesForRing } = await import("./boundary-edge-fixture.js");
+    const boundaryEdges = boundaryEdgesForRing(ringWgs84, [
+      { role: "front", feet: 10 },
+      { role: "side", feet: 5 },
+      { role: "rear", feet: 20 },
+      { role: "side", feet: 5 },
+    ]).slice(0, 2); // stale/partial primitive
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      boundaryEdges,
+    });
+    expect(model.setback.basis).toBe("unresolved-front-edge");
+    expect(model.setback.frontEdgeUnresolved).toBe(true);
+    expect(model.setback.offsetRingLocal).toBeNull();
+    expect(model.summary.buildableAreaSqFt).toBeNull();
   });
 
   it("flags the honesty note when the buildable-envelope atom independently reports provisional-front-edge, even on a resolved front-edge-hint basis", () => {

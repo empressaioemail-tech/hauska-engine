@@ -7,8 +7,10 @@ import { TERRAIN_VERTICAL_DATUM, type TerrainVerticalDatum } from "../parcel-ter
 import { projectWgs84ToLocalEnu, TERRAIN_MESH_CRS_CONVENTION } from "../parcel-terrain/mesh.js";
 import {
   computeSetbackOffset,
+  computeSetbackOffsetFromPrimitive,
   dedupeClosingVertex,
   ringSegments,
+  type BoundaryEdgeGeometryInput,
   type FrontEdgeBasis,
   type LocalPoint,
   type RingSegment,
@@ -120,6 +122,16 @@ export interface ComposeSitePlanModelInputs {
   dem: ParsedDem;
   contourIntervalMeters: number;
   setback: SetbackRuleInput;
+  /**
+   * The parcel's STORED boundary primitive (property-boundary-edge atoms:
+   * per-edge role + resolved setback + interior inward normal, baked once per
+   * ring — S2-U2). When present, the envelope/setback geometry and edge-role
+   * labels CONSUME it through the same engine depth-warm uses
+   * (`computeSetbackOffsetFromPrimitive`) — one truth by construction. When
+   * absent, the composer falls back to `frontEdgeIndex` (resolved anchor) or
+   * the honest unresolved-front-edge treatment — never a per-edge guess.
+   */
+  boundaryEdges?: ReadonlyArray<BoundaryEdgeGeometryInput>;
   /** Segment index (into the property ring) known to face the street, if resolved. */
   frontEdgeIndex?: number;
   streetAnchors?: StreetAnchorInput[];
@@ -174,6 +186,13 @@ export interface SitePlanSetbackModel {
   offsetRingLocal: LocalPoint[] | null;
   degenerate: boolean;
   degenerateReason?: string;
+  /** True when a rule exists but no boundary primitive / front-edge anchor
+   * resolves the front edge: nothing envelope-shaped is drawn (provisional),
+   * distinct from a degenerate (collapsed) offset. */
+  frontEdgeUnresolved?: boolean;
+  /** Boundary-primitive path: some edge carried a stored setback absence
+   * (zero inset there) — envelope drawn but labeled PROVISIONAL. */
+  primitiveEdgeAbsence?: boolean;
 }
 
 export interface SitePlanStreetAnchorModel {
@@ -307,32 +326,50 @@ function sampleDemNearest(
 }
 
 /**
- * Buildable area is only ever a certain, non-provisional figure when the
- * front edge is a resolved anchor (`front-edge-hint`) AND no upstream
- * buildable-envelope atom has independently flagged the parcel provisional.
- * Every other basis (a geometric heuristic, or a uniform-minimum fallback
- * for an irregular ring) is a planning estimate, not a permit-ready number,
- * and the honesty note must say so even when a numeric area IS drawn
- * (planner HOLD-1, 2026-07-25 — a degenerate offset is a separate, harder
- * failure already covered by `offsetDegenerateReason` below).
+ * Buildable area is a certain, non-provisional figure only when its geometry
+ * consumed a fully-resolved truth: the stored boundary primitive with a
+ * resolved setback on every edge, or a caller-resolved front-edge anchor —
+ * AND no upstream buildable-envelope atom independently flags the parcel
+ * provisional. Everything else carries the honesty note (planner HOLD-1,
+ * 2026-07-25; build-to-line ruling 2026-07-28 — a degenerate offset is a
+ * separate, harder failure already covered by `offsetDegenerateReason`).
  */
 function computeBuildableAreaHonestNote(
-  offset: Pick<SetbackOffsetResult, "offsetRing" | "offsetDegenerateReason" | "basis">,
+  offset: Pick<
+    SetbackOffsetResult,
+    "offsetRing" | "offsetDegenerateReason" | "basis" | "frontEdgeUnresolved" | "primitiveEdgeAbsence"
+  >,
   envelopeOutcome: EnvelopeOutcomeInput | undefined,
 ): string | undefined {
+  if (offset.frontEdgeUnresolved) {
+    return (
+      "Buildable area is provisional pending front-edge resolution: no boundary primitive is on file " +
+      "for this parcel and no front-edge anchor is resolved. Setback lines are not drawn rather than " +
+      "guessed per edge. Treat any figure as a planning estimate, not a permit-ready boundary."
+    );
+  }
   if (!offset.offsetRing) {
     return offset.offsetDegenerateReason;
   }
   const envelopeProvisional = envelopeOutcome?.kind === "provisional-front-edge";
-  if (offset.basis === "front-edge-hint" && !envelopeProvisional) {
+  if (offset.basis === "boundary-primitive" && offset.primitiveEdgeAbsence && !envelopeProvisional) {
+    return (
+      "Buildable area is provisional: one or more boundary edges carry no stated setback " +
+      "(build-to-line governs or adjacency unmapped); zero inset was applied on those edges — " +
+      "no value was fabricated. Treat this figure as a planning estimate, not a permit-ready boundary."
+    );
+  }
+  if (
+    (offset.basis === "front-edge-hint" || offset.basis === "boundary-primitive") &&
+    !envelopeProvisional
+  ) {
     return undefined;
   }
-  const basisNote =
-    offset.basis === "geometric-heuristic:shortest-edge-pair-south-most"
-      ? "front edge assigned by a geometric heuristic (shortest roughly-parallel edge pair, south-most side), not a resolved road-anchor"
-      : offset.basis === "unresolved-uniform-min"
-        ? "front edge unresolved on this ring shape; the uniform minimum of front/side/rear was applied to every edge as a conservative estimate"
-        : "front-edge basis resolved by hint, but the parcel's buildable-envelope atom independently reports a provisional front edge";
+  const basisNote = envelopeProvisional
+    ? offset.basis === "boundary-primitive"
+      ? "geometry consumed the stored boundary primitive, but the parcel's buildable-envelope atom independently reports a provisional front edge"
+      : "front-edge basis resolved by hint, but the parcel's buildable-envelope atom independently reports a provisional front edge"
+    : "front edge unresolved";
   const envelopeNote = envelopeProvisional
     ? ` Buildable-envelope atom outcome: provisional-front-edge (${envelopeOutcome.reason}).`
     : "";
@@ -391,13 +428,27 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
   const notSpecified = setbackHonestAbsence
     ? { front: true, side: true, rear: true }
     : inputs.setback.notSpecified;
-  const offset = computeSetbackOffset(
-    ringLocal,
-    { front: inputs.setback.front, side: inputs.setback.side, rear: inputs.setback.rear },
-    inputs.frontEdgeIndex,
-    notSpecified,
-    { ringWgs84: inputs.ringWgs84, bbox: inputs.bbox },
-  );
+  // Geometry selection (2026-07-28 architecture directive): the STORED
+  // boundary primitive wins whenever it exists — the export consumes the same
+  // per-edge role/setback/inward-normal truth depth-warm consumes, through
+  // the same offset engine. A caller-resolved front-edge anchor is the only
+  // other basis; otherwise the honest unresolved treatment. The retired
+  // vertex-count heuristic never runs here.
+  const offset: SetbackOffsetResult =
+    !setbackHonestAbsence && inputs.boundaryEdges && inputs.boundaryEdges.length > 0
+      ? computeSetbackOffsetFromPrimitive({
+          ringLocal,
+          ringWgs84: inputs.ringWgs84,
+          bbox: inputs.bbox,
+          boundaryEdges: inputs.boundaryEdges,
+        })
+      : computeSetbackOffset(
+          ringLocal,
+          { front: inputs.setback.front, side: inputs.setback.side, rear: inputs.setback.rear },
+          inputs.frontEdgeIndex,
+          notSpecified,
+          { ringWgs84: inputs.ringWgs84, bbox: inputs.bbox },
+        );
   const setback: SitePlanSetbackModel = {
     front: inputs.setback.front,
     side: inputs.setback.side,
@@ -419,6 +470,8 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     offsetRingLocal: offset.offsetRing,
     degenerate: offset.offsetDegenerate,
     degenerateReason: offset.offsetDegenerateReason,
+    frontEdgeUnresolved: offset.frontEdgeUnresolved,
+    primitiveEdgeAbsence: offset.primitiveEdgeAbsence,
   };
 
   const contours =
@@ -509,6 +562,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     buildableAreaSqFt,
     provisional:
       warmKind === "provisional-front-edge" ||
+      offset.frontEdgeUnresolved === true ||
       (honestNote != null && buildableAreaSqFt != null),
     warmEnvelopeKind: warmKind,
     warmEnvelopeAreaSqFt: warmAreaSqFt,

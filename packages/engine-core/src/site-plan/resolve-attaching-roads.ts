@@ -3,7 +3,11 @@
  *
  * Prefer property-boundary-edge facingRoad refs. Fallback: county road-nodes
  * whose centerline intersects an expanded parcel bbox, then proximity-filter
- * against parcel edges (same 25 m threshold as depth-warm edge labeling).
+ * against parcel edges. DISTANCE CAP: a road anchors only when its centerline
+ * passes within DEFAULT_ROAD_PROXIMITY_THRESHOLD_M (25 m) of a parcel edge —
+ * the same cap depth-warm edge labeling applies. FRONTAGE PLAUSIBILITY
+ * (2026-07-28): pedestrian/service ways (footway, path, cycleway, steps,
+ * service/alley, …) never anchor STREET/frontage regardless of distance.
  * Honest absence when neither path yields an attach — never fabricate STREET.
  */
 
@@ -15,11 +19,33 @@ import type { StoragePort } from "@hauska-engine/storage";
 
 import {
   DEFAULT_ROAD_PROXIMITY_THRESHOLD_M,
+  FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS,
+  isFrontEligibleRoad,
   labelEdgesFromRoads,
 } from "../depth-warm/edgeLabeling.js";
 import { roadAtomToWarmSource } from "../road-intake/road-to-warm-source.js";
 import { streetAnchorsFromRoadNodes } from "./road-street-anchors.js";
 import type { StreetAnchorInput } from "./site-model.js";
+
+/**
+ * OSM highway tags that must never anchor a parcel's STREET frontage: the
+ * shared depth-warm front-ineligible set (footway, path, steps, cycleway,
+ * pedestrian, …) plus `service` (driveways/parking aisles classify as alley).
+ */
+const STREET_INELIGIBLE_OSM_HIGHWAY_TAGS: ReadonlySet<string> = new Set([
+  ...FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS,
+  "service",
+]);
+
+/** Frontage candidacy: class-eligible road with a real (non-alley) ROW. */
+export function isStreetAnchorEligible(road: RoadNodeAtomInstance): boolean {
+  const warm = roadAtomToWarmSource(road);
+  if (!warm) return false;
+  if (warm.classification === "alley") return false;
+  const tag = warm.osmHighwayTag?.trim().toLowerCase() ?? "";
+  if (tag && STREET_INELIGIBLE_OSM_HIGHWAY_TAGS.has(tag)) return false;
+  return isFrontEligibleRoad(warm);
+}
 
 const METERS_PER_DEG_LAT = 111_320;
 /** ~50 m buffer so ROW edges near the parcel still enter the bbox candidate set. */
@@ -141,7 +167,7 @@ export async function resolveAttachingRoadNodes(input: {
   const edges = await input.storage.listBoundaryEdgesByParcelNodeId(input.parcelNodeId);
   const fromEdges = roadIdsFromBoundaryEdges(edges);
   if (fromEdges.length > 0) {
-    const roads = await loadRoadsByIds(input.storage, fromEdges);
+    const roads = (await loadRoadsByIds(input.storage, fromEdges)).filter(isStreetAnchorEligible);
     const streetAnchors = streetAnchorsFromRoadNodes(roads);
     if (streetAnchors.length > 0) {
       return { roads, streetAnchors, source: "boundary-edge" };
@@ -151,7 +177,9 @@ export async function resolveAttachingRoadNodes(input: {
   const countyFips = parseCountyFips(input.parcelNodeId);
   const bbox = expandRingBbox(input.ringWgs84);
   if (countyFips && bbox && typeof input.storage.listRoadAtomsNearBbox === "function") {
-    const candidates = await input.storage.listRoadAtomsNearBbox(countyFips, bbox);
+    const candidates = (await input.storage.listRoadAtomsNearBbox(countyFips, bbox)).filter(
+      isStreetAnchorEligible,
+    );
     const proximityRoads = filterRoadsAttachingByProximity(input.ringWgs84, candidates);
     const streetAnchors = streetAnchorsFromRoadNodes(proximityRoads);
     if (streetAnchors.length > 0) {
@@ -164,6 +192,7 @@ export async function resolveAttachingRoadNodes(input: {
     streetAnchors: [],
     source: "none",
     reason:
-      "No road-node attaches to this parcel (no ROW/alley boundary-edge facingRoad and no road-node within proximity of the parcel ring).",
+      "No road-node attaches to this parcel (no frontage-eligible boundary-edge facingRoad and no " +
+      `frontage-eligible road-node within ${DEFAULT_ROAD_PROXIMITY_THRESHOLD_M} m of the parcel ring).`,
   };
 }

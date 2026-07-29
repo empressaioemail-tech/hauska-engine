@@ -456,7 +456,7 @@ export function buildApp(options: ServerOptions = {}): Hono {
       return c.json(
         {
           error: "invalid roadNodeId",
-          hint: "expected {county_fips}:road:{osm_way_id} e.g. 48021:road:123456789",
+          hint: "expected {county_fips}:road:{osm_way_id} e.g. 48021:road:<numeric-osm-way-id>",
           roadNodeId,
         },
         400,

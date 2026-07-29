@@ -108,6 +108,7 @@ export const REASON = {
   noZoning: "No zoning record on file for this parcel.",
   noSetbackRule: "No setback rule on file; setbacks not specified or verified.",
   setbacksConsumeLot: "Setbacks exceed the lot; no buildable margin remains.",
+  frontEdgeUnresolved: "Front edge unresolved; setback lines are not drawn.",
   noStreet: "No road node attaches to this parcel.",
   floodNotQueried: "Flood data was not queried on this run.",
   noCaptureDate: "Provider basemap does not publish a capture date.",
@@ -193,8 +194,8 @@ export function countyDisplayName(name: string | undefined | null): string | und
 
 /** Plain-language mapping of the front-edge basis (machine codes stay off the sheet, §11). */
 export function describeSetbackBasis(basis: string): string {
+  if (basis === "boundary-primitive") return "basis: stored boundary edges";
   if (basis === "front-edge-hint") return "basis: resolved road anchor";
-  if (basis.startsWith("geometric-heuristic")) return "basis: front edge estimated by geometry";
-  if (basis === "unresolved-uniform-min") return "basis: uniform minimum on every edge";
+  if (basis === "unresolved-front-edge") return "basis: front edge unresolved";
   return "basis: rule on file";
 }

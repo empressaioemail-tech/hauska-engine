@@ -45,6 +45,7 @@ function buildModel(streetAnchors?: Array<{ name: string; points: Array<[number,
     dem,
     contourIntervalMeters: 0.5,
     setback,
+    frontEdgeIndex: 0,
     geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
     streetAnchors,
   });
@@ -317,6 +318,32 @@ describe("buildSitePlanDrawingLayout", () => {
     expect(layout.streets.honestAbsence).toBe(false);
     expect(layout.streets.anchors).toHaveLength(1);
     expect(layout.streets.anchors[0]!.points.length).toBeGreaterThanOrEqual(2);
+    // A named road with in-frame geometry LABELS (2026-07-28 street-label fix
+    // — drop is the last resort only).
+    expect(layout.streets.anchors[0]!.label).toBeDefined();
+    expect(layout.streets.anchors[0]!.label!.text).toBe("N PINE ST");
+  });
+
+  it("labels a named road whose visible geometry is only an in-frame STUB (fallback along the longest visible run)", () => {
+    // Centerline mostly west of the frame; only a short stub survives the
+    // frame/context clip near the parcel. The name must still label on the
+    // visible run rather than silently dropping.
+    const model = buildModel([
+      {
+        name: "STUB LN",
+        points: [
+          [-98.5030, 29.4002], // far outside the frame to the west
+          [-98.49978, 29.4002], // stub reaching just inside the parcel vicinity
+        ],
+        sourceRef: "osm:way/stub",
+      },
+    ]);
+    const layout = buildSitePlanDrawingLayout(model, box);
+    const anchor = layout.streets.anchors.find((a) => a.name === "STUB LN");
+    expect(anchor).toBeDefined();
+    expect(anchor!.points.length).toBeGreaterThanOrEqual(2);
+    expect(anchor!.label).toBeDefined();
+    expect(anchor!.label!.text).toBe("STUB LN");
   });
 
   it("keeps a frontage street just outside the parcel ring (not only on-ring geometry)", () => {
