@@ -14,6 +14,8 @@ import {
   type NoaaAtlas14PointEstimate,
 } from "@hauska-engine/adapters/hydrology";
 
+import polygonClipping from "polygon-clipping";
+
 import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
 import type { ParcelGeometryResolver } from "../parcel-terrain/author.js";
 
@@ -118,9 +120,20 @@ export interface FloodDrainageFlowExit {
 export interface FloodDrainageStudyStats {
   /** Modeled upstream catchment area (mask-cell sum), square feet. */
   catchmentAreaSqFt: number;
-  /** Modeled ponded area at the design storm, square feet; null when the
-   * rainfall result was not computed. */
+  /**
+   * Modeled ponded area CLIPPED TO THE PARCEL RING, square feet — the
+   * headline number ("how much water pools HERE"). 0 is a valid, honest
+   * value (rainfall was modeled; none of it intersects the parcel); null
+   * means the rainfall result was not computed at all. The 2026-07-29
+   * canary defect was summing the whole modeled DEM region into this stat
+   * (3.4M sq ft on a 0.19-acre parcel) — that wider figure now lives in
+   * {@link pondedAreaModeledRegionSqFt} as labeled context only.
+   */
   pondedAreaSqFt: number | null;
+  /** Total modeled ponding across the WHOLE padded catchment region,
+   * square feet (context qualifier, never the headline); null when the
+   * rainfall result was not computed. */
+  pondedAreaModeledRegionSqFt: number | null;
   flowExitCount: number;
   pourPoint: { lng: number; lat: number };
 }
@@ -286,6 +299,84 @@ export function featureCollectionAreaSqFt(fc: GeoJsonFeatureCollection | null): 
   return total;
 }
 
+/** Signed-free shoelace area of one WGS84 ring, square feet. */
+function ringAreaSqFt(pts: ReadonlyArray<[number, number]>): number {
+  if (pts.length < 3) return 0;
+  const lat0 = pts[0]![1];
+  const mLng = metersPerDegLng(lat0);
+  let sum = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i]![0] * mLng;
+    const yi = pts[i]![1] * METERS_PER_DEG_LAT;
+    const xj = pts[j]![0] * mLng;
+    const yj = pts[j]![1] * METERS_PER_DEG_LAT;
+    sum += xj * yi - xi * yj;
+  }
+  return Math.abs(sum / 2) * SQFT_PER_SQM;
+}
+
+export interface PondingClipResult {
+  /** The rainfall FeatureCollection with every Polygon feature tagged
+   * `onParcel: boolean` (true = the feature intersects the parcel ring). */
+  taggedGeoJson: GeoJsonFeatureCollection;
+  /** Ponded area intersecting the parcel ring, square feet (exact
+   * polygon-clipping intersection, not a centroid heuristic). */
+  onParcelAreaSqFt: number;
+  /** Total ponded area across the whole modeled region, square feet. */
+  modeledRegionAreaSqFt: number;
+}
+
+/**
+ * Clip the modeled rainfall/ponding result to the parcel ring (2026-07-29
+ * canary fix). The headline ponding stat must answer "how much water pools
+ * on THIS parcel" — never the whole padded catchment region. Exact boolean
+ * intersection via polygon-clipping (already the repo's polygon-ops
+ * dependency); every feature is tagged `onParcel` so the PDF drawing and
+ * the PE viz emphasize parcel ponding without re-deriving the clip.
+ */
+export function clipPondingToParcel(
+  fc: GeoJsonFeatureCollection,
+  ring: ReadonlyArray<[number, number]>,
+): PondingClipResult {
+  const parcelPoly: [number, number][][] = [ring.map((p) => [p[0], p[1]] as [number, number])];
+  let onParcelAreaSqFt = 0;
+  let modeledRegionAreaSqFt = 0;
+  const features = fc.features.map((feature) => {
+    if (feature.geometry.type !== "Polygon") {
+      return { ...feature, properties: { ...feature.properties, onParcel: false } };
+    }
+    const exterior = (feature.geometry.coordinates as [number, number][][])[0];
+    if (!Array.isArray(exterior) || exterior.length < 3) {
+      return { ...feature, properties: { ...feature.properties, onParcel: false } };
+    }
+    modeledRegionAreaSqFt += ringAreaSqFt(exterior);
+    let interAreaSqFt = 0;
+    try {
+      const intersection = polygonClipping.intersection(parcelPoly, [exterior]);
+      for (const poly of intersection) {
+        poly.forEach((clipRing, ringIndex) => {
+          const area = ringAreaSqFt(clipRing as [number, number][]);
+          interAreaSqFt += ringIndex === 0 ? area : -area;
+        });
+      }
+    } catch {
+      // Degenerate input geometry: honest fallback is NO parcel overlap
+      // claimed — never a guessed positive area.
+      interAreaSqFt = 0;
+    }
+    onParcelAreaSqFt += Math.max(0, interAreaSqFt);
+    return {
+      ...feature,
+      properties: { ...feature.properties, onParcel: interAreaSqFt > 0 },
+    };
+  });
+  return {
+    taggedGeoJson: { type: "FeatureCollection", features },
+    onParcelAreaSqFt,
+    modeledRegionAreaSqFt,
+  };
+}
+
 /**
  * Flow exits: traced flow lines that START inside the parcel ring (or enter
  * it) and leave it — the first vertex outside following an inside vertex is
@@ -443,11 +534,15 @@ export function buildFloodDrainageBriefing(study: {
   );
   if (study.stats.pondedAreaSqFt != null && study.stats.pondedAreaSqFt > 0) {
     sentences.push(
-      `At a ${study.rainfallDepthInches} inch design storm, modeled ponding covers ${acresPhrase(study.stats.pondedAreaSqFt)} in and around the parcel.`,
+      `At a ${study.rainfallDepthInches} inch design storm, modeled ponding covers ${acresPhrase(study.stats.pondedAreaSqFt)} on the parcel.`,
+    );
+  } else if (study.stats.pondedAreaSqFt === 0) {
+    sentences.push(
+      `At a ${study.rainfallDepthInches} inch design storm, no modeled ponding intersects the parcel.`,
     );
   } else {
     sentences.push(
-      `At a ${study.rainfallDepthInches} inch design storm, the model shows no significant ponding concentration on this parcel.`,
+      `A rainfall ponding response was not modeled on this run at the ${study.rainfallDepthInches} inch design storm.`,
     );
   }
   if (study.stats.flowExitCount > 0) {
@@ -524,18 +619,25 @@ export async function runFloodDrainageStudy(
     resolutionMetersRequested,
   );
 
+  // Cold-refresh trim (2026-07-29 canary follow-up): the NOAA point-estimate
+  // fetch (up to a 15s upstream timeout) runs CONCURRENTLY with the DEM
+  // fetch+parse instead of serially after it — it only needs the ring
+  // centroid, which is already known. `resolveStudyRainfall` never rejects
+  // (fetch failures resolve to the documented default), so the parallel
+  // promise cannot orphan an unhandled rejection if the DEM path throws.
+  const centroid = ringCentroid(ringWgs84);
+  const rainfallPromise = resolveStudyRainfall(
+    centroid,
+    options.rainfallDepthInches,
+    options.fetchRainfall ?? fetchNoaaAtlas14PointEstimate,
+  );
+
   const fetchDem = options.fetchDem ?? fetchUsgs3depDem;
   const demFetch = await fetchDem(catchmentBbox, {
     resolutionMeters: resolutionMetersAdapted,
   });
   const dem = await (options.parseDem ?? parseDemBytes)(demFetch.bytes);
-
-  const centroid = ringCentroid(ringWgs84);
-  const rainfall = await resolveStudyRainfall(
-    centroid,
-    options.rainfallDepthInches,
-    options.fetchRainfall ?? fetchNoaaAtlas14PointEstimate,
-  );
+  const rainfall = await rainfallPromise;
 
   const pourPoint = resolvePourPoint(dem, catchmentBbox, resolved.bbox, ringWgs84);
   const accumulationThreshold = accumulationThresholdForResolution(resolutionMetersAdapted);
@@ -578,6 +680,7 @@ export async function runFloodDrainageStudy(
     const stats: FloodDrainageStudyStats = {
       catchmentAreaSqFt: 0,
       pondedAreaSqFt: null,
+      pondedAreaModeledRegionSqFt: null,
       flowExitCount: 0,
       pourPoint,
     };
@@ -611,11 +714,15 @@ export async function runFloodDrainageStudy(
   const catchmentGeoJson = result.drainageZonesGeoJson;
   const drainageZonesGeoJson = deriveDrainageZones(catchmentGeoJson, result.flowLinesGeoJson);
   const flowExits = resolveFlowExits(result.flowLinesGeoJson, ringWgs84);
+  // Headline ponding = the PARCEL-CLIPPED area; the whole-region figure is
+  // context only (never the headline — the 2026-07-29 canary defect).
+  const pondingClip = result.rainfallResultGeoJson
+    ? clipPondingToParcel(result.rainfallResultGeoJson, ringWgs84)
+    : null;
   const stats: FloodDrainageStudyStats = {
     catchmentAreaSqFt: featureCollectionAreaSqFt(catchmentGeoJson),
-    pondedAreaSqFt: result.rainfallResultGeoJson
-      ? featureCollectionAreaSqFt(result.rainfallResultGeoJson)
-      : null,
+    pondedAreaSqFt: pondingClip ? pondingClip.onParcelAreaSqFt : null,
+    pondedAreaModeledRegionSqFt: pondingClip ? pondingClip.modeledRegionAreaSqFt : null,
     flowExitCount: flowExits.length,
     pourPoint: result.pourPoint,
   };
@@ -624,7 +731,7 @@ export async function runFloodDrainageStudy(
     ...base,
     catchmentGeoJson,
     drainageZonesGeoJson,
-    rainfallResultGeoJson: result.rainfallResultGeoJson,
+    rainfallResultGeoJson: pondingClip ? pondingClip.taggedGeoJson : null,
     flowLinesGeoJson: result.flowLinesGeoJson,
     flowExits,
     stats,

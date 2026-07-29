@@ -63,7 +63,12 @@ function fullStudy(overrides: Partial<FloodDrainageStudy> = {}): FloodDrainageSt
     },
     rainfallResultGeoJson: {
       type: "FeatureCollection",
-      features: [quad(-97.3192, 30.1008, 0.0003, { rainfallDepthMm: 241 })],
+      features: [
+        // On-parcel ponding (clip-tagged by the study) → drawn prominent.
+        quad(-97.3192, 30.1008, 0.0003, { rainfallDepthMm: 241, onParcel: true }),
+        // Far-field ponding → context only, NOT drawn (stated choice).
+        quad(-97.324, 30.104, 0.001, { rainfallDepthMm: 241, onParcel: false }),
+      ],
     },
     flowLinesGeoJson: {
       type: "FeatureCollection",
@@ -89,7 +94,9 @@ function fullStudy(overrides: Partial<FloodDrainageStudy> = {}): FloodDrainageSt
     flowExits: [{ lng: -97.3184, lat: 30.1009, bearingDeg: 95 }],
     stats: {
       catchmentAreaSqFt: 538_000,
+      // Headline = parcel-clipped; the whole-region figure is context only.
       pondedAreaSqFt: 3_200,
+      pondedAreaModeledRegionSqFt: 3_472_049,
       flowExitCount: 1,
       pourPoint: { lng: -97.319, lat: 30.101 },
     },
@@ -114,6 +121,7 @@ function emptyStudy(): FloodDrainageStudy {
     stats: {
       catchmentAreaSqFt: 0,
       pondedAreaSqFt: null,
+      pondedAreaModeledRegionSqFt: null,
       flowExitCount: 0,
       pourPoint: { lng: -97.319, lat: 30.101 },
     },
@@ -144,12 +152,18 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     expect(decoded).toContain("CATCHMENT");
     expect(decoded).toContain("12.4 AC");
     expect(decoded).toContain("PONDING AT 9.5\"");
+    // Headline ponding = the PARCEL-CLIPPED 3,200 SF — the 3.4M SF whole-
+    // region figure must NEVER print as a headline stat (canary defect).
     expect(decoded).toContain("3,200 SF");
+    expect(decoded).not.toContain("3,472,049 SF");
     expect(decoded).toContain("FLOW EXITS");
     // Summary sections (§7 grid language).
     expect(decoded).toContain("MODELED RESULTS");
     expect(decoded).toContain("538,000 sq ft");
     expect(decoded).toContain("(12.35 acres)");
+    // The wider modeled region rides as a labeled context qualifier only.
+    expect(decoded).toContain("Ponding on parcel");
+    expect(decoded).toContain("wider modeled area 79.7 acres");
     expect(decoded).toContain("RAINFALL FORCING");
     expect(decoded).toContain("9.5 in · 24-hr · 100-yr");
     expect(decoded).toContain("NOAA Atlas 14 point estimate");
@@ -196,6 +210,50 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     expect(kinds.has("flow-line")).toBe(false);
     expect(kinds.has("property-line")).toBe(true);
     expect(kinds.has("honest-empty-callout")).toBe(true);
+  });
+
+  it("ponding modeled but NONE on the parcel: honest NONE MODELED headline, no ponding drawn, legend reason inline", async () => {
+    const study = fullStudy({
+      rainfallResultGeoJson: {
+        type: "FeatureCollection",
+        // All ponding is far-field — none intersects the ring.
+        features: [quad(-97.324, 30.104, 0.001, { rainfallDepthMm: 241, onParcel: false })],
+      },
+    });
+    study.stats = { ...study.stats, pondedAreaSqFt: 0, pondedAreaModeledRegionSqFt: 3_472_049 };
+    study.briefing = buildFloodDrainageBriefing(study);
+    const result = await emitPdfFloodDrainage(study, descriptor);
+
+    const decoded = decodeAllContentStreams(result.bytes);
+    // §15-style honest headline — never the whole-region sum.
+    expect(decoded).toContain("NONE MODELED");
+    expect(decoded).not.toContain("3,472,049 SF");
+    expect(decoded).toContain("None modeled");
+    expect(decoded).toContain("no modeled ponding intersects the parcel");
+    // The wider figure survives ONLY as the labeled qualifier.
+    expect(decoded).toContain("wider modeled area 79.7 acres");
+    // §5 legend: the ponding row is listed, greyed, reason inline.
+    expect(decoded).toContain("Ponding — none modeled on parcel");
+    // Far-field ponding is NOT drawn (stated choice: context lives in the
+    // catchment fill + the summary qualifier, not as far-field fills).
+    expect(result.marks.some((m) => m.kind === "rainfall-ponding")).toBe(false);
+  });
+
+  it("drainage zones with nothing graded: no zones drawn AND the legend row carries the honest inline reason (§5)", async () => {
+    const study = fullStudy({
+      drainageZonesGeoJson: {
+        type: "FeatureCollection",
+        features: [
+          quad(-97.3193, 30.1008, 0.0006, { zone: "catchment", concentration: 0 }),
+          quad(-97.3199, 30.1002, 0.0006, { zone: "catchment", concentration: 0 }),
+        ],
+      },
+    });
+    study.briefing = buildFloodDrainageBriefing(study);
+    const result = await emitPdfFloodDrainage(study, descriptor);
+    expect(result.marks.some((m) => m.kind === "drainage-zones")).toBe(false);
+    const decoded = decodeAllContentStreams(result.bytes);
+    expect(decoded).toContain("Drainage concentration — none at this resolution");
   });
 
   it("discloses the documented rainfall default in the fine print when the source is 'default'", async () => {

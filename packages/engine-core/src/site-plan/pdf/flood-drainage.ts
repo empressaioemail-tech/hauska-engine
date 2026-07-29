@@ -1,6 +1,8 @@
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFPage, type RGB } from "pdf-lib";
 
+import type { GeoJsonFeatureCollection } from "@hauska-engine/adapters/hydrology";
+
 import type { FloodDrainageStudy } from "../flood-drainage-study.js";
 import { clipPolylineToAabb } from "./annotation-placement.js";
 import {
@@ -329,16 +331,40 @@ function headerStats(study: FloodDrainageStudy): HeaderStat[] {
       { label: "FLOW EXITS", chip: CHIP_UNAVAILABLE },
     ];
   }
+  // PONDING headline = the PARCEL-CLIPPED area only (2026-07-29 canary
+  // fix — the whole-region sum printed 3.4M SF on a 0.19-acre parcel).
+  // 0 takes the §15-style NONE MODELED treatment (suppressed, honest);
+  // null (not computed) takes the UNAVAILABLE chip.
+  const ponding: HeaderStat =
+    study.stats.pondedAreaSqFt == null
+      ? { label: `PONDING AT ${study.rainfallDepthInches}"`, chip: CHIP_UNAVAILABLE }
+      : study.stats.pondedAreaSqFt > 0
+        ? {
+            label: `PONDING AT ${study.rainfallDepthInches}"`,
+            value: formatSf(study.stats.pondedAreaSqFt),
+          }
+        : {
+            label: `PONDING AT ${study.rainfallDepthInches}"`,
+            value: "NONE MODELED",
+            color: SUPPRESSED,
+          };
   return [
     { label: "CATCHMENT", value: catchmentStatValue(study), color: TOKENS.accent700 },
-    {
-      label: `PONDING AT ${study.rainfallDepthInches}"`,
-      ...(study.stats.pondedAreaSqFt != null
-        ? { value: formatSf(study.stats.pondedAreaSqFt) }
-        : { chip: CHIP_UNAVAILABLE }),
-    },
+    ponding,
     { label: "FLOW EXITS", value: String(study.stats.flowExitCount) },
   ];
+}
+
+/** True when a rainfall feature intersects the parcel (study-side clip tag). */
+function pondingFeatureOnParcel(feature: GeoJsonFeatureCollection["features"][number]): boolean {
+  return (feature.properties as { onParcel?: boolean } | undefined)?.onParcel === true;
+}
+
+/** True when the zones layer carries at least one graded cell to draw. */
+function hasGradedZones(study: FloodDrainageStudy): boolean {
+  return study.drainageZonesGeoJson.features.some(
+    (f) => Number((f.properties as { concentration?: number } | undefined)?.concentration ?? 0) >= 1,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -383,11 +409,17 @@ function drawStudyDrawing(
       if (drawn.length > 0) marks.once(1, "drainage-zones", "graded", bboxOf(drawn));
     }
 
-    // 3) RAINFALL PONDING.
+    // 3) RAINFALL PONDING — ON-PARCEL FEATURES ONLY (2026-07-29 canary
+    // fix). DESIGN CHOICE: far-field ponding across the padded modeled
+    // region is NOT drawn at all — at parcel scale it reads as noise, the
+    // catchment fill already carries the regional context, and the wider
+    // area is disclosed as a labeled qualifier on the summary sheet. The
+    // drawing answers "where does water pool HERE".
     if (study.rainfallResultGeoJson) {
       const drawn: Array<{ x: number; y: number }> = [];
       for (const feature of study.rainfallResultGeoJson.features) {
         if (feature.geometry.type !== "Polygon") continue;
+        if (!pondingFeatureOnParcel(feature)) continue;
         const ring = projectPolygon(t, frame, feature.geometry.coordinates);
         if (!ring) continue;
         drawFilledRing(page, ring, PONDING_FILL);
@@ -525,6 +557,14 @@ interface FdLegendRow {
 
 function fdLegendRows(study: FloodDrainageStudy): FdLegendRow[] {
   const empty = !!study.honestEmpty;
+  // §5: an empty layer stays LISTED, greys to neutral-500, and carries its
+  // reason INLINE on the same row — a populated-looking legend row over a
+  // layer that drew nothing (the 2026-07-29 canary smoke) is a defect.
+  const zonesEmpty = empty || !hasGradedZones(study);
+  const pondingOnParcel =
+    !empty &&
+    !!study.rainfallResultGeoJson &&
+    study.rainfallResultGeoJson.features.some(pondingFeatureOnParcel);
   return [
     { label: "Property line", swatch: "line-heavy", color: INK },
     {
@@ -534,19 +574,24 @@ function fdLegendRows(study: FloodDrainageStudy): FdLegendRow[] {
       empty,
     },
     {
-      label: empty ? "Drainage concentration — none modeled" : "Drainage concentration",
+      label: zonesEmpty
+        ? empty
+          ? "Drainage concentration — none modeled"
+          : "Drainage concentration — none at this resolution"
+        : "Drainage concentration",
       swatch: "fill",
       color: ZONE_FILL_HIGH,
-      empty,
+      empty: zonesEmpty,
     },
     {
-      label:
-        empty || !study.rainfallResultGeoJson
+      label: pondingOnParcel
+        ? `Ponding on parcel at ${study.rainfallDepthInches}" storm`
+        : empty || !study.rainfallResultGeoJson
           ? "Ponding — not modeled"
-          : `Modeled ponding at ${study.rainfallDepthInches}" storm`,
+          : "Ponding — none modeled on parcel",
       swatch: "fill",
       color: PONDING_FILL,
-      empty: empty || !study.rainfallResultGeoJson,
+      empty: !pondingOnParcel,
     },
     {
       label: empty ? "Flow lines — none traced" : "Traced flow line",
@@ -941,22 +986,35 @@ export async function emitPdfFloodDrainage(
       F,
       rhythm,
     );
+    // Headline = parcel-clipped; the whole-region figure rides as the
+    // labeled context qualifier only (never the headline).
+    const widerQualifier =
+      study.stats.pondedAreaModeledRegionSqFt != null &&
+      study.stats.pondedAreaModeledRegionSqFt > (study.stats.pondedAreaSqFt ?? 0)
+        ? ` · wider modeled area ${(study.stats.pondedAreaModeledRegionSqFt / 43_560).toFixed(1)} acres`
+        : "";
     cursor = drawFdKvRow(
       page,
       pageNo,
       study.honestEmpty
-        ? { label: "Modeled ponding", chip: true, grey: study.honestEmpty.reason }
-        : study.stats.pondedAreaSqFt != null
+        ? { label: "Ponding on parcel", chip: true, grey: study.honestEmpty.reason }
+        : study.stats.pondedAreaSqFt == null
           ? {
-              label: "Modeled ponding",
-              value: formatSqFt(study.stats.pondedAreaSqFt),
-              grey: `at a ${study.rainfallDepthInches} inch design storm`,
-            }
-          : {
-              label: "Modeled ponding",
+              label: "Ponding on parcel",
               chip: true,
               grey: FLOOD_DRAINAGE_PONDING_NOT_MODELED_REASON,
-            },
+            }
+          : study.stats.pondedAreaSqFt > 0
+            ? {
+                label: "Ponding on parcel",
+                value: formatSqFt(study.stats.pondedAreaSqFt),
+                grey: `at a ${study.rainfallDepthInches} inch design storm${widerQualifier}`,
+              }
+            : {
+                label: "Ponding on parcel",
+                value: "None modeled",
+                grey: `no modeled ponding intersects the parcel at a ${study.rainfallDepthInches} inch design storm${widerQualifier}`,
+              },
       cursor,
       F,
       rhythm,
