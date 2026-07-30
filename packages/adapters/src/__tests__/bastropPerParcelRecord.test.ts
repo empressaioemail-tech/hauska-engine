@@ -94,7 +94,7 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 1)", () => {
     expect(parsed.maxImperviousPct).toBe(65);
   });
 
-  it("honest-decline non-scalar MU side (Reference Building Code/Fire Code)", () => {
+  it("R22: MU side fire-code deferral resolves to 5ft (envelope draws), city language surfaced", () => {
     const parsed = parseBastropPerParcelAttributes(FIXTURES["34841_mu_non_scalar"]!);
     expect(parsed.kind).toBe("parsed");
     if (parsed.kind !== "parsed") return;
@@ -102,12 +102,18 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 1)", () => {
     expect(parsed.rearFt).toBe(15);
     expect(parsed.maxHeightFt).toBe(40);
     expect(parsed.maxImperviousPct).toBe(60);
-    expect(parsed.sideNonScalar).toBe(true);
-    expect(parsed.sideInteriorFt).toBeNull();
-    expect(parsed.sideDeclineReason).toMatch(/Reference Building Code/i);
-    expect(
-      parseSideSetbackText("None - Reference Building Code/Fire Code").ok,
-    ).toBe(false);
+    // R22 — fire-code deferral now resolves to the 5ft code minimum (NOT a decline).
+    expect(parsed.sideNonScalar).toBe(false);
+    expect(parsed.sideInteriorFt).toBe(5);
+    expect(parsed.sideCornerFt).toBe(5);
+    expect(parsed.sideFireCodeDeferral).toBe(true);
+    expect(parsed.sideCityLanguage).toMatch(/Reference Building Code/i);
+    const side = parseSideSetbackText("None - Reference Building Code/Fire Code");
+    expect(side.ok).toBe(true);
+    if (side.ok) {
+      expect(side.sideInteriorFt).toBe(5);
+      expect(side.fireCodeDeferral).toBe(true);
+    }
   });
 
   it("flags chart disagreement for 105054 SF-1 (chart 30/10/20/30 vs record 25/5/15/25)", () => {
@@ -200,7 +206,7 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 2 — MU/GC/PDD)", () => {
     expect(row.provenance?.side_ft?.not_specified).toBeUndefined();
   });
 
-  it("48021:34841 MU base dims with honest side decline", () => {
+  it("R22: 48021:34841 MU base dims with side resolved to 5ft fire-code", () => {
     const parsed = parseBastropPerParcelAttributes(FIXTURES["34841_mu_non_scalar"]!);
     expect(parsed.kind).toBe("parsed");
     if (parsed.kind !== "parsed") return;
@@ -211,13 +217,16 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 2 — MU/GC/PDD)", () => {
     const row = table!.districts[0]!;
     expect(row.front_ft).toBe(15);
     expect(row.rear_ft).toBe(15);
+    expect(row.side_ft).toBe(5);
+    expect(row.side_corner_ft).toBe(5);
     expect(row.max_height_ft).toBe(40);
     expect(row.max_impervious_pct).toBe(60);
-    expect(row.provenance?.side_ft?.not_specified).toBe(true);
-    expect(row.provenance?.side_corner_ft?.not_specified).toBe(true);
+    // R22 — side is a real fire-code value now, not not_specified.
+    expect(row.provenance?.side_ft?.not_specified).toBeUndefined();
+    expect(row.display_meta?.side_fire_code_deferral).toBe(true);
   });
 
-  it("selectBastropLayer23Attributes picks MU row on overlap (34841 stamp MU not SF-1)", () => {
+  it("R26: selectBastropLayer23Attributes picks the DOMINANT-area row on overlap (MU 12000sf > SF-1 8000sf)", () => {
     const picked = selectBastropLayer23Attributes(
       [
         { attributes: FIXTURES["34841_sf1_overlap"]! },
@@ -225,16 +234,19 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 2 — MU/GC/PDD)", () => {
       ],
       "MU",
     );
+    // Dominant area (MU 12000) governs, not the passed stamp per se.
     expect(picked?.ZoneTypeClass).toBe(6);
     const parsed = parseBastropPerParcelAttributes(picked!);
     expect(parsed.kind).toBe("parsed");
     if (parsed.kind !== "parsed") return;
     expect(parsed.frontFt).toBe(15);
     expect(parsed.rearFt).toBe(15);
-    expect(parsed.sideNonScalar).toBe(true);
+    // R22 — side resolves to fire-code 5ft.
+    expect(parsed.sideNonScalar).toBe(false);
+    expect(parsed.sideInteriorFt).toBe(5);
   });
 
-  it("fetchBastropPerParcelSetbackRecord selects district row on overlap parcels", async () => {
+  it("R26: fetch resolves dominant-area district + discloses minor zones on overlap parcels", async () => {
     const fetchImpl = mockFetchForOverlapRows([
       FIXTURES["34841_sf1_overlap"]!,
       FIXTURES["34841_mu_overlap"]!,
@@ -247,8 +259,15 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 2 — MU/GC/PDD)", () => {
     if (result.kind !== "parsed") return;
     expect(result.frontFt).toBe(15);
     expect(result.rearFt).toBe(15);
-    expect(result.sideNonScalar).toBe(true);
-    expect(result.sideDeclineReason).toMatch(/Reference Building Code/i);
+    // R22 fire-code side.
+    expect(result.sideNonScalar).toBe(false);
+    expect(result.sideInteriorFt).toBe(5);
+    expect(result.sideFireCodeDeferral).toBe(true);
+    // R26 — dominant district = MU; the minor SF-1 zone is disclosed.
+    expect(result.resolvedDistrictCode).toBe("MU");
+    expect(result.splitZoneMinorZones?.some((z) => z.districtCode === "SF-1")).toBe(
+      true,
+    );
     expect(fetchImpl).toHaveBeenCalledOnce();
     const url = String(fetchImpl.mock.calls[0]?.[0] ?? "");
     expect(url).toContain(BASTROP_PARCELS_ONE_CLICK_LAYER_23.split("/FeatureServer")[0]);

@@ -50,15 +50,15 @@ export const PARCEL_34073_CORRUPT_TXGIO: Ring = [
   [-97.31670476230498, 30.111119675253228],
 ];
 
-/** SF-1 dimensional setbacks for Jefferson row (Parcels_One_Click layer 23). */
-export const SF1_SETBACKS_FT = {
+/** SF-1 per-parcel record scalars for 34073 Jefferson row (layer 23, 2026-07-30). */
+export const PARCEL_34073_SF1_LAYER23 = {
   front: 25,
   side: 5,
-  rear: 15,
+  rear: 25,
 } as const;
 
 export const DOWNTOWN_DRILL_MANIFEST_PROP_IDS = [
-  34017, 34025, 34049, 34057, 34065, 34073, 34081, 34089, 34097, 34105,
+  34017, 34025, 34049, 34057, 8741972, 8741973, 8741974, 8723767, 34073, 34081, 34089, 34097, 34105,
   34121, 34145, 34153, 34769, 34785, 34825, 34833, 34841, 34849, 34857,
   34865, 34873, 34881, 34889, 34897, 34905, 34913, 34921, 39282, 60981,
   61332, 64731, 71198, 71199, 105054, 127129,

@@ -240,6 +240,9 @@ importers:
 
   packages/retrieval:
     dependencies:
+      '@hauska-engine/adapters':
+        specifier: workspace:*
+        version: link:../adapters
       '@hauska-engine/atom-contract-pin':
         specifier: workspace:*
         version: link:../atom-contract-pin

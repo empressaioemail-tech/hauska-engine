@@ -168,6 +168,50 @@ export function emitSetbackRule(
     maxHeightFt: row.setbacks.maxHeightFt,
     maxLotCoveragePct: row.setbacks.maxLotCoveragePct,
     maxImperviousPct: row.setbacks.maxImperviousPct,
+    ...(setbackTableRow.display_meta?.min_lot_size
+      ? { minLotSize: setbackTableRow.display_meta.min_lot_size }
+      : {}),
+    ...(setbackTableRow.display_meta
+      ? {
+          displayMeta: {
+            ...(setbackTableRow.display_meta.min_lot_size
+              ? { minLotSize: setbackTableRow.display_meta.min_lot_size }
+              : {}),
+            ...(setbackTableRow.display_meta.side_fire_code_deferral
+              ? { sideFireCodeDeferral: true }
+              : {}),
+            ...(setbackTableRow.display_meta.side_city_language
+              ? { sideCityLanguage: setbackTableRow.display_meta.side_city_language }
+              : {}),
+            ...(setbackTableRow.display_meta.resolved_district_code !== undefined
+              ? { resolvedDistrictCode: setbackTableRow.display_meta.resolved_district_code }
+              : {}),
+            ...(setbackTableRow.display_meta.split_zone_minor_zones?.length
+              ? {
+                  splitZoneMinorZones:
+                    setbackTableRow.display_meta.split_zone_minor_zones.map((z) => ({
+                      districtCode: z.district_code,
+                      ...(z.shape_area != null ? { shapeArea: z.shape_area } : {}),
+                    })),
+                }
+              : {}),
+            ...(setbackTableRow.display_meta.second_source
+              ? {
+                  secondSource: {
+                    source: setbackTableRow.display_meta.second_source.source,
+                    note: setbackTableRow.display_meta.second_source.note,
+                    ...(setbackTableRow.display_meta.second_source.citation_url
+                      ? {
+                          citationUrl:
+                            setbackTableRow.display_meta.second_source.citation_url,
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
     sourceCodeAtomRef: row.sourceCodeAtomRef,
     fieldProvenance: {
       front: {

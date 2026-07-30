@@ -158,29 +158,20 @@ export function getSetbackTableForZoning(
 
   if (isBastropCityJurisdiction(normalized)) {
     if (code && isRepealedB3PlaceType(code)) {
-      // Explicit: repealed B3 is not current law. Honest-decline.
       return null;
     }
 
-    if (code && isBdcPerParcelDistrictCode(code) && !options?.bastropPerParcelRecord) {
-      // MU/GC/PDD numbers come from layer 23 — not bastrop-development-code chart.
-      return null;
-    }
-
-    const bdc = SETBACK_TABLES["bastrop-development-code"] ?? null;
-    if (!bdc) return null;
-
+    // County-only legacy codes (R-MD, etc.) on bastrop-tx key — not city BDC.
     if (
-      !code ||
-      isKnownBdcDistrictCode(code) ||
-      tableHasDistrict(bdc, code) ||
-      normalized === "bastrop-city-tx" ||
-      normalized === "bastrop-development-code"
+      normalized === "bastrop-tx" &&
+      code &&
+      !isKnownBdcDistrictCode(code)
     ) {
-      return bdc;
+      return SETBACK_TABLES["bastrop-tx"] ?? null;
     }
 
-    // bastrop-tx + non-BDC code (e.g. legacy county R-MD): fall through.
+    // R13 (AMENDMENT 8): city BDC districts require layer-23 per-parcel record.
+    return null;
   }
 
   return SETBACK_TABLES[normalized] ?? null;
@@ -225,3 +216,11 @@ export {
   type FetchBastropPerParcelOptions,
   type ParsedSideSetback,
 } from "./bastrop-per-parcel-record.js";
+export {
+  BASTROP_AUTHORITATIVE_SETBACK_ADAPTER,
+  bastropSetbackPendingRewarmReason,
+  isAuthoritativeBastropCitySetbackSource,
+  isBastropCountyParcelNodeId,
+  isStaleBastropCitySetbackRule,
+  requiresPerParcelSetbackRecord,
+} from "./bastrop-setback-currency.js";

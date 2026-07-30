@@ -37,7 +37,7 @@
     "MaxBuildingHt": 35,
     "MaxImpervisionCoverage": "50%",
     "Ordinance_Link": "https://www.cityofbastrop.org/example/ordinance-34841-sf1.pdf",
-    "Shape__Area": 12000
+    "Shape__Area": 8000
   },
   "34841_mu_overlap": {
     "prop_id": 34841,
@@ -48,6 +48,6 @@
     "MaxBuildingHt": 40,
     "MaxImpervisionCoverage": "60%",
     "Ordinance_Link": "https://www.cityofbastrop.org/example/ordinance-34841-mu.pdf",
-    "Shape__Area": 8000
+    "Shape__Area": 12000
   }
 }

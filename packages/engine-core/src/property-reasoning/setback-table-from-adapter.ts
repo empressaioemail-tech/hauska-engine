@@ -28,6 +28,7 @@ type AdapterDistrict = {
   max_lot_coverage_pct?: number;
   max_impervious_pct?: number;
   provenance?: Record<string, AdapterFieldProv | undefined>;
+  display_meta?: import("./types.js").SetbackRowDisplayMeta;
 };
 
 type AdapterSetbackTable = {
@@ -92,6 +93,7 @@ function rowFromDistrict(d: AdapterDistrict): SetbackTableRowProvenance | null {
       p.max_impervious_pct,
       0.6,
     ),
+    ...(d.display_meta ? { display_meta: d.display_meta } : {}),
   };
 }
 

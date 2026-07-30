@@ -31,6 +31,16 @@ export interface SetbackFieldProvenance {
   not_specified?: boolean;
 }
 
+/** R22/R24/R25/R26 — full-field + disclosure metadata carried on a setback row. */
+export interface SetbackRowDisplayMeta {
+  min_lot_size?: string;
+  side_fire_code_deferral?: boolean;
+  side_city_language?: string;
+  resolved_district_code?: string | null;
+  split_zone_minor_zones?: Array<{ district_code: string | null; shape_area?: number }>;
+  second_source?: { source: string; note: string; citation_url?: string };
+}
+
 export interface SetbackTableRowProvenance {
   atom_did: string;
   match_basis: MatchBasis;
@@ -43,6 +53,8 @@ export interface SetbackTableRowProvenance {
   max_height_ft?: SetbackFieldProvenance;
   max_lot_coverage_pct?: SetbackFieldProvenance;
   max_impervious_pct?: SetbackFieldProvenance;
+  /** R22/R24/R25/R26 — surfaced on the emitted atom for the PE card. */
+  display_meta?: SetbackRowDisplayMeta;
 }
 
 export interface SetbackTableDescriptor {

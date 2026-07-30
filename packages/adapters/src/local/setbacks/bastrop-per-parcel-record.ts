@@ -8,9 +8,14 @@
  * Public endpoint; no privileged relationship required.
  */
 
-import { arcgisWhereQuery } from "../../arcgis.js";
+import { arcgisPointQuery, arcgisWhereQuery } from "../../arcgis.js";
 import { AdapterRunError } from "../../types.js";
-import type { SetbackDistrict, SetbackTable } from "./table-types.js";
+import type {
+  SetbackDisplayMeta,
+  SetbackDistrict,
+  SetbackSecondSourceDisclosure,
+  SetbackTable,
+} from "./table-types.js";
 import bastropDevelopmentCode from "./bastrop-development-code.json" with { type: "json" };
 
 /** Layer 23 — per-parcel setback numbers + Ordinance_Link. */
@@ -51,30 +56,79 @@ function districtCodeFromZoneTypeClass(attrs: Record<string, unknown>): string |
   return BASTROP_ZONE_TYPE_CLASS[n] ?? null;
 }
 
+function featureShapeArea(attrs: Record<string, unknown>): number {
+  const raw = attrs.Shape__Area ?? attrs.SHAPE__Area ?? 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** A split-zone sliver at/below this area (sq units) never governs the district (R26). */
+export const SPLIT_ZONE_SLIVER_AREA_EPSILON = 1;
+
+export type BastropSplitZoneMinorZone = {
+  districtCode: string | null;
+  shapeArea: number;
+};
+
 /**
- * Pick the layer-23 row matching the ENGINE zoning stamp on overlap parcels.
+ * R26 — split-zone dominant-area resolution.
+ * When a parcel spans multiple layer-23 rows, the LARGEST-AREA row governs the
+ * district (not the engine zoning stamp, which may be a sliver). Minor zones are
+ * returned for honest disclosure (R25). districtCode is used only as a tiebreak
+ * among rows of equal area.
+ */
+export function resolveBastropLayer23DominantRow(
+  features: ReadonlyArray<{ attributes: Record<string, unknown> }>,
+  districtCode?: string | null,
+): {
+  dominant: Record<string, unknown>;
+  dominantDistrictCode: string | null;
+  minorZones: BastropSplitZoneMinorZone[];
+} | null {
+  if (features.length === 0) return null;
+
+  const byArea = [...features].sort(
+    (a, b) => featureShapeArea(b.attributes) - featureShapeArea(a.attributes),
+  );
+
+  // Dominant = largest area. Tiebreak (equal top areas) toward the engine stamp.
+  const topArea = featureShapeArea(byArea[0]!.attributes);
+  const wanted = (districtCode ?? "").trim().toUpperCase();
+  const wantedNum = wanted ? ZONE_TYPE_CLASS_BY_CODE[wanted] : undefined;
+  let dominantFeature = byArea[0]!;
+  if (wantedNum != null) {
+    const tiedStamp = byArea.find(
+      (f) =>
+        featureShapeArea(f.attributes) >= topArea - SPLIT_ZONE_SLIVER_AREA_EPSILON &&
+        zoneTypeClassNumeric(f.attributes) === wantedNum,
+    );
+    if (tiedStamp) dominantFeature = tiedStamp;
+  }
+
+  const minorZones: BastropSplitZoneMinorZone[] = byArea
+    .filter((f) => f !== dominantFeature)
+    .map((f) => ({
+      districtCode: districtCodeFromZoneTypeClass(f.attributes),
+      shapeArea: featureShapeArea(f.attributes),
+    }));
+
+  return {
+    dominant: dominantFeature.attributes,
+    dominantDistrictCode: districtCodeFromZoneTypeClass(dominantFeature.attributes),
+    minorZones,
+  };
+}
+
+/**
+ * Pick the governing layer-23 row on overlap parcels (R26 dominant-area).
  * Falls back to largest Shape__Area when district is unknown or unmatched.
  */
 export function selectBastropLayer23Attributes(
   features: ReadonlyArray<{ attributes: Record<string, unknown> }>,
   districtCode?: string | null,
 ): Record<string, unknown> | null {
-  if (features.length === 0) return null;
-  if (features.length === 1) return features[0]!.attributes;
-
-  const wanted = (districtCode ?? "").trim().toUpperCase();
-  const wantedNum = wanted ? ZONE_TYPE_CLASS_BY_CODE[wanted] : undefined;
-  if (wantedNum != null) {
-    const hit = features.find((f) => zoneTypeClassNumeric(f.attributes) === wantedNum);
-    if (hit) return hit.attributes;
-  }
-
-  const byArea = [...features].sort(
-    (a, b) =>
-      Number(b.attributes.Shape__Area ?? b.attributes.SHAPE__Area ?? 0) -
-      Number(a.attributes.Shape__Area ?? a.attributes.SHAPE__Area ?? 0),
-  );
-  return byArea[0]!.attributes;
+  const resolved = resolveBastropLayer23DominantRow(features, districtCode);
+  return resolved?.dominant ?? null;
 }
 
 const CORNER_SIDE_RE =
@@ -95,16 +149,24 @@ export type BastropPerParcelSetbackParsed = {
   propId: string;
   frontFt: number;
   rearFt: number;
-  /** Interior side yard; null when city record is non-scalar. */
+  /** Interior side yard; null when city record is non-scalar AND unresolvable. */
   sideInteriorFt: number | null;
   sideCornerFt: number;
   sideNonScalar: boolean;
   sideDeclineReason?: string;
+  /** R22 — side resolved from a building/fire-code deferral (5ft), not a printed scalar. */
+  sideFireCodeDeferral?: boolean;
+  /** City's verbatim side-yard language when deferred to building/fire code. */
+  sideCityLanguage?: string;
   maxHeightFt?: number;
   maxImperviousPct?: number;
   minLotSize?: string;
   ordinanceLink: string;
   sourceUrl: string;
+  /** R26 — district resolved from the DOMINANT-area layer-23 row (may differ from engine stamp). */
+  resolvedDistrictCode?: string | null;
+  /** R26/R25 — split-zone minor zones present on this parcel, for honest disclosure. */
+  splitZoneMinorZones?: BastropSplitZoneMinorZone[];
   raw: {
     frontSetback?: string;
     sideSetback?: string;
@@ -157,12 +219,23 @@ export function parseScalarSetbackFeet(
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * R22 — fire-code standard applied when the city record defers a side yard to
+ * building/fire code ("None - Reference Building/Fire Code"). A broad, citable
+ * baseline so the envelope DRAWS instead of collapsing to a whole-parcel decline.
+ */
+export const FIRE_CODE_SIDE_SETBACK_FT = 5;
+
 export type ParsedSideSetback =
   | {
       ok: true;
       sideInteriorFt: number;
       sideCornerFt: number;
       nonScalar: false;
+      /** R22 — resolved from a building/fire-code deferral, not a printed scalar. */
+      fireCodeDeferral?: boolean;
+      /** City's verbatim language for the card, when deferred. */
+      cityLanguage?: string;
     }
   | {
       ok: false;
@@ -172,7 +245,9 @@ export type ParsedSideSetback =
 
 /**
  * Parse SideSetback_ text: interior feet + optional corner embed.
- * Honest-decline when non-scalar ("Reference Building Code/Fire Code").
+ * R22: "Reference Building Code/Fire Code" resolves to the 5ft fire-code
+ * standard (envelope draws) with the city language surfaced — NOT a decline.
+ * Genuinely-unparseable / empty side text still honest-declines.
  */
 export function parseSideSetbackText(
   text: string | null | undefined,
@@ -186,11 +261,14 @@ export function parseSideSetbackText(
   }
   const raw = String(text).trim();
   if (NON_SCALAR_SIDE_RE.test(raw)) {
+    // R22 — fire-code deferral resolves to the code minimum so the envelope draws.
     return {
-      ok: false,
-      nonScalar: true,
-      reason:
-        "Side setback is non-scalar (Reference Building Code/Fire Code).",
+      ok: true,
+      sideInteriorFt: FIRE_CODE_SIDE_SETBACK_FT,
+      sideCornerFt: FIRE_CODE_SIDE_SETBACK_FT,
+      nonScalar: false,
+      fireCodeDeferral: true,
+      cityLanguage: raw,
     };
   }
 
@@ -228,8 +306,9 @@ function parseImperviousPct(text: string | null | undefined): number | undefined
 /** Parse raw layer-23 attributes into a typed per-parcel setback record. */
 export function parseBastropPerParcelAttributes(
   attrs: Record<string, unknown>,
+  propIdOverride?: string,
 ): BastropPerParcelSetbackParsed | BastropPerParcelHonestDecline {
-  const propId = pickPropId(attrs);
+  const propId = propIdOverride ?? pickPropId(attrs);
   if (!propId) {
     return {
       kind: "honest-decline",
@@ -299,6 +378,12 @@ export function parseBastropPerParcelAttributes(
     sideInteriorFt: sideParsed.sideInteriorFt,
     sideCornerFt: sideParsed.sideCornerFt,
     sideNonScalar: false,
+    ...(sideParsed.fireCodeDeferral
+      ? {
+          sideFireCodeDeferral: true,
+          sideCityLanguage: sideParsed.cityLanguage,
+        }
+      : {}),
     maxHeightFt: maxHeightFt ?? undefined,
     maxImperviousPct,
     minLotSize: minLotSize || undefined,
@@ -367,6 +452,34 @@ export function flagBastropChartDisagreement(
   };
 }
 
+/** Layer 83 (Zoned_Parcels Revisions) — Bastrop's CONFLICTING second setback schedule (R25). */
+export const BASTROP_LAYER_83_REVISIONS_URL =
+  "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/83";
+
+/** Per-district layer-83 conflict text (block-13 answer key, confirmed 2026-07-30). */
+const BASTROP_LAYER_83_CONFLICT_BY_DISTRICT: Readonly<Record<string, string>> = {
+  "SF-1":
+    "front 30 / interior side 10 / corner side 20 / rear 30",
+  MU: "max height 45",
+  GC: "corner side 10",
+};
+
+/** R25 — build the layer-83 Revisions conflict disclosure for a dominant district. */
+export function bastropLayer83SecondSourceDisclosure(
+  districtCode: string,
+): SetbackSecondSourceDisclosure | undefined {
+  const code = leadingDistrictToken(districtCode);
+  const conflict = BASTROP_LAYER_83_CONFLICT_BY_DISTRICT[code];
+  if (!conflict) return undefined;
+  return {
+    source: "City of Bastrop GIS layer 83 (Zoned_Parcels Revisions)",
+    note:
+      `Drawn from OnClick (layer 23). The city's Revisions layer (83) specifies ${conflict} for ${code}; ` +
+      "the two city schedules conflict — verify which is in effect with the city.",
+    citation_url: BASTROP_LAYER_83_REVISIONS_URL,
+  };
+}
+
 /** Synthesize a one-row SetbackTable from a parsed per-parcel record. */
 export function setbackTableFromBastropPerParcelRecord(
   record: BastropPerParcelSetbackParsed,
@@ -375,6 +488,32 @@ export function setbackTableFromBastropPerParcelRecord(
   const code = leadingDistrictToken(districtCode) || "UNKNOWN";
   const sideInterior = record.sideInteriorFt ?? 0;
   const sideNotSpecified = record.sideNonScalar;
+  const displayMeta: SetbackDisplayMeta = {
+    ...(record.minLotSize ? { min_lot_size: record.minLotSize } : {}),
+    ...(record.sideFireCodeDeferral
+      ? {
+          side_fire_code_deferral: true,
+          ...(record.sideCityLanguage
+            ? { side_city_language: record.sideCityLanguage }
+            : {}),
+        }
+      : {}),
+    ...(record.resolvedDistrictCode
+      ? { resolved_district_code: record.resolvedDistrictCode }
+      : {}),
+    ...(record.splitZoneMinorZones?.length
+      ? {
+          split_zone_minor_zones: record.splitZoneMinorZones.map((z) => ({
+            district_code: z.districtCode,
+            shape_area: z.shapeArea,
+          })),
+        }
+      : {}),
+    ...(() => {
+      const second = bastropLayer83SecondSourceDisclosure(code);
+      return second ? { second_source: second } : {};
+    })(),
+  };
   const district: SetbackDistrict = {
     district_name: `${code} (per-parcel layer 23)`,
     front_ft: record.frontFt,
@@ -385,6 +524,7 @@ export function setbackTableFromBastropPerParcelRecord(
     max_lot_coverage_pct: 0,
     max_impervious_pct: record.maxImperviousPct ?? 0,
     citation_url: record.ordinanceLink,
+    ...(Object.keys(displayMeta).length > 0 ? { display_meta: displayMeta } : {}),
     provenance: {
       front_ft: {
         atom_did: `bastrop-per-parcel/${record.propId}/front`,
@@ -435,8 +575,10 @@ export function setbackTableFromBastropPerParcelRecord(
 export type FetchBastropPerParcelOptions = {
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
-  /** ENGINE zoning stamp — selects correct layer-23 row when overlaps exist. */
+  /** ENGINE zoning stamp / R26 dominant district — selects the correct layer-23 row on split-zone overlaps. */
   districtCode?: string | null;
+  /** When prop_id miss on layer 23, spatial intersect at this point (R9 re-plat fallback). */
+  centroidLngLat?: [number, number];
 };
 
 /** Live fetch layer 23 by prop_id (numeric; leading zeros stripped for match). */
@@ -479,6 +621,25 @@ export async function fetchBastropPerParcelSetbackRecord(
     throw err;
   }
 
+  if (result.features.length === 0 && options.centroidLngLat) {
+    const [lng, lat] = options.centroidLngLat;
+    try {
+      result = await arcgisPointQuery({
+        serviceUrl: BASTROP_PARCELS_ONE_CLICK_LAYER_23,
+        longitude: lng,
+        latitude: lat,
+        outFields:
+          "prop_id,ZoneTypeClass,FrontSetback_,FrontSetback,SideSetback_,SideSetback,RearSetback_,RearSetback,MaxBuildingHt,MinimumLotSize_,MaxImpervisionCoverage,Ordinance_Link,Shape__Area",
+        returnGeometry: false,
+        fetchImpl: options.fetchImpl,
+        signal: options.signal,
+        upstreamLabel: "Bastrop Parcels_One_Click layer 23 (spatial fallback)",
+      });
+    } catch {
+      /* fall through to not-found */
+    }
+  }
+
   if (result.features.length === 0) {
     return {
       kind: "honest-decline",
@@ -488,11 +649,11 @@ export async function fetchBastropPerParcelSetbackRecord(
     };
   }
 
-  const attrs = selectBastropLayer23Attributes(
+  const resolved = resolveBastropLayer23DominantRow(
     result.features,
     options.districtCode,
   );
-  if (!attrs) {
+  if (!resolved) {
     return {
       kind: "honest-decline",
       code: "bastrop-per-parcel-empty-features",
@@ -500,5 +661,12 @@ export async function fetchBastropPerParcelSetbackRecord(
       propId: normalized,
     };
   }
-  return parseBastropPerParcelAttributes(attrs);
+  const parsed = parseBastropPerParcelAttributes(resolved.dominant, normalized);
+  if (parsed.kind === "parsed") {
+    // R26 — carry the dominant-area district + minor zones for disclosure (R25).
+    parsed.resolvedDistrictCode = resolved.dominantDistrictCode;
+    parsed.splitZoneMinorZones =
+      resolved.minorZones.length > 0 ? resolved.minorZones : undefined;
+  }
+  return parsed;
 }

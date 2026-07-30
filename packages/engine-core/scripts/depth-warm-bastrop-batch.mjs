@@ -29,6 +29,8 @@ import {
 import {
   fetchBcadParcelRings,
   scrubLotLineRing,
+  assertParcelCurrencyInBcad,
+  ringCentroidLngLat,
 } from "../src/boundary-primitive/index.ts";
 import { openRing } from "../src/depth-warm/geometry.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
@@ -66,12 +68,14 @@ function resolvablePlaceTypeDistrictCodes() {
   return [...BASTROP_PER_PARCEL_DISTRICT_PREFIXES];
 }
 
-async function districtHasPerParcelSetbackRow(parcelNodeId, district) {
+async function districtHasPerParcelSetbackRow(parcelNodeId, district, centroidLngLat) {
   const built = await buildBastropPerParcelSetbackDescriptor(
     baseDescriptor,
     parcelNodeId,
     district,
     BASTROP_CITY_KEY,
+    undefined,
+    centroidLngLat,
   );
   return built.ok;
 }
@@ -275,6 +279,7 @@ const stats = {
     "already-promoted": 0,
     "no-setback-row": 0,
     "no-boundary-primitive": 0,
+    "superseded-prop-id": 0,
     other: 0,
   },
   atomWrites: 0,
@@ -284,6 +289,7 @@ const stats = {
 const sampleOutcomes = [];
 
 for (const row of parcelRows) {
+  const parcelT0 = performance.now();
   const parcelNodeId = row.parcel_node_id;
   const district = normalizeDistrict(row.district);
   if (!district) continue;
@@ -294,7 +300,30 @@ for (const row of parcelRows) {
     continue;
   }
 
-  if (!(await districtHasPerParcelSetbackRow(parcelNodeId, district))) {
+  const propId = parcelNodeId.split(":")[1];
+  /** @type {[number, number] | undefined} */
+  let centroidLngLat;
+  /** @type {import('../src/boundary-primitive/parcel-currency.ts').ParcelCurrencyResult | null} */
+  let currencyResult = null;
+  if (propId) {
+    currencyResult = await assertParcelCurrencyInBcad(propId);
+    if (!currencyResult.ok) {
+      stats.declines["superseded-prop-id"]++;
+      stats.processed++;
+      stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+      if (sampleOutcomes.length < 8) {
+        sampleOutcomes.push({
+          parcelNodeId,
+          verifyPass: false,
+          reasons: [currencyResult.reason],
+        });
+      }
+      continue;
+    }
+    centroidLngLat = ringCentroidLngLat(currencyResult.ring);
+  }
+
+  if (!(await districtHasPerParcelSetbackRow(parcelNodeId, district, centroidLngLat))) {
     stats.declines["no-setback-row"]++;
     stats.processed++;
     continue;
@@ -305,14 +334,17 @@ for (const row of parcelRows) {
     parcelNodeId,
     district,
     BASTROP_CITY_KEY,
+    undefined,
+    centroidLngLat,
   );
   if (!builtDescriptor.ok) {
     stats.declines["no-setback-row"]++;
     stats.processed++;
     continue;
   }
-
-  const parcelT0 = performance.now();
+  // R26 — key the warm inset on the DOMINANT-area district (per-parcel record),
+  // not the stamped sliver, so edge resolution matches the single per-parcel row.
+  const warmDistrict = builtDescriptor.governingDistrict || district;
 
   if (!args.forceRepromote) {
     const [existing] = await sql`
@@ -330,7 +362,13 @@ for (const row of parcelRows) {
   }
 
   const geom = await geomResolver.resolve(parcelNodeId);
-  if (!geom?.ring || geom.ring.length < 3) {
+  let parcelRing =
+    geom?.ring && geom.ring.length >= 3
+      ? geom.ring
+      : currencyResult?.ok
+        ? scrubLotLineRing(currencyResult.ring)
+        : null;
+  if (!parcelRing || parcelRing.length < 3) {
     stats.declines["no-geometry"]++;
     stats.processed++;
     stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
@@ -350,24 +388,23 @@ for (const row of parcelRows) {
     }
   }
 
-  let parcelRing = geom.ring;
-  const propId = parcelNodeId.split(":")[1];
+  let parcelRingWorking = parcelRing;
   if (args.forceRepromote && propId) {
     try {
       const bcad = await fetchBcadParcelRings([propId]);
       if (bcad[0]?.ring) {
-        parcelRing = scrubLotLineRing(bcad[0].ring);
+        parcelRingWorking = scrubLotLineRing(bcad[0].ring);
       }
     } catch {
-      /* fall back to txgio ring */
+      /* fall back */
     }
   } else if (boundaryEdges?.length) {
-    const ringVerts = openRing(parcelRing).length;
+    const ringVerts = openRing(parcelRingWorking).length;
     if (boundaryEdges.length !== ringVerts) {
       try {
         const bcad = await fetchBcadParcelRings([propId]);
         if (bcad[0]?.ring) {
-          parcelRing = scrubLotLineRing(bcad[0].ring);
+          parcelRingWorking = scrubLotLineRing(bcad[0].ring);
         }
       } catch {
         /* fall back */
@@ -375,7 +412,7 @@ for (const row of parcelRows) {
     }
   }
 
-  const ringVerts = openRing(parcelRing).length;
+  const ringVerts = openRing(parcelRingWorking).length;
   if (boundaryEdges?.length && boundaryEdges.length > ringVerts) {
     boundaryEdges = boundaryEdges.filter((e) => e.edgeIndex < ringVerts);
   } else if (boundaryEdges?.length && boundaryEdges.length < ringVerts) {
@@ -383,7 +420,7 @@ for (const row of parcelRows) {
   }
 
   const labelResult = labelEdgesFromRoads({
-    parcelRing,
+    parcelRing: parcelRingWorking,
     roads,
   });
 
@@ -399,8 +436,8 @@ for (const row of parcelRows) {
   try {
     result = await warmThenVerify({
       parcelNodeId,
-      district,
-      parcelRing,
+      district: warmDistrict,
+      parcelRing: parcelRingWorking,
       descriptor: builtDescriptor.descriptor,
       roads,
       edgeLabels: labelResult.ok ? labelResult.edgeLabels : [],

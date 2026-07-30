@@ -135,7 +135,11 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
     expect(result.notes).toContain("setback-omitted-no-jurisdiction-key");
   });
 
-  it("Bastrop SF-1 routes to bastrop-development-code; ordinance 30/10/20/30", () => {
+  it("R13: Bastrop city breadth-bake OMITS setback (per-parcel layer-23 record only)", () => {
+    // AMENDMENT 2 R1 + R13: Bastrop city setback NUMBERS come only from the
+    // per-parcel layer-23 record. A tier1 breadth-bake must NOT synthesize the
+    // repealed/ordinance-chart scalar (30/10/20/30) — it omits setback so the
+    // warm path fetches layer 23.
     const result = emitFromTier1Snapshot(
       "48021:105054",
       {
@@ -156,15 +160,13 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
       },
       "48021",
     );
-    expect(result.setbackPresent).toBe(true);
-    const setback = result.atoms.find((a) => a.entityType === "setback-rule") as {
-      front?: number;
-      side?: number;
-      rear?: number;
-    };
-    expect(setback?.front).toBe(30);
-    expect(setback?.side).toBe(10);
-    expect(setback?.rear).toBe(30);
+    expect(result.setbackPresent).toBe(false);
+    expect(
+      result.atoms.find((a) => a.entityType === "setback-rule"),
+    ).toBeUndefined();
+    expect(
+      result.notes.some((n) => n.includes("requires-per-parcel-record")),
+    ).toBe(true);
   });
 
   it("Bastrop repealed P-3 honest-declines setback (does not serve B3 as current)", () => {

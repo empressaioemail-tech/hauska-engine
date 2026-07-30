@@ -21,7 +21,7 @@ import {
   PARCEL_34073_BCAD,
   PARCEL_34073_CORRUPT_TXGIO,
   PARCEL_34081_BCAD,
-  SF1_SETBACKS_FT,
+  PARCEL_34073_SF1_LAYER23,
 } from "../fixtures/bastropDowntownDrill.js";
 import type { ParcelIndexEntry } from "../types.js";
 
@@ -43,19 +43,20 @@ function entry(propId: string, ring: typeof PARCEL_34073_BCAD, situs?: string): 
   };
 }
 
-/** SF-1 inset for a near-rect 4–5 edge ring: front=25, rear=15, sides=5. */
-function sf1InsetFeet(ring: typeof PARCEL_34073_BCAD): number[] {
+/** SF-1 inset for 34073 Jefferson row (layer 23 per-parcel record). */
+function sf1InsetFeet34073(ring: typeof PARCEL_34073_BCAD): number[] {
   const n = openRing(ring).length;
+  const sb = PARCEL_34073_SF1_LAYER23;
   return Array.from({ length: n }, (_, i) => {
-    if (i === 0) return SF1_SETBACKS_FT.front;
-    if (i === 2) return SF1_SETBACKS_FT.rear;
-    return SF1_SETBACKS_FT.side;
+    if (i === 0) return sb.front;
+    if (i === 2) return sb.rear;
+    return sb.side;
   });
 }
 
 describe("F3 lot-line geometry scrub (34073 + 34081)", () => {
   it("34073 corrupt txgio ring fails SF-1 inset before scrub", () => {
-    const r = insetPerEdge(PARCEL_34073_CORRUPT_TXGIO, sf1InsetFeet(PARCEL_34073_CORRUPT_TXGIO));
+    const r = insetPerEdge(PARCEL_34073_CORRUPT_TXGIO, sf1InsetFeet34073(PARCEL_34073_CORRUPT_TXGIO));
     expect(r.empty).toBe(true);
     expect(r.emptyReason).toMatch(/setbacks exceed|correctness gate|null/i);
   });
@@ -65,7 +66,7 @@ describe("F3 lot-line geometry scrub (34073 + 34081)", () => {
     expect(openRing(scrubbed).length).toBeLessThanOrEqual(5);
     expect(isNearRectangularParcelRing(scrubbed)).toBe(true);
 
-    const inset = insetPerEdge(scrubbed, sf1InsetFeet(scrubbed));
+    const inset = insetPerEdge(scrubbed, sf1InsetFeet34073(scrubbed));
     expect(inset.empty, inset.emptyReason).toBe(false);
 
     const check = nearRectEnvelopeCheck(scrubbed, inset.ring, 6);
@@ -81,7 +82,7 @@ describe("F3 lot-line geometry scrub (34073 + 34081)", () => {
     const scrubbed = scrubLotLineRing(PARCEL_34073_BCAD);
     expect(isNearRectangularParcelRing(scrubbed)).toBe(true);
 
-    const inset = insetPerEdge(scrubbed, sf1InsetFeet(scrubbed));
+    const inset = insetPerEdge(scrubbed, sf1InsetFeet34073(scrubbed));
     expect(inset.empty, inset.emptyReason).toBe(false);
 
     const check = nearRectEnvelopeCheck(scrubbed, inset.ring, 6);
@@ -112,7 +113,7 @@ describe("F3 lot-line geometry scrub (34073 + 34081)", () => {
     );
     expect(shared73.length).toBeGreaterThanOrEqual(1);
 
-    const inset81 = insetPerEdge(r81, sf1InsetFeet(r81));
+    const inset81 = insetPerEdge(r81, sf1InsetFeet34073(r81));
     expect(inset81.empty, inset81.emptyReason).toBe(false);
     expect(nearRectEnvelopeCheck(r81, inset81.ring, 6).pass).toBe(true);
   });
@@ -128,10 +129,11 @@ describe("F3 lot-line geometry scrub (34073 + 34081)", () => {
     expect(index.entries.has("48021:34073")).toBe(true);
   });
 
-  it("manifest prop_id list matches downtown drill catalog (36 parcels)", () => {
-    expect(DOWNTOWN_DRILL_MANIFEST_PROP_IDS.length).toBe(36);
+  it("manifest prop_id list matches downtown drill catalog (39 seed parcels)", () => {
+    expect(DOWNTOWN_DRILL_MANIFEST_PROP_IDS.length).toBe(39);
     expect(DOWNTOWN_DRILL_MANIFEST_PROP_IDS).toContain(34073);
-    expect(DOWNTOWN_DRILL_MANIFEST_PROP_IDS).toContain(34081);
+    expect(DOWNTOWN_DRILL_MANIFEST_PROP_IDS).toContain(8741972);
+    expect(DOWNTOWN_DRILL_MANIFEST_PROP_IDS).not.toContain(34065);
   });
 });
 
