@@ -92,6 +92,7 @@ function parseArgs(argv) {
     parcel: null,
     cityCohort: false,
     placeTypeCohort: false,
+    forceRepromote: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -105,6 +106,7 @@ function parseArgs(argv) {
     else if (a === "--dry-run") out.dryRun = true;
     else if (a === "--city-cohort") out.cityCohort = true;
     else if (a === "--place-type-cohort") out.placeTypeCohort = true;
+    else if (a === "--force-repromote") out.forceRepromote = true;
   }
   return out;
 }
@@ -307,17 +309,19 @@ for (const row of parcelRows) {
 
   const parcelT0 = performance.now();
 
-  const [existing] = await sql`
-    SELECT 1 FROM atoms
-    WHERE entity_type = 'buildable-envelope'
-      AND body->>'parcelNodeId' = ${parcelNodeId}
-      AND body->>'depthWarmPromotion' = ${DEPTH_WARM_PROMOTION_MARKER}
-    LIMIT 1
-  `;
-  if (existing) {
-    stats.declines["already-promoted"]++;
-    stats.processed++;
-    continue;
+  if (!args.forceRepromote) {
+    const [existing] = await sql`
+      SELECT 1 FROM atoms
+      WHERE entity_type = 'buildable-envelope'
+        AND body->>'parcelNodeId' = ${parcelNodeId}
+        AND body->>'depthWarmPromotion' = ${DEPTH_WARM_PROMOTION_MARKER}
+      LIMIT 1
+    `;
+    if (existing) {
+      stats.declines["already-promoted"]++;
+      stats.processed++;
+      continue;
+    }
   }
 
   const geom = await geomResolver.resolve(parcelNodeId);
@@ -335,7 +339,7 @@ for (const row of parcelRows) {
 
   /** @type {import('@hauska-engine/atoms').BoundaryEdgeAtomInstance[] | null} */
   let boundaryEdges = null;
-  if (!dryRun && storageHandle?.storage) {
+  if (!args.forceRepromote && !dryRun && storageHandle?.storage) {
     try {
       boundaryEdges = await readBoundaryEdgesForParcel(
         storageHandle.storage,
