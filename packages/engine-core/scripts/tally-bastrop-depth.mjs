@@ -8,14 +8,15 @@
 import postgres from "postgres";
 import { resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
-import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
+import { getSetbackTable } from "@hauska-engine/adapters";
+import { setbackTableDescriptorFromAdapter } from "../src/property-reasoning/setback-table-from-adapter.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 
 const COUNTY_FIPS = "48021";
 
-function resolvablePlaceTypeDistrictCodes(descriptor) {
+function resolvablePlaceTypeDistrictCodes(setbackTable) {
   const codes = new Set();
-  for (const row of descriptor.setbackTable?.rows ?? []) {
+  for (const row of setbackTable?.rows ?? []) {
     if (row.match_basis === "exact" || row.match_basis === "prefix") {
       codes.add(row.district_code);
     }
@@ -29,7 +30,10 @@ if (!url) {
 }
 
 const sql = postgres(url, { ssl: "require", max: 1, prepare: false });
-const placeTypeDistrictCodes = resolvablePlaceTypeDistrictCodes(bastropDescriptor);
+/** SURVIVOR = adapter bastrop-development-code (WDLL STEP 3). */
+const placeTypeDistrictCodes = resolvablePlaceTypeDistrictCodes(
+  setbackTableDescriptorFromAdapter(getSetbackTable("bastrop-development-code")),
+);
 
 try {
   const [roads] = await sql`

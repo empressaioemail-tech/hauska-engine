@@ -5,7 +5,7 @@
   "parcelFips": "48021",
   "defaultAccessPolicy": "public-free",
   "sourceAdapter": "descriptor-fixture",
-  "sourceUrl": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+  "sourceUrl": "https://www.cityofbastrop.org/page/open/18744/0/ORDINANCE%20NO.%202026-06%20B3%20Code%20Repeal%20and%20Bastrop%20Development%20Code%20Adoption.pdf",
   "assumedRowWidthFt": {
     "highway": 100,
     "major_collector": 60,
@@ -18,143 +18,143 @@
   "setbackTable": {
     "rows": [
       {
-        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
         "match_basis": "exact",
-        "district_code": "P-5",
+        "district_code": "SF-1",
         "front_ft": {
-          "value": 15,
-          "confidence": 0.9,
+          "value": 30,
+          "confidence": 0.95,
           "verification_state": "human-verified"
         },
         "rear_ft": {
-          "value": 0,
-          "confidence": 0.8,
-          "verification_state": "human-verified",
-          "not_specified": true
+          "value": 30,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "side_ft": {
-          "value": 0,
-          "confidence": 0.8,
-          "verification_state": "human-verified",
-          "not_specified": true
+          "value": 10,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "side_corner_ft": {
-          "value": 0,
-          "confidence": 0.8,
-          "verification_state": "human-verified",
-          "not_specified": true
+          "value": 20,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "value": 35,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_impervious_pct": {
+          "value": 50,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         }
       },
       {
-        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
         "match_basis": "exact",
-        "district_code": "P-1",
+        "district_code": "SF-2",
         "front_ft": {
           "value": 25,
-          "confidence": 0.85,
-          "verification_state": "transcribed"
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "rear_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
+          "value": 20,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "side_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
+          "value": 7.5,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "side_corner_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
+          "value": 15,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "value": 35,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_impervious_pct": {
+          "value": 50,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         }
       },
       {
-        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
         "match_basis": "exact",
-        "district_code": "P-2",
-        "front_ft": {
-          "value": 25,
-          "confidence": 0.85,
-          "verification_state": "transcribed"
-        },
-        "rear_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
-        },
-        "side_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
-        },
-        "side_corner_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
-        }
-      },
-      {
-        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
-        "match_basis": "exact",
-        "district_code": "P-3",
+        "district_code": "SF-3",
         "front_ft": {
           "value": 15,
-          "confidence": 0.85,
-          "verification_state": "transcribed"
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "rear_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
+          "value": 15,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "side_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
+          "value": 5,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "side_corner_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
+          "value": 10,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "value": 35,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_impervious_pct": {
+          "value": 50,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         }
       },
       {
-        "atom_did": "bastrop_tx/b3-code-april-2025/6.5.003",
+        "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
         "match_basis": "exact",
-        "district_code": "P-4",
+        "district_code": "RR",
         "front_ft": {
-          "value": 15,
-          "confidence": 0.85,
-          "verification_state": "transcribed"
+          "value": 50,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "rear_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
+          "value": 50,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "side_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
+          "value": 20,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         },
         "side_corner_ft": {
-          "value": 0,
-          "confidence": 0.75,
-          "verification_state": "transcribed",
-          "not_specified": true
+          "value": 20,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "value": 35,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_impervious_pct": {
+          "value": 50,
+          "confidence": 0.95,
+          "verification_state": "human-verified"
         }
       }
     ]

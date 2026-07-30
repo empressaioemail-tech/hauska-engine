@@ -94,7 +94,8 @@ export function notSpecifiedAxesFromSetbackTable(
   const code = districtCode.trim();
   const keys = [
     jurisdictionKey,
-    // B3 PlaceTypes live under bastrop-city-tx via getSetbackTableForZoning(bastrop-tx, P-*).
+    // BDC Euclidean districts live under bastrop-development-code via
+    // getSetbackTableForZoning(bastrop-tx, SF-*). Repealed P-* returns null.
     "bastrop-tx",
   ].filter((k): k is string => typeof k === "string" && k.trim().length > 0);
 

@@ -12,8 +12,10 @@ import { performance } from "node:perf_hooks";
 import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
+import { getSetbackTable } from "@hauska-engine/adapters";
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
 import { resolveSetbackTableRow } from "../src/property-reasoning/emit-setback-rule.ts";
+import { setbackTableDescriptorFromAdapter } from "../src/property-reasoning/setback-table-from-adapter.ts";
 import { BASTROP_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
 import {
   computeBoundaryEdgeAtoms,
@@ -23,7 +25,20 @@ import {
 } from "../src/boundary-primitive/index.ts";
 
 const COUNTY_FIPS = "48021";
-const descriptor = bastropDescriptor;
+
+/** SURVIVOR = adapter bastrop-development-code (same overlay as depth-warm-bastrop-batch). */
+const adapterSetbackTable = getSetbackTable("bastrop-development-code");
+const setbackTableFromAdapter = setbackTableDescriptorFromAdapter(adapterSetbackTable);
+if (!setbackTableFromAdapter?.rows?.length) {
+  console.error(
+    "FATAL: bastrop-development-code adapter setback table missing or empty.",
+  );
+  process.exit(1);
+}
+const descriptor = {
+  ...bastropDescriptor,
+  setbackTable: setbackTableFromAdapter,
+};
 
 function districtHasSetbackRow(district) {
   const row = resolveSetbackTableRow(descriptor.setbackTable, district);

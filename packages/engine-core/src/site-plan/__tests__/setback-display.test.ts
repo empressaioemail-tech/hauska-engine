@@ -42,10 +42,14 @@ describe("setback-display", () => {
     expect(axes).toEqual({ front: true, side: true, rear: true });
   });
 
-  it("looks up B3 P-5 silent side/rear from bastrop-city-tx table", () => {
+  it("looks up BDC SF-1 (no silent not_specified on side/rear)", () => {
+    const axes = notSpecifiedAxesFromSetbackTable("bastrop-tx", "SF-1");
+    // Ordinance-text scalars are fully specified — no not_specified axes.
+    expect(axes).toBeUndefined();
+  });
+
+  it("repealed P-5 no longer routes through getSetbackTableForZoning", () => {
     const axes = notSpecifiedAxesFromSetbackTable("bastrop-tx", "P-5");
-    expect(axes?.side).toBe(true);
-    expect(axes?.rear).toBe(true);
-    expect(axes?.front).toBeUndefined();
+    expect(axes).toBeUndefined();
   });
 });

@@ -39,12 +39,12 @@ describe("resolveRoadClassSetback (27c WDLL 4)", () => {
   it("falls back to flat district row when road-class cell missing", () => {
     const hit = resolveRoadClassSetback(
       descriptor,
-      "P-5",
+      "SF-1",
       "highway",
       "front",
     );
     if ("kind" in hit) throw new Error("expected flat fallback");
-    expect(hit.value).toBe(15);
+    expect(hit.value).toBe(30);
   });
 
   it("resolves gravel front at 15 ft — same as local street (B3 6.5.003 / Ch7 frontage)", () => {
