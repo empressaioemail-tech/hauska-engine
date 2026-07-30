@@ -86,12 +86,17 @@ export function emitDepthWarmPromotion(
     throw new Error(`promote: raw setback row missing for ${candidate.district}`);
   }
 
-  const rowForEmit = {
-    ...rawRow,
-    front_ft: { ...rawRow.front_ft!, value: agg.front },
-    side_ft: { ...rawRow.side_ft!, value: agg.side },
-    rear_ft: { ...rawRow.rear_ft!, value: agg.rear },
-  };
+  /** Per-parcel layer 23 is authoritative for scalars — do not overwrite with edge aggregate. */
+  const perParcelScalars =
+    descriptor.sourceAdapter === "bastrop-per-parcel-record-layer-23";
+  const rowForEmit = perParcelScalars
+    ? rawRow
+    : {
+        ...rawRow,
+        front_ft: { ...rawRow.front_ft!, value: agg.front },
+        side_ft: { ...rawRow.side_ft!, value: agg.side },
+        rear_ft: { ...rawRow.rear_ft!, value: agg.rear },
+      };
 
   const setback = emitSetbackRule(
     descriptor,
