@@ -132,6 +132,7 @@ export type BastropChartDisagreement = {
 function pickString(attrs: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
     const v = attrs[key];
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
     if (typeof v === "string" && v.trim()) return v.trim();
   }
   return "";
@@ -239,7 +240,7 @@ export function parseBastropPerParcelAttributes(
   }
 
   const frontRaw = pickString(attrs, "FrontSetback_", "FrontSetback");
-  const sideRaw = pickString(attrs, "SideSetback_", "SideSetback");
+  const sideRaw = pickString(attrs, "SideSetback", "SideSetback_");
   const rearRaw = pickString(attrs, "RearSetback_", "RearSetback");
   const ordinanceLink = pickString(attrs, "Ordinance_Link", "OrdinanceLink");
   const minLotSize = pickString(attrs, "MinimumLotSize_", "MinimumLotSize");
@@ -460,7 +461,7 @@ export async function fetchBastropPerParcelSetbackRecord(
       serviceUrl: BASTROP_PARCELS_ONE_CLICK_LAYER_23,
       where: `prop_id = ${numeric}`,
       outFields:
-        "prop_id,ZoneTypeClass,FrontSetback_,SideSetback_,RearSetback_,MaxBuildingHt,MinimumLotSize_,MaxImpervisionCoverage,Ordinance_Link,Shape__Area",
+        "prop_id,ZoneTypeClass,FrontSetback_,FrontSetback,SideSetback_,SideSetback,RearSetback_,RearSetback,MaxBuildingHt,MinimumLotSize_,MaxImpervisionCoverage,Ordinance_Link,Shape__Area",
       returnGeometry: false,
       fetchImpl: options.fetchImpl,
       signal: options.signal,

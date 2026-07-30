@@ -65,6 +65,23 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 1)", () => {
     expect(parsed.sideNonScalar).toBe(false);
   });
 
+  it("parses numeric FrontSetback_/SideSetback_/RearSetback_ doubles from live layer 23", () => {
+    const parsed = parseBastropPerParcelAttributes({
+      prop_id: 105054,
+      FrontSetback_: 25,
+      SideSetback_: 5,
+      SideSetback: "5 ft (Corner Side Street Setback: 15 ft)",
+      RearSetback_: 25,
+      Ordinance_Link: "https://example.test/105054",
+    });
+    expect(parsed.kind).toBe("parsed");
+    if (parsed.kind !== "parsed") return;
+    expect(parsed.frontFt).toBe(25);
+    expect(parsed.sideInteriorFt).toBe(5);
+    expect(parsed.sideCornerFt).toBe(15);
+    expect(parsed.rearFt).toBe(25);
+  });
+
   it("parses 34089 GC as 20 / 5 / 10 corner / 20", () => {
     const parsed = parseBastropPerParcelAttributes(FIXTURES["34089"]!);
     expect(parsed.kind).toBe("parsed");
