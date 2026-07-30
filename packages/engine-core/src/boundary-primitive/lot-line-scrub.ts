@@ -232,9 +232,10 @@ export function snapSharedLotLineVertices(
   const out = new Map<string, Ring>();
   for (const [propId, ring] of rings) {
     const open = openRing(ring);
-    const snapped = open.map(([lng, lat]) => {
+    const snapped: Array<[number, number]> = open.map(([lng, lat]) => {
       const key = vertexKey(lng, lat, opts.snapTolM);
-      return canonical.get(key) ?? [lng, lat];
+      const canonicalPt = canonical.get(key);
+      return canonicalPt ?? ([lng, lat] as [number, number]);
     });
     out.set(propId, closeRing(snapped));
   }
