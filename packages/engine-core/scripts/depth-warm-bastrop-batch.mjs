@@ -19,10 +19,8 @@ import { performance } from "node:perf_hooks";
 import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
-import { getSetbackTable } from "@hauska-engine/adapters";
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
-import { resolveSetbackTableRow } from "../src/property-reasoning/emit-setback-rule.ts";
-import { setbackTableDescriptorFromAdapter } from "../src/property-reasoning/setback-table-from-adapter.ts";
+import { buildBastropPerParcelSetbackDescriptor } from "../src/property-reasoning/bastrop-per-parcel-setback.ts";
 import { labelEdgesFromRoads } from "../src/depth-warm/edgeLabeling.ts";
 import {
   readBoundaryEdgesForParcel,
@@ -35,43 +33,41 @@ import { BASTROP_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
 import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parcel-geometry-resolver.ts";
 
 const COUNTY_FIPS = "48021";
+const BASTROP_CITY_KEY = "bastrop-city-tx";
 
-/**
- * SURVIVOR = adapter bastrop-development-code.json (WDLL STEP 3 item 3).
- * Overlay descriptor.setbackTable from the adapter so bake + depth-warm
- * resolve the SAME ordinance-text numbers. Fixture roadClassSetbackTable
- * is retained until STEP 4 road-decouple (not a competing VALUE author).
- */
-const adapterSetbackTable = getSetbackTable("bastrop-development-code");
-const setbackTableFromAdapter = setbackTableDescriptorFromAdapter(adapterSetbackTable);
-if (!setbackTableFromAdapter?.rows?.length) {
-  console.error(
-    "FATAL: bastrop-development-code adapter setback table missing or empty.",
-  );
-  process.exit(1);
-}
-const descriptor = {
+/** Base descriptor — per-parcel layer 23 overlays setbackTable per parcel (STEP 1). */
+const baseDescriptor = {
   ...bastropDescriptor,
-  setbackTable: setbackTableFromAdapter,
-  sourceUrl:
-    adapterSetbackTable?.districts?.[0]?.citation_url ??
-    bastropDescriptor.sourceUrl,
+  sourceAdapter: "bastrop-per-parcel-record-layer-23",
 };
 
-function districtHasSetbackRow(district) {
-  const row = resolveSetbackTableRow(descriptor.setbackTable, district);
-  return !("kind" in row);
+/** BDC + downtown conditional districts served from per-parcel layer 23. */
+const BASTROP_PER_PARCEL_DISTRICT_PREFIXES = [
+  "SF-1",
+  "SF-2",
+  "SF-3",
+  "RR",
+  "MU",
+  "GC",
+  "PI",
+  "IND",
+  "OS",
+  "P/OS",
+  "P-OS",
+];
+
+function resolvablePlaceTypeDistrictCodes() {
+  return [...BASTROP_PER_PARCEL_DISTRICT_PREFIXES];
 }
 
-/** District codes with BDC Euclidean setback rows (SF-1/SF-2/SF-3/RR). */
-function resolvablePlaceTypeDistrictCodes() {
-  const codes = new Set();
-  for (const row of descriptor.setbackTable?.rows ?? []) {
-    if (row.match_basis === "exact" || row.match_basis === "prefix") {
-      codes.add(row.district_code);
-    }
-  }
-  return [...codes].sort();
+async function districtHasPerParcelSetbackRow(parcelNodeId, district) {
+  const built = await buildBastropPerParcelSetbackDescriptor(
+    baseDescriptor,
+    parcelNodeId,
+    district,
+    BASTROP_CITY_KEY,
+  );
+  return built.ok;
 }
 
 function isPlaceTypeDistrict(district, codes) {
@@ -290,7 +286,19 @@ for (const row of parcelRows) {
     continue;
   }
 
-  if (!districtHasSetbackRow(district)) {
+  if (!(await districtHasPerParcelSetbackRow(parcelNodeId, district))) {
+    stats.declines["no-setback-row"]++;
+    stats.processed++;
+    continue;
+  }
+
+  const builtDescriptor = await buildBastropPerParcelSetbackDescriptor(
+    baseDescriptor,
+    parcelNodeId,
+    district,
+    BASTROP_CITY_KEY,
+  );
+  if (!builtDescriptor.ok) {
     stats.declines["no-setback-row"]++;
     stats.processed++;
     continue;
@@ -351,7 +359,7 @@ for (const row of parcelRows) {
       parcelNodeId,
       district,
       parcelRing: geom.ring,
-      descriptor,
+      descriptor: builtDescriptor.descriptor,
       roads,
       edgeLabels: labelResult.ok ? labelResult.edgeLabels : [],
       boundaryEdges: boundaryEdges ?? undefined,

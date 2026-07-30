@@ -209,3 +209,119 @@ export async function arcgisPointQuery(
     : undefined;
   return { features, fields, raw: json };
 }
+
+export interface ArcGisWhereQueryInput {
+  serviceUrl: string;
+  /** SQL-style WHERE clause (e.g. `prop_id = 105054`). */
+  where: string;
+  /** Comma-separated attribute list ("*" for everything). */
+  outFields?: string;
+  /** When true, include feature geometries in the response. */
+  returnGeometry?: boolean;
+  fetchImpl?: typeof fetch;
+  signal?: AbortSignal;
+  upstreamLabel?: string;
+}
+
+/**
+ * Query an ArcGIS service layer by attribute WHERE clause. Same envelope
+ * handling as {@link arcgisPointQuery}; used for per-parcel keyed lookups.
+ */
+export async function arcgisWhereQuery(
+  input: ArcGisWhereQueryInput,
+): Promise<ArcGisQueryResult> {
+  const label = input.upstreamLabel ?? "ArcGIS";
+  const url = new URL(`${input.serviceUrl.replace(/\/$/, "")}/query`);
+  url.searchParams.set("f", "json");
+  url.searchParams.set("where", input.where);
+  url.searchParams.set("outFields", input.outFields ?? "*");
+  url.searchParams.set(
+    "returnGeometry",
+    input.returnGeometry ? "true" : "false",
+  );
+
+  const {
+    response: res,
+    attempts,
+    bodyExcerpt,
+    throwExcerpt,
+  } = await fetchWithRetry(
+    url.toString(),
+    {
+      signal: input.signal,
+      headers: {
+        "User-Agent": ARC_GIS_USER_AGENT,
+        Accept: "application/json, */*;q=0.1",
+      },
+    },
+    {
+      fetchImpl: input.fetchImpl,
+      signal: input.signal,
+      upstreamLabel: label,
+      captureThrowsAsResult: true,
+    },
+  );
+  if (!res.ok) {
+    if (throwExcerpt) {
+      throw new AdapterRunError(
+        "network-error",
+        `${label} did not get a response after ${attempts} attempt${attempts === 1 ? "" : "s"}. Network error: ${throwExcerpt}. Use Force refresh to retry.`,
+      );
+    }
+    const suffix = bodyExcerpt ? ` Upstream response: ${bodyExcerpt}` : "";
+    throw new AdapterRunError(
+      "upstream-error",
+      `${label} responded with HTTP ${res.status} after ${attempts} attempt${attempts === 1 ? "" : "s"}.${suffix} Use Force refresh to retry.`,
+    );
+  }
+
+  let json: unknown;
+  try {
+    json = await res.json();
+  } catch (err) {
+    throw new AdapterRunError(
+      "parse-error",
+      `${label} response was not JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!json || typeof json !== "object") {
+    throw new AdapterRunError(
+      "parse-error",
+      `${label} response was not a JSON object`,
+    );
+  }
+  const errorEnv = (json as { error?: { code?: number; message?: string } })
+    .error;
+  if (errorEnv) {
+    throw new AdapterRunError(
+      "upstream-error",
+      `${label} error ${errorEnv.code ?? "?"}: ${errorEnv.message ?? "unknown"}`,
+    );
+  }
+
+  const featuresRaw = (json as { features?: unknown }).features;
+  if (!Array.isArray(featuresRaw)) {
+    throw new AdapterRunError(
+      "parse-error",
+      `${label} response missing \`features\` array`,
+    );
+  }
+  const features: ArcGisFeature[] = featuresRaw.map((f) => {
+    const feat = f as { attributes?: unknown; geometry?: unknown };
+    return {
+      attributes:
+        feat.attributes && typeof feat.attributes === "object"
+          ? (feat.attributes as Record<string, unknown>)
+          : {},
+      geometry:
+        feat.geometry && typeof feat.geometry === "object"
+          ? (feat.geometry as Record<string, unknown>)
+          : null,
+    };
+  });
+  const fieldsRaw = (json as { fields?: unknown }).fields;
+  const fields = Array.isArray(fieldsRaw)
+    ? (fieldsRaw as ReadonlyArray<{ name: string; type: string }>)
+    : undefined;
+  return { features, fields, raw: json };
+}

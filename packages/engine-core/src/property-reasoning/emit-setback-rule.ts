@@ -161,6 +161,8 @@ export function emitSetbackRule(
     prefixMatched: row.prefixMatched,
     front: row.setbacks.frontFt,
     side: row.setbacks.sideFt,
+    /** Interior side yard (AMENDMENT 2 R2); legacy `side` mirrors this. */
+    sideInteriorFt: row.setbacks.sideFt,
     rear: row.setbacks.rearFt,
     sideCornerFt: row.setbacks.sideCornerFt,
     maxHeightFt: row.setbacks.maxHeightFt,

@@ -93,8 +93,17 @@ export {
   getSetbackDistrict,
   listSetbackTables,
   SETBACK_JURISDICTION_KEYS,
+  fetchBastropPerParcelSetbackRecord,
+  flagBastropChartDisagreement,
+  parseBastropPerParcelAttributes,
+  parseSideSetbackText,
+  setbackTableFromBastropPerParcelRecord,
+  BASTROP_PARCELS_ONE_CLICK_LAYER_23,
   type SetbackTable,
   type SetbackDistrict,
+  type SetbackTableResolveOptions,
+  type BastropPerParcelSetbackParsed,
+  type BastropChartDisagreement,
 } from "./local/setbacks";
 
 /** Master WDLL 3.10 — public-record permit-outcome fuel for calibration. */

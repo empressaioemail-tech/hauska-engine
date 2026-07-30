@@ -21,28 +21,12 @@ import sanAntonioTx from "./san-antonio-tx.json" with { type: "json" };
 import utahUnincorporated from "./utah-unincorporated.json" with { type: "json" };
 import idahoUnincorporated from "./idaho-unincorporated.json" with { type: "json" };
 
-/** Per locked decision #9 — one row per zoning district per jurisdiction. */
-export interface SetbackDistrict {
-  district_name: string;
-  front_ft: number;
-  rear_ft: number;
-  side_ft: number;
-  side_corner_ft: number;
-  max_height_ft: number;
-  max_lot_coverage_pct: number;
-  max_impervious_pct: number;
-  citation_url: string;
-  /** Fan-gift per-field provenance (optional on legacy tables). */
-  provenance?: Record<string, unknown>;
-}
+export type { SetbackDistrict, SetbackTable } from "./table-types.js";
+import type { SetbackDistrict, SetbackTable } from "./table-types.js";
 
-export interface SetbackTable {
-  jurisdictionKey: string;
-  jurisdictionDisplayName: string;
-  /** Optional context note for fallback / statewide-default tables. */
-  note?: string;
-  districts: SetbackDistrict[];
-}
+import {
+  setbackTableFromBastropPerParcelRecord,
+} from "./bastrop-per-parcel-record.js";
 
 const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = {
   "grand-county-ut": grandCountyUt as SetbackTable,
@@ -104,9 +88,21 @@ function isBastropCityJurisdiction(normalizedKey: string): boolean {
   return (
     normalizedKey === "bastrop-tx" ||
     normalizedKey === "bastrop-city-tx" ||
-    normalizedKey === "bastrop-development-code"
+    normalizedKey === "bastrop-development-code" ||
+    normalizedKey === "bastrop-per-parcel-record"
   );
 }
+
+export type SetbackTableResolveOptions = {
+  /**
+   * Pre-fetched Bastrop layer-23 record (AMENDMENT 2+3). When set for a
+   * Bastrop city jurisdiction, NUMBERS come from here — not
+   * bastrop-development-code.json chart rows.
+   */
+  bastropPerParcelRecord?: import("./bastrop-per-parcel-record.js").BastropPerParcelSetbackParsed;
+  /** District code for per-parcel row labeling (defaults to zoningCode arg). */
+  districtCode?: string;
+};
 
 function tableHasDistrict(table: SetbackTable, code: string): boolean {
   const wanted = leadingDistrictToken(code);
@@ -128,15 +124,14 @@ export function getSetbackTable(jurisdictionKey: string): SetbackTable | null {
 /**
  * Resolve the table for a parcel's stamped zoning code.
  *
- * City of Bastrop (current law = BDC / Ord. 2026-06):
- *   - SF-1 / SF-2 / SF-3 / RR (and any clean match in the BDC table) →
- *     bastrop-development-code (ordinance-text scalars).
+ * City of Bastrop (current law = per-parcel layer 23, AMENDMENT 2+3):
+ *   - When `options.bastropPerParcelRecord` is supplied, NUMBERS come from
+ *     that record (cited to Ordinance_Link). Chart table is verification only.
+ *   - Without a per-parcel record, returns bastrop-development-code for
+ *     edition/citation lookup only — callers MUST NOT use chart scalars as
+ *     warm authors for Bastrop city (fetch layer 23 first).
  *   - Repealed B3 Place Types (P-1..P-5, P-CS, P-EC, PDD) → null
  *     (honest-decline). Do NOT silently serve bastrop-city-tx as current.
- *     Historical B3 remains available only via getSetbackTable("bastrop-city-tx").
- *   - Conditional BDC districts without rows (MU/GC/PI/IND/P/OS/…) → BDC
- *     table returned; callers honest-decline on missing district row
- *     (CORRECTION C — no fabricated scalars).
  *
  * County / other jurisdictions: fall through to the keyed table
  * (e.g. bastrop-tx legacy R-MD rows for non-city codes).
@@ -144,9 +139,19 @@ export function getSetbackTable(jurisdictionKey: string): SetbackTable | null {
 export function getSetbackTableForZoning(
   jurisdictionKey: string,
   zoningCode: string | null | undefined,
+  options?: SetbackTableResolveOptions,
 ): SetbackTable | null {
   const normalized = normalizeJurisdictionKey(jurisdictionKey);
   const code = (zoningCode ?? "").trim().toUpperCase();
+
+  if (options?.bastropPerParcelRecord && isBastropCityJurisdiction(normalized)) {
+    const district = (options.districtCode ?? code).trim();
+    if (!district) return null;
+    return setbackTableFromBastropPerParcelRecord(
+      options.bastropPerParcelRecord,
+      district,
+    );
+  }
 
   if (isBastropCityJurisdiction(normalized)) {
     if (code && isRepealedB3PlaceType(code)) {
@@ -195,3 +200,18 @@ export function getSetbackDistrict(
 export function listSetbackTables(): SetbackTable[] {
   return Object.values(SETBACK_TABLES);
 }
+
+export {
+  BASTROP_PARCELS_ONE_CLICK_LAYER_23,
+  fetchBastropPerParcelSetbackRecord,
+  flagBastropChartDisagreement,
+  parseBastropPerParcelAttributes,
+  parseScalarSetbackFeet,
+  parseSideSetbackText,
+  setbackTableFromBastropPerParcelRecord,
+  type BastropChartDisagreement,
+  type BastropPerParcelHonestDecline,
+  type BastropPerParcelSetbackParsed,
+  type FetchBastropPerParcelOptions,
+  type ParsedSideSetback,
+} from "./bastrop-per-parcel-record.js";
