@@ -33,6 +33,7 @@ import { BASTROP_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
 import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parcel-geometry-resolver.ts";
 
 const COUNTY_FIPS = "48021";
+const BASTROP_CITY_KEY = "bastrop-city-tx";
 
 /** Base descriptor — per-parcel layer 23 overlays setbackTable per parcel (STEP 1). */
 const baseDescriptor = {
@@ -64,6 +65,7 @@ async function districtHasPerParcelSetbackRow(parcelNodeId, district) {
     baseDescriptor,
     parcelNodeId,
     district,
+    BASTROP_CITY_KEY,
   );
   return built.ok;
 }
@@ -294,6 +296,7 @@ for (const row of parcelRows) {
     baseDescriptor,
     parcelNodeId,
     district,
+    BASTROP_CITY_KEY,
   );
   if (!builtDescriptor.ok) {
     stats.declines["no-setback-row"]++;

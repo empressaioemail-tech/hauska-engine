@@ -36,6 +36,7 @@ export async function buildBastropPerParcelSetbackDescriptor(
   base: JurisdictionDescriptor,
   parcelNodeId: string,
   district: string,
+  cityKey: string,
   fetchImpl?: typeof fetch,
 ): Promise<BastropPerParcelDescriptorResult> {
   const propId = propIdFromParcelNodeId(parcelNodeId);
@@ -56,7 +57,7 @@ export async function buildBastropPerParcelSetbackDescriptor(
     };
   }
 
-  const adapterTable = getSetbackTableForZoning("bastrop-city-tx", district, {
+  const adapterTable = getSetbackTableForZoning(cityKey, district, {
     bastropPerParcelRecord: fetched,
     districtCode: district,
   });
