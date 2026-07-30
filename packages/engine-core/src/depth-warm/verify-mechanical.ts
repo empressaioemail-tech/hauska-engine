@@ -125,6 +125,16 @@ export function verifyWarmCandidateMechanically(
     candidate.insetRing &&
     isNearRectangularParcelRing(candidate.parcelRing)
   ) {
+    // R5 near-rect gate — ONLY for lots that are themselves near-rectangular
+    // AND convex (isNearRectangularParcelRing now requires turn-sign
+    // consistency). On such a lot a non-convex or over-vertexed inset means the
+    // offset math corrupted a clean rectangle (the 1006 Jefferson notch), so we
+    // demand convexity + a bounded vertex count on top of the plain validity
+    // gate. R29: genuinely irregular / notched / multi-part lots (e.g.
+    // 48021:34121, an L-shaped hexagon hugging the alley) are NOT near-rect, so
+    // this branch is skipped for them and their legitimately non-convex inset is
+    // validated by geometryCorrectnessGate alone (containment, no
+    // self-intersection/self-touch, positive area, per-edge plausibility).
     const parcelVerts = openRing(candidate.parcelRing).length;
     const rectCheck = nearRectEnvelopeCheck(
       candidate.parcelRing,
