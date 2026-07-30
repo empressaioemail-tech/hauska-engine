@@ -15,6 +15,7 @@ import {
   type Ring,
 } from "../depth-warm/geometry.js";
 import {
+  isConvexPlanarRing,
   ringSelfIntersects,
   signedArea,
   type PlanarPoint,
@@ -79,6 +80,7 @@ function turnAngleDeg(a: PlanarPoint, b: PlanarPoint, c: PlanarPoint): number {
 export function removeNearlyStraightVertices(
   points: PlanarPoint[],
   maxTurnDeg = 12,
+  protectedIndices?: ReadonlySet<number>,
 ): PlanarPoint[] {
   let pts = points.map((p) => ({ x: p.x, y: p.y }));
   let changed = true;
@@ -88,6 +90,7 @@ export function removeNearlyStraightVertices(
     const n = pts.length;
     const targetArea = Math.abs(signedArea(pts));
     for (let v = 0; v < n; v++) {
+      if (protectedIndices?.has(v)) continue;
       const prev = pts[(v + n - 1) % n]!;
       const cur = pts[v]!;
       const next = pts[(v + 1) % n]!;
@@ -97,7 +100,9 @@ export function removeNearlyStraightVertices(
       const candidate = pts.filter((_, i) => i !== v);
       if (candidate.length < 3) continue;
       const nextArea = Math.abs(signedArea(candidate));
-      if (nextArea < targetArea * 0.998) continue;
+      /** Micro-jogs (<5°) may shed slightly more area when collapsing digitization noise. */
+      const areaFloor = turn < 5 ? 0.99 : 0.998;
+      if (nextArea < targetArea * areaFloor) continue;
       if (ringSelfIntersects(candidate)) continue;
 
       pts = candidate;
@@ -131,6 +136,7 @@ function removeCollinearVertices(points: PlanarPoint[], tol: number): PlanarPoin
 export function removeShortEdgeVertices(
   points: PlanarPoint[],
   minEdgeM: number,
+  protectedIndices?: ReadonlySet<number>,
 ): PlanarPoint[] {
   let pts = points.map((p) => ({ x: p.x, y: p.y }));
   let changed = true;
@@ -140,6 +146,7 @@ export function removeShortEdgeVertices(
     const n = pts.length;
     const targetArea = Math.abs(signedArea(pts));
     for (let v = 0; v < n; v++) {
+      if (protectedIndices?.has(v)) continue;
       const prev = pts[(v + n - 1) % n]!;
       const cur = pts[v]!;
       const next = pts[(v + 1) % n]!;
@@ -161,10 +168,41 @@ export function removeShortEdgeVertices(
   return pts;
 }
 
+function protectedVertexIndices(
+  open: Array<[number, number]>,
+  snapTolM: number,
+  sharedKeys: ReadonlySet<string>,
+): Set<number> {
+  const out = new Set<number>();
+  open.forEach(([lng, lat], i) => {
+    const key = vertexKey(lng, lat, snapTolM);
+    if (sharedKeys.has(key)) out.add(i);
+  });
+  return out;
+}
+
+function sharedLotLineVertexKeys(
+  rings: ReadonlyMap<string, Ring>,
+  snapTolM: number,
+): Set<string> {
+  const counts = new Map<string, number>();
+  for (const ring of rings.values()) {
+    for (const [lng, lat] of openRing(ring)) {
+      const key = vertexKey(lng, lat, snapTolM);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  const shared = new Set<string>();
+  for (const [key, n] of counts) {
+    if (n >= 2) shared.add(key);
+  }
+  return shared;
+}
+
 /** Scrub one parcel ring: dedupe, drop collinear + sub-survey vertices. */
 export function scrubLotLineRing(
   ring: Ring,
-  options?: LotLineScrubOptions,
+  options?: LotLineScrubOptions & { protectedVertexKeys?: ReadonlySet<string> },
 ): Ring {
   const opts = { ...DEFAULT_SCRUB, ...options };
   const open = openRing(ring);
@@ -173,12 +211,18 @@ export function scrubLotLineRing(
   const frame = projectRing(open);
   if (!frame) return ring;
 
+  const protectedIdx = options?.protectedVertexKeys
+    ? protectedVertexIndices(open, opts.snapTolM, options.protectedVertexKeys)
+    : undefined;
+
   let pts = frame.points.map((p) => ({ x: p.x, y: p.y }));
   pts = removeCollinearVertices(pts, opts.collinearTolM);
-  pts = removeNearlyStraightVertices(pts);
-  pts = removeShortEdgeVertices(pts, opts.minEdgeM);
-  pts = removeNearlyStraightVertices(pts);
+  pts = removeNearlyStraightVertices(pts, 12, protectedIdx);
+  pts = removeShortEdgeVertices(pts, opts.minEdgeM, protectedIdx);
+  pts = removeNearlyStraightVertices(pts, 12, protectedIdx);
   pts = removeCollinearVertices(pts, opts.collinearTolM);
+  pts = removeNearlyStraightVertices(pts, 8, protectedIdx);
+  pts = removeShortEdgeVertices(pts, opts.minEdgeM, protectedIdx);
 
   if (pts.length < 3 || ringSelfIntersects(pts)) return ring;
 
@@ -247,9 +291,22 @@ export function scrubParcelCohortEntries(
   entries: ReadonlyArray<ParcelIndexEntry>,
   options?: LotLineScrubOptions,
 ): ParcelIndexEntry[] {
+  const opts = { ...DEFAULT_SCRUB, ...options };
+  const preRings = new Map<string, Ring>(
+    entries.map((e) => [e.propId, e.ring]),
+  );
+  const preSnapped = snapSharedLotLineVertices(preRings, options);
+  const sharedKeys = sharedLotLineVertexKeys(preSnapped, opts.snapTolM);
+
   const scrubbed = new Map<string, Ring>();
   for (const entry of entries) {
-    scrubbed.set(entry.propId, scrubLotLineRing(entry.ring, options));
+    scrubbed.set(
+      entry.propId,
+      scrubLotLineRing(preSnapped.get(entry.propId) ?? entry.ring, {
+        ...options,
+        protectedVertexKeys: sharedKeys,
+      }),
+    );
   }
   const snapped = snapSharedLotLineVertices(scrubbed, options);
 
@@ -285,24 +342,31 @@ export function isNearRectangularParcelRing(ring: Ring): boolean {
   return true;
 }
 
-/** WDLL F3 invariant: near-rect parcel → near-rect envelope (≤ maxInsetVerts). */
+/** WDLL F3 / R5 invariant: near-rect parcel → convex inset matching topology. */
 export function nearRectEnvelopeCheck(
   parcelRing: Ring,
   insetRing: Ring | null,
-  maxInsetVerts = 6,
+  maxInsetVerts?: number,
 ): NearRectEnvelopeCheck {
   const reasons: string[] = [];
   const parcelEdgeCount = openRing(parcelRing).length;
   const insetVertexCount = insetRing ? openRing(insetRing).length : 0;
+  const vertCap = maxInsetVerts ?? parcelEdgeCount;
 
   if (!insetRing) reasons.push("inset ring is null");
   if (!isNearRectangularParcelRing(parcelRing)) {
     reasons.push("parcel ring is not near-rectangular");
   }
-  if (insetRing && insetVertexCount > maxInsetVerts) {
+  if (insetRing && insetVertexCount > vertCap) {
     reasons.push(
-      `inset vertex count ${insetVertexCount} exceeds ${maxInsetVerts}`,
+      `inset vertex count ${insetVertexCount} exceeds ${vertCap} (parcel has ${parcelEdgeCount} edges)`,
     );
+  }
+  if (insetRing) {
+    const insetFrame = projectRing(insetRing);
+    if (insetFrame && !isConvexPlanarRing(insetFrame.points)) {
+      reasons.push("inset ring is not convex");
+    }
   }
 
   return {

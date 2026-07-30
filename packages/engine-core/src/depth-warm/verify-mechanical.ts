@@ -5,6 +5,12 @@
  */
 
 import { classifyOsmHighwayTag } from "../road-intake/classify.js";
+import {
+  isNearRectangularParcelRing,
+  nearRectEnvelopeCheck,
+} from "../boundary-primitive/lot-line-scrub.js";
+import { openRing, projectRing } from "./geometry.js";
+import { isConvexPlanarRing } from "../geometry/polygon-inset.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { geometryCorrectnessGate } from "./geometry.js";
 import type { VerifyResult, WarmCandidate } from "./types.js";
@@ -115,6 +121,25 @@ export function verifyWarmCandidateMechanically(
   if (candidate.empty) {
     geometry.pass = false;
     geometry.reasons.push("warm candidate marked empty — cannot promote");
+  } else if (
+    candidate.insetRing &&
+    isNearRectangularParcelRing(candidate.parcelRing)
+  ) {
+    const parcelVerts = openRing(candidate.parcelRing).length;
+    const rectCheck = nearRectEnvelopeCheck(
+      candidate.parcelRing,
+      candidate.insetRing,
+      parcelVerts,
+    );
+    if (!rectCheck.pass) {
+      geometry.pass = false;
+      geometry.reasons.push(...rectCheck.reasons);
+    }
+    const insetFrame = projectRing(candidate.insetRing);
+    if (insetFrame && !isConvexPlanarRing(insetFrame.points)) {
+      geometry.pass = false;
+      geometry.reasons.push("inset ring is not convex (R5 near-rect gate)");
+    }
   }
 
   const roadClassification = verifyRoadClassificationMatchesSource(candidate);

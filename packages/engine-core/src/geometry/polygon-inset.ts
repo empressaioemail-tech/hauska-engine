@@ -381,7 +381,33 @@ function midpoint(a: PlanarPoint, b: PlanarPoint): PlanarPoint {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-/** Per-edge midpoint plausibility check (exported for geometryCorrectnessGate). */
+/** True when every significant turn is consistently signed (convex polygon). */
+export function isConvexPlanarRing(
+  points: PlanarPoint[],
+  minTurnDeg = 12,
+): boolean {
+  const n = points.length;
+  if (n < 3) return false;
+  let sign = 0;
+  for (let i = 0; i < n; i++) {
+    const a = points[(i + n - 1) % n]!;
+    const b = points[i]!;
+    const c = points[(i + 1) % n]!;
+    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+    const ab = Math.hypot(b.x - a.x, b.y - a.y);
+    const bc = Math.hypot(c.x - b.x, c.y - b.y);
+    if (ab < 1e-6 || bc < 1e-6) continue;
+    const sin = cross / (ab * bc);
+    const turnDeg = Math.abs(Math.asin(Math.max(-1, Math.min(1, sin))) * (180 / Math.PI));
+    if (turnDeg < minTurnDeg) continue;
+    const s = Math.sign(cross);
+    if (s === 0) continue;
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
+  }
+  return sign !== 0;
+}
+
 export function perEdgeOffsetPlausible(
   orig: PlanarPoint[],
   inset: PlanarPoint[],
