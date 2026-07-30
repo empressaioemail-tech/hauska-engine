@@ -151,25 +151,253 @@ function lngLatForCell(
   return [lng, lat];
 }
 
+/**
+ * MINIMUM PONDING DEPTH — the depth of standing water below which a cell is
+ * NOT reported as ponded (2026-07-30 credible-ponding fix).
+ *
+ * 0.1 m (about 4 inches). The number a customer reads in "modeled ponding
+ * covers N acres" has to mean water that would actually matter to a building
+ * pad, a driveway or a finished-floor elevation. Four inches of standing water
+ * is the shallowest depth that plausibly does: it is deep enough to be a real
+ * site-design constraint rather than a wet patch, and shallow enough that a
+ * genuine depression is not silently dropped.
+ *
+ * The prior rule used 0.005 m (5 mm) — a quarter-inch trace of wetness, which
+ * on any rained-on terrain qualifies essentially every cell.
+ */
+export const MIN_PONDING_DEPTH_METERS = 0.1;
+
+/**
+ * PONDING = DEPRESSION STORAGE, NOT WETNESS (2026-07-30 credible-ponding fix).
+ *
+ * WHAT THE OLD RULE DID AND WHY IT WAS NOT DEFENSIBLE. The native fallback
+ * computed, per cell, `slopeProxy = 1 / accumulation` and
+ * `pondDepth = rainfallDepth * min(1, slopeProxy * 10)`, then called the cell
+ * ponded when `pondDepth > 0.005` (5 mm). That rule has two independent
+ * defects:
+ *
+ *   1. IT IS INVERTED. Ponding rose as accumulation FELL, so a ridge cell with
+ *      one upstream cell scored the FULL design-storm depth while a valley
+ *      channel cell scored the least. It ponded the hilltops.
+ *   2. THE THRESHOLD WAS A TRACE. `slopeProxy * 10 >= 1` for every cell with
+ *      accumulation <= 10, so pondDepth saturated at the full storm depth over
+ *      broad areas, and even off saturation the 5 mm bar passed everywhere.
+ *      Measured on a 115x115 10 m grid over a gentle dome: 13,225 of 13,225
+ *      cells (100%) qualified. On the live Bastrop parcel 48021:36249 this
+ *      reported 396,134 sq ft of ponding on a 398,813 sq ft parcel — 99.3% of
+ *      the parcel — inside a briefing that simultaneously said the parcel is a
+ *      local high point that sheds water.
+ *
+ * WHAT THE NEW RULE DOES. A cell ponds when it is an actual DEPRESSION and the
+ * water that collects there is deep enough to matter:
+ *
+ *   depressionDepth = filledElevation - rawElevation
+ *
+ * Depression-filling raises exactly those cells that have no downslope escape
+ * — the sinks. `depressionDepth` is the height of the lip that traps water
+ * there, in meters, straight out of the same D8 preprocessing the rest of the
+ * model already runs. A cell on a slope has `filled == raw`, so its depression
+ * depth is 0 and it never ponds no matter how hard it rains. That is the
+ * physical statement "water runs off a slope; it stands in a hollow".
+ *
+ * The ponded depth is then the lesser of what the depression can HOLD and what
+ * the storm DELIVERS — a sink deeper than the design storm only fills to the
+ * storm depth, and a shallow sink only holds its own depth:
+ *
+ *   pondDepth = min(depressionDepth, rainfallDepth)
+ *
+ * A cell is ponded when `pondDepth >= MIN_PONDING_DEPTH_METERS`.
+ *
+ * WHAT THIS DOES AND DOES NOT REPRESENT — state this plainly, it ships in the
+ * payload provenance. It DOES represent: screening-level identification of
+ * closed depressions on the DEM that would hold at least 4 inches of standing
+ * water under the design storm. It does NOT represent: a routed hydraulic
+ * model, infiltration, soil storage, storm-sewer or culvert capacity, or the
+ * timing/duration of any flood. It is a D8 + design-storm screening product at
+ * the DEM's resolution, and a depression smaller than one DEM cell is
+ * invisible to it. Verification by a licensed engineer is still required.
+ */
+export function pondingDepthMeters(
+  filledElevation: number,
+  rawElevation: number,
+  rainfallDepthMeters: number,
+): number {
+  if (!isFiniteElev(filledElevation) || !isFiniteElev(rawElevation)) return 0;
+  const depressionDepth = filledElevation - rawElevation;
+  if (!(depressionDepth > 0)) return 0;
+  return Math.min(depressionDepth, Math.max(0, rainfallDepthMeters));
+}
+
+/** True when a cell holds standing water deep enough to report as ponded. */
+export function isCellPonded(
+  filledElevation: number,
+  rawElevation: number,
+  rainfallDepthMeters: number,
+): boolean {
+  return (
+    pondingDepthMeters(filledElevation, rawElevation, rainfallDepthMeters) >=
+    MIN_PONDING_DEPTH_METERS
+  );
+}
+
+/**
+ * Provenance note shipped on the ponding FeatureCollection so the client, the
+ * PDF and the briefing all describe the SAME criterion rather than each
+ * narrating its own guess at what the blue area means.
+ */
+export const PONDING_BASIS_NOTE =
+  `modeled depression storage at or above ${MIN_PONDING_DEPTH_METERS} m ` +
+  `(${Math.round(MIN_PONDING_DEPTH_METERS * 39.3701)} in) of standing water under the design storm; ` +
+  `closed depressions on the DEM only, excluding infiltration, soil storage and drainage infrastructure`;
+
+/**
+ * Minimal binary min-heap over cell indices keyed by elevation. Only what
+ * priority-flood needs (push / pop-min); no dependency added for this.
+ */
+class MinHeap {
+  private readonly cells: number[] = [];
+  private readonly keys: number[] = [];
+
+  get size(): number {
+    return this.cells.length;
+  }
+
+  push(cell: number, key: number): void {
+    this.cells.push(cell);
+    this.keys.push(key);
+    let i = this.cells.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.keys[parent]! <= this.keys[i]!) break;
+      this.swap(i, parent);
+      i = parent;
+    }
+  }
+
+  pop(): { cell: number; key: number } | null {
+    if (this.cells.length === 0) return null;
+    const cell = this.cells[0]!;
+    const key = this.keys[0]!;
+    const lastCell = this.cells.pop()!;
+    const lastKey = this.keys.pop()!;
+    if (this.cells.length > 0) {
+      this.cells[0] = lastCell;
+      this.keys[0] = lastKey;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let smallest = i;
+        if (l < this.keys.length && this.keys[l]! < this.keys[smallest]!) smallest = l;
+        if (r < this.keys.length && this.keys[r]! < this.keys[smallest]!) smallest = r;
+        if (smallest === i) break;
+        this.swap(i, smallest);
+        i = smallest;
+      }
+    }
+    return { cell, key };
+  }
+
+  private swap(a: number, b: number): void {
+    const c = this.cells[a]!;
+    this.cells[a] = this.cells[b]!;
+    this.cells[b] = c;
+    const k = this.keys[a]!;
+    this.keys[a] = this.keys[b]!;
+    this.keys[b] = k;
+  }
+}
+
+/**
+ * PRIORITY-FLOOD depression filling (Barnes, Lehman & Mulla 2014), replacing
+ * the prior single-pass "raise each cell to its lowest neighbour" sweep.
+ *
+ * WHY THIS HAD TO CHANGE (2026-07-30). The old sweep visited each interior cell
+ * ONCE in row-major order and lifted it to its lowest neighbour. That does not
+ * converge to a filled surface: in a wide bowl it raises the rim ring slightly
+ * and leaves the interior essentially untouched, because the information that
+ * the bowl has no outlet never propagates inward. It is adequate only to nudge
+ * single-cell pits.
+ *
+ * That was tolerable while `filled` was used solely to break D8 routing ties,
+ * but the ponding criterion now reads `filled - raw` as a PHYSICAL depression
+ * depth, and an unconverged fill reports a real 3 m bowl as 0.3 m of storage at
+ * the rim and zero at the centre — it would report the genuine flood case as
+ * dry. A correct fill is also strictly better for the routing it already fed.
+ *
+ * The algorithm: seed a min-heap with every border and nodata-adjacent cell (a
+ * cell that can drain off-grid), then repeatedly pop the lowest cell and raise
+ * each unvisited neighbour to at least the popped cell's level. Every cell is
+ * therefore assigned the lowest elevation at which water reaching it can still
+ * escape to the grid edge — exactly the filled surface, so `filled - raw` is
+ * the depth of water the depression holds before it spills. O(n log n).
+ */
 function fillDepressions(
   dem: Float32Array,
   width: number,
   height: number,
 ): Float32Array {
-  const out = new Float32Array(dem);
-  for (let row = 1; row < height - 1; row++) {
-    for (let col = 1; col < width - 1; col++) {
+  const size = width * height;
+  const out = new Float32Array(size);
+  const visited = new Uint8Array(size);
+  const heap = new MinHeap();
+
+  const isBorder = (col: number, row: number): boolean =>
+    col === 0 || row === 0 || col === width - 1 || row === height - 1;
+
+  // Seed: every cell that can already spill off the grid — the borders, plus
+  // any finite cell touching nodata (nodata is an open edge, not a wall).
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
       const i = idx(col, row, width);
-      if (!isFiniteElev(out[i]!)) continue;
-      let minNeighbor = out[i]!;
-      for (const [dc, dr] of D8_OFFSETS) {
-        const v = out[idx(col + dc, row + dr, width)]!;
-        if (isFiniteElev(v) && v < minNeighbor) minNeighbor = v;
+      const z = dem[i]!;
+      if (!isFiniteElev(z)) {
+        // Nodata passes through unchanged and is never a fill target.
+        out[i] = z;
+        visited[i] = 1;
+        continue;
       }
-      if (minNeighbor > out[i]!) {
-        out[i] = minNeighbor;
+      let seed = isBorder(col, row);
+      if (!seed) {
+        for (const [dc, dr] of D8_OFFSETS) {
+          if (!isFiniteElev(dem[idx(col + dc, row + dr, width)]!)) {
+            seed = true;
+            break;
+          }
+        }
+      }
+      if (seed) {
+        out[i] = z;
+        visited[i] = 1;
+        heap.push(i, z);
       }
     }
+  }
+
+  while (heap.size > 0) {
+    const popped = heap.pop()!;
+    const col = popped.cell % width;
+    const row = (popped.cell - col) / width;
+    for (const [dc, dr] of D8_OFFSETS) {
+      const nc = col + dc;
+      const nr = row + dr;
+      if (nc < 0 || nr < 0 || nc >= width || nr >= height) continue;
+      const ni = idx(nc, nr, width);
+      if (visited[ni] === 1) continue;
+      const nz = dem[ni]!;
+      // The neighbour cannot sit below the level at which water escapes past
+      // this cell; raising it to `popped.key` is exactly the fill.
+      const filledZ = Math.max(nz, popped.key);
+      out[ni] = filledZ;
+      visited[ni] = 1;
+      heap.push(ni, filledZ);
+    }
+  }
+
+  // Any cell the flood never reached (fully enclosed by nodata) keeps its raw
+  // elevation — never an invented fill.
+  for (let i = 0; i < size; i++) {
+    if (visited[i] === 0) out[i] = dem[i]!;
   }
   return out;
 }
@@ -349,8 +577,46 @@ function maskToGeoJson(
  * the 90th percentile is over the 70th), so the three bands NEST — which is
  * exactly what the redesign paints. Bands whose mask is empty are simply not
  * emitted; nothing is invented to fill a band.
+ *
+ * TOO SMALL TO BAND — AN EXPLICIT STATE, NOT A SILENT COLLAPSE (2026-07-30).
+ * On the live Bastrop parcel 48021:36249 the delineated catchment was 3,223
+ * sq ft — about 3 cells of a 10 m DEM. Percentile bands over three values are
+ * meaningless, and the resulting single-cell band masks were then swallowed by
+ * the library speck filter (4 cells), so the payload carried exactly one
+ * feature with `concentration: 0` and the generic "modeled catchment extent"
+ * basis. To a client painting three amber tones that is indistinguishable from
+ * a rendering bug, and it silently hid the real finding, which is that the
+ * catchment is too small to have internal structure at this resolution.
+ *
+ * So a catchment below {@link MIN_BANDABLE_CATCHMENT_CELLS} now short-circuits
+ * to band 0 carrying a SELF-DESCRIBING basis
+ * ({@link concentrationBasisTooSmall}) that names the cell count and says why
+ * no banding was attempted. The client and the PDF surface that sentence
+ * instead of implying a gradient the model cannot support.
  */
 export const CONCENTRATION_BAND_QUANTILES: readonly [number, number] = [0.7, 0.9];
+
+/**
+ * Fewest catchment cells that can carry a meaningful 70th/90th-percentile
+ * split. Below this the quantiles land on the same one or two values and any
+ * "band" is a single cell of DEM noise, so the model reports the honest
+ * too-small state instead. 12 cells leaves at least ~3 cells in the top decile
+ * (12 * 0.1 rounded up, plus the speck floor of 4 for a traceable region).
+ */
+export const MIN_BANDABLE_CATCHMENT_CELLS = 12;
+
+/** Self-describing basis for a catchment too small to band. */
+export function concentrationBasisTooSmall(cells: number): string {
+  return (
+    `modeled catchment extent; too small to band at this resolution ` +
+    `(${cells} DEM ${cells === 1 ? "cell" : "cells"}, under the ` +
+    `${MIN_BANDABLE_CATCHMENT_CELLS}-cell minimum for a flow-concentration split)`
+  );
+}
+
+/** Basis for a catchment whose accumulation field carries no usable gradient. */
+export const CONCENTRATION_BASIS_NO_GRADIENT =
+  "modeled catchment extent; flow accumulation is uniform across it, so no concentration gradient was modeled";
 
 export function deriveConcentrationBands(
   catchmentMask: Uint8Array,
@@ -379,24 +645,35 @@ export function deriveConcentrationBands(
         concentration,
         concentrationBasis: note,
       },
-      // Band 0 IS the delineated catchment — keep whatever the model
-      // delineated (see DELINEATED_SPECK_FLOOR_CELLS). Bands 1 and 2 are
-      // thresholded fields where the library speck filter is the right one.
-      concentration === 0 ? { minRegionAreaCells: DELINEATED_SPECK_FLOOR_CELLS } : {},
+      // EVERY band keeps whatever the model delineated. Band 0 is the
+      // delineated catchment (a headline stat). Bands 1 and 2 were previously
+      // left on the library speck floor (4 cells), which silently DELETED
+      // genuine small bands and left the payload looking like band 0 alone —
+      // half of the 2026-07-30 banding defect. The too-small-to-band guard
+      // below is now what protects against noise, and it says so out loud.
+      { minRegionAreaCells: DELINEATED_SPECK_FLOOR_CELLS },
     );
     features.push(...(fc.features as GeoJsonFeatureCollection["features"][number][]));
   };
 
-  // Band 0 — the catchment itself.
-  emit(catchmentMask, 0, "modeled catchment extent");
+  // TOO SMALL TO BAND — explicit, self-describing, never a silent collapse.
+  if (inside.length < MIN_BANDABLE_CATCHMENT_CELLS) {
+    emit(catchmentMask, 0, concentrationBasisTooSmall(inside.length));
+    return { type: "FeatureCollection", features };
+  }
 
-  inside.sort((a, b) => a - b);
+  const sorted = [...inside].sort((a, b) => a - b);
   const quantile = (q: number): number =>
-    inside[Math.min(inside.length - 1, Math.floor(q * inside.length))] ?? 0;
-  const levels: Array<[0 | 1 | 2, number]> = [
+    sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0;
+  const levels: Array<[1 | 2, number]> = [
     [1, quantile(CONCENTRATION_BAND_QUANTILES[0])],
     [2, quantile(CONCENTRATION_BAND_QUANTILES[1])],
   ];
+
+  // Build the higher bands FIRST so band 0 can carry an honest basis: if no
+  // gradient survives, band 0 must say the field is uniform rather than imply
+  // a split that was never emitted.
+  const higher: Array<{ band: Uint8Array; concentration: 1 | 2; note: string }> = [];
   const seen = new Set<number>();
   for (const [concentration, cutoff] of levels) {
     // A degenerate accumulation field can put two quantiles on the same
@@ -405,10 +682,8 @@ export function deriveConcentrationBands(
     seen.add(cutoff);
     const band = new Uint8Array(width * height);
     let cells = 0;
-    let catchmentCells = 0;
     for (let i = 0; i < band.length; i++) {
       if (catchmentMask[i] !== 1) continue;
-      catchmentCells++;
       if ((accumulationGrid[i] ?? 0) >= cutoff) {
         band[i] = 1;
         cells++;
@@ -417,12 +692,21 @@ export function deriveConcentrationBands(
     // A band identical to the catchment (a flat accumulation field puts every
     // cell over the cutoff) is not a CONCENTRATION — painting it as one would
     // assert a gradient the model does not show. Emit nothing for that band.
-    if (cells === 0 || cells === catchmentCells) continue;
-    emit(
+    if (cells === 0 || cells === inside.length) continue;
+    higher.push({
       band,
       concentration,
-      `D8 flow accumulation at or above ${cutoff} upstream cells`,
-    );
+      note: `D8 flow accumulation at or above ${cutoff} upstream cells`,
+    });
+  }
+
+  emit(
+    catchmentMask,
+    0,
+    higher.length > 0 ? "modeled catchment extent" : CONCENTRATION_BASIS_NO_GRADIENT,
+  );
+  for (const { band, concentration, note } of higher) {
+    emit(band, concentration, note);
   }
   return { type: "FeatureCollection", features };
 }
@@ -580,19 +864,25 @@ export function runHydrologyNative(
   const rainfallMm = input.rainfallDepthMm ?? 0;
   if (rainfallMm > 0) {
     const rainfallM = rainfallMm / 1000;
+    // PONDING = DEPRESSION STORAGE (see `pondingDepthMeters`): a cell ponds
+    // only where depression-filling had to RAISE it — an actual sink — and the
+    // trapped water clears MIN_PONDING_DEPTH_METERS. Cells on a slope have
+    // filled == raw and never pond, however hard it rains.
     const pondMask = new Uint8Array(width * height);
     for (let i = 0; i < width * height; i++) {
-      if (!isFiniteElev(filled[i]!)) continue;
-      const slopeProxy = acc[i]! > 0 ? 1 / acc[i]! : 1;
-      const pondDepth = rainfallM * Math.min(1, slopeProxy * 10);
-      if (pondDepth > 0.005) pondMask[i] = 1;
+      if (isCellPonded(filled[i]!, elevation[i]!, rainfallM)) pondMask[i] = 1;
     }
     rainfallResultGeoJson = maskToGeoJson(
       pondMask,
       width,
       height,
       catchmentBbox,
-      { rainfallDepthMm: rainfallMm, library: "native-d8" },
+      {
+        rainfallDepthMm: rainfallMm,
+        library: "native-d8",
+        pondingBasis: PONDING_BASIS_NOTE,
+        minPondingDepthMeters: MIN_PONDING_DEPTH_METERS,
+      },
     );
   }
 

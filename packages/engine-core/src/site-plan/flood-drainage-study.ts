@@ -687,7 +687,8 @@ export function buildFloodDrainageBriefing(study: {
   const negligibleSqFt = negligibleCatchmentThresholdSqFt(
     study.demProvenance?.resolutionMeters ?? DEFAULT_DRAINAGE_RESOLUTION_METERS,
   );
-  if (study.stats.catchmentAreaSqFt < negligibleSqFt) {
+  const highPoint = study.stats.catchmentAreaSqFt < negligibleSqFt;
+  if (highPoint) {
     // HONEST near-zero catchment. A "catchment of about 0 square feet
     // delivers runoff toward the parcel" is incoherent; the true reading is
     // that the parcel sheds rather than receives.
@@ -700,8 +701,20 @@ export function buildFloodDrainageBriefing(study: {
     );
   }
   if (study.stats.pondedAreaSqFt != null && study.stats.pondedAreaSqFt > 0) {
+    // COHERENCE GUARD (2026-07-30). The briefing must never narrate a parcel
+    // as a local high point that sheds water and, in the next sentence, report
+    // large ponding on that same parcel — the live 48021:36249 payload did
+    // exactly that ("negligible upstream catchment ... drains away from it"
+    // alongside "ponding covers about 9.1 acres"). The criterion fix is what
+    // makes that combination stop arising; this guard is the belt-and-braces
+    // that keeps the SENTENCES honest if it ever does, by qualifying the
+    // ponding as on-parcel depression storage rather than delivered runoff.
+    // It never suppresses or shrinks the number.
+    const pondPhrase = acresPhrase(study.stats.pondedAreaSqFt);
     sentences.push(
-      `At a ${study.rainfallDepthInches} inch design storm, modeled ponding covers ${acresPhrase(study.stats.pondedAreaSqFt)} on the parcel.`,
+      highPoint
+        ? `At a ${study.rainfallDepthInches} inch design storm, modeled ponding covers ${pondPhrase} on the parcel, held in local depressions on the parcel itself rather than fed by upstream runoff.`
+        : `At a ${study.rainfallDepthInches} inch design storm, modeled ponding covers ${pondPhrase} on the parcel.`,
     );
   } else if (study.stats.pondedAreaSqFt === 0) {
     sentences.push(
