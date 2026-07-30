@@ -33,6 +33,7 @@ import { LegacyClient } from "./legacy-client.js";
 import { runMigration } from "./migrate.js";
 import { runPathCIngest } from "./path-c-ingest.js";
 import { runPathPdfIngest } from "./path-pdf-ingest.js";
+import { runBastropBdcCli } from "./bastrop-bdc-chapter14-ingest.js";
 import { buildBastropUdcCuratedQueries } from "./udc-curated-queries.js";
 import {
   buildBastropB3CuratedQueries,
@@ -982,6 +983,28 @@ program
       }));
     }
     console.log(JSON.stringify(output, null, 2));
+  });
+
+program
+  .command("ingest-bastrop-bdc-chapter14")
+  .description(
+    "WDLL STEP1 items 4–5: parse Ord. 2026-06 Chapter 14 into the existing bastrop_tx-bdc-2026-adopted stub, close B3 at the IBC boundary day, advance currentEditionId. Does not touch IBC.",
+  )
+  .requiredOption(
+    "--pdf <path>",
+    "Local path to Ordinance 2026-06 PDF (public source; download from cityofbastrop.org).",
+  )
+  .option(
+    "--snapshot <path>",
+    "Corpus snapshot to patch.",
+    "services/retrieval-api/corpus/snapshot.json",
+  )
+  .option(
+    "--out <path>",
+    "Output snapshot path (defaults to --snapshot).",
+  )
+  .action(async (opts: { pdf: string; snapshot: string; out?: string }) => {
+    await runBastropBdcCli(opts);
   });
 
 program
