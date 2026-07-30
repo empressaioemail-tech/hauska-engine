@@ -113,6 +113,8 @@ export type SetbackRuleAtomInstance = ContractSetbackRuleAtomInstance &
   EnginePropertyPersistence & {
     districtCode?: string;
     prefixMatched?: string;
+    /** Interior side yard (distinct from corner side — AMENDMENT 2 R2). */
+    sideInteriorFt?: number;
     sideCornerFt?: number;
     maxHeightFt?: number;
     maxLotCoveragePct?: number;
