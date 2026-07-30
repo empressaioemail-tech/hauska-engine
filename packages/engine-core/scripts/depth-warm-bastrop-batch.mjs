@@ -27,6 +27,10 @@ import {
   BoundaryPrimitiveMissingError,
 } from "../src/boundary-primitive/read.ts";
 import {
+  primitiveNormalsAgreeWithRing,
+  recomputeBoundaryEdgesForRing,
+} from "../src/boundary-primitive/recompute-for-ring.ts";
+import {
   fetchBcadParcelRings,
   scrubLotLineRing,
   assertParcelCurrencyInBcad,
@@ -389,11 +393,13 @@ for (const row of parcelRows) {
   }
 
   let parcelRingWorking = parcelRing;
+  let ringSwapped = false;
   if (args.forceRepromote && propId) {
     try {
       const bcad = await fetchBcadParcelRings([propId]);
       if (bcad[0]?.ring) {
         parcelRingWorking = scrubLotLineRing(bcad[0].ring);
+        ringSwapped = true;
       }
     } catch {
       /* fall back */
@@ -405,6 +411,7 @@ for (const row of parcelRows) {
         const bcad = await fetchBcadParcelRings([propId]);
         if (bcad[0]?.ring) {
           parcelRingWorking = scrubLotLineRing(bcad[0].ring);
+          ringSwapped = true;
         }
       } catch {
         /* fall back */
@@ -417,6 +424,34 @@ for (const row of parcelRows) {
     boundaryEdges = boundaryEdges.filter((e) => e.edgeIndex < ringVerts);
   } else if (boundaryEdges?.length && boundaryEdges.length < ringVerts) {
     boundaryEdges = null;
+  }
+
+  // R28 winding gate — the stored primitive's per-edge inward normals + role→
+  // edgeIndex mapping were built against the ORIGINAL (TXGIO) ring. When the
+  // BCAD ring is swapped in (--force-repromote or count-mismatch), the swap may
+  // reverse winding at equal vertex count, so applying stored normals by
+  // edgeIndex lands them on the WRONG edges → offset never closes → inset null.
+  // Fail closed: before insetting, assert the stored normals agree (dot ≈ 1.0)
+  // with the working ring's per-edge normals; if not (or the ring was swapped),
+  // RECOMPUTE the primitive against the working ring so edgeIndex→edge→normal is
+  // correct for its winding. Never silently inset with mismatched normals.
+  if (boundaryEdges?.length && boundaryEdges.length === ringVerts) {
+    const agree = primitiveNormalsAgreeWithRing(boundaryEdges, parcelRingWorking);
+    if (ringSwapped || !agree.ok) {
+      const rebuilt = recomputeBoundaryEdgesForRing({
+        storedEdges: boundaryEdges,
+        ring: parcelRingWorking,
+        roads,
+      });
+      const rebuiltAgree = primitiveNormalsAgreeWithRing(rebuilt, parcelRingWorking);
+      if (rebuiltAgree.ok) {
+        boundaryEdges = rebuilt;
+      } else {
+        // Recompute could not reconcile the primitive to the ring — drop to the
+        // road-label inset path rather than inset with mismatched normals.
+        boundaryEdges = null;
+      }
+    }
   }
 
   const labelResult = labelEdgesFromRoads({
