@@ -7,7 +7,8 @@ export const BASTROP_PACK = "bastrop" as const;
 
 /** Gold parcel for point / setback / atom-chain probes (audit A). */
 export const GOLD_PARCEL_NODE_ID = "48021:33512";
-export const GOLD_DISTRICT = "P-5";
+/** Current-law BDC Euclidean district (Ord. 2026-06). Was P-5 under repealed B3. */
+export const GOLD_DISTRICT = "SF-1";
 export const GOLD_LAT = 30.1119;
 export const GOLD_LNG = -97.31912;
 

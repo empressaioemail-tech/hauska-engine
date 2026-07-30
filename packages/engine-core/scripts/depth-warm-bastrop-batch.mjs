@@ -10,7 +10,8 @@
  *       --limit=500 [--offset=0] [--promote] [--dry-run] [--city-cohort] [--place-type-cohort]
  *
  * Pilot cohort default (--limit=500) with extrapolation to full zoning-fact universe.
- * --place-type-cohort: only P-1..P-5 (descriptor rows); excludes PDD honest no-setback-row noise.
+ * --place-type-cohort: only SF-1/SF-2/SF-3/RR (BDC Euclidean rows); excludes
+ * conditional districts without setback rows (MU/GC/… honest no-setback-row).
  */
 
 import { performance } from "node:perf_hooks";
@@ -18,8 +19,10 @@ import { performance } from "node:perf_hooks";
 import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
+import { getSetbackTable } from "@hauska-engine/adapters";
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
 import { resolveSetbackTableRow } from "../src/property-reasoning/emit-setback-rule.ts";
+import { setbackTableDescriptorFromAdapter } from "../src/property-reasoning/setback-table-from-adapter.ts";
 import { labelEdgesFromRoads } from "../src/depth-warm/edgeLabeling.ts";
 import {
   readBoundaryEdgesForParcel,
@@ -32,14 +35,35 @@ import { BASTROP_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
 import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parcel-geometry-resolver.ts";
 
 const COUNTY_FIPS = "48021";
-const descriptor = bastropDescriptor;
+
+/**
+ * SURVIVOR = adapter bastrop-development-code.json (WDLL STEP 3 item 3).
+ * Overlay descriptor.setbackTable from the adapter so bake + depth-warm
+ * resolve the SAME ordinance-text numbers. Fixture roadClassSetbackTable
+ * is retained until STEP 4 road-decouple (not a competing VALUE author).
+ */
+const adapterSetbackTable = getSetbackTable("bastrop-development-code");
+const setbackTableFromAdapter = setbackTableDescriptorFromAdapter(adapterSetbackTable);
+if (!setbackTableFromAdapter?.rows?.length) {
+  console.error(
+    "FATAL: bastrop-development-code adapter setback table missing or empty.",
+  );
+  process.exit(1);
+}
+const descriptor = {
+  ...bastropDescriptor,
+  setbackTable: setbackTableFromAdapter,
+  sourceUrl:
+    adapterSetbackTable?.districts?.[0]?.citation_url ??
+    bastropDescriptor.sourceUrl,
+};
 
 function districtHasSetbackRow(district) {
   const row = resolveSetbackTableRow(descriptor.setbackTable, district);
   return !("kind" in row);
 }
 
-/** District codes with Place Type setback rows (P-1..P-5); excludes PDD / overlay honest declines. */
+/** District codes with BDC Euclidean setback rows (SF-1/SF-2/SF-3/RR). */
 function resolvablePlaceTypeDistrictCodes() {
   const codes = new Set();
   for (const row of descriptor.setbackTable?.rows ?? []) {

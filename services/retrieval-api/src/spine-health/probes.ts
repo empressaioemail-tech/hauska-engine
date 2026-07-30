@@ -827,7 +827,7 @@ export async function probeDepthWarm(
   }
 }
 
-/** rule-setback — resolve setback table row for gold district (P-5 → P-5 Core). */
+/** rule-setback — resolve setback table row for gold district (SF-1 BDC). */
 export async function probeRuleSetback(
   ctx: ProbeContext,
 ): Promise<ProbeResult> {

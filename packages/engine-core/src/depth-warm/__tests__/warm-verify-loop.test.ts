@@ -4,7 +4,10 @@
 
 import { describe, expect, it } from "vitest";
 
+import { getSetbackTable } from "@hauska-engine/adapters";
+
 import bastropDescriptor from "../../property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
+import { setbackTableDescriptorFromAdapter } from "../../property-reasoning/setback-table-from-adapter.js";
 import type { JurisdictionDescriptor } from "../../property-reasoning/types.js";
 import type { Ring } from "../geometry.js";
 import {
@@ -24,7 +27,56 @@ import {
 } from "../warm-compute.js";
 import { warmThenVerify } from "../warm-then-verify.js";
 
-const descriptor = bastropDescriptor as JurisdictionDescriptor;
+/**
+ * SURVIVOR overlay: adapter BDC setbackTable. roadClassSetbackTable still
+ * carries B3-era P-* cells for road-class mechanism tests (STEP 4 decouples).
+ * SF-1 road-class row (front 30, side/rear not_specified) lets promote-path
+ * tests use current-law district codes without inventing conditional scalars.
+ */
+function buildDescriptor(): JurisdictionDescriptor {
+  const adapterSetback = setbackTableDescriptorFromAdapter(
+    getSetbackTable("bastrop-development-code"),
+  );
+  if (!adapterSetback) {
+    throw new Error("bastrop-development-code adapter table required");
+  }
+  const base = bastropDescriptor as JurisdictionDescriptor;
+  const p5rc = base.roadClassSetbackTable?.rows.find(
+    (r) => r.district_code.toUpperCase() === "P-5",
+  );
+  const sf1rc = p5rc
+    ? {
+        ...p5rc,
+        atom_did: "bastrop_tx/bdc-2026-adopted/14.02.003",
+        district_code: "SF-1",
+        entries: p5rc.entries.map((e) =>
+          e.edge_role === "front" && e.setback_ft.value === 15
+            ? {
+                ...e,
+                setback_ft: {
+                  ...e.setback_ft,
+                  value: 30,
+                  confidence: 0.95,
+                  verification_state: "human-verified" as const,
+                },
+              }
+            : e,
+        ),
+      }
+    : null;
+  return {
+    ...base,
+    setbackTable: adapterSetback,
+    roadClassSetbackTable: {
+      rows: [
+        ...(base.roadClassSetbackTable?.rows ?? []),
+        ...(sf1rc ? [sf1rc] : []),
+      ],
+    },
+  };
+}
+
+const descriptor = buildDescriptor();
 const PARCEL_ID = "48021:33512";
 const SPRING_ROAD = {
   osmWayId: 123456789,
@@ -163,7 +215,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
   it("714 Spring warm → verify pass → emit depth-warm atoms", async () => {
     const result = await warmThenVerify({
       parcelNodeId: PARCEL_ID,
-      district: "P-5",
+      district: "SF-1",
       parcelRing: PARCEL_714_SPRING_33512,
       descriptor,
       roads: [SPRING_ROAD],
@@ -175,10 +227,10 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
     expect(result.verify.pass).toBe(true);
     expect(result.candidate.empty).toBe(false);
     expect(result.candidate.edges.map((e) => e.insetFeet)).toEqual([
-      0, 0, 0, 0, 0, 15,
+      0, 0, 0, 0, 0, 30,
     ]);
     const frontEdge = result.candidate.edges.find((e) => e.label === "front");
-    expect(frontEdge?.insetFeet).toBe(15);
+    expect(frontEdge?.insetFeet).toBe(30);
     for (const edge of result.candidate.edges.filter((e) => e.label !== "front")) {
       expect(edge.insetFeet).toBe(0);
     }
@@ -199,7 +251,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
 
     const setback = result.atoms!.find((a) => a.entityType === "setback-rule");
     expect(setback).toBeDefined();
-    expect(setback!.front).toBe(15);
+    expect(setback!.front).toBe(30);
   });
 
   it("street front 15ft != alley rear 5ft on warm edges", () => {
@@ -277,7 +329,7 @@ describe("emitDepthWarmPromotion read-path marker", () => {
   it("stamps depth-warm citation for PE warm-read detection", () => {
     const candidate = computeWarmCandidate({
       parcelNodeId: PARCEL_ID,
-      district: "P-5",
+      district: "SF-1",
       parcelRing: PARCEL_714_SPRING_33512,
       descriptor,
       roads: [SPRING_ROAD],

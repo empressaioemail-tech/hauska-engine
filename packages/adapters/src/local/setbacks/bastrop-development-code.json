@@ -1,0 +1,260 @@
+{
+  "$schema": "./schema.json",
+  "jurisdictionKey": "bastrop-development-code",
+  "jurisdictionDisplayName": "City of Bastrop, TX (Bastrop Development Code / Ord. 2026-06)",
+  "note": "WDLL 2026-07-29 BDC STEP 3 item 1. AUTHORITATIVE setback VALUES for City of Bastrop Euclidean districts — ordinance TEXT Sec. 14.02.003 (CORRECTION A), not the GIS card. Ord. 2026-06 repealed B3 Place Types (P-1..P-5) effective 2026-04-14. Rows ONLY for scalar Euclidean districts SF-1/SF-2/SF-3/RR. MU/GC/PI/IND/P/OS/PDD intentionally ABSENT (CORRECTION C honest-decline: conditional/contextual standards the flat model cannot hold). Min-lot notes: SF-1 1/3 ac; SF-2 7,500 sf; SF-3 5,000 sf; RR 1 ac. Do not invent scalars for omitted districts.",
+  "districts": [
+    {
+      "district_name": "SF-1 Single-Family Residential",
+      "front_ft": 30,
+      "rear_ft": 30,
+      "side_ft": 10,
+      "side_corner_ft": 20,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 0,
+      "max_impervious_pct": 50,
+      "citation_url": "https://www.cityofbastrop.org/page/open/18744/0/ORDINANCE%20NO.%202026-06%20B3%20Code%20Repeal%20and%20Bastrop%20Development%20Code%20Adoption.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-1 front yard minimum 30 ft. Min lot size 1/3 acre (noted; not a setback scalar).",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-1 rear yard minimum 30 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-1 side yard minimum 10 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-1 corner-side yard minimum 20 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-1 maximum building height 35 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 states impervious cover for SF-1; a separate lot-coverage percentage is not modeled as a distinct scalar here.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-1 maximum impervious cover 50%. Min lot size 1/3 acre.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        }
+      }
+    },
+    {
+      "district_name": "SF-2 Single-Family Residential",
+      "front_ft": 25,
+      "rear_ft": 20,
+      "side_ft": 7.5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 0,
+      "max_impervious_pct": 50,
+      "citation_url": "https://www.cityofbastrop.org/page/open/18744/0/ORDINANCE%20NO.%202026-06%20B3%20Code%20Repeal%20and%20Bastrop%20Development%20Code%20Adoption.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-2 front yard minimum 25 ft. Min lot size 7,500 sf (noted; not a setback scalar).",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-2 rear yard minimum 20 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-2 side yard minimum 7.5 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-2 corner-side yard minimum 15 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-2 maximum building height 35 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 states impervious cover for SF-2; a separate lot-coverage percentage is not modeled as a distinct scalar here.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-2 maximum impervious cover 50%. Min lot size 7,500 sf.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        }
+      }
+    },
+    {
+      "district_name": "SF-3 Single-Family Residential",
+      "front_ft": 15,
+      "rear_ft": 15,
+      "side_ft": 5,
+      "side_corner_ft": 10,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 0,
+      "max_impervious_pct": 50,
+      "citation_url": "https://www.cityofbastrop.org/page/open/18744/0/ORDINANCE%20NO.%202026-06%20B3%20Code%20Repeal%20and%20Bastrop%20Development%20Code%20Adoption.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-3 front yard minimum 15 ft. Min lot size 5,000 sf (noted; not a setback scalar).",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-3 rear yard minimum 15 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-3 side yard minimum 5 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-3 corner-side yard minimum 10 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-3 maximum building height 35 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 states impervious cover for SF-3; a separate lot-coverage percentage is not modeled as a distinct scalar here.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): SF-3 maximum impervious cover 50%. Min lot size 5,000 sf.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        }
+      }
+    },
+    {
+      "district_name": "RR Rural Residential",
+      "front_ft": 50,
+      "rear_ft": 50,
+      "side_ft": 20,
+      "side_corner_ft": 20,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 0,
+      "max_impervious_pct": 50,
+      "citation_url": "https://www.cityofbastrop.org/page/open/18744/0/ORDINANCE%20NO.%202026-06%20B3%20Code%20Repeal%20and%20Bastrop%20Development%20Code%20Adoption.pdf",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): RR front yard minimum 50 ft. Min lot size 1 acre (noted; not a setback scalar).",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): RR rear yard minimum 50 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "side_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): RR side yard minimum 20 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "side_corner_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): RR corner-side yard minimum 20 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): RR maximum building height 35 ft.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 states impervious cover for RR; a separate lot-coverage percentage is not modeled as a distinct scalar here.",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "bastrop_tx/bdc-2026-adopted/14.02.003",
+          "section_number": "14.02.003",
+          "quote": "BDC Sec. 14.02.003 dimensional standards (Ord. 2026-06): RR maximum impervious cover 50%. Min lot size 1 acre.",
+          "confidence": 0.95,
+          "verification_state": "human-verified"
+        }
+      }
+    }
+  ]
+}
