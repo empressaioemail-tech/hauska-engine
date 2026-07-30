@@ -54,6 +54,7 @@ const BASTROP_PER_PARCEL_DISTRICT_PREFIXES = [
   "OS",
   "P/OS",
   "P-OS",
+  "PDD",
 ];
 
 function resolvablePlaceTypeDistrictCodes() {

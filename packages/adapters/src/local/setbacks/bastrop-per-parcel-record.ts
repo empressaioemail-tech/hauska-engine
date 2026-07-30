@@ -17,9 +17,70 @@ import bastropDevelopmentCode from "./bastrop-development-code.json" with { type
 export const BASTROP_PARCELS_ONE_CLICK_LAYER_23 =
   "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/23";
 
+/** Numeric `ZoneTypeClass` on layer 23 / 83 → BDC district code (STEP 2). */
+export const BASTROP_ZONE_TYPE_CLASS: Readonly<Record<number, string>> = {
+  1: "P/OS",
+  2: "RR",
+  3: "SF-1",
+  4: "SF-2",
+  5: "SF-3",
+  6: "MU",
+  7: "GC",
+  8: "PI",
+  9: "IND",
+  10: "PDD",
+};
+
+const ZONE_TYPE_CLASS_BY_CODE: Readonly<Record<string, number>> = Object.fromEntries(
+  Object.entries(BASTROP_ZONE_TYPE_CLASS).map(([n, code]) => [code, Number(n)]),
+);
+
+function zoneTypeClassNumeric(attrs: Record<string, unknown>): number | null {
+  const raw = attrs.ZoneTypeClass ?? attrs.ZONETYPECLASS ?? attrs.zone_type_class;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string" && raw.trim()) {
+    const n = Number(raw.trim());
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function districtCodeFromZoneTypeClass(attrs: Record<string, unknown>): string | null {
+  const n = zoneTypeClassNumeric(attrs);
+  if (n == null) return null;
+  return BASTROP_ZONE_TYPE_CLASS[n] ?? null;
+}
+
+/**
+ * Pick the layer-23 row matching the ENGINE zoning stamp on overlap parcels.
+ * Falls back to largest Shape__Area when district is unknown or unmatched.
+ */
+export function selectBastropLayer23Attributes(
+  features: ReadonlyArray<{ attributes: Record<string, unknown> }>,
+  districtCode?: string | null,
+): Record<string, unknown> | null {
+  if (features.length === 0) return null;
+  if (features.length === 1) return features[0]!.attributes;
+
+  const wanted = (districtCode ?? "").trim().toUpperCase();
+  const wantedNum = wanted ? ZONE_TYPE_CLASS_BY_CODE[wanted] : undefined;
+  if (wantedNum != null) {
+    const hit = features.find((f) => zoneTypeClassNumeric(f.attributes) === wantedNum);
+    if (hit) return hit.attributes;
+  }
+
+  const byArea = [...features].sort(
+    (a, b) =>
+      Number(b.attributes.Shape__Area ?? b.attributes.SHAPE__Area ?? 0) -
+      Number(a.attributes.Shape__Area ?? a.attributes.SHAPE__Area ?? 0),
+  );
+  return byArea[0]!.attributes;
+}
+
 const CORNER_SIDE_RE =
   /\(Corner Side Street Setback:\s*([\d.]+)\s*ft\)/i;
-const NON_SCALAR_SIDE_RE = /Reference Building Code\/Fire Code/i;
+const NON_SCALAR_SIDE_RE =
+  /(?:none\s*-\s*)?reference building code\/fire code/i;
 const FEET_NUMBER_RE = /([\d.]+)\s*(?:'|ft\b)?/i;
 
 export type BastropPerParcelHonestDecline = {
@@ -373,6 +434,8 @@ export function setbackTableFromBastropPerParcelRecord(
 export type FetchBastropPerParcelOptions = {
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
+  /** ENGINE zoning stamp — selects correct layer-23 row when overlaps exist. */
+  districtCode?: string | null;
 };
 
 /** Live fetch layer 23 by prop_id (numeric; leading zeros stripped for match). */
@@ -397,7 +460,7 @@ export async function fetchBastropPerParcelSetbackRecord(
       serviceUrl: BASTROP_PARCELS_ONE_CLICK_LAYER_23,
       where: `prop_id = ${numeric}`,
       outFields:
-        "prop_id,FrontSetback_,SideSetback_,RearSetback_,MaxBuildingHt,MinimumLotSize_,MaxImpervisionCoverage,Ordinance_Link",
+        "prop_id,ZoneTypeClass,FrontSetback_,SideSetback_,RearSetback_,MaxBuildingHt,MinimumLotSize_,MaxImpervisionCoverage,Ordinance_Link,Shape__Area",
       returnGeometry: false,
       fetchImpl: options.fetchImpl,
       signal: options.signal,
@@ -424,5 +487,17 @@ export async function fetchBastropPerParcelSetbackRecord(
     };
   }
 
-  return parseBastropPerParcelAttributes(result.features[0]!.attributes);
+  const attrs = selectBastropLayer23Attributes(
+    result.features,
+    options.districtCode,
+  );
+  if (!attrs) {
+    return {
+      kind: "honest-decline",
+      code: "bastrop-per-parcel-empty-features",
+      reason: `Layer 23 returned no usable attributes for prop_id=${normalized}.`,
+      propId: normalized,
+    };
+  }
+  return parseBastropPerParcelAttributes(attrs);
 }

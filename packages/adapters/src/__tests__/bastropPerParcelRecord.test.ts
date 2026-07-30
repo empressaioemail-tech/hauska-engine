@@ -1,5 +1,5 @@
 /**
- * WDLL STEP 1 — Bastrop per-parcel layer 23 adapter (F4 source + side model).
+ * WDLL STEP 1+2 — Bastrop per-parcel layer 23 adapter (F4 source + MU/GC/PDD).
  */
 
 import { readFileSync } from "node:fs";
@@ -14,9 +14,13 @@ import {
   flagBastropChartDisagreement,
   parseBastropPerParcelAttributes,
   parseSideSetbackText,
+  selectBastropLayer23Attributes,
   setbackTableFromBastropPerParcelRecord,
 } from "../local/setbacks/bastrop-per-parcel-record.js";
-import { getSetbackTableForZoning } from "../local/setbacks/index.js";
+import {
+  getSetbackTableForZoning,
+  isBdcPerParcelDistrictCode,
+} from "../local/setbacks/index.js";
 
 const FIXTURE_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -36,6 +40,14 @@ function mockFetchForPropId(propId: string) {
   }
   return vi.fn(async () =>
     jsonResponse({ features: [{ attributes: attrs }] }),
+  ) as unknown as typeof fetch;
+}
+
+function mockFetchForOverlapRows(rows: Record<string, unknown>[]) {
+  return vi.fn(async () =>
+    jsonResponse({
+      features: rows.map((attributes) => ({ attributes })),
+    }),
   ) as unknown as typeof fetch;
 }
 
@@ -69,10 +81,16 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 1)", () => {
     const parsed = parseBastropPerParcelAttributes(FIXTURES["34841_mu_non_scalar"]!);
     expect(parsed.kind).toBe("parsed");
     if (parsed.kind !== "parsed") return;
+    expect(parsed.frontFt).toBe(15);
+    expect(parsed.rearFt).toBe(15);
+    expect(parsed.maxHeightFt).toBe(40);
+    expect(parsed.maxImperviousPct).toBe(60);
     expect(parsed.sideNonScalar).toBe(true);
     expect(parsed.sideInteriorFt).toBeNull();
     expect(parsed.sideDeclineReason).toMatch(/Reference Building Code/i);
-    expect(parseSideSetbackText("Reference Building Code/Fire Code").ok).toBe(false);
+    expect(
+      parseSideSetbackText("None - Reference Building Code/Fire Code").ok,
+    ).toBe(false);
   });
 
   it("flags chart disagreement for 105054 SF-1 (chart 30/10/20/30 vs record 25/5/15/25)", () => {
@@ -130,5 +148,92 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 1)", () => {
     const table = setbackTableFromBastropPerParcelRecord(parsed, "SF-1");
     expect(table.districts[0]!.side_ft).toBe(5);
     expect(table.districts[0]!.side_corner_ft).toBe(15);
+  });
+});
+
+describe("bastrop per-parcel layer 23 (WDLL STEP 2 — MU/GC/PDD)", () => {
+  it("isBdcPerParcelDistrictCode marks MU/GC/PDD as layer-23-only", () => {
+    expect(isBdcPerParcelDistrictCode("MU")).toBe(true);
+    expect(isBdcPerParcelDistrictCode("GC")).toBe(true);
+    expect(isBdcPerParcelDistrictCode("PDD")).toBe(true);
+    expect(isBdcPerParcelDistrictCode("SF-1")).toBe(false);
+  });
+
+  it("MU/GC without per-parcel record return null (no chart-row honest-decline bypass)", () => {
+    expect(getSetbackTableForZoning("bastrop-tx", "MU")).toBeNull();
+    expect(getSetbackTableForZoning("bastrop-tx", "GC")).toBeNull();
+    expect(getSetbackTableForZoning("bastrop-tx", "PDD")).toBeNull();
+  });
+
+  it("48021:34089 GC routes through per-parcel adapter when record supplied", () => {
+    const parsed = parseBastropPerParcelAttributes(FIXTURES["34089"]!);
+    expect(parsed.kind).toBe("parsed");
+    if (parsed.kind !== "parsed") return;
+    const table = getSetbackTableForZoning("bastrop-city-tx", "GC", {
+      bastropPerParcelRecord: parsed,
+      districtCode: "GC",
+    });
+    const row = table!.districts[0]!;
+    expect(row.front_ft).toBe(20);
+    expect(row.side_ft).toBe(5);
+    expect(row.side_corner_ft).toBe(10);
+    expect(row.rear_ft).toBe(20);
+    expect(row.max_height_ft).toBe(55);
+    expect(row.max_impervious_pct).toBe(65);
+    expect(row.provenance?.side_ft?.not_specified).toBeUndefined();
+  });
+
+  it("48021:34841 MU base dims with honest side decline", () => {
+    const parsed = parseBastropPerParcelAttributes(FIXTURES["34841_mu_non_scalar"]!);
+    expect(parsed.kind).toBe("parsed");
+    if (parsed.kind !== "parsed") return;
+    const table = getSetbackTableForZoning("bastrop-city-tx", "MU", {
+      bastropPerParcelRecord: parsed,
+      districtCode: "MU",
+    });
+    const row = table!.districts[0]!;
+    expect(row.front_ft).toBe(15);
+    expect(row.rear_ft).toBe(15);
+    expect(row.max_height_ft).toBe(40);
+    expect(row.max_impervious_pct).toBe(60);
+    expect(row.provenance?.side_ft?.not_specified).toBe(true);
+    expect(row.provenance?.side_corner_ft?.not_specified).toBe(true);
+  });
+
+  it("selectBastropLayer23Attributes picks MU row on overlap (34841 stamp MU not SF-1)", () => {
+    const picked = selectBastropLayer23Attributes(
+      [
+        { attributes: FIXTURES["34841_sf1_overlap"]! },
+        { attributes: FIXTURES["34841_mu_overlap"]! },
+      ],
+      "MU",
+    );
+    expect(picked?.ZoneTypeClass).toBe(6);
+    const parsed = parseBastropPerParcelAttributes(picked!);
+    expect(parsed.kind).toBe("parsed");
+    if (parsed.kind !== "parsed") return;
+    expect(parsed.frontFt).toBe(15);
+    expect(parsed.rearFt).toBe(15);
+    expect(parsed.sideNonScalar).toBe(true);
+  });
+
+  it("fetchBastropPerParcelSetbackRecord selects district row on overlap parcels", async () => {
+    const fetchImpl = mockFetchForOverlapRows([
+      FIXTURES["34841_sf1_overlap"]!,
+      FIXTURES["34841_mu_overlap"]!,
+    ]);
+    const result = await fetchBastropPerParcelSetbackRecord("34841", {
+      fetchImpl,
+      districtCode: "MU",
+    });
+    expect(result.kind).toBe("parsed");
+    if (result.kind !== "parsed") return;
+    expect(result.frontFt).toBe(15);
+    expect(result.rearFt).toBe(15);
+    expect(result.sideNonScalar).toBe(true);
+    expect(result.sideDeclineReason).toMatch(/Reference Building Code/i);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    const url = String(fetchImpl.mock.calls[0]?.[0] ?? "");
+    expect(url).toContain(BASTROP_PARCELS_ONE_CLICK_LAYER_23.split("/FeatureServer")[0]);
   });
 });

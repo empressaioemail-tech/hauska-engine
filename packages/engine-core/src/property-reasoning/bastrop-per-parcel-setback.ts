@@ -48,7 +48,10 @@ export async function buildBastropPerParcelSetbackDescriptor(
     };
   }
 
-  const fetched = await fetchBastropPerParcelSetbackRecord(propId, { fetchImpl });
+  const fetched = await fetchBastropPerParcelSetbackRecord(propId, {
+    fetchImpl,
+    districtCode: district,
+  });
   if (fetched.kind !== "parsed") {
     return {
       ok: false,
