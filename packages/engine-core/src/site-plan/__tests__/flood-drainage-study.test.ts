@@ -950,6 +950,58 @@ describe("buildFloodDrainageBriefing (narration honesty)", () => {
     expect(briefing).not.toContain(":");
   });
 
+  /**
+   * THE CONTRADICTION BAN, THE OTHER DIRECTION (2026-07-30 real-terrain
+   * calibration). The first coherence guard banned "high point + large
+   * ponding". The inverse is just as wrong and more dangerous, because a
+   * reader will act on it: a bare "no modeled ponding intersects the parcel"
+   * reads as "this parcel does not flood". On four FEMA-designated
+   * special-flood-hazard parcels in Bastrop, the depression-storage-only
+   * criterion produced exactly that sentence.
+   *
+   * The model's contributing area is limited to the study window, so riverine
+   * flooding is not represented at all. A zero must therefore state its own
+   * scope and defer to the NFHL, never stand alone as a flood verdict.
+   */
+  it("a zero-ponding result must NOT read as 'this parcel is not in a floodplain'", () => {
+    const briefing = buildFloodDrainageBriefing({
+      stats: { ...baseStats, catchmentAreaSqFt: 250_000, pondedAreaSqFt: 0 },
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    expect(briefing).toContain("no modeled ponding intersects the parcel");
+    // It must scope itself to LOCAL storm ponding...
+    expect(briefing).toContain("local storm ponding");
+    // ...explicitly disclaim the riverine mechanism...
+    expect(briefing).toContain("does not model riverine flooding");
+    // ...refuse the floodplain verdict outright...
+    expect(briefing).toContain("not a determination that the parcel is outside a floodplain");
+    // ...and name the authoritative source instead.
+    expect(briefing).toContain("FEMA National Flood Hazard Layer");
+    expect(briefing).not.toContain(":");
+  });
+
+  it("both coherence guards hold at once — neither direction can contradict", () => {
+    // High point + ponding: qualified, never bare.
+    const shedding = buildFloodDrainageBriefing({
+      stats: { ...baseStats, catchmentAreaSqFt: 0, pondedAreaSqFt: 396_134 },
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    expect(shedding).toContain("held in local depressions on the parcel itself");
+
+    // Real catchment + zero ponding: scoped, never a floodplain verdict.
+    const dry = buildFloodDrainageBriefing({
+      stats: { ...baseStats, catchmentAreaSqFt: 250_000, pondedAreaSqFt: 0 },
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    expect(dry).toContain("does not model riverine flooding");
+
+    // And the magnitude is still never suppressed in either case.
+    expect(shedding).toMatch(/9\.1 acres|396,134/);
+  });
+
   it("still narrates ponding plainly when the parcel actually receives runoff", () => {
     const briefing = buildFloodDrainageBriefing({
       stats: {

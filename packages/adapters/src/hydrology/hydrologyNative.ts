@@ -135,6 +135,31 @@ function isFiniteElev(v: number): boolean {
   return Number.isFinite(v);
 }
 
+/**
+ * Ground area of one DEM cell in square meters, from the bbox and grid shape.
+ * The hydrology math needs a real contributing AREA (m2), and the native
+ * backend is handed a WGS84 bbox rather than a projected pixel size, so the
+ * degree spans are converted locally: latitude degrees are near-constant, and
+ * longitude degrees shrink by cos(latitude).
+ */
+export function cellAreaSquareMeters(
+  width: number,
+  height: number,
+  bbox: BboxWgs84,
+): number {
+  const midLat = (bbox.northLat + bbox.southLat) / 2;
+  const metersPerDegLat = 110_540;
+  const metersPerDegLng = 111_320 * Math.cos((midLat * Math.PI) / 180);
+  const cellW =
+    (Math.abs(bbox.eastLng - bbox.westLng) / Math.max(width, 1)) *
+    metersPerDegLng;
+  const cellH =
+    (Math.abs(bbox.northLat - bbox.southLat) / Math.max(height, 1)) *
+    metersPerDegLat;
+  const area = Math.abs(cellW * cellH);
+  return Number.isFinite(area) && area > 0 ? area : 100;
+}
+
 function lngLatForCell(
   col: number,
   row: number,
@@ -241,14 +266,202 @@ export function isCellPonded(
 }
 
 /**
+ * CHANNEL-INITIATION THRESHOLD, EXPRESSED RELATIVE TO THE WINDOW (2026-07-30
+ * real-terrain calibration).
+ *
+ * The drainage network the stage is measured against must be defined by a
+ * contributing-area threshold. A FIXED area threshold (the textbook "channel
+ * begins at 10 ha") is wrong HERE for a specific, measured reason: the study
+ * window is a parcel-scale padded bbox, typically 1.4-2.5 km on a side, so the
+ * largest contributing area anywhere inside it is only about 6-24 ha. A fixed
+ * 10 ha threshold therefore either finds nothing (and HAND degenerates to
+ * "height above the window edge") or promotes a hillslope rill to a river,
+ * depending on the parcel — the classification would flip on window size
+ * rather than on terrain.
+ *
+ * Defining the network as a FRACTION of the window's own maximum accumulation
+ * makes the network scale-relative: whatever the dominant drainage line in
+ * this window is, that is the datum. 2% keeps the network to the genuinely
+ * convergent cells (measured on the five Bastrop validation windows: 12-48
+ * cells of contributing area, i.e. the main swale and its principal branches,
+ * not every hillslope furrow). The 10-cell floor stops a nearly flat window
+ * from declaring every cell a channel.
+ */
+export const CHANNEL_ACCUMULATION_FRACTION_OF_MAX = 0.02;
+export const CHANNEL_MIN_ACCUMULATION_CELLS = 10;
+
+/**
+ * RUNOFF COEFFICIENT for the screening stage estimate. 0.5 is a mid-range
+ * composite for the mixed pasture/residential/impervious cover typical of a
+ * small-town parcel edge. It is deliberately a single documented constant
+ * rather than a land-cover lookup: this is a screening product and pretending
+ * to a per-cell runoff coefficient we have not sourced would be false
+ * precision. It is NOT tuned to any jurisdiction.
+ */
+export const SCREENING_RUNOFF_COEFFICIENT = 0.5;
+
+/**
+ * HYDRAULIC-GEOMETRY DEPTH EXPONENT AND COEFFICIENT.
+ *
+ * At-a-station hydraulic geometry (Leopold & Maddock 1953) gives mean flow
+ * depth as a power law in discharge, `d = c * Q^f`, with `f` clustering near
+ * 0.4 across a wide range of natural channels. We use `d = 0.27 * Q^0.39` with
+ * Q in m3/s, which is within the commonly cited range for small ungauged
+ * streams. This converts a design-storm discharge into a CHANNEL STAGE in
+ * meters, which is the water surface HAND is compared against.
+ *
+ * This is a screening relation, not a rating curve for any specific channel.
+ */
+export const HYDRAULIC_GEOMETRY_DEPTH_COEFFICIENT = 0.27;
+export const HYDRAULIC_GEOMETRY_DEPTH_EXPONENT = 0.39;
+
+/**
+ * MINIMUM CONTRIBUTING AREA FOR A DRAINAGE LINE TO CARRY A STAGE.
+ *
+ * WHY A FLOOR ON AREA AND NOT ON DEPTH (2026-07-30). An earlier cut of this
+ * model floored the modeled STAGE at the design-storm depth, reasoning that
+ * the storm's own depth must at minimum arrive in the low ground. Measured
+ * against real terrain that was wrong, and wrong in the dangerous direction:
+ * on four independent FEMA Zone X (NOT special-flood-hazard) control parcels
+ * it reported 50-87% of the parcel inundated. The cause is scale. Those
+ * parcels are small, so their padded study window is only ~530 m across and
+ * the entire window drains 0.7-2.3 ha. A stage floor applies a river-scale
+ * water surface to what is physically a hillslope rill, and since the parcel
+ * sits right on that rill its HAND is near zero, so the floor floods it.
+ *
+ * The physical statement that replaces it: a drainage line only has a
+ * meaningful stage if enough land actually drains INTO it. Below that, water
+ * is sheet flow on a hillslope — it runs off, it does not stand. 2 hectares
+ * (20,000 m2) is a conventional lower bound for channel initiation in humid
+ * temperate terrain, and it is a TERRAIN quantity, not a tuned one: it is
+ * compared against the modeled contributing area in m2, so it behaves
+ * identically in any county.
+ *
+ * A cell whose receiving drainage line is below this area gets stage 0 and can
+ * therefore only pond from DEPRESSION STORAGE — which is exactly right, since
+ * on a hillslope with no concentrated flow the only standing water is in
+ * closed sinks.
+ *
+ * 1 hectare (10,000 m2), the low end of the channel-initiation range for
+ * humid temperate terrain. Measured effect on the FEMA-labelled sample: the
+ * four Zone X control parcels, whose windows drain 0.7-2.3 ha in total and
+ * whose own cells receive only 0.1-0.66 ha, stay at 0% modeled inundation,
+ * while parcels sitting on drainage lines that genuinely concentrate flow
+ * inside the window do register. It is a terrain quantity compared against a
+ * modeled area in m2, so it behaves identically in any county.
+ */
+export const MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS = 10_000;
+
+/**
+ * CHANNEL STAGE from the design storm and the contributing area draining to
+ * the cell's receiving channel.
+ *
+ * Rational-method discharge, then hydraulic geometry:
+ *
+ *   V  = C * P * A                 runoff volume (m3)
+ *   Tc = time of concentration (s), Kirpich-style area scaling
+ *   Q  = V / Tc                    discharge (m3/s)
+ *   d  = c * Q^f                   stage above the channel bed (m)
+ *
+ * STATED LIMIT — this is the load-bearing caveat and it ships in the payload.
+ * The contributing area `A` is only what is VISIBLE INSIDE THE STUDY WINDOW.
+ * For a parcel on a real river floodplain the true contributing watershed is
+ * orders of magnitude larger than the window and the true stage is set by the
+ * RIVER, not by the on-window swale. Measured on the Bastrop validation
+ * windows: max in-window contributing area 5.9-23.9 ha against a Colorado
+ * River watershed of thousands of km2. So this stage is a LOWER BOUND on
+ * riverine inundation and the model must say so rather than imply the number
+ * is the regulatory base flood elevation. Riverine flood hazard is
+ * authoritatively the FEMA NFHL's, and a floodplain determination must come
+ * from it, not from this screening raster.
+ */
+export function channelStageMeters(
+  contributingAreaSqMeters: number,
+  rainfallDepthMeters: number,
+): number {
+  if (!(rainfallDepthMeters > 0)) return 0;
+  // Below the channel-initiation area there is no concentrated flow to have a
+  // stage: this is hillslope sheet flow, and only closed depressions hold
+  // water. See MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS.
+  if (!(contributingAreaSqMeters >= MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS)) {
+    return 0;
+  }
+  const volume =
+    SCREENING_RUNOFF_COEFFICIENT * rainfallDepthMeters * contributingAreaSqMeters;
+  const areaHa = contributingAreaSqMeters / 10_000;
+  // Time of concentration: floor at 10 minutes, scaling with sqrt(area).
+  const tcSeconds = Math.max(600, 1800 * Math.sqrt(Math.max(areaHa, 0)));
+  const dischargeCms = volume / tcSeconds;
+  const depth =
+    HYDRAULIC_GEOMETRY_DEPTH_COEFFICIENT *
+    Math.pow(Math.max(dischargeCms, 0), HYDRAULIC_GEOMETRY_DEPTH_EXPONENT);
+  return Math.max(0, depth);
+}
+
+/**
+ * RIVERINE-COVERAGE LIMIT — the scale at which this model stops being able to
+ * see the flood driver at all, and must say so instead of implying a verdict.
+ *
+ * MEASURED, 2026-07-30, on 24 Bastrop parcels independently labelled by the
+ * FEMA NFHL (12 in a special flood hazard area, 12 in Zone X). The largest
+ * contributing area visible ANYWHERE inside the padded study window was
+ * 1.7-11.9 ha for the flood-hazard parcels and 0.7-5.0 ha for the Zone X
+ * parcels — overlapping ranges, medians 3.9 ha and 3.1 ha. The Colorado River,
+ * which is what actually puts those parcels in Zone AE and the regulatory
+ * floodway, drains on the order of 3,000,000 ha. The study window is short of
+ * the flood driver by five to six orders of magnitude, and no statistic
+ * computed inside that window distinguishes the two groups: on that 24-parcel
+ * sample, HAND, window relief, contributing area and depression storage all
+ * carried rank information in the WRONG direction or none at all (the
+ * flood-hazard parcels had HIGHER median HAND than the Zone X parcels).
+ *
+ * The conclusion is a statement about the model's domain, not a tuning knob.
+ * A parcel-scale DEM window can honestly model LOCAL storm response —
+ * depression storage and low ground along drainage lines that are inside the
+ * window. It cannot model RIVERINE inundation, because the river's stage is
+ * set by a watershed that is not in the raster. Any criterion that appeared to
+ * reproduce FEMA flood zones from this window would be fitting noise, and it
+ * would not transfer to a county without an SFHA layer to fit against.
+ *
+ * So when the window's own drainage network is this small, the payload states
+ * that riverine flood hazard is OUT OF MODEL SCOPE and points at the NFHL,
+ * rather than reporting a confident zero that a reader would mistake for
+ * "not in a floodplain".
+ */
+export const RIVERINE_COVERAGE_MIN_CONTRIBUTING_AREA_SQ_METERS = 5_000_000; // 500 ha
+
+/** True when the window contains a drainage network large enough that riverine
+ * stage is even arguably in scope. Below this the study models LOCAL response
+ * only and must disclose that. */
+export function windowResolvesRiverineDrainage(
+  maxContributingAreaSqMeters: number,
+): boolean {
+  return maxContributingAreaSqMeters >= RIVERINE_COVERAGE_MIN_CONTRIBUTING_AREA_SQ_METERS;
+}
+
+export const RIVERINE_OUT_OF_SCOPE_NOTE =
+  `RIVERINE FLOOD HAZARD IS OUT OF SCOPE FOR THIS STUDY. The modeled window's ` +
+  `largest drainage network is far smaller than a river watershed, so channel ` +
+  `stage from a river cannot be computed from this DEM and is NOT represented ` +
+  `in the ponding figure. A zero or small ponding number here means "no modeled ` +
+  `LOCAL storm ponding", NOT "outside the floodplain". Floodplain determination ` +
+  `must come from the FEMA National Flood Hazard Layer or a site-specific ` +
+  `hydraulic study.`;
+
+/**
  * Provenance note shipped on the ponding FeatureCollection so the client, the
  * PDF and the briefing all describe the SAME criterion rather than each
  * narrating its own guess at what the blue area means.
  */
 export const PONDING_BASIS_NOTE =
-  `modeled depression storage at or above ${MIN_PONDING_DEPTH_METERS} m ` +
-  `(${Math.round(MIN_PONDING_DEPTH_METERS * 39.3701)} in) of standing water under the design storm; ` +
-  `closed depressions on the DEM only, excluding infiltration, soil storage and drainage infrastructure`;
+  `modeled standing water at or above ${MIN_PONDING_DEPTH_METERS} m ` +
+  `(${Math.round(MIN_PONDING_DEPTH_METERS * 39.3701)} in) under the design storm, from ` +
+  `depression storage (closed sinks on the DEM) COMBINED WITH low-lying inundation ` +
+  `(terrain below the modeled stage of the drainage line it drains to, via height ` +
+  `above nearest drainage). Screening model at DEM resolution: excludes infiltration, ` +
+  `soil storage, culverts and storm sewer, and its contributing area is limited to the ` +
+  `study window, so riverine stage from a larger upstream watershed is UNDER-represented. ` +
+  `Not a hydraulic study; the FEMA NFHL remains authoritative for floodplain determination.`;
 
 /**
  * Minimal binary min-heap over cell indices keyed by elevation. Only what
@@ -748,6 +961,234 @@ function flowLinesFromAccumulation(
   return { type: "FeatureCollection", features: features.slice(0, 40) };
 }
 
+/**
+ * HEIGHT ABOVE NEAREST DRAINAGE (HAND) — Rennó et al. 2008, Nobre et al. 2011.
+ *
+ * WHY THIS EXISTS (2026-07-30 real-terrain calibration; the correction to the
+ * 2026-07-30 depression-storage fix).
+ *
+ * The prior criterion was depression storage ALONE: `filled - raw` over a
+ * threshold. That is a correct model of PONDING IN A CLOSED SINK and it is
+ * kept, unchanged, below. What it cannot do — structurally, not by
+ * mis-tuning — is represent FLOODPLAIN INUNDATION. A floodplain is not a
+ * closed depression. It is ground that drains perfectly well, and floods
+ * anyway, because the water surface in the channel next to it rises above it.
+ * Depression filling raises nothing on a floodplain that has an outlet, so
+ * `filled - raw` is zero there and a pure depression model reports a
+ * floodplain as dry.
+ *
+ * MEASURED, on the real 10 m 3DEP DEM over five Bastrop validation parcels
+ * (not a synthetic fixture): `filled - raw` is exactly 0 for 90-94% of cells,
+ * p50 = 0.0000 m and p90 = 0.0000 m in EVERY window, with only 2.2-4.5% of
+ * cells clearing 0.10 m. Those few cells are scattered micro-sinks, and where
+ * they land bears no relation to flood exposure: the parcel with the MOST
+ * depression storage on it (12.4%) is the one sitting lowest against the
+ * drainage line, while parcels squarely inside the FEMA AE floodway scored
+ * 0.7% and 1.0%. Depression storage was not merely too small, it was
+ * uncorrelated with the hazard.
+ *
+ * WHAT HAND ADDS. For each cell, follow the D8 flow path downslope until it
+ * reaches a channel cell (contributing area over
+ * {@link CHANNEL_ACCUMULATION_FRACTION_OF_MAX} of the window maximum). HAND is
+ * the cell's elevation minus that receiving channel cell's elevation — the
+ * height of the ground above the water it drains to. A cell is inundated when
+ * its HAND is below the modeled stage in that channel
+ * (see {@link channelStageMeters}), and the inundation depth is
+ * `stage - HAND`. This is the standard terrain-based screening approach to
+ * floodplain extent and it is what makes low, flat, well-drained ground next
+ * to a drainage line read as flood-exposed.
+ *
+ * The two mechanisms are combined by taking the DEEPER of the two per cell:
+ * a closed sink on a terrace ponds from its own storage, low ground beside the
+ * channel inundates from stage, and ground that is both takes the larger. The
+ * result is still gated by {@link MIN_PONDING_DEPTH_METERS}.
+ *
+ * NO CALIBRATION TO ANY PARCEL OR JURISDICTION. Every constant here is a
+ * terrain- or storm-derived quantity documented at its definition. There is no
+ * parcel list, no county constant, and the FEMA/SFHA flag is NEVER an input —
+ * those layers were used to CHECK the output, never to produce it.
+ */
+export function heightAboveNearestDrainage(
+  elevation: Float32Array,
+  fdir: Int8Array,
+  accumulationCells: Uint32Array,
+  width: number,
+  height: number,
+): { hand: Float32Array; receivingAccumulationCells: Float32Array } {
+  const size = width * height;
+  const hand = new Float32Array(size).fill(Number.NaN);
+  const receiving = new Float32Array(size).fill(Number.NaN);
+
+  let maxAcc = 0;
+  for (let i = 0; i < size; i++) {
+    const a = accumulationCells[i]!;
+    if (a > maxAcc) maxAcc = a;
+  }
+  const channelCells = Math.max(
+    CHANNEL_MIN_ACCUMULATION_CELLS,
+    Math.round(maxAcc * CHANNEL_ACCUMULATION_FRACTION_OF_MAX),
+  );
+
+  const path: number[] = [];
+  const onPath = new Uint8Array(size);
+  // HAND may legitimately resolve to NaN ("drains off the window"), which is
+  // indistinguishable from "not yet visited" in the array itself. This marks
+  // resolution explicitly so each cell is walked once.
+  const resolved = new Uint8Array(size);
+  for (let start = 0; start < size; start++) {
+    if (!isFiniteElev(elevation[start]!)) continue;
+    if (resolved[start] === 1) continue;
+
+    path.length = 0;
+    let cur = start;
+    let baseElevation = Number.NaN;
+    let baseAcc = Number.NaN;
+
+    for (;;) {
+      if (!isFiniteElev(elevation[cur]!)) break;
+      // Already resolved downstream — inherit its channel datum (which may be
+      // the off-window NaN datum, and that must propagate too).
+      if (resolved[cur] === 1) {
+        baseElevation = isFiniteElev(hand[cur]!)
+          ? elevation[cur]! - hand[cur]!
+          : Number.NaN;
+        baseAcc = receiving[cur]!;
+        break;
+      }
+      // A channel cell is its own datum: HAND 0.
+      if (accumulationCells[cur]! >= channelCells) {
+        baseElevation = elevation[cur]!;
+        baseAcc = accumulationCells[cur]!;
+        hand[cur] = 0;
+        receiving[cur] = baseAcc;
+        resolved[cur] = 1;
+        break;
+      }
+      // Cycle guard: a flat/looping region resolves against itself rather
+      // than spinning. Never invents a datum from outside the terrain.
+      if (onPath[cur] === 1) {
+        baseElevation = elevation[cur]!;
+        baseAcc = accumulationCells[cur]!;
+        break;
+      }
+      onPath[cur] = 1;
+      path.push(cur);
+
+      const dir = fdir[cur]!;
+      if (dir <= 0) {
+        // NO DOWNSLOPE NEIGHBOUR. Two physically different cases, and
+        // conflating them was a real defect (2026-07-30): it made a pure
+        // monotonic slope report inundation along its own grid border.
+        //
+        // `flowDirection` only assigns a direction to INTERIOR cells, so every
+        // border cell has fdir 0 regardless of terrain. A border cell is
+        // where water LEAVES the study window — it is an open outflow
+        // boundary, not an impoundment. Treating it as its own drainage datum
+        // gave it HAND 0, and any stage then flooded it.
+        //
+        // So: a border cell is UNDEFINED for HAND (no inundation can be
+        // asserted there, since what happens to that water is off-raster),
+        // while a true interior pit IS its own local low point and keeps its
+        // datum. Depression storage still applies to both — a real sink on the
+        // border is caught by `filled - raw`, which is unaffected by this.
+        const col0 = cur % width;
+        const row0 = (cur - col0) / width;
+        const isBorder =
+          col0 === 0 || row0 === 0 || col0 === width - 1 || row0 === height - 1;
+        if (isBorder) {
+          baseElevation = Number.NaN;
+          baseAcc = Number.NaN;
+        } else {
+          baseElevation = elevation[cur]!;
+          baseAcc = accumulationCells[cur]!;
+        }
+        break;
+      }
+      const offset = D8_OFFSETS[dir - 1];
+      if (!offset) {
+        baseElevation = elevation[cur]!;
+        baseAcc = accumulationCells[cur]!;
+        break;
+      }
+      const col = cur % width;
+      const row = (cur - col) / width;
+      const nc = col + offset[0];
+      const nr = row + offset[1];
+      if (nc < 0 || nr < 0 || nc >= width || nr >= height) {
+        // Flows off the grid edge: open boundary, same reasoning as above.
+        baseElevation = Number.NaN;
+        baseAcc = Number.NaN;
+        break;
+      }
+      cur = nr * width + nc;
+    }
+
+    // A NaN datum is the deliberate "drains off the study window" signal from
+    // the loop above, and it must PROPAGATE: every cell whose flow path leaves
+    // the raster has undefined HAND, so no inundation is asserted for it. It
+    // is never back-filled with a substitute datum, which would be inventing a
+    // water surface for water we cannot follow.
+    for (const cell of path) {
+      onPath[cell] = 0;
+      hand[cell] = isFiniteElev(baseElevation)
+        ? elevation[cell]! - baseElevation
+        : Number.NaN;
+      receiving[cell] = baseAcc;
+      resolved[cell] = 1;
+    }
+  }
+
+  return { hand, receivingAccumulationCells: receiving };
+}
+
+/**
+ * MINIMUM HAND FOR THE INUNDATION MECHANISM TO APPLY.
+ *
+ * Inundation is water leaving the channel and standing on ground BESIDE it.
+ * The channel's own bed (HAND 0) is conveyance, not standing water: on a plain
+ * hillslope the D8 outlet cell is classified as the local channel, and without
+ * this exclusion the model reported that outlet as ponded — i.e. a strictly
+ * monotonic slope, where nothing can impound, showed inundation. Flowing water
+ * in a drainage line is not a site-design ponding constraint, and if a channel
+ * cell genuinely holds water it is a closed sink and the depression-storage
+ * term already reports it.
+ *
+ * One DEM cell is the smallest resolvable distance from the channel, so
+ * "strictly greater than zero HAND" is the exclusion: the bed itself is out,
+ * the first cell of overbank ground is in.
+ */
+function isChannelBedCell(handMeters: number): boolean {
+  return isFiniteElev(handMeters) && handMeters <= 0;
+}
+
+/**
+ * Standing-water depth at a cell: the DEEPER of closed-depression storage and
+ * low-lying inundation below the modeled channel stage. See
+ * {@link heightAboveNearestDrainage} for why both are required.
+ */
+export function standingWaterDepthMeters(
+  filledElevation: number,
+  rawElevation: number,
+  handMeters: number,
+  channelStage: number,
+  rainfallDepthMeters: number,
+): number {
+  const depression = pondingDepthMeters(
+    filledElevation,
+    rawElevation,
+    rainfallDepthMeters,
+  );
+  let inundation = 0;
+  if (
+    isFiniteElev(handMeters) &&
+    channelStage > 0 &&
+    !isChannelBedCell(handMeters)
+  ) {
+    inundation = Math.max(0, channelStage - handMeters);
+  }
+  return Math.max(depression, inundation);
+}
+
 export interface D8Field {
   /** Depression-filled elevation grid (same shape as the input DEM). */
   filled: Float32Array;
@@ -864,14 +1305,41 @@ export function runHydrologyNative(
   const rainfallMm = input.rainfallDepthMm ?? 0;
   if (rainfallMm > 0) {
     const rainfallM = rainfallMm / 1000;
-    // PONDING = DEPRESSION STORAGE (see `pondingDepthMeters`): a cell ponds
-    // only where depression-filling had to RAISE it — an actual sink — and the
-    // trapped water clears MIN_PONDING_DEPTH_METERS. Cells on a slope have
-    // filled == raw and never pond, however hard it rains.
+    // STANDING WATER = DEPRESSION STORAGE **OR** LOW-LYING INUNDATION.
+    // Depression storage alone reports a floodplain as dry (it is not a closed
+    // sink); HAND against the modeled channel stage supplies the floodplain
+    // mechanism. See `heightAboveNearestDrainage`. Cells on a high, well
+    // drained slope have filled == raw AND a HAND far above stage, so they
+    // still never pond, however hard it rains.
+    const { hand, receivingAccumulationCells } = heightAboveNearestDrainage(
+      elevation,
+      fdir,
+      acc,
+      width,
+      height,
+    );
+    const cellAreaSqM = cellAreaSquareMeters(width, height, catchmentBbox);
     const pondMask = new Uint8Array(width * height);
+    let maxContributingSqM = 0;
     for (let i = 0; i < width * height; i++) {
-      if (isCellPonded(filled[i]!, elevation[i]!, rainfallM)) pondMask[i] = 1;
+      const receiving = receivingAccumulationCells[i]!;
+      const contributingSqM =
+        (isFiniteElev(receiving) ? Math.max(receiving, 1) : 1) * cellAreaSqM;
+      if (contributingSqM > maxContributingSqM) maxContributingSqM = contributingSqM;
+      const stage = channelStageMeters(contributingSqM, rainfallM);
+      const depth = standingWaterDepthMeters(
+        filled[i]!,
+        elevation[i]!,
+        hand[i]!,
+        stage,
+        rainfallM,
+      );
+      if (depth >= MIN_PONDING_DEPTH_METERS) pondMask[i] = 1;
     }
+    // The window either resolves a river-scale network or it does not. When it
+    // does not, the payload SAYS the riverine mechanism is out of scope rather
+    // than letting a small number read as "not in a floodplain".
+    const riverineResolved = windowResolvesRiverineDrainage(maxContributingSqM);
     rainfallResultGeoJson = maskToGeoJson(
       pondMask,
       width,
@@ -882,6 +1350,12 @@ export function runHydrologyNative(
         library: "native-d8",
         pondingBasis: PONDING_BASIS_NOTE,
         minPondingDepthMeters: MIN_PONDING_DEPTH_METERS,
+        pondingMechanisms: ["depression-storage", "low-lying-inundation"],
+        maxContributingAreaSqMeters: Math.round(maxContributingSqM),
+        riverineFloodHazardModeled: riverineResolved,
+        ...(riverineResolved
+          ? {}
+          : { riverineFloodHazardNote: RIVERINE_OUT_OF_SCOPE_NOTE }),
       },
     );
   }

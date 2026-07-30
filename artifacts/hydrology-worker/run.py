@@ -125,11 +125,38 @@ MIN_BANDABLE_CATCHMENT_CELLS = 12
 # PONDING CRITERION — see `_pond_mask` and the TS `pondingDepthMeters`.
 MIN_PONDING_DEPTH_METERS = 0.1
 
+# CHANNEL NETWORK + STAGE (2026-07-30 real-terrain calibration). Every one of
+# these mirrors the identically-named export in
+# packages/adapters/src/hydrology/hydrologyNative.ts, where the physical
+# justification and the measurements behind each number are documented in full.
+# The parity test asserts they stay identical across both backends.
+CHANNEL_ACCUMULATION_FRACTION_OF_MAX = 0.02
+CHANNEL_MIN_ACCUMULATION_CELLS = 10
+MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS = 10_000
+SCREENING_RUNOFF_COEFFICIENT = 0.5
+HYDRAULIC_GEOMETRY_DEPTH_COEFFICIENT = 0.27
+HYDRAULIC_GEOMETRY_DEPTH_EXPONENT = 0.39
+RIVERINE_COVERAGE_MIN_CONTRIBUTING_AREA_SQ_METERS = 5_000_000
+
 PONDING_BASIS_NOTE = (
-    f"modeled depression storage at or above {MIN_PONDING_DEPTH_METERS} m "
-    f"({round(MIN_PONDING_DEPTH_METERS * 39.3701)} in) of standing water under the design storm; "
-    "closed depressions on the DEM only, excluding infiltration, soil storage "
-    "and drainage infrastructure"
+    f"modeled standing water at or above {MIN_PONDING_DEPTH_METERS} m "
+    f"({round(MIN_PONDING_DEPTH_METERS * 39.3701)} in) under the design storm, from "
+    "depression storage (closed sinks on the DEM) COMBINED WITH low-lying inundation "
+    "(terrain below the modeled stage of the drainage line it drains to, via height "
+    "above nearest drainage). Screening model at DEM resolution: excludes infiltration, "
+    "soil storage, culverts and storm sewer, and its contributing area is limited to the "
+    "study window, so riverine stage from a larger upstream watershed is UNDER-represented. "
+    "Not a hydraulic study; the FEMA NFHL remains authoritative for floodplain determination."
+)
+
+RIVERINE_OUT_OF_SCOPE_NOTE = (
+    "RIVERINE FLOOD HAZARD IS OUT OF SCOPE FOR THIS STUDY. The modeled window's "
+    "largest drainage network is far smaller than a river watershed, so channel "
+    "stage from a river cannot be computed from this DEM and is NOT represented "
+    'in the ponding figure. A zero or small ponding number here means "no modeled '
+    'LOCAL storm ponding", NOT "outside the floodplain". Floodplain determination '
+    "must come from the FEMA National Flood Hazard Layer or a site-specific "
+    "hydraulic study."
 )
 
 CONCENTRATION_BASIS_NO_GRADIENT = (
@@ -148,10 +175,163 @@ def concentration_basis_too_small(cells: int) -> str:
     )
 
 
-def _pond_mask(
-    raw_dem: np.ndarray, filled_dem: np.ndarray, rainfall_m: float
+def _cell_area_sq_meters(grid: Grid) -> float:
+    """Ground area of one DEM cell in m2, from the grid affine.
+
+    The rasters this worker is handed are WGS84 (the 3DEP export is requested
+    in EPSG:4326), so the pixel size is in DEGREES and has to be converted:
+    latitude degrees are near-constant, longitude degrees shrink by
+    cos(latitude). Mirrors `cellAreaSquareMeters` in hydrologyNative.ts.
+    """
+    try:
+        affine = grid.affine
+        deg_w = abs(float(affine.a))
+        deg_h = abs(float(affine.e))
+        mid_lat = float(np.mean([grid.bbox[1], grid.bbox[3]]))
+    except Exception:
+        return 100.0
+    if deg_w > 1.0 or deg_h > 1.0:
+        # Already a projected CRS in meters — use the pixel size directly.
+        area = deg_w * deg_h
+        return area if np.isfinite(area) and area > 0 else 100.0
+    meters_per_deg_lat = 110_540.0
+    meters_per_deg_lng = 111_320.0 * np.cos(np.radians(mid_lat))
+    area = (deg_w * meters_per_deg_lng) * (deg_h * meters_per_deg_lat)
+    return float(area) if np.isfinite(area) and area > 0 else 100.0
+
+
+def _channel_stage_meters(
+    contributing_area_sq_m: np.ndarray | float, rainfall_m: float
 ) -> np.ndarray:
-    """PONDING = DEPRESSION STORAGE, NOT WETNESS (2026-07-30 credible fix).
+    """Design-storm stage in the receiving drainage line.
+
+    Rational-method discharge then at-a-station hydraulic geometry; mirrors
+    ``channelStageMeters`` in hydrologyNative.ts, where the derivation and its
+    stated limits are documented. Below
+    ``MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS`` there is no concentrated flow
+    to carry a stage (hillslope sheet flow), so the stage is zero and only
+    depression storage can pond.
+    """
+    area = np.asarray(contributing_area_sq_m, dtype=float)
+    if rainfall_m <= 0:
+        return np.zeros_like(area)
+    volume = SCREENING_RUNOFF_COEFFICIENT * rainfall_m * area
+    area_ha = area / 10_000.0
+    tc_seconds = np.maximum(600.0, 1800.0 * np.sqrt(np.maximum(area_ha, 0.0)))
+    discharge_cms = np.divide(
+        volume, tc_seconds, out=np.zeros_like(area), where=tc_seconds > 0
+    )
+    depth = HYDRAULIC_GEOMETRY_DEPTH_COEFFICIENT * np.power(
+        np.maximum(discharge_cms, 0.0), HYDRAULIC_GEOMETRY_DEPTH_EXPONENT
+    )
+    return np.where(area >= MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS, depth, 0.0)
+
+
+def _hand(
+    raw_dem: np.ndarray, fdir: np.ndarray, acc: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """HEIGHT ABOVE NEAREST DRAINAGE + the receiving line's contributing cells.
+
+    Mirrors ``heightAboveNearestDrainage`` in hydrologyNative.ts: walk each
+    cell downslope along D8 until a channel cell (accumulation over a
+    window-relative threshold) is reached; HAND is the cell's elevation minus
+    that channel cell's elevation. A path that leaves the raster yields NaN —
+    an open outflow boundary, where no inundation can be asserted, never a
+    substituted datum.
+
+    pysheds encodes flow direction with the D8 compass values in ``DIRMAP``;
+    this resolves each to a (drow, dcol) step.
+    """
+    dem = np.asarray(raw_dem, dtype=float)
+    fdir_a = np.asarray(fdir)
+    acc_a = np.asarray(acc, dtype=float)
+    h, w = dem.shape
+    max_acc = float(np.nanmax(acc_a)) if acc_a.size else 0.0
+    channel_cells = max(
+        CHANNEL_MIN_ACCUMULATION_CELLS,
+        int(round(max_acc * CHANNEL_ACCUMULATION_FRACTION_OF_MAX)),
+    )
+    # DIRMAP order is (N, NE, E, SE, S, SW, W, NW) as used in `run`.
+    steps = {
+        64: (-1, 0),
+        128: (-1, 1),
+        1: (0, 1),
+        2: (1, 1),
+        4: (1, 0),
+        8: (1, -1),
+        16: (0, -1),
+        32: (-1, -1),
+    }
+    hand = np.full(dem.shape, np.nan, dtype=float)
+    recv = np.full(dem.shape, np.nan, dtype=float)
+    resolved = np.zeros(dem.shape, dtype=bool)
+
+    for r0 in range(h):
+        for c0 in range(w):
+            if resolved[r0, c0] or not np.isfinite(dem[r0, c0]):
+                continue
+            path: list[tuple[int, int]] = []
+            on_path: set[tuple[int, int]] = set()
+            r, c = r0, c0
+            base_elev = np.nan
+            base_acc = np.nan
+            while True:
+                if not np.isfinite(dem[r, c]):
+                    break
+                if resolved[r, c]:
+                    base_elev = (
+                        dem[r, c] - hand[r, c] if np.isfinite(hand[r, c]) else np.nan
+                    )
+                    base_acc = recv[r, c]
+                    break
+                if acc_a[r, c] >= channel_cells:
+                    base_elev = dem[r, c]
+                    base_acc = acc_a[r, c]
+                    hand[r, c] = 0.0
+                    recv[r, c] = base_acc
+                    resolved[r, c] = True
+                    break
+                if (r, c) in on_path:
+                    base_elev = dem[r, c]
+                    base_acc = acc_a[r, c]
+                    break
+                on_path.add((r, c))
+                path.append((r, c))
+                step = steps.get(int(fdir_a[r, c]))
+                if step is None:
+                    # No downslope neighbour. On the raster border this is an
+                    # open outflow boundary (undefined HAND); in the interior
+                    # it is a true pit and is its own datum.
+                    if r in (0, h - 1) or c in (0, w - 1):
+                        base_elev = np.nan
+                        base_acc = np.nan
+                    else:
+                        base_elev = dem[r, c]
+                        base_acc = acc_a[r, c]
+                    break
+                nr, nc = r + step[0], c + step[1]
+                if nr < 0 or nc < 0 or nr >= h or nc >= w:
+                    base_elev = np.nan
+                    base_acc = np.nan
+                    break
+                r, c = nr, nc
+            for rr, cc in path:
+                hand[rr, cc] = (
+                    dem[rr, cc] - base_elev if np.isfinite(base_elev) else np.nan
+                )
+                recv[rr, cc] = base_acc
+                resolved[rr, cc] = True
+    return hand, recv
+
+
+def _pond_mask(
+    raw_dem: np.ndarray,
+    filled_dem: np.ndarray,
+    rainfall_m: float,
+    hand: np.ndarray | None = None,
+    contributing_area_sq_m: np.ndarray | None = None,
+) -> np.ndarray:
+    """PONDING = DEPRESSION STORAGE **OR** LOW-LYING INUNDATION.
 
     WHAT THE OLD RULE DID. This worker computed ``inflated = dem + rainfall_m``
     and then ``pond_mask = inflated > dem + rainfall_m * 0.25``. Substituting
@@ -163,30 +343,55 @@ def _pond_mask(
     ~100% of cells; on the live Bastrop parcel 48021:36249 it reported 396,134
     sq ft of ponding on a 398,813 sq ft parcel.
 
-    WHAT THE NEW RULE DOES. A cell ponds where it is an actual DEPRESSION and
-    the trapped water is deep enough to matter to a building pad:
+    TWO MECHANISMS, NOT ONE (2026-07-30 real-terrain calibration). Depression
+    storage is kept unchanged:
 
         depression_depth = filled_dem - raw_dem
         pond_depth       = min(depression_depth, rainfall_m)
-        ponded           = pond_depth >= MIN_PONDING_DEPTH_METERS
 
     ``fill_depressions`` raises exactly the cells with no downslope escape, so
     ``filled - raw`` is the height of the lip trapping water there. A cell on a
-    slope has ``filled == raw``, so it never ponds however hard it rains — the
-    physical statement "water runs off a slope; it stands in a hollow". The
-    ponded depth is capped by what the storm actually delivers.
+    slope has ``filled == raw``, so it never ponds however hard it rains.
 
-    DOES represent: screening-level identification of closed depressions on the
-    DEM holding at least 4 inches of standing water under the design storm.
-    Does NOT represent: routed hydraulics, infiltration, soil storage, storm
-    sewer or culvert capacity, or flood timing/duration. Mirrors
-    `pondingDepthMeters` in the adapters hydrology package cell-for-cell.
+    But depression storage ALONE cannot represent floodplain inundation, and
+    measuring it on real 10 m terrain showed why: over five Bastrop windows
+    ``filled - raw`` was exactly zero for 90-94% of cells (p50 and p90 both
+    0.0000 m), because a floodplain is not a closed sink — it drains fine and
+    floods anyway when the water surface beside it rises. So a second term is
+    added, low-lying inundation against the modeled drainage stage:
+
+        inundation = max(0, stage(receiving contributing area) - HAND)
+
+    A cell's standing water is the DEEPER of the two, gated by
+    MIN_PONDING_DEPTH_METERS. The channel bed itself (HAND <= 0) is conveyance,
+    not standing water, and is excluded from the inundation term — without that
+    exclusion a strictly monotonic slope reported inundation at its own outlet.
+
+    DOES represent: screening-level local storm response — closed depressions,
+    plus low ground along drainage lines INSIDE the study window. Does NOT
+    represent: routed hydraulics, infiltration, soil storage, storm sewer or
+    culvert capacity, flood timing/duration, or RIVERINE flooding driven by a
+    watershed larger than the window (see RIVERINE_OUT_OF_SCOPE_NOTE). Mirrors
+    `standingWaterDepthMeters` in the adapters hydrology package cell-for-cell.
     """
     depression_depth = np.asarray(filled_dem, dtype=float) - np.asarray(
         raw_dem, dtype=float
     )
     pond_depth = np.minimum(depression_depth, max(0.0, rainfall_m))
-    return np.nan_to_num(pond_depth, nan=0.0) >= MIN_PONDING_DEPTH_METERS
+    pond_depth = np.nan_to_num(pond_depth, nan=0.0)
+    pond_depth = np.where(depression_depth > 0, pond_depth, 0.0)
+
+    if hand is not None and contributing_area_sq_m is not None:
+        stage = _channel_stage_meters(contributing_area_sq_m, rainfall_m)
+        hand_a = np.asarray(hand, dtype=float)
+        inundation = np.where(
+            np.isfinite(hand_a) & (hand_a > 0),
+            np.maximum(0.0, stage - hand_a),
+            0.0,
+        )
+        pond_depth = np.maximum(pond_depth, inundation)
+
+    return pond_depth >= MIN_PONDING_DEPTH_METERS
 
 
 def _concentration_bands(
@@ -392,16 +597,40 @@ def run(req: dict[str, Any]) -> dict[str, Any]:
     rainfall_result = None
     if rainfall_mm > 0:
         rainfall_m = rainfall_mm / 1000.0
-        pond_mask = _pond_mask(np.asarray(raw_dem), np.asarray(dem), rainfall_m)
+        # HAND against the window's own drainage network supplies the
+        # floodplain mechanism that depression storage structurally cannot —
+        # see `_pond_mask` and `_hand`.
+        hand, recv_cells = _hand(np.asarray(raw_dem), np.asarray(fdir), np.asarray(acc))
+        cell_area_sq_m = _cell_area_sq_meters(grid)
+        contributing_area = (
+            np.nan_to_num(recv_cells, nan=1.0).clip(min=1.0) * cell_area_sq_m
+        )
+        pond_mask = _pond_mask(
+            np.asarray(raw_dem),
+            np.asarray(dem),
+            rainfall_m,
+            hand=hand,
+            contributing_area_sq_m=contributing_area,
+        )
+        max_contributing = float(np.nanmax(contributing_area)) if contributing_area.size else 0.0
+        riverine_resolved = (
+            max_contributing >= RIVERINE_COVERAGE_MIN_CONTRIBUTING_AREA_SQ_METERS
+        )
+        pond_props: dict[str, Any] = {
+            "rainfallDepthMm": rainfall_mm,
+            "library": "pysheds",
+            "pondingBasis": PONDING_BASIS_NOTE,
+            "minPondingDepthMeters": MIN_PONDING_DEPTH_METERS,
+            "pondingMechanisms": ["depression-storage", "low-lying-inundation"],
+            "maxContributingAreaSqMeters": round(max_contributing),
+            "riverineFloodHazardModeled": riverine_resolved,
+        }
+        if not riverine_resolved:
+            pond_props["riverineFloodHazardNote"] = RIVERINE_OUT_OF_SCOPE_NOTE
         rainfall_result = _mask_to_geojson_polygons(
             grid,
             pond_mask.astype(bool),
-            {
-                "rainfallDepthMm": rainfall_mm,
-                "library": "pysheds",
-                "pondingBasis": PONDING_BASIS_NOTE,
-                "minPondingDepthMeters": MIN_PONDING_DEPTH_METERS,
-            },
+            pond_props,
         )
 
     return {

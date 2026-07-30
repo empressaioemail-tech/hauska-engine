@@ -6,9 +6,16 @@ import {
   computeD8Field,
   isCellPonded,
   pondingDepthMeters,
+  heightAboveNearestDrainage,
+  standingWaterDepthMeters,
+  channelStageMeters,
+  cellAreaSquareMeters,
+  windowResolvesRiverineDrainage,
   ACCUMULATION_THRESHOLD_BASE_CELLS,
   MIN_PONDING_DEPTH_METERS,
   MIN_BANDABLE_CATCHMENT_CELLS,
+  MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS,
+  RIVERINE_COVERAGE_MIN_CONTRIBUTING_AREA_SQ_METERS,
 } from "../hydrologyNative.js";
 
 const BBOX = { westLng: -97.68, southLat: 30.5, eastLng: -97.67, northLat: 30.51 };
@@ -36,6 +43,254 @@ function fcAreaSqFt(fc: { features: ReadonlyArray<{ geometry: { type: string; co
   }
   return total;
 }
+
+/**
+ * A RIVER FLOODPLAIN CROSS-SECTION — the fixture class that was MISSING, and
+ * whose absence let the depression-storage-only criterion ship reporting zero
+ * ponding on real FEMA flood-hazard parcels (2026-07-30 real-terrain
+ * calibration).
+ *
+ * WHY THE OLD FIXTURES COULD NOT CATCH IT. Every ponding fixture in the #191
+ * suite was a synthetic CLOSED DEPRESSION — a bowl, a dome, a plane. A closed
+ * bowl is exactly the case depression storage models correctly, so the suite
+ * was green while the criterion reported real floodplains as bone dry. A
+ * floodplain is not a closed depression: it drains perfectly well and floods
+ * anyway, because the water surface in the channel beside it rises. No amount
+ * of bowl testing can surface that, because the failure is a MISSING
+ * MECHANISM, not a mis-tuned threshold.
+ *
+ * The geometry below is a valley cross-section, the shape that actually
+ * distinguishes the two mechanisms:
+ *   - CHANNEL, |col-40| <= 1, at the valley bed;
+ *   - LOW BANK / floodplain, |col-40| 2..8, only 0.05-0.17 m above the bed —
+ *     ground that drains freely (no closed sink anywhere in it) but sits
+ *     within a design-storm stage of the channel;
+ *   - TERRACE, |col-40| >= 12, 5 m or more above the bed — high, dry, and
+ *     equally free-draining.
+ * Plus a gentle downstream gradient so the channel routes like a real one.
+ *
+ * The load-bearing property: NOTHING here is a closed depression, so
+ * `filled - raw` is zero across the whole fixture and a depression-only
+ * criterion reports 0% everywhere — including on the low bank. Only a model
+ * that also represents low-lying inundation can tell the bank from the
+ * terrace.
+ */
+const FLOODPLAIN_WIDTH = 80;
+const FLOODPLAIN_HEIGHT = 60;
+const FLOODPLAIN_BBOX = {
+  westLng: -97.7,
+  southLat: 30.5,
+  eastLng: -97.675,
+  northLat: 30.5162,
+};
+const FLOODPLAIN_CHANNEL_COL = 40;
+
+function floodplainCrossSection(): Float32Array {
+  const elevation = new Float32Array(FLOODPLAIN_WIDTH * FLOODPLAIN_HEIGHT);
+  for (let row = 0; row < FLOODPLAIN_HEIGHT; row++) {
+    for (let col = 0; col < FLOODPLAIN_WIDTH; col++) {
+      const d = Math.abs(col - FLOODPLAIN_CHANNEL_COL);
+      let z: number;
+      if (d <= 1) z = 100; // channel bed
+      else if (d <= 8) z = 100.05 + (d - 2) * 0.02; // low bank / floodplain
+      else z = 105 + (d - 8) * 0.3; // terrace
+      elevation[row * FLOODPLAIN_WIDTH + col] = z - row * 0.02; // downstream
+    }
+  }
+  return elevation;
+}
+
+/** Fraction of a cross-section zone reported as standing water. */
+function floodplainZonePondedFraction(
+  elevation: Float32Array,
+  rainfallMeters: number,
+  inZone: (distanceFromChannel: number) => boolean,
+): number {
+  const { filled, fdir, accumulation } = computeD8Field(
+    elevation,
+    FLOODPLAIN_WIDTH,
+    FLOODPLAIN_HEIGHT,
+  );
+  const { hand, receivingAccumulationCells } = heightAboveNearestDrainage(
+    elevation,
+    fdir,
+    accumulation,
+    FLOODPLAIN_WIDTH,
+    FLOODPLAIN_HEIGHT,
+  );
+  const cellArea = cellAreaSquareMeters(
+    FLOODPLAIN_WIDTH,
+    FLOODPLAIN_HEIGHT,
+    FLOODPLAIN_BBOX,
+  );
+  let total = 0;
+  let ponded = 0;
+  // Skip the outermost rows: they are the open inflow/outflow boundary of the
+  // modeled reach, not terrain the study is making a claim about.
+  for (let row = 5; row < FLOODPLAIN_HEIGHT - 5; row++) {
+    for (let col = 0; col < FLOODPLAIN_WIDTH; col++) {
+      if (!inZone(Math.abs(col - FLOODPLAIN_CHANNEL_COL))) continue;
+      const i = row * FLOODPLAIN_WIDTH + col;
+      const receiving = receivingAccumulationCells[i]!;
+      const contributing =
+        (Number.isFinite(receiving) ? Math.max(receiving, 1) : 1) * cellArea;
+      const depth = standingWaterDepthMeters(
+        filled[i]!,
+        elevation[i]!,
+        hand[i]!,
+        channelStageMeters(contributing, rainfallMeters),
+        rainfallMeters,
+      );
+      total++;
+      if (depth >= MIN_PONDING_DEPTH_METERS) ponded++;
+    }
+  }
+  return total === 0 ? 0 : ponded / total;
+}
+
+describe("floodplain inundation — the mechanism depression storage cannot model", () => {
+  const rainfall = 0.1016; // 4 in design storm
+
+  it("THE REGRESSION: this terrain has NO closed depressions at all", () => {
+    // If this ever stops holding, the fixture has drifted into being a bowl
+    // and would stop testing the floodplain mechanism.
+    const elevation = floodplainCrossSection();
+    const { filled } = computeD8Field(
+      elevation,
+      FLOODPLAIN_WIDTH,
+      FLOODPLAIN_HEIGHT,
+    );
+    let maxDepression = 0;
+    for (let i = 0; i < elevation.length; i++) {
+      maxDepression = Math.max(maxDepression, filled[i]! - elevation[i]!);
+    }
+    expect(maxDepression).toBeLessThan(MIN_PONDING_DEPTH_METERS);
+
+    // ...and therefore the OLD depression-only criterion reports the whole
+    // floodplain dry. This is the exact defect that shipped: a green suite
+    // over a criterion that cannot see a floodplain.
+    let depressionOnlyPonded = 0;
+    for (let i = 0; i < elevation.length; i++) {
+      if (isCellPonded(filled[i]!, elevation[i]!, rainfall)) {
+        depressionOnlyPonded++;
+      }
+    }
+    expect(depressionOnlyPonded).toBe(0);
+  });
+
+  it("the LOW BANK floods — free-draining ground within a stage of the channel", () => {
+    const fraction = floodplainZonePondedFraction(
+      floodplainCrossSection(),
+      rainfall,
+      (d) => d >= 2 && d <= 8,
+    );
+    expect(fraction).toBeGreaterThan(0.1);
+  });
+
+  it("the TERRACE stays dry — the same storm, 5 m higher", () => {
+    const fraction = floodplainZonePondedFraction(
+      floodplainCrossSection(),
+      rainfall,
+      (d) => d >= 12,
+    );
+    expect(fraction).toBe(0);
+  });
+
+  it("bank floods MORE than terrace — the discrimination, not just the levels", () => {
+    const elevation = floodplainCrossSection();
+    const bank = floodplainZonePondedFraction(
+      elevation,
+      rainfall,
+      (d) => d >= 2 && d <= 8,
+    );
+    const terrace = floodplainZonePondedFraction(
+      elevation,
+      rainfall,
+      (d) => d >= 12,
+    );
+    expect(bank).toBeGreaterThan(terrace);
+  });
+});
+
+describe("HAND and channel stage", () => {
+  it("a grid-border cell has UNDEFINED HAND — an outflow boundary, not a pond", () => {
+    // Regression on a real bug: `flowDirection` leaves every border cell at
+    // fdir 0, and treating that as "its own drainage datum" gave the border
+    // HAND 0, so any stage flooded it — a pure slope reported inundation
+    // along its own edge.
+    const width = 12;
+    const height = 12;
+    const elevation = new Float32Array(width * height);
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        elevation[row * width + col] = 100 + col * 0.5 + row * 0.2;
+      }
+    }
+    const { fdir, accumulation } = computeD8Field(elevation, width, height);
+    const { hand } = heightAboveNearestDrainage(
+      elevation,
+      fdir,
+      accumulation,
+      width,
+      height,
+    );
+    expect(Number.isNaN(hand[0]!)).toBe(false); // corner IS the local outlet
+    // A mid-edge cell drains off-grid: no inundation may be asserted there.
+    expect(Number.isNaN(hand[6]!)).toBe(true);
+  });
+
+  it("no concentrated flow, no stage — hillslope sheet flow is not a flood", () => {
+    const rainfall = 0.1016;
+    expect(
+      channelStageMeters(MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS - 1, rainfall),
+    ).toBe(0);
+    expect(
+      channelStageMeters(MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS * 50, rainfall),
+    ).toBeGreaterThan(0);
+  });
+
+  it("stage rises with contributing area, and never with zero rain", () => {
+    const small = channelStageMeters(1_000_000, 0.1016);
+    const large = channelStageMeters(20_000_000, 0.1016);
+    expect(large).toBeGreaterThan(small);
+    expect(channelStageMeters(20_000_000, 0)).toBe(0);
+  });
+
+  it("the channel BED is conveyance, never reported as standing water", () => {
+    // HAND 0 (in the channel) must not be flooded by its own stage; only
+    // ground ABOVE the bed and BELOW the stage inundates.
+    const rainfall = 0.1016;
+    const bed = standingWaterDepthMeters(100, 100, 0, 0.5, rainfall);
+    const overbank = standingWaterDepthMeters(100, 100, 0.2, 0.5, rainfall);
+    expect(bed).toBe(0);
+    expect(overbank).toBeCloseTo(0.3, 5);
+  });
+
+  it("a closed sink still ponds even where there is no channel stage at all", () => {
+    // Depression storage is KEPT, not replaced. A 0.4 m sink under a 4 in
+    // storm holds the storm depth regardless of stage.
+    expect(standingWaterDepthMeters(100.4, 100, Number.NaN, 0, 0.1016)).toBeCloseTo(
+      0.1016,
+      5,
+    );
+  });
+
+  it("undefined HAND never inundates, however high the stage", () => {
+    expect(standingWaterDepthMeters(100, 100, Number.NaN, 99, 0.1016)).toBe(0);
+  });
+
+  it("declares riverine hazard out of scope for a parcel-scale window", () => {
+    // The measured reality: a padded parcel window resolves single-digit
+    // hectares, a river drains millions. The payload must SAY so rather than
+    // let a small number read as "not in a floodplain".
+    expect(windowResolvesRiverineDrainage(120_000)).toBe(false);
+    expect(
+      windowResolvesRiverineDrainage(
+        RIVERINE_COVERAGE_MIN_CONTRIBUTING_AREA_SQ_METERS * 10,
+      ),
+    ).toBe(true);
+  });
+});
 
 describe("runHydrologyNative", () => {
   it("produces drainage zones and flow lines on a sloped grid", () => {
