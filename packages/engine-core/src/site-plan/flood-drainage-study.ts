@@ -20,6 +20,11 @@ import polygonClipping from "polygon-clipping";
 import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
 import type { ParcelGeometryResolver } from "../parcel-terrain/author.js";
 import { buildDrainageGradient, type FloodDrainageGradient } from "./drainage-gradient.js";
+import {
+  buildFloodFlowPaths,
+  type FloodCatchmentSwath,
+  type FloodFlowPath,
+} from "./flood-flow-paths.js";
 
 /**
  * FLOOD & DRAINAGE study service (2026-07-29, R3 — the first PAID report).
@@ -161,6 +166,23 @@ export interface FloodDrainageStudy {
    * never fabricated.
    */
   gradient?: FloodDrainageGradient;
+  /**
+   * TRACED FLOW PATHS (v3 additive, PINNED CONTRACT — PE feature-detects;
+   * absent-safe for old consumers): the top D8 accumulation ridgelines of
+   * the SAME model the gradient shades, ordered downstream, with strength =
+   * normalized log flow accumulation and kind "exit" when the trace leaves
+   * the parcel ring. Absent when no channel reaches the study threshold.
+   */
+  flowPaths?: FloodFlowPath[];
+  /**
+   * CATCHMENT SWATHS (v3 additive, index-aligned with flowPaths): one
+   * closed polygon ring per path buffering it with a width proportional to
+   * local normalized accumulation — the contributing corridor, widening
+   * downstream. See flood-flow-paths.ts for the honest-derivation contract.
+   */
+  catchmentSwaths?: FloodCatchmentSwath[];
+  /** Provenance note for flowPaths + catchmentSwaths (present with them). */
+  flowPathsNote?: string;
   honestEmpty?: { reason: string };
   /** Additive detail beyond the pinned contract (PE viz + PDF arrows). */
   flowExits: FloodDrainageFlowExit[];
@@ -883,6 +905,21 @@ export async function runFloodDrainageStudy(
     rainfallDepthInches: rainfall.depthInches,
   });
 
+  // TRACED FLOW PATHS + CATCHMENT SWATHS (v3 pinned contract): same D8
+  // field, same normalization as the gradient; null (omitted) when no
+  // channel reaches the threshold — absent fields are honest.
+  const flowPathsResult = buildFloodFlowPaths({
+    elevation: dem.values,
+    width: dem.width,
+    height: dem.height,
+    accumulation: d8.accumulation,
+    fdir: d8.fdir,
+    bbox: catchmentBbox,
+    accumulationThreshold,
+    parcelRing: ringWgs84,
+    demResolutionMeters: resolutionMetersAdapted,
+  });
+
   const study: FloodDrainageStudy = {
     ...base,
     catchmentGeoJson,
@@ -892,6 +929,13 @@ export async function runFloodDrainageStudy(
     flowExits,
     stats,
     ...(gradient ? { gradient } : {}),
+    ...(flowPathsResult
+      ? {
+          flowPaths: flowPathsResult.flowPaths,
+          catchmentSwaths: flowPathsResult.catchmentSwaths,
+          flowPathsNote: flowPathsResult.note,
+        }
+      : {}),
     computation: {
       library: result.library,
       routing: result.routing,

@@ -33,6 +33,14 @@ import {
  *   The gradient is the transparent-background water-ramp PNG (longest
  *   axis <= 640 px) the PE leg drapes on the map by its WGS84 bbox —
  *   absent only when the drainage field is degenerate or honest-empty.
+ *
+ *   v3 additive study fields (PE feature-detects; absent-safe):
+ *     flowPaths?: [{ coordinates: [[lng,lat],...], strength: 0..1,
+ *       kind: "interior" | "exit" }]      — top D8 accumulation ridgelines,
+ *       ordered downstream, strength = normalized log flow accumulation
+ *     catchmentSwaths?: [{ coordinates: [ring], strength, kind }]
+ *       — index-aligned contributing-corridor polygon per flow path
+ *     flowPathsNote?: string              — derivation provenance
  *   GET  /v1/property-nodes/:parcelNodeId/flood-drainage/download
  *     ?format=pdf-flood-drainage → application/pdf
  *   GET  /v1/property-nodes/:parcelNodeId/flood-drainage/study

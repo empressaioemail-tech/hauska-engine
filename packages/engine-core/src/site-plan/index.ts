@@ -131,6 +131,22 @@ export {
 } from "./drainage-gradient.js";
 
 export {
+  FLOW_PATHS_MAX,
+  FLOW_PATH_MAX_POINTS,
+  FLOW_PATH_MIN_CELLS,
+  SWATH_MAX_HALF_WIDTH_CELLS,
+  SWATH_MIN_HALF_WIDTH_CELLS,
+  buildFloodFlowPaths,
+  buildSwathRing,
+  douglasPeuckerIndices,
+  type BuildFloodFlowPathsOptions,
+  type FloodCatchmentSwath,
+  type FloodFlowPath,
+  type FloodFlowPathKind,
+  type FloodFlowPathsResult,
+} from "./flood-flow-paths.js";
+
+export {
   authorParcelFloodDrainageReport,
   type AuthorParcelFloodDrainageReportOptions,
   type AuthorParcelFloodDrainageReportResult,
