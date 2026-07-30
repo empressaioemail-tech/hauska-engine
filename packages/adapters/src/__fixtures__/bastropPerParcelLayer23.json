@@ -1,0 +1,28 @@
+{
+  "105054": {
+    "prop_id": 105054,
+    "FrontSetback_": "25",
+    "SideSetback_": "5 (Corner Side Street Setback: 15 ft)",
+    "RearSetback_": "25",
+    "MaxBuildingHt": 35,
+    "MaxImpervisionCoverage": "50%",
+    "Ordinance_Link": "https://www.cityofbastrop.org/example/ordinance-105054.pdf"
+  },
+  "34089": {
+    "prop_id": 34089,
+    "FrontSetback_": "20",
+    "SideSetback_": "5 (Corner Side Street Setback: 10 ft)",
+    "RearSetback_": "20",
+    "MaxBuildingHt": 55,
+    "MaxImpervisionCoverage": "65%",
+    "Ordinance_Link": "https://www.cityofbastrop.org/example/ordinance-34089-gc.pdf"
+  },
+  "34841_mu_non_scalar": {
+    "prop_id": 34841,
+    "FrontSetback_": "15",
+    "SideSetback_": "Reference Building Code/Fire Code",
+    "RearSetback_": "15",
+    "MaxBuildingHt": 45,
+    "Ordinance_Link": "https://www.cityofbastrop.org/example/ordinance-34841-mu.pdf"
+  }
+}
