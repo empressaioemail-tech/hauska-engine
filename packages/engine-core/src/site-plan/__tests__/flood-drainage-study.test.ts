@@ -7,7 +7,7 @@ import type {
 } from "@hauska-engine/adapters/hydrology";
 import { accumulationThresholdForResolution } from "@hauska-engine/adapters/hydrology";
 
-import { computeD8Field } from "@hauska-engine/adapters/hydrology";
+import { computeD8Field, runHydrologyNative } from "@hauska-engine/adapters/hydrology";
 
 import {
   DEFAULT_DRAINAGE_RESOLUTION_METERS,
@@ -726,6 +726,152 @@ describe("resolvePourPoint (parcel-aware, fixture DEM matrix)", () => {
   });
 });
 
+/**
+ * MECHANICAL COHERENCE (2026-07-30) — the study as a whole, driven end to end
+ * through the REAL native hydrology backend rather than a mocked worker
+ * result, so the assertion binds the actual criterion.
+ *
+ * Live parcel 48021:36249 (Bastrop, ~9.2 ac) is a local high point with a
+ * negligible upstream catchment; the pre-fix payload reported 396,134 sq ft of
+ * ponding against 398,813 sq ft of parcel — 99.3%. A parcel the model narrates
+ * as shedding cannot also be almost entirely under water.
+ */
+describe("ponding coherence with the catchment narrative (end to end)", () => {
+  const HP_GRID = 64;
+  const RES = 10;
+
+  /** A broad dome centred on the parcel — every cell has a downslope escape. */
+  function highPointDem() {
+    const values = new Float32Array(HP_GRID * HP_GRID);
+    for (let row = 0; row < HP_GRID; row++) {
+      for (let col = 0; col < HP_GRID; col++) {
+        const d = Math.hypot((col - HP_GRID / 2) * RES, (row - HP_GRID / 2) * RES);
+        values[row * HP_GRID + col] = 140 - d * 0.02 + (col - HP_GRID / 2) * RES * 0.001;
+      }
+    }
+    let min = Infinity;
+    let max = -Infinity;
+    for (const v of values) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    return {
+      width: HP_GRID,
+      height: HP_GRID,
+      values,
+      minElevation: min,
+      maxElevation: max,
+      nodataCount: 0,
+    };
+  }
+
+  /** Drive the genuine native D8 backend, not a canned worker payload. */
+  const nativeWorker = async (req: HydrologyWorkerRequest): Promise<HydrologyWorkerResult> =>
+    runHydrologyNative({
+      width: req.width,
+      height: req.height,
+      elevation: req.elevation,
+      catchmentBbox: req.catchmentBbox,
+      pourLng: req.pourLng,
+      pourLat: req.pourLat,
+      rainfallDepthMm: req.rainfallDepthMm,
+      accumulationThreshold: req.accumulationThreshold,
+    }) as HydrologyWorkerResult;
+
+  it("a shedding high point cannot report near-total parcel ponding", async () => {
+    const { fn: fetchDem } = fakeFetchDem();
+    const { study } = await runFloodDrainageStudy({
+      parcelNodeId,
+      resolver,
+      fetchDem,
+      parseDem: async () => highPointDem(),
+      runWorker: nativeWorker,
+      fetchRainfall: failingRainfall,
+      rainfallDepthInches: DEFAULT_RAINFALL_DEPTH_INCHES,
+    });
+
+    const parcelSqFt = ringAreaSqFtLocal(ringWgs84);
+    expect(parcelSqFt).toBeGreaterThan(0);
+
+    // Every cell of this dome has a downslope escape, so nothing impounds.
+    // THE COHERENCE ASSERTION: a parcel the model shows as shedding is not
+    // almost entirely under water. The pre-fix live value was 99.3% of parcel.
+    expect(study.stats.pondedAreaSqFt).not.toBeNull();
+    expect(study.stats.pondedAreaSqFt! / parcelSqFt).toBeLessThan(0.1);
+
+    // And the briefing agrees with the stat rather than contradicting it.
+    expect(study.briefing).toContain("no modeled ponding intersects the parcel");
+    expect(study.briefing).not.toMatch(/modeled ponding covers/);
+  });
+
+  it("a negligible catchment plus ponding is narrated coherently, never as delivered runoff", () => {
+    // The exact live 48021:36249 shape: high-point narration AND a large
+    // ponding figure in the same study. The briefing must not read as a
+    // contradiction even if a future model produces this combination.
+    const negligible = negligibleCatchmentThresholdSqFt(10);
+    const briefing = buildFloodDrainageBriefing({
+      stats: {
+        catchmentAreaSqFt: negligible - 1,
+        pondedAreaSqFt: 396_134,
+        pondedAreaModeledRegionSqFt: 396_134,
+        flowExitCount: 0,
+        pourPoint: { lng: -97.319, lat: 30.101 },
+        pourPointMethod: "lowest-boundary-cell",
+      },
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    expect(briefing).toContain("local high point");
+    expect(briefing).toContain("held in local depressions on the parcel itself");
+    expect(briefing).not.toMatch(
+      /modeled ponding covers about [\d.]+ acres on the parcel\./,
+    );
+  });
+
+  it("still reports substantial ponding on a genuine depression — not a clamp", async () => {
+    // Same parcel and ring, but the terrain is a closed basin around it.
+    function bowlDem() {
+      const values = new Float32Array(HP_GRID * HP_GRID);
+      for (let row = 0; row < HP_GRID; row++) {
+        for (let col = 0; col < HP_GRID; col++) {
+          const d = Math.hypot(col - HP_GRID / 2, row - HP_GRID / 2);
+          values[row * HP_GRID + col] =
+            d < HP_GRID / 3 ? 100 - (HP_GRID / 3 - d) * 0.3 : 100 + (d - HP_GRID / 3) * 0.05;
+        }
+      }
+      let min = Infinity;
+      let max = -Infinity;
+      for (const v of values) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      return {
+        width: HP_GRID,
+        height: HP_GRID,
+        values,
+        minElevation: min,
+        maxElevation: max,
+        nodataCount: 0,
+      };
+    }
+
+    const { fn: fetchDem } = fakeFetchDem();
+    const { study } = await runFloodDrainageStudy({
+      parcelNodeId,
+      resolver,
+      fetchDem,
+      parseDem: async () => bowlDem(),
+      runWorker: nativeWorker,
+      fetchRainfall: failingRainfall,
+      rainfallDepthInches: DEFAULT_RAINFALL_DEPTH_INCHES,
+    });
+
+    // The parcel sits in the basin floor, so real ponding must be reported.
+    expect(study.stats.pondedAreaModeledRegionSqFt).not.toBeNull();
+    expect(study.stats.pondedAreaModeledRegionSqFt!).toBeGreaterThan(0);
+  });
+});
+
 describe("buildFloodDrainageBriefing (narration honesty)", () => {
   const baseStats: FloodDrainageStudyStats = {
     catchmentAreaSqFt: 0,
@@ -769,6 +915,69 @@ describe("buildFloodDrainageBriefing (narration honesty)", () => {
     });
     expect(real).toContain("delivers runoff toward the parcel's low point");
     expect(real).not.toContain("negligible upstream catchment");
+  });
+
+  /**
+   * THE CONTRADICTION BAN (2026-07-30). The live 48021:36249 briefing said, in
+   * consecutive sentences, that the parcel "sits at or near a local high point,
+   * so negligible upstream catchment delivers runoff onto it and rainfall
+   * landing on the parcel drains away from it" AND that "modeled ponding covers
+   * about 9.1 acres on the parcel" — on a 9.2 acre parcel. Those cannot both be
+   * true as written. The criterion fix stops the combination arising; this test
+   * bans the SENTENCES from ever contradicting each other again.
+   */
+  it("cannot narrate a shedding high point and large delivered ponding at once", () => {
+    const parcelSqFt = 398_813; // the live ~9.2 acre parcel
+    const briefing = buildFloodDrainageBriefing({
+      stats: {
+        ...baseStats,
+        catchmentAreaSqFt: 0, // negligible → the high-point narration
+        pondedAreaSqFt: 396_134, // the live (wrong) figure
+      },
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    expect(briefing).toContain("local high point");
+    // If ponding is narrated alongside the high point, it MUST be qualified as
+    // on-parcel depression storage, never as delivered upstream runoff.
+    expect(briefing).toContain("held in local depressions on the parcel itself");
+    expect(briefing).toContain("rather than fed by upstream runoff");
+    // The bare unqualified sentence is what read as a contradiction.
+    expect(briefing).not.toMatch(
+      /modeled ponding covers about [\d.]+ acres on the parcel\./,
+    );
+    void parcelSqFt;
+    expect(briefing).not.toContain(":");
+  });
+
+  it("still narrates ponding plainly when the parcel actually receives runoff", () => {
+    const briefing = buildFloodDrainageBriefing({
+      stats: {
+        ...baseStats,
+        catchmentAreaSqFt: 250_000, // a real catchment
+        pondedAreaSqFt: 40_000,
+      },
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    expect(briefing).toContain("delivers runoff toward the parcel's low point");
+    // No high point, so no qualifier — the plain sentence is correct here.
+    expect(briefing).toContain("modeled ponding covers about 0.9 acres on the parcel.");
+    expect(briefing).not.toContain("held in local depressions");
+  });
+
+  /**
+   * The number is never suppressed or clamped to look nice — the guard changes
+   * the WORDING, not the magnitude. A genuinely flooding parcel still reports.
+   */
+  it("never suppresses a large ponding figure — it qualifies it", () => {
+    const briefing = buildFloodDrainageBriefing({
+      stats: { ...baseStats, catchmentAreaSqFt: 0, pondedAreaSqFt: 396_134 },
+      rainfallDepthInches: 9.5,
+      demProvenance: { resolutionMeters: 10 },
+    });
+    // 396,134 sq ft ≈ 9.1 acres — still stated, just honestly framed.
+    expect(briefing).toContain("about 9.1 acres");
   });
 });
 
