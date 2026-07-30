@@ -119,6 +119,67 @@ def test_constants_match_across_backends() -> None:
         f"py={py_band} ts={ts_band}",
     )
 
+    # HAND / channel-stage constants (2026-07-30 real-terrain calibration).
+    # Both backends must model the SAME water surface or the picture changes
+    # with which backend happened to run.
+    for name, pattern in (
+        ("CHANNEL_ACCUMULATION_FRACTION_OF_MAX", r"([\d.]+)"),
+        ("CHANNEL_MIN_ACCUMULATION_CELLS", r"([\d_]+)"),
+        ("MIN_CHANNEL_CONTRIBUTING_AREA_SQ_METERS", r"([\d_]+)"),
+        ("SCREENING_RUNOFF_COEFFICIENT", r"([\d.]+)"),
+        ("HYDRAULIC_GEOMETRY_DEPTH_COEFFICIENT", r"([\d.]+)"),
+        ("HYDRAULIC_GEOMETRY_DEPTH_EXPONENT", r"([\d.]+)"),
+        ("RIVERINE_COVERAGE_MIN_CONTRIBUTING_AREA_SQ_METERS", r"([\d_]+)"),
+    ):
+        py_v = grab(run_src, rf"{name}\s*=\s*{pattern}")
+        ts_v = grab(ts_src, rf"{name}\s*=\s*{pattern}")
+        check(
+            f"{name} present in both",
+            py_v is not None and ts_v is not None,
+            f"py={py_v} ts={ts_v}",
+        )
+        norm = lambda v: None if v is None else v.replace("_", "")
+        check(
+            f"{name} agrees",
+            norm(py_v) == norm(ts_v),
+            f"py={py_v} ts={ts_v}",
+        )
+
+
+def test_inundation_mechanism_present_in_both_backends() -> None:
+    """DEPRESSION STORAGE ALONE IS NOT ENOUGH — lock the second mechanism in.
+
+    This is the regression that the #191 test suite could not catch, because
+    every fixture it used was a synthetic closed depression. A floodplain is
+    not a closed depression, so a depression-only model reports it dry. Both
+    backends must carry the HAND/stage inundation term.
+    """
+    print("both backends model low-lying inundation, not just depression storage")
+    run_src = read(RUN_PY)
+    ts_src = read(NATIVE_TS)
+    for label, src, hand_token in (
+        ("pysheds", run_src, "_hand"),
+        ("native", ts_src, "heightAboveNearestDrainage"),
+    ):
+        check(f"{label} computes HAND", hand_token in src)
+        check(
+            f"{label} derives a channel stage",
+            "channel_stage" in src.lower() or "channelstage" in src.lower(),
+        )
+        check(
+            f"{label} discloses BOTH ponding mechanisms in the payload",
+            "low-lying-inundation" in src and "depression-storage" in src,
+        )
+        check(
+            f"{label} states riverine flooding is out of model scope",
+            "RIVERINE_OUT_OF_SCOPE_NOTE" in src
+            and "riverineFloodHazardModeled" in src,
+        )
+        check(
+            f"{label} excludes the channel bed itself from inundation",
+            "conveyance" in src,
+        )
+
 
 def strip_python_comments_and_docstrings(source: str) -> str:
     """Return only EXECUTABLE python: no `#` comments, no triple-quoted blocks.
@@ -292,8 +353,20 @@ def test_ponding_basis_is_disclosed() -> None:
             "depression storage" in src,
         )
         check(
+            f"{label} basis names low-lying inundation too",
+            "low-lying inundation" in src,
+        )
+        check(
             f"{label} basis names what it excludes",
             "infiltration" in src,
+        )
+        check(
+            f"{label} basis admits riverine stage is under-represented",
+            "UNDER-represented" in src,
+        )
+        check(
+            f"{label} basis points at the FEMA NFHL as authoritative",
+            "NFHL" in src,
         )
 
 
@@ -301,6 +374,7 @@ def main() -> int:
     print("ponding criterion + banding parity tests\n")
     for test in (
         test_constants_match_across_backends,
+        test_inundation_mechanism_present_in_both_backends,
         test_old_rules_are_gone,
         test_slope_never_ponds,
         test_depression_ponds_to_the_lesser_of_depth_and_storm,
