@@ -323,10 +323,18 @@ function projectPolygon(
 }
 
 /**
- * Union the modeled catchment cells into their outline rings — the CLEAN
+ * Union the modeled catchment geometry into its outline rings — the CLEAN
  * dashed catchment boundary. Exact boolean union via polygon-clipping (the
  * repo's standing polygon-ops dependency); a degenerate input yields no
  * boundary rather than a guessed one.
+ *
+ * HOLES (2026-07-30 overlay redesign). The catchment used to arrive as
+ * hundreds of subsampled single-ring squares, so reading `coordinates[0]` and
+ * discarding the rest lost nothing. The dissolved converters now emit traced
+ * regions WITH INTERIOR RINGS where the mask has holes, and silently dropping
+ * them would draw a boundary around area the model says is NOT in the
+ * catchment. Every ring is therefore passed to the union, which resolves
+ * interiors correctly and returns them as their own outline rings to stroke.
  */
 export function catchmentBoundaryRings(
   catchment: GeoJsonFeatureCollection,
@@ -334,9 +342,11 @@ export function catchmentBoundaryRings(
   const polys: Array<[number, number][][]> = [];
   for (const feature of catchment.features) {
     if (feature.geometry.type !== "Polygon") continue;
-    const exterior = (feature.geometry.coordinates as [number, number][][])[0];
-    if (!Array.isArray(exterior) || exterior.length < 3) continue;
-    polys.push([exterior.map((p) => [p[0], p[1]] as [number, number])]);
+    const rings = (feature.geometry.coordinates as [number, number][][])
+      .filter((ring) => Array.isArray(ring) && ring.length >= 3)
+      .map((ring) => ring.map((p) => [p[0], p[1]] as [number, number]));
+    if (rings.length === 0) continue;
+    polys.push(rings);
   }
   if (polys.length === 0) return [];
   try {

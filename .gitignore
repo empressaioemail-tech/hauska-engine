@@ -30,6 +30,10 @@ pnpm-debug.log*
 coverage/
 .nyc_output/
 
+# python worker bytecode (artifacts/*-worker)
+__pycache__/
+*.pyc
+
 # pipeline-runner local state
 services/pipeline-runner/.local/
 ingest-cli-state.json

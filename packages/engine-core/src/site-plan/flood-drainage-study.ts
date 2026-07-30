@@ -544,44 +544,55 @@ export function resolveFlowExits(
 }
 
 /**
- * Drainage zones: the catchment mask cells RE-GRADED by real flow-line
- * vertex density (`concentration` 0 | 1 | 2). This derives entirely from
- * the worker's own outputs — cells crossed by more traced flow carry higher
- * concentration — a deterministic spatial join, not an invented gradient.
+ * DRAINAGE ZONES — three nested concentration bands (2026-07-30 redesign).
+ *
+ * WHAT CHANGED AND WHY. The prior derivation graded each catchment feature by
+ * counting how many traced flow-line vertices fell inside its bbox, then
+ * bucketed 0 / 1-2 / 3+ into `concentration` 0 | 1 | 2. That was coherent only
+ * while the catchment arrived as HUNDREDS of small subsampled grid squares —
+ * each square was effectively a grid cell, so vertex density per square read
+ * as flow density per cell. Now that the converters emit DISSOLVED regions, a
+ * catchment is one or a few large polygons that between them absorb every
+ * flow vertex, so the same counting would grade essentially everything "high"
+ * and the three bands would collapse into one.
+ *
+ * So the bands now come from the MODEL, not from re-bucketing polygon vertex
+ * counts: the hydrology backend thresholds its own D8 accumulation grid at
+ * three levels inside the catchment mask and traces each level as its own
+ * dissolved region (see `deriveConcentrationBands` in the adapters hydrology
+ * package for the quantile levels and the nesting guarantee). Higher bands are
+ * strict subsets of lower ones, which is what the redesign paints.
+ *
+ * FALLBACK, HONESTLY: when the backend produced no bands (an older worker
+ * payload, or a field with no gradable accumulation), the catchment regions
+ * ship as band 0 — "modeled catchment extent" — rather than inventing a
+ * medium/high band the model does not support. `concentration` is always
+ * present on every feature so the client can paint deterministically.
  */
 export function deriveDrainageZones(
   catchment: GeoJsonFeatureCollection,
   flowLines: GeoJsonFeatureCollection,
+  concentrationBands?: GeoJsonFeatureCollection | null,
 ): GeoJsonFeatureCollection {
-  const flowPoints: Array<[number, number]> = [];
-  for (const feature of flowLines.features) {
-    if (feature.geometry.type !== "LineString") continue;
-    for (const pt of feature.geometry.coordinates as Array<[number, number]>) {
-      flowPoints.push(pt);
-    }
+  void flowLines; // bands come from the accumulation grid, not vertex counts
+  if (concentrationBands && concentrationBands.features.length > 0) {
+    // Paint order matters for nested bands: low first, high last, so the
+    // tightest band sits on top when a client draws in array order.
+    const features = [...concentrationBands.features].sort((a, b) => {
+      const ca = Number((a.properties as { concentration?: number })?.concentration ?? 0);
+      const cb = Number((b.properties as { concentration?: number })?.concentration ?? 0);
+      return ca - cb;
+    });
+    return { type: "FeatureCollection", features };
   }
-  const features = catchment.features.map((feature) => {
-    let count = 0;
-    if (feature.geometry.type === "Polygon") {
-      const exterior = (feature.geometry.coordinates as Array<Array<[number, number]>>)[0];
-      if (Array.isArray(exterior) && exterior.length >= 3) {
-        const lngs = exterior.map((p) => p[0]);
-        const lats = exterior.map((p) => p[1]);
-        const minLng = Math.min(...lngs);
-        const maxLng = Math.max(...lngs);
-        const minLat = Math.min(...lats);
-        const maxLat = Math.max(...lats);
-        for (const [lng, lat] of flowPoints) {
-          if (lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat) count++;
-        }
-      }
-    }
-    const concentration = count >= 3 ? 2 : count >= 1 ? 1 : 0;
-    return {
-      ...feature,
-      properties: { ...feature.properties, concentration, flowVertexCount: count },
-    };
-  });
+  const features = catchment.features.map((feature) => ({
+    ...feature,
+    properties: {
+      ...feature.properties,
+      concentration: 0,
+      concentrationBasis: "modeled catchment extent",
+    },
+  }));
   return { type: "FeatureCollection", features };
 }
 
@@ -876,7 +887,11 @@ export async function runFloodDrainageStudy(
   }
 
   const catchmentGeoJson = result.drainageZonesGeoJson;
-  const drainageZonesGeoJson = deriveDrainageZones(catchmentGeoJson, result.flowLinesGeoJson);
+  const drainageZonesGeoJson = deriveDrainageZones(
+    catchmentGeoJson,
+    result.flowLinesGeoJson,
+    result.concentrationBandsGeoJson ?? null,
+  );
   const flowExits = resolveFlowExits(result.flowLinesGeoJson, ringWgs84);
   // Headline ponding = the PARCEL-CLIPPED area; the whole-region figure is
   // context only (never the headline — the 2026-07-29 canary defect).
