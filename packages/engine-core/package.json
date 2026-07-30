@@ -76,6 +76,7 @@
     "depth-warm-bastrop-pilot": "tsx scripts/depth-warm-bastrop-pilot.mjs",
     "depth-warm-bastrop-batch": "tsx scripts/depth-warm-bastrop-batch.mjs",
     "boundary-primitive-bastrop": "tsx scripts/boundary-primitive-bastrop.mjs",
+    "boundary-primitive-bastrop-downtown-scrub": "tsx scripts/boundary-primitive-bastrop-downtown-scrub.mjs",
     "backfill-property-line-tags-bastrop": "tsx scripts/backfill-property-line-tags-bastrop.mjs",
     "tally-bastrop-depth": "tsx scripts/tally-bastrop-depth.mjs",
     "ingest-caldwell-roads-cad": "tsx scripts/ingest-caldwell-roads-cad.mjs",
