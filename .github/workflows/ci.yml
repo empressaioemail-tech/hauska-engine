@@ -44,6 +44,12 @@ jobs:
           pip install -r artifacts/dxf-worker/requirements.txt
           pip install -r artifacts/ifc-worker/requirements.txt
 
+      # Stdlib-only (no pysheds/rasterio needed). Locks the hydrology worker's
+      # mask-to-region tracer to the TypeScript module's numbers so the pysheds
+      # sidecar and the native-D8 fallback keep drawing the same geometry.
+      - name: Test hydrology worker mask tracer (parity with the TS module)
+        run: python artifacts/hydrology-worker/test_mask_regions.py
+
       - name: Typecheck
         run: pnpm typecheck
 

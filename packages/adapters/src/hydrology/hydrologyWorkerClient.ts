@@ -34,6 +34,12 @@ export interface HydrologyWorkerSuccess {
   routing: string;
   accumulationThreshold: number;
   drainageZonesGeoJson: GeoJsonFeatureCollection;
+  /**
+   * Three nested concentration bands (`concentration` 0 | 1 | 2) traced from
+   * the D8 accumulation grid. Additive and optional — both backends emit it,
+   * but consumers feature-detect so an older worker payload still parses.
+   */
+  concentrationBandsGeoJson?: GeoJsonFeatureCollection;
   flowLinesGeoJson: GeoJsonFeatureCollection;
   rainfallResultGeoJson: GeoJsonFeatureCollection | null;
   pourPoint: { lng: number; lat: number };

@@ -5,6 +5,8 @@
  * backends without changing the atom payload.
  */
 
+import { maskArrayToDissolvedGeoJson } from "./maskRegions.js";
+
 export interface BboxWgs84 {
   westLng: number;
   southLat: number;
@@ -43,6 +45,14 @@ export interface HydrologyNativeSuccess {
   routing: "d8";
   accumulationThreshold: number;
   drainageZonesGeoJson: GeoJsonFeatureCollection;
+  /**
+   * THREE NESTED CONCENTRATION BANDS traced from the SAME D8 accumulation
+   * grid the flow lines come from (`concentration` 0 low / 1 medium / 2 high
+   * on each feature). Additive to the pinned payload contract — consumers
+   * feature-detect; absence means the model produced no gradable field, and
+   * the study falls back to grading the catchment itself as band 0.
+   */
+  concentrationBandsGeoJson?: GeoJsonFeatureCollection;
   flowLinesGeoJson: GeoJsonFeatureCollection;
   rainfallResultGeoJson: GeoJsonFeatureCollection | null;
   pourPoint: { lng: number; lat: number };
@@ -278,6 +288,31 @@ function traceCatchment(
   return mask;
 }
 
+/**
+ * Boolean mask → DISSOLVED, SMOOTH region polygons (2026-07-30 flood overlay
+ * redesign). Replaces the old subsampled-lattice emitter, which walked the
+ * mask at `step = min(w,h)/12` and pushed ONE INDEPENDENT AXIS-ALIGNED SQUARE
+ * per sampled hit cell — the blue-checkerboard defect, and an area sum that
+ * under-counted the true mask because only every step-th cell contributed.
+ *
+ * `maskArrayToDissolvedGeoJson` traces the FULL-RESOLUTION mask's cell-edge
+ * boundary, dissolves contiguous cells into one polygon (with interior rings
+ * for holes), simplifies at 0.5 cells and corner-smooths within 0.5 cells,
+ * drops specks and caps the feature/vertex count. See maskRegions.ts for the
+ * honesty tolerance and every documented cap.
+ *
+ * SPECK THRESHOLD, per layer. The DELINEATED CATCHMENT is one traced region
+ * whose area is a HEADLINE STAT, and on a coarse drainage DEM a real parcel
+ * catchment can legitimately be only a couple of cells — dropping it would
+ * silently zero a reported number. So catchment/ponding tracing uses
+ * {@link DELINEATED_SPECK_FLOOR_CELLS} (1 cell: keep anything the model
+ * actually delineated) and lets the STUDY decide what is negligible, which it
+ * already does explicitly via `NEGLIGIBLE_CATCHMENT_CELLS`. The library
+ * default (4 cells) stays the right filter for noisy thresholded fields such
+ * as the concentration bands.
+ */
+export const DELINEATED_SPECK_FLOOR_CELLS = 1;
+
 function maskToGeoJson(
   mask: Uint8Array,
   width: number,
@@ -285,50 +320,109 @@ function maskToGeoJson(
   bbox: BboxWgs84,
   properties: Record<string, unknown>,
 ): GeoJsonFeatureCollection {
+  return maskArrayToDissolvedGeoJson(mask, width, height, bbox, properties, {
+    minRegionAreaCells: DELINEATED_SPECK_FLOOR_CELLS,
+  }) as GeoJsonFeatureCollection;
+}
+
+/**
+ * THREE NESTED CONCENTRATION BANDS from the D8 accumulation raster.
+ *
+ * The old `deriveDrainageZones` graded each subsampled SQUARE by counting how
+ * many traced flow-line vertices fell in its bbox. With dissolved regions
+ * that counting is meaningless — a handful of large polygons absorb every
+ * vertex, so every zone grades "high". Bands are therefore derived from the
+ * MODEL ITSELF: the same D8 accumulation grid the flow lines are traced from,
+ * thresholded at three levels INSIDE the catchment mask and each level traced
+ * as its own dissolved region.
+ *
+ * The levels are quantiles of the accumulation values actually present inside
+ * the catchment (not fixed magic numbers), so the bands adapt to the terrain
+ * rather than asserting an absolute drainage-area scale the DEM may not
+ * support:
+ *
+ *   concentration 0 (low)    — the whole catchment mask.
+ *   concentration 1 (medium) — accumulation at or above the 70th percentile.
+ *   concentration 2 (high)   — accumulation at or above the 90th percentile.
+ *
+ * Higher bands are strict subsets of lower ones by construction (a cell over
+ * the 90th percentile is over the 70th), so the three bands NEST — which is
+ * exactly what the redesign paints. Bands whose mask is empty are simply not
+ * emitted; nothing is invented to fill a band.
+ */
+export const CONCENTRATION_BAND_QUANTILES: readonly [number, number] = [0.7, 0.9];
+
+export function deriveConcentrationBands(
+  catchmentMask: Uint8Array,
+  accumulationGrid: Uint32Array,
+  width: number,
+  height: number,
+  bbox: BboxWgs84,
+  properties: Record<string, unknown> = {},
+): GeoJsonFeatureCollection {
+  const inside: number[] = [];
+  for (let i = 0; i < catchmentMask.length; i++) {
+    if (catchmentMask[i] === 1) inside.push(accumulationGrid[i] ?? 0);
+  }
   const features: GeoJsonFeatureCollection["features"][number][] = [];
-  const step = Math.max(1, Math.floor(Math.min(width, height) / 12));
-  for (let row = 0; row < height; row += step) {
-    for (let col = 0; col < width; col += step) {
-      if (!mask[idx(col, row, width)]) continue;
-      const [lng0, lat0] = lngLatForCell(col, row, width, height, bbox);
-      const [lng1, lat1] = lngLatForCell(
-        Math.min(col + step, width - 1),
-        row,
-        width,
-        height,
-        bbox,
-      );
-      const [lng2, lat2] = lngLatForCell(
-        Math.min(col + step, width - 1),
-        Math.min(row + step, height - 1),
-        width,
-        height,
-        bbox,
-      );
-      const [lng3, lat3] = lngLatForCell(
-        col,
-        Math.min(row + step, height - 1),
-        width,
-        height,
-        bbox,
-      );
-      features.push({
-        type: "Feature",
-        geometry: {
-          type: "Polygon",
-          coordinates: [
-            [
-              [lng0, lat0],
-              [lng1, lat1],
-              [lng2, lat2],
-              [lng3, lat3],
-              [lng0, lat0],
-            ],
-          ],
-        },
-        properties: { ...properties },
-      });
+  if (inside.length === 0) return { type: "FeatureCollection", features };
+
+  const emit = (mask: Uint8Array, concentration: 0 | 1 | 2, note: string): void => {
+    const fc = maskArrayToDissolvedGeoJson(
+      mask,
+      width,
+      height,
+      bbox,
+      {
+        ...properties,
+        zone: "drainage-concentration",
+        concentration,
+        concentrationBasis: note,
+      },
+      // Band 0 IS the delineated catchment — keep whatever the model
+      // delineated (see DELINEATED_SPECK_FLOOR_CELLS). Bands 1 and 2 are
+      // thresholded fields where the library speck filter is the right one.
+      concentration === 0 ? { minRegionAreaCells: DELINEATED_SPECK_FLOOR_CELLS } : {},
+    );
+    features.push(...(fc.features as GeoJsonFeatureCollection["features"][number][]));
+  };
+
+  // Band 0 — the catchment itself.
+  emit(catchmentMask, 0, "modeled catchment extent");
+
+  inside.sort((a, b) => a - b);
+  const quantile = (q: number): number =>
+    inside[Math.min(inside.length - 1, Math.floor(q * inside.length))] ?? 0;
+  const levels: Array<[0 | 1 | 2, number]> = [
+    [1, quantile(CONCENTRATION_BAND_QUANTILES[0])],
+    [2, quantile(CONCENTRATION_BAND_QUANTILES[1])],
+  ];
+  const seen = new Set<number>();
+  for (const [concentration, cutoff] of levels) {
+    // A degenerate accumulation field can put two quantiles on the same
+    // value; emitting the identical ring twice would fake a band. Skip.
+    if (cutoff <= 0 || seen.has(cutoff)) continue;
+    seen.add(cutoff);
+    const band = new Uint8Array(width * height);
+    let cells = 0;
+    let catchmentCells = 0;
+    for (let i = 0; i < band.length; i++) {
+      if (catchmentMask[i] !== 1) continue;
+      catchmentCells++;
+      if ((accumulationGrid[i] ?? 0) >= cutoff) {
+        band[i] = 1;
+        cells++;
+      }
     }
+    // A band identical to the catchment (a flat accumulation field puts every
+    // cell over the cutoff) is not a CONCENTRATION — painting it as one would
+    // assert a gradient the model does not show. Emit nothing for that band.
+    if (cells === 0 || cells === catchmentCells) continue;
+    emit(
+      band,
+      concentration,
+      `D8 flow accumulation at or above ${cutoff} upstream cells`,
+    );
   }
   return { type: "FeatureCollection", features };
 }
@@ -465,6 +559,14 @@ export function runHydrologyNative(
     catchmentBbox,
     { zone: "catchment", library: "native-d8" },
   );
+  const concentrationBandsGeoJson = deriveConcentrationBands(
+    catchMask,
+    acc,
+    width,
+    height,
+    catchmentBbox,
+    { library: "native-d8" },
+  );
   const flowLinesGeoJson = flowLinesFromAccumulation(
     acc,
     fdir,
@@ -501,6 +603,7 @@ export function runHydrologyNative(
     routing: "d8",
     accumulationThreshold: threshold,
     drainageZonesGeoJson,
+    concentrationBandsGeoJson,
     flowLinesGeoJson,
     rainfallResultGeoJson,
     pourPoint: { lng: input.pourLng, lat: input.pourLat },

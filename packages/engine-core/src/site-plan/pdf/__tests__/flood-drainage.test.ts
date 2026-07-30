@@ -15,6 +15,7 @@ import {
   FLOOD_DRAINAGE_DISCLAIMER,
   FLOOD_DRAINAGE_EMPTY_TITLE,
   FLOOD_DRAINAGE_TOTAL_SHEETS,
+  catchmentBoundaryRings,
   emitPdfFloodDrainage,
   type EmitPdfFloodDrainageOptions,
 } from "../flood-drainage.js";
@@ -414,6 +415,92 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     expect(result.rhythm.some((r) => r.kind === "kv-row")).toBe(true);
     expect(result.rhythm.some((r) => r.kind === "briefing-text")).toBe(true);
     expect(result.rhythm.some((r) => r.kind === "provenance-row")).toBe(true);
+  });
+
+  it("renders DISSOLVED input sanely: a traced region with a hole draws a catchment boundary, no crash, no leaked far-field ring", async () => {
+    // The 2026-07-30 overlay redesign replaced the subsampled grid squares
+    // with dissolved, smooth, hole-carrying traced regions. Sheet 1 unions
+    // the catchment features into a dashed boundary — verify that path takes
+    // real dissolved geometry (many vertices, an interior ring, one large
+    // region) without falling back to no boundary at all.
+    const dissolved = {
+      type: "FeatureCollection" as const,
+      features: [
+        {
+          type: "Feature" as const,
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              // Exterior: a rounded traced blob around the parcel.
+              Array.from({ length: 40 }, (_, i) => {
+                const t = (i / 40) * Math.PI * 2;
+                return [
+                  -97.319 + Math.cos(t) * 0.0016,
+                  30.1009 + Math.sin(t) * 0.0016,
+                ] as [number, number];
+              }).concat([[-97.319 + 0.0016, 30.1009]] as Array<[number, number]>),
+              // Interior ring (a hole in the mask).
+              Array.from({ length: 16 }, (_, i) => {
+                const t = (-i / 16) * Math.PI * 2;
+                return [
+                  -97.319 + Math.cos(t) * 0.0004,
+                  30.1009 + Math.sin(t) * 0.0004,
+                ] as [number, number];
+              }).concat([[-97.319 + 0.0004, 30.1009]] as Array<[number, number]>),
+            ],
+          },
+          properties: { zone: "catchment", library: "native-d8" },
+        },
+      ],
+    };
+    const bands = {
+      type: "FeatureCollection" as const,
+      features: [0, 1, 2].map((concentration) => ({
+        type: "Feature" as const,
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            Array.from({ length: 24 }, (_, i) => {
+              const t = (i / 24) * Math.PI * 2;
+              const r = 0.0016 - concentration * 0.0005;
+              return [-97.319 + Math.cos(t) * r, 30.1009 + Math.sin(t) * r] as [
+                number,
+                number,
+              ];
+            }).concat([[-97.319 + (0.0016 - concentration * 0.0005), 30.1009]] as Array<
+              [number, number]
+            >),
+          ],
+        },
+        properties: { zone: "drainage-concentration", concentration },
+      })),
+    };
+    const result = await emitPdfFloodDrainage(
+      fullStudy({
+        catchmentGeoJson: dissolved as never,
+        drainageZonesGeoJson: bands as never,
+      }),
+      descriptor,
+      { generatedAtIso: "2026-07-30T12:00:00.000Z", aerial: aerialStubOk },
+    );
+    expect(result.pageCount).toBe(FLOOD_DRAINAGE_TOTAL_SHEETS);
+    // The dashed catchment boundary still draws from dissolved input.
+    expect(result.marks.some((m) => m.kind === "catchment-boundary")).toBe(true);
+    // The INTERIOR ring survives the union: dropping it would draw a boundary
+    // around area the model says is NOT in the catchment.
+    const rings = catchmentBoundaryRings(dissolved as never);
+    expect(rings.length).toBe(2);
+    const spanOf = (ring: Array<[number, number]>): number =>
+      Math.max(...ring.map((p) => p[0])) - Math.min(...ring.map((p) => p[0]));
+    const spans = rings.map(spanOf).sort((a, b) => b - a);
+    expect(spans[0]!).toBeGreaterThan(spans[1]! * 2); // shell then hole
+    // Every sheet-1 drawing mark stays inside the frame (§3) — a traced ring
+    // that overflowed the clip would show up here.
+    for (const mark of result.marks) {
+      if (mark.page !== 1 || !mark.bbox) continue;
+      expect(mark.bbox.minX).toBeGreaterThanOrEqual(result.page1Frame.minX - 1e-6);
+      expect(mark.bbox.maxX).toBeLessThanOrEqual(result.page1Frame.maxX + 1e-6);
+    }
   });
 
   it("never re-spells the disclaimer: one standing string on both sheets", async () => {
