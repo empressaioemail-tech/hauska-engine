@@ -1,5 +1,6 @@
 /**
  * R3 warm-then-verify loop tests (27c WDLL 6 + WDLL 8 prep).
+ * Post BDC STEP 3 + WDLL 7: districts are SF-x/RR; inset NUMBERS from flat table.
  */
 
 import { describe, expect, it } from "vitest";
@@ -27,12 +28,7 @@ import {
 } from "../warm-compute.js";
 import { warmThenVerify } from "../warm-then-verify.js";
 
-/**
- * SURVIVOR overlay: adapter BDC setbackTable. roadClassSetbackTable still
- * carries B3-era P-* cells for road-class mechanism tests (STEP 4 decouples).
- * SF-1 road-class row (front 30, side/rear not_specified) lets promote-path
- * tests use current-law district codes without inventing conditional scalars.
- */
+/** SURVIVOR overlay: adapter BDC setbackTable (WDLL STEP 3 dual-fork kill). */
 function buildDescriptor(): JurisdictionDescriptor {
   const adapterSetback = setbackTableDescriptorFromAdapter(
     getSetbackTable("bastrop-development-code"),
@@ -41,38 +37,9 @@ function buildDescriptor(): JurisdictionDescriptor {
     throw new Error("bastrop-development-code adapter table required");
   }
   const base = bastropDescriptor as JurisdictionDescriptor;
-  const p5rc = base.roadClassSetbackTable?.rows.find(
-    (r) => r.district_code.toUpperCase() === "P-5",
-  );
-  const sf1rc = p5rc
-    ? {
-        ...p5rc,
-        atom_did: "bastrop_tx/bdc-2026-adopted/14.02.003",
-        district_code: "SF-1",
-        entries: p5rc.entries.map((e) =>
-          e.edge_role === "front" && e.setback_ft.value === 15
-            ? {
-                ...e,
-                setback_ft: {
-                  ...e.setback_ft,
-                  value: 30,
-                  confidence: 0.95,
-                  verification_state: "human-verified" as const,
-                },
-              }
-            : e,
-        ),
-      }
-    : null;
   return {
     ...base,
     setbackTable: adapterSetback,
-    roadClassSetbackTable: {
-      rows: [
-        ...(base.roadClassSetbackTable?.rows ?? []),
-        ...(sf1rc ? [sf1rc] : []),
-      ],
-    },
   };
 }
 
@@ -94,7 +61,7 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
   it("geometry gate rejects parcel-as-inset inject", () => {
     const good = computeWarmCandidate({
       parcelNodeId: PARCEL_ID,
-      district: "P-5",
+      district: "SF-1",
       parcelRing: PARCEL_714_SPRING_33512,
       descriptor,
       roads: [SPRING_ROAD],
@@ -113,7 +80,7 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
   it("road classification gate rejects mismatched OSM tag", () => {
     const good = computeWarmCandidate({
       parcelNodeId: PARCEL_ID,
-      district: "P-5",
+      district: "SF-1",
       parcelRing: PARCEL_714_SPRING_33512,
       descriptor,
       roads: [SPRING_ROAD],
@@ -145,7 +112,7 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
     };
     const candidate = computeWarmCandidate({
       parcelNodeId: PARCEL_ID,
-      district: "P-5",
+      district: "SF-1",
       parcelRing: PARCEL_714_SPRING_33512,
       descriptor,
       roads: [gravelService],
@@ -163,7 +130,7 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
     expect(verify.gates.roadClassification.pass).toBe(true);
   });
 
-  it("gravel front warm+verify pass at 15ft (R4.3)", () => {
+  it("gravel front warm+verify pass at 30ft SF-1 (BDC / WDLL 7)", () => {
     const ring: Ring = [
       [-97.32, 30.11],
       [-97.31975, 30.11],
@@ -183,15 +150,12 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
     };
     const candidate = computeWarmCandidate({
       parcelNodeId: "48021:104985",
-      district: "P-5",
+      district: "SF-1",
       parcelRing: ring,
       descriptor,
       roads: [gravelService],
       edgeLabels: [
-        {
-          index: 0,
-          label: "side",
-        },
+        { index: 0, label: "side" },
         {
           index: 1,
           label: "front",
@@ -205,7 +169,7 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
     });
     expect(candidate.empty).toBe(false);
     const frontEdge = candidate.edges.find((e) => e.label === "front");
-    expect(frontEdge?.insetFeet).toBe(15);
+    expect(frontEdge?.insetFeet).toBe(30);
     const verify = verifyWarmCandidateMechanically(candidate, descriptor);
     expect(verify.pass).toBe(true);
   });
@@ -226,13 +190,13 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
 
     expect(result.verify.pass).toBe(true);
     expect(result.candidate.empty).toBe(false);
-    expect(result.candidate.edges.map((e) => e.insetFeet)).toEqual([
-      0, 0, 0, 0, 0, 30,
-    ]);
     const frontEdge = result.candidate.edges.find((e) => e.label === "front");
     expect(frontEdge?.insetFeet).toBe(30);
-    for (const edge of result.candidate.edges.filter((e) => e.label !== "front")) {
-      expect(edge.insetFeet).toBe(0);
+    for (const edge of result.candidate.edges.filter((e) => e.label === "side")) {
+      expect(edge.insetFeet).toBe(10);
+    }
+    for (const edge of result.candidate.edges.filter((e) => e.label === "rear")) {
+      expect(edge.insetFeet).toBe(30);
     }
 
     expect(result.atoms).not.toBeNull();
@@ -254,7 +218,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
     expect(setback!.front).toBe(30);
   });
 
-  it("street front 15ft != alley rear 5ft on warm edges", () => {
+  it("street front 30ft; alley rear uses flat rear 30 (WDLL 7, no invented alley feet)", () => {
     const ring: Ring = [
       [-97.32, 30.11],
       [-97.31975, 30.11],
@@ -270,7 +234,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
     ];
     const candidate = computeWarmCandidate({
       parcelNodeId: PARCEL_ID,
-      district: "P-5",
+      district: "SF-1",
       parcelRing: ring,
       descriptor,
       roads: [
@@ -289,9 +253,10 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
     });
     const frontEdge = candidate.edges.find((e) => e.label === "front");
     const rearEdge = candidate.edges.find((e) => e.label === "rear");
-    expect(frontEdge?.insetFeet).toBe(15);
-    expect(rearEdge?.insetFeet).toBe(5);
-    expect(frontEdge!.insetFeet).not.toBe(rearEdge!.insetFeet);
+    // WDLL 7: NUMBER from flat SF-1 table (30/10/20/30). Alley labels the rear EDGE only.
+    expect(frontEdge?.insetFeet).toBe(30);
+    expect(rearEdge?.insetFeet).toBe(30);
+    expect(rearEdge?.roadClass).toBe("alley");
 
     const verify = verifyWarmCandidateMechanically(candidate, descriptor);
     expect(verify.pass).toBe(true);
@@ -299,7 +264,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
 });
 
 describe("honest partial inset (R4.1)", () => {
-  it("47728: alley+front draws (PATCH-A); still contains front 15' and verifies", () => {
+  it("47728: alley+front draws (PATCH-A); contains front 30' SF-1 and verifies", () => {
     const labels = [
       { index: 0, label: "rear" as const, roadClass: "alley" as const, osmHighwayTag: "service" },
       { index: 1, label: "front" as const, roadClass: "residential" as const, osmHighwayTag: "residential" },
@@ -308,17 +273,15 @@ describe("honest partial inset (R4.1)", () => {
     ];
     const candidate = computeWarmCandidate({
       parcelNodeId: "48021:47728",
-      district: "P-5",
+      district: "SF-1",
       parcelRing: PARCEL_BASTROP_47728,
       descriptor,
       roads: [],
       edgeLabels: labels,
     });
-    // Pre-PATCH-A: clip self-touch emptied full labeling → retry stripped to front-only.
-    // Post-PATCH-A: alley+front can both apply; require front 15' + verify pass.
     expect(candidate.empty).toBe(false);
     expect(candidate.insetRing).not.toBeNull();
-    expect(candidate.insetFeetPerEdge).toContain(15);
+    expect(candidate.insetFeetPerEdge).toContain(30);
     expect(candidate.insetFeetPerEdge.filter((ft) => ft > 0).length).toBeGreaterThanOrEqual(1);
     const verify = verifyWarmCandidateMechanically(candidate, descriptor);
     expect(verify.pass).toBe(true);

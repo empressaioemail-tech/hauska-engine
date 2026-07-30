@@ -1,13 +1,13 @@
 /**
- * Background warm writer (27c R3 WDLL 6): roads + road-class setbacks + envelope.
- * Depth-over-breadth — caller supplies parcel ring + district + edge labeling inputs.
+ * Background warm writer (27c R3 WDLL 6): roads label edges; district table
+ * supplies setback VALUES (WDLL 7 / RULING 2 — road-class VALUE path retired).
  */
 
 import type { BoundaryEdgeAtomInstance } from "@hauska-engine/atoms";
 import type { RoadClassification } from "@hauska-engine/atoms";
 
 import { computeWarmCandidateFromBoundary } from "../boundary-primitive/consume.js";
-import { resolveRoadClassSetback } from "../property-reasoning/resolve-road-class-setback.js";
+import { resolveDistrictEdgeSetback } from "../property-reasoning/resolve-road-class-setback.js";
 import type { JurisdictionDescriptor, RoadEdgeRole } from "../property-reasoning/types.js";
 import {
   insetPerEdge,
@@ -39,69 +39,59 @@ export interface WarmComputeInput {
   warmAt?: string;
 }
 
-function warmEdgeRoleToRoadRole(label: WarmEdgeInfo["label"]): RoadEdgeRole {
-  if (label === "side_corner") return "side_corner";
-  return label;
+export interface FlatSetbackFallback {
+  front: number;
+  side: number;
+  rear: number;
+  sideCorner: number;
 }
 
-/** Shared warm + verify inset lookup (R4.3 parity). */
+/**
+ * Shared warm + verify inset lookup from flat district setbackTable only.
+ * Honest absence → 0 (never invent a legacy B3 front fallback).
+ */
 export function buildFlatSetbackFallback(
   descriptor: JurisdictionDescriptor,
   district: string,
-): { front: number; side: number; rear: number } {
-  const flatFront = resolveRoadClassSetback(
-    descriptor,
-    district,
-    "residential",
-    "front",
-  );
-  const flatSide = resolveRoadClassSetback(
-    descriptor,
-    district,
-    "residential",
-    "side",
-  );
-  const flatRear = resolveRoadClassSetback(
-    descriptor,
-    district,
-    "residential",
-    "rear",
-  );
+): FlatSetbackFallback {
+  const axis = (role: RoadEdgeRole): number => {
+    const hit = resolveDistrictEdgeSetback(descriptor, district, role);
+    return "kind" in hit ? 0 : hit.value;
+  };
   return {
-    front: "kind" in flatFront ? 15 : flatFront.value,
-    side: "kind" in flatSide ? 0 : flatSide.value,
-    rear: "kind" in flatRear ? 0 : flatRear.value,
+    front: axis("front"),
+    side: axis("side"),
+    rear: axis("rear"),
+    sideCorner: axis("side_corner"),
   };
 }
 
+/**
+ * Inset feet for an edge ROLE from the flat district table.
+ * Road class on the edge is ignored for the NUMBER (may still be stored for twin).
+ */
 export function resolveInsetFeetForEdge(
-  descriptor: JurisdictionDescriptor,
-  district: string,
+  _descriptor: JurisdictionDescriptor,
+  _district: string,
   edge: {
     label: WarmEdgeInfo["label"];
     roadClass?: RoadClassification;
   },
-  flatFallback: { front: number; side: number; rear: number },
+  flatFallback: FlatSetbackFallback,
 ): number {
-  if (edge.roadClass) {
-    const hit = resolveRoadClassSetback(
-      descriptor,
-      district,
-      edge.roadClass,
-      warmEdgeRoleToRoadRole(edge.label),
-    );
-    if (!("kind" in hit)) return hit.value;
-  }
   if (edge.label === "front") return flatFallback.front;
   if (edge.label === "rear") return flatFallback.rear;
+  if (edge.label === "side_corner") return flatFallback.sideCorner;
   return flatFallback.side;
 }
 
 type EdgeLabelDraft = WarmComputeInput["edgeLabels"][number];
 
 /**
- * Honest partial inset (R3.1 / R4.1): when full road-class labeling collapses the
- * lot, keep only the front edge's roadClass — never fabricate not_specified axes.
+ * Honest partial inset (R3.1 / R4.1): when full road labeling collapses the
+ * lot, keep only the front edge's roadClass metadata — never fabricate
+ * not_specified axes. After WDLL 7, roadClass no longer changes inset feet;
+ * retained for twin/provenance continuity on the retry path.
  */
 export function stripNonFrontRoadClass(edgeLabels: EdgeLabelDraft[]): EdgeLabelDraft[] {
   return edgeLabels.map((e) => {
@@ -170,8 +160,8 @@ function computeWarmCandidateWithLabels(
 }
 
 /**
- * Warm-compute envelope geometry + per-edge setbacks from road-class table.
- * Retries with honest partial inset when full labeling leaves no buildable area.
+ * Warm-compute envelope geometry + per-edge setbacks from flat district table.
+ * Roads label which edge is front; they do not supply the setback NUMBER.
  * When boundaryEdges are supplied, consumes stored primitive (no proxy re-derive).
  */
 export function computeWarmCandidate(input: WarmComputeInput): WarmCandidate {

@@ -61,7 +61,8 @@ export function verifyRoadClassificationMatchesSource(
 }
 
 /**
- * Gate: applied inset feet on each edge match descriptor (road-class, edge-role) lookup.
+ * Gate: applied inset feet on each edge match flat district table by edge ROLE
+ * (WDLL 7 — road class must not invent a different NUMBER).
  */
 export function verifySetbackEdgeDistance(
   candidate: WarmCandidate,
@@ -79,7 +80,7 @@ export function verifySetbackEdgeDistance(
     );
     if (Math.abs(edge.insetFeet - expectedFt) > tol) {
       reasons.push(
-        `edge ${edge.index}: inset ${edge.insetFeet}ft != expected ${expectedFt}ft for ${edge.roadClass ?? "unlabeled"}/${edge.label}`,
+        `edge ${edge.index}: inset ${edge.insetFeet}ft != expected ${expectedFt}ft for role ${edge.label} (roadClass=${edge.roadClass ?? "none"} ignored for value)`,
       );
     }
   }

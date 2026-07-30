@@ -15,7 +15,7 @@ import type {
 } from "@hauska-engine/atoms";
 import type { AssumedRowWidthTable } from "../road-intake/types.js";
 
-/** Edge role keyed in the road-class setback table (27c WDLL 4). */
+/** Edge role for setback axis lookup (front/side/rear/corner). */
 export type RoadEdgeRole = "front" | "side" | "rear" | "side_corner";
 
 /** Per-field provenance carried in setback table JSON (fan gift). */
@@ -75,8 +75,13 @@ export interface JurisdictionDescriptor {
   /** FIPS prefix for parcel nodes `{fips}:{propId}`. */
   parcelFips: string;
   defaultAccessPolicy: AccessPolicy;
+  /** Authoritative setback VALUE source (district → front/side/rear/corner). */
   setbackTable?: SetbackTableDescriptor;
-  /** Indexed by (road-class, edge-role); jurisdiction knowledge only. */
+  /**
+   * DEPRECATED as a setback-VALUE source (WDLL 7 / RULING 2, 2026-07-29).
+   * Resolvers ignore this table. Roads remain a twin for edge ROLE / frontage /
+   * rendering only. Kept optional for legacy fixture archaeology.
+   */
   roadClassSetbackTable?: RoadClassSetbackTableDescriptor;
   /** v1 assumed ROW width by road class (feet). */
   assumedRowWidthFt?: AssumedRowWidthTable;
