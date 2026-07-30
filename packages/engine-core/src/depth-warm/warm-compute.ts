@@ -174,6 +174,7 @@ export function computeWarmCandidate(input: WarmComputeInput): WarmCandidate {
       roads: input.roads,
       warmAgentId: input.warmAgentId,
       warmAt: input.warmAt,
+      descriptor: input.descriptor,
     });
   }
   const full = computeWarmCandidateWithLabels(input, input.edgeLabels);

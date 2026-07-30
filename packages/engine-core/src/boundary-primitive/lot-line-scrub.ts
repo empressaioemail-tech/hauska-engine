@@ -172,11 +172,21 @@ function protectedVertexIndices(
   open: Array<[number, number]>,
   snapTolM: number,
   sharedKeys: ReadonlySet<string>,
+  minCornerTurnDeg = 5,
 ): Set<number> {
+  const frame = projectRing(open);
+  if (!frame) return new Set();
   const out = new Set<number>();
+  const pts = frame.points;
   open.forEach(([lng, lat], i) => {
     const key = vertexKey(lng, lat, snapTolM);
-    if (sharedKeys.has(key)) out.add(i);
+    if (!sharedKeys.has(key)) return;
+    const a = pts[(i + pts.length - 1) % pts.length]!;
+    const b = pts[i]!;
+    const c = pts[(i + 1) % pts.length]!;
+    const turn = turnAngleDeg(a, b, c);
+    /** Shared micro-jogs (<5°) may collapse — they corrupt inset, not real lot corners. */
+    if (turn >= minCornerTurnDeg) out.add(i);
   });
   return out;
 }

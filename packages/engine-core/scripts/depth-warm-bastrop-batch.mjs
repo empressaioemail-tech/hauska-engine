@@ -26,6 +26,11 @@ import {
   readBoundaryEdgesForParcel,
   BoundaryPrimitiveMissingError,
 } from "../src/boundary-primitive/read.ts";
+import {
+  fetchBcadParcelRings,
+  scrubLotLineRing,
+} from "../src/boundary-primitive/index.ts";
+import { openRing } from "../src/depth-warm/geometry.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
@@ -332,14 +337,9 @@ for (const row of parcelRows) {
     continue;
   }
 
-  const labelResult = labelEdgesFromRoads({
-    parcelRing: geom.ring,
-    roads,
-  });
-
   /** @type {import('@hauska-engine/atoms').BoundaryEdgeAtomInstance[] | null} */
   let boundaryEdges = null;
-  if (!args.forceRepromote && !dryRun && storageHandle?.storage) {
+  if (!dryRun && storageHandle?.storage) {
     try {
       boundaryEdges = await readBoundaryEdgesForParcel(
         storageHandle.storage,
@@ -349,6 +349,43 @@ for (const row of parcelRows) {
       if (!(err instanceof BoundaryPrimitiveMissingError)) throw err;
     }
   }
+
+  let parcelRing = geom.ring;
+  const propId = parcelNodeId.split(":")[1];
+  if (args.forceRepromote && propId) {
+    try {
+      const bcad = await fetchBcadParcelRings([propId]);
+      if (bcad[0]?.ring) {
+        parcelRing = scrubLotLineRing(bcad[0].ring);
+      }
+    } catch {
+      /* fall back to txgio ring */
+    }
+  } else if (boundaryEdges?.length) {
+    const ringVerts = openRing(parcelRing).length;
+    if (boundaryEdges.length !== ringVerts) {
+      try {
+        const bcad = await fetchBcadParcelRings([propId]);
+        if (bcad[0]?.ring) {
+          parcelRing = scrubLotLineRing(bcad[0].ring);
+        }
+      } catch {
+        /* fall back */
+      }
+    }
+  }
+
+  const ringVerts = openRing(parcelRing).length;
+  if (boundaryEdges?.length && boundaryEdges.length > ringVerts) {
+    boundaryEdges = boundaryEdges.filter((e) => e.edgeIndex < ringVerts);
+  } else if (boundaryEdges?.length && boundaryEdges.length < ringVerts) {
+    boundaryEdges = null;
+  }
+
+  const labelResult = labelEdgesFromRoads({
+    parcelRing,
+    roads,
+  });
 
   if (!boundaryEdges?.length && !labelResult.ok) {
     const key = labelResult.decline in stats.declines ? labelResult.decline : "other";
@@ -363,7 +400,7 @@ for (const row of parcelRows) {
     result = await warmThenVerify({
       parcelNodeId,
       district,
-      parcelRing: geom.ring,
+      parcelRing,
       descriptor: builtDescriptor.descriptor,
       roads,
       edgeLabels: labelResult.ok ? labelResult.edgeLabels : [],
