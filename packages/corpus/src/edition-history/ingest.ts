@@ -22,6 +22,12 @@ export interface EditionIngestResult {
   amendmentsWritten: number;
   corpusUpdated: boolean;
   editionEntityIds: ReadonlyArray<string>;
+  /**
+   * The jurisdiction-corpus `currentEditionId` after this ingest.
+   * Advances on temporal supersession (latest open-ended edition);
+   * preserved when only historical (closed) editions are added.
+   */
+  currentEditionId: string | null;
 }
 
 function buildTemporalAmendment(
@@ -58,6 +64,7 @@ function buildEditionAtom(
   bundle: EditionBundle,
   entry: EditionBundle["entries"][number],
   amendmentIds: ReadonlyArray<string>,
+  sectionIds: ReadonlyArray<string> = [],
 ): CodeEditionAtomInstance {
   const e = entry.edition;
   return {
@@ -67,7 +74,7 @@ function buildEditionAtom(
     editionLabel: e.editionLabel,
     effectiveFrom: e.effectiveFrom,
     effectiveTo: e.effectiveTo,
-    sectionIds: [],
+    sectionIds: [...sectionIds],
     amendmentIds: [...amendmentIds],
     fetchedAt: bundle.generatedAt,
     sourceAdapter: e.sourceAdapter,
@@ -78,14 +85,44 @@ function buildEditionAtom(
       e.editionLabel,
       e.effectiveFrom,
       e.effectiveTo ?? "",
+      ...sectionIds,
     ),
   };
+}
+
+/**
+ * Pick the jurisdiction's current edition: the open-ended edition
+ * (`effectiveTo == null`) with the latest `effectiveFrom`.
+ *
+ * Historical ingests that only add closed editions therefore leave an
+ * existing open-ended pointer alone (WDLL CORRECTION B / historical
+ * protection). A superseding open-ended edition advances the pointer.
+ */
+export function selectCurrentEditionId(
+  editions: ReadonlyArray<
+    Pick<CodeEditionAtomInstance, "entityId" | "effectiveFrom" | "effectiveTo">
+  >,
+  fallback: string | null,
+): string | null {
+  const openEnded = editions.filter((e) => e.effectiveTo == null);
+  if (openEnded.length === 0) return fallback;
+  const sorted = [...openEnded].sort((a, b) =>
+    a.effectiveFrom.localeCompare(b.effectiveFrom),
+  );
+  return sorted[sorted.length - 1]?.entityId ?? fallback;
 }
 
 /**
  * Ingest a historical edition bundle from the acquisition agent.
  * Writes code-edition + temporal code-amendment atoms and updates the
  * jurisdiction-corpus adoption timeline for K2 edition-correct lookup.
+ *
+ * When `options.sections` is provided, section atoms are written, contains
+ * links emitted, and the owning edition's `sectionIds` is filled.
+ *
+ * `currentEditionId` advances when the ingested (or already-adopted)
+ * open-ended edition with the latest `effectiveFrom` supersedes the
+ * prior pointer. Closed historical editions do not advance it.
  */
 export async function ingestEditionBundle(
   storage: StoragePort,
@@ -97,6 +134,15 @@ export async function ingestEditionBundle(
   const sortedEntries = [...bundle.entries].sort((a, b) =>
     a.edition.effectiveFrom.localeCompare(b.edition.effectiveFrom),
   );
+
+  const sectionsByEdition = new Map<string, string[]>();
+  if (options?.sections?.length) {
+    for (const section of options.sections) {
+      const list = sectionsByEdition.get(section.codeEditionId) ?? [];
+      list.push(section.entityId);
+      sectionsByEdition.set(section.codeEditionId, list);
+    }
+  }
 
   const editionEntityIds: string[] = [];
   let amendmentsWritten = 0;
@@ -120,7 +166,39 @@ export async function ingestEditionBundle(
       }
     }
 
-    const edition = buildEditionAtom(bundle, entry, amendmentIds);
+    const sectionIds = sectionsByEdition.get(entry.edition.entityId) ?? [];
+    const existingEdition = await storage.getAtom(
+      "code-edition",
+      entry.edition.entityId,
+    );
+    const mergedSectionIds = [
+      ...new Set([
+        ...(existingEdition?.entityType === "code-edition"
+          ? existingEdition.sectionIds
+          : []),
+        ...sectionIds,
+      ]),
+    ];
+
+    const edition = buildEditionAtom(
+      bundle,
+      entry,
+      amendmentIds.length > 0
+        ? amendmentIds
+        : existingEdition?.entityType === "code-edition"
+          ? existingEdition.amendmentIds
+          : [],
+      mergedSectionIds,
+    );
+    // Preserve non-empty amendmentIds already on a stub when the bundle
+    // entry omits a fresh adoption ordinance.
+    if (
+      amendmentIds.length === 0 &&
+      existingEdition?.entityType === "code-edition" &&
+      existingEdition.amendmentIds.length > 0
+    ) {
+      edition.amendmentIds = [...existingEdition.amendmentIds];
+    }
     await storage.writeAtom(edition);
     editionEntityIds.push(edition.entityId);
     links.push({
@@ -156,21 +234,45 @@ export async function ingestEditionBundle(
     bundle.jurisdictionTenant,
   );
 
-  const adoptedEditionIds = editionEntityIds;
-  const lastIngestedEditionId =
-    sortedEntries[sortedEntries.length - 1]?.edition.entityId ?? null;
+  const adoptedEditionIds = [
+    ...new Set([
+      ...(existingCorpus?.entityType === "jurisdiction-corpus"
+        ? existingCorpus.adoptedEditionIds
+        : []),
+      ...editionEntityIds,
+    ]),
+  ];
+
+  const editionSnapshots: Array<
+    Pick<CodeEditionAtomInstance, "entityId" | "effectiveFrom" | "effectiveTo">
+  > = [];
+  for (const id of adoptedEditionIds) {
+    const ed = await storage.getAtom("code-edition", id);
+    if (ed?.entityType === "code-edition") {
+      editionSnapshots.push({
+        entityId: ed.entityId,
+        effectiveFrom: ed.effectiveFrom,
+        effectiveTo: ed.effectiveTo,
+      });
+    }
+  }
+
+  const existingCurrent =
+    existingCorpus?.entityType === "jurisdiction-corpus"
+      ? existingCorpus.currentEditionId
+      : null;
+  const currentEditionId = selectCurrentEditionId(
+    editionSnapshots,
+    existingCurrent ??
+      sortedEntries[sortedEntries.length - 1]?.edition.entityId ??
+      null,
+  );
 
   const corpusInst: JurisdictionCorpusAtomInstance = existingCorpus
     ? {
         ...existingCorpus,
-        adoptedEditionIds: [
-          ...new Set([
-            ...existingCorpus.adoptedEditionIds,
-            ...adoptedEditionIds,
-          ]),
-        ],
-        currentEditionId:
-          existingCorpus.currentEditionId ?? lastIngestedEditionId,
+        adoptedEditionIds,
+        currentEditionId,
         lastRefreshedAt: bundle.generatedAt,
         fetchedAt: bundle.generatedAt,
       }
@@ -180,7 +282,7 @@ export async function ingestEditionBundle(
         jurisdictionTenant: bundle.jurisdictionTenant,
         jurisdictionName: bundle.jurisdictionName,
         adoptedEditionIds,
-        currentEditionId: lastIngestedEditionId,
+        currentEditionId,
         coverageQualityBar: existingStatus?.qualityBar ?? "not-evaluated",
         lastRefreshedAt: bundle.generatedAt,
         fetchedAt: bundle.generatedAt,
@@ -201,5 +303,6 @@ export async function ingestEditionBundle(
     amendmentsWritten,
     corpusUpdated: true,
     editionEntityIds,
+    currentEditionId,
   };
 }
