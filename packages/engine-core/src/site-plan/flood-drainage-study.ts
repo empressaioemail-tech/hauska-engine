@@ -717,8 +717,20 @@ export function buildFloodDrainageBriefing(study: {
         : `At a ${study.rainfallDepthInches} inch design storm, modeled ponding covers ${pondPhrase} on the parcel.`,
     );
   } else if (study.stats.pondedAreaSqFt === 0) {
+    // COHERENCE GUARD, THE OTHER DIRECTION (2026-07-30 real-terrain
+    // calibration). "High point + large ponding" was the contradiction that
+    // shipped first; "floodplain + zero ponding, stated flatly" is the equally
+    // dangerous inverse, and it is the one a reader is most likely to act on,
+    // because a bare "no modeled ponding" reads as "this parcel does not
+    // flood". It does not mean that. This model's contributing area is limited
+    // to the study window, so riverine flooding driven by a larger upstream
+    // watershed is not represented at all — measured on 24 FEMA-labelled
+    // Bastrop parcels, a padded parcel window resolves single-digit hectares
+    // against a river watershed of millions. A zero here is a statement about
+    // LOCAL storm ponding only, and the sentence has to carry that or the
+    // number is misleading on its own.
     sentences.push(
-      `At a ${study.rainfallDepthInches} inch design storm, no modeled ponding intersects the parcel.`,
+      `At a ${study.rainfallDepthInches} inch design storm, no modeled ponding intersects the parcel. This models local storm ponding from on-parcel depressions and low ground along drainage lines inside the study area; it does not model riverine flooding from a larger upstream watershed, so this is not a determination that the parcel is outside a floodplain — check the FEMA National Flood Hazard Layer for that.`,
     );
   } else {
     sentences.push(
