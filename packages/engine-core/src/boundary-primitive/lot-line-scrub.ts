@@ -326,7 +326,19 @@ export function scrubParcelCohortEntries(
   }));
 }
 
-/** True when open ring has 4–5 edges and bearings are near-orthogonal. */
+/**
+ * True when open ring has 4–6 edges, every significant corner is near-orthogonal,
+ * AND the ring is CONVEX (all significant turns same-signed — no reflex/notch
+ * vertex). The convexity requirement is load-bearing for R29: a genuinely
+ * irregular lot (L-shape / notched hexagon hugging an interior alley, e.g.
+ * 48021:34121) can scrub down to 6 all-orthogonal corners yet carry ONE reflex
+ * vertex. Its buildable envelope is legitimately non-convex. Classifying such a
+ * lot as near-rect wrongly fired the R5 convexity assertion in verify-mechanical
+ * and false-rejected a valid inset. Requiring turn-sign consistency here keeps
+ * the R5 corruption gate on truly near-rect (convex) downtown lots — the six
+ * clean Block-13 parcels stay classified near-rect — while letting genuinely
+ * irregular lots fall through to the plain validity gate (geometryCorrectnessGate).
+ */
 export function isNearRectangularParcelRing(ring: Ring): boolean {
   const open = openRing(ring);
   if (open.length < 4 || open.length > 6) return false;
@@ -334,6 +346,7 @@ export function isNearRectangularParcelRing(ring: Ring): boolean {
   const frame = projectRing(open);
   if (!frame) return false;
 
+  let turnSign = 0;
   for (let i = 0; i < frame.points.length; i++) {
     const a = frame.points[(i + frame.points.length - 1) % frame.points.length]!;
     const b = frame.points[i]!;
@@ -348,8 +361,15 @@ export function isNearRectangularParcelRing(ring: Ring): boolean {
     const l2 = Math.hypot(v2x, v2y);
     if (l1 < 0.3 || l2 < 0.3) continue;
     if (turn < 75 || turn > 105) return false;
+    // Near-rect requires a single consistent turn direction. A reflex corner
+    // (opposite sign) is a genuine notch — the lot is irregular, not near-rect.
+    const cross = v1x * v2y - v1y * v2x;
+    const s = Math.sign(cross);
+    if (s === 0) continue;
+    if (turnSign === 0) turnSign = s;
+    else if (s !== turnSign) return false;
   }
-  return true;
+  return turnSign !== 0;
 }
 
 /** WDLL F3 / R5 invariant: near-rect parcel → convex inset matching topology. */
