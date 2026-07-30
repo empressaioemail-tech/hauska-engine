@@ -22,7 +22,7 @@ import {
   sha256HexCanonical,
   widthedFromMatchBasis,
 } from "../property-reasoning/confidence.js";
-import { resolveRoadClassSetback } from "../property-reasoning/resolve-road-class-setback.js";
+import { resolveDistrictEdgeSetback } from "../property-reasoning/resolve-road-class-setback.js";
 import type { JurisdictionDescriptor, RoadEdgeRole } from "../property-reasoning/types.js";
 import { computePropertyLineTagsFromLocalEnuEndpoints } from "../geometry/gis-property-line-tags.js";
 import { getParcelEdgeNeighbors } from "./adjacency-grid.js";
@@ -99,7 +99,7 @@ function resolveSetbackForEdge(
   district: string,
   role: RoadEdgeRole,
   adjacencyKind: BoundaryAdjacencyKind,
-  roadClass?: RoadClassification,
+  _roadClass?: RoadClassification,
 ): BoundaryResolvedSetback | BoundarySetbackAbsence {
   if (adjacencyKind === "unmapped") {
     return {
@@ -108,28 +108,15 @@ function resolveSetbackForEdge(
     };
   }
 
-  const roadClassForSetback =
-    roadClass ?? (adjacencyKind === "neighbor-parcel" ? "residential" : undefined);
-
-  if (!roadClassForSetback) {
-    return {
-      kind: "no-setback-row",
-      reason: "Road-adjacent edge lacks classification for setback lookup.",
-    };
-  }
-
-  const hit = resolveRoadClassSetback(
-    descriptor,
-    district,
-    roadClassForSetback,
-    role,
-  );
+  // WDLL 7 / RULING 2: NUMBER from flat district table by edge ROLE.
+  // Road class may identify ROW/alley adjacency and front EDGE; never the VALUE.
+  const hit = resolveDistrictEdgeSetback(descriptor, district, role);
   if ("kind" in hit) {
     return { kind: "no-setback-row", reason: hit.reason };
   }
   return {
     feet: hit.value,
-    provenance: "road-class-setback-table",
+    provenance: "district-setback-table",
     atomCitation: descriptor.key,
   };
 }

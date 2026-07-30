@@ -1,57 +1,22 @@
 /**
- * RULE engine: resolve setback from (road-class, edge-role) + district row.
- * Jurisdiction-agnostic — all values live in the descriptor fixture (27c WDLL 4).
+ * Resolve setback NUMBER from the flat district table (edge ROLE only).
+ *
+ * RULING 2 / WDLL 7 (2026-07-29): road-class must NOT supply setback VALUES.
+ * Roads may still identify the front EDGE (role / frontage / rendering).
+ * `roadClassSetbackTable` is retired as a value source; kept on the descriptor
+ * type only for legacy fixture archaeology — resolvers ignore it.
  */
-
-import type { RoadClassification } from "@hauska-engine/atoms";
 
 import { resolveSetbackTableRow } from "./emit-setback-rule.js";
 import type {
   HonestAbsence,
   JurisdictionDescriptor,
-  RoadClassSetbackRowProvenance,
   RoadEdgeRole,
   ResolvedSetbackRow,
   SetbackFieldProvenance,
   SetbackTableRowProvenance,
 } from "./types.js";
-
-function resolveRoadClassRow(
-  table: JurisdictionDescriptor["roadClassSetbackTable"],
-  district: string,
-): RoadClassSetbackRowProvenance | HonestAbsence {
-  if (!table || table.rows.length === 0) {
-    return {
-      kind: "honest-absence",
-      parcelNodeId: "",
-      reason: "No road-class setback table configured for jurisdiction descriptor.",
-      code: "road-class-setback-table-missing",
-    };
-  }
-
-  const wanted = district.trim().toLowerCase();
-  const exact = table.rows.find(
-    (r) => r.district_code.toLowerCase() === wanted && r.match_basis === "exact",
-  );
-  if (exact) return exact;
-
-  const prefix = table.rows.find(
-    (r) =>
-      r.match_basis === "prefix" &&
-      wanted.startsWith(r.district_code.toLowerCase()),
-  );
-  if (prefix) return prefix;
-
-  const fallback = table.rows.find((r) => r.match_basis === "fallback");
-  if (fallback) return fallback;
-
-  return {
-    kind: "honest-absence",
-    parcelNodeId: "",
-    reason: `No road-class setback row matched district "${district}".`,
-    code: "road-class-setback-no-match",
-  };
-}
+import type { RoadClassification } from "@hauska-engine/atoms";
 
 function flatAxisForRoleFromResolved(
   row: ResolvedSetbackRow,
@@ -90,29 +55,14 @@ function flatAxisForRoleFromRow(
 }
 
 /**
- * Resolve the scalar setback (feet) for a classified road edge.
- * Prefers the (road-class, edge-role) cell; falls back to the flat district row.
+ * Resolve the scalar setback (feet) for a district edge ROLE from flat setbackTable.
+ * Road class is intentionally not a parameter — values are district+role only.
  */
-export function resolveRoadClassSetback(
+export function resolveDistrictEdgeSetback(
   descriptor: JurisdictionDescriptor,
   district: string,
-  roadClass: RoadClassification,
   edgeRole: RoadEdgeRole,
 ): SetbackFieldProvenance | HonestAbsence {
-  const rcTable = descriptor.roadClassSetbackTable;
-  if (rcTable && rcTable.rows.length > 0) {
-    const rcRow = resolveRoadClassRow(rcTable, district);
-    if (!("kind" in rcRow)) {
-      const hit = rcRow.entries.find(
-        (e: (typeof rcRow.entries)[number]) =>
-          e.road_class === roadClass && e.edge_role === edgeRole,
-      );
-      if (hit) return hit.setback_ft;
-    }
-    // District row or (road-class, edge-role) cell missing — fall through to flat
-    // district table (same path as highway/gravel/unclassified on P-5).
-  }
-
   const flat = resolveSetbackTableRow(descriptor.setbackTable, district);
   if ("kind" in flat && flat.kind === "honest-absence") {
     return flat;
@@ -124,4 +74,18 @@ export function resolveRoadClassSetback(
   const fromRaw = raw ? flatAxisForRoleFromRow(raw, edgeRole) : undefined;
   if (fromRaw) return fromRaw;
   return flatAxisForRoleFromResolved(resolved, edgeRole);
+}
+
+/**
+ * @deprecated Prefer `resolveDistrictEdgeSetback`. Road class is ignored for
+ * VALUES (WDLL 7 / RULING 2). Kept so existing call sites / Caldwell tests
+ * keep compiling; all lookups go through the flat district table.
+ */
+export function resolveRoadClassSetback(
+  descriptor: JurisdictionDescriptor,
+  district: string,
+  _roadClass: RoadClassification,
+  edgeRole: RoadEdgeRole,
+): SetbackFieldProvenance | HonestAbsence {
+  return resolveDistrictEdgeSetback(descriptor, district, edgeRole);
 }
