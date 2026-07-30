@@ -22,6 +22,12 @@ export type BastropPerParcelDescriptorResult =
       ok: true;
       descriptor: JurisdictionDescriptor;
       record: BastropPerParcelSetbackParsed;
+      /**
+       * R26 — the GOVERNING (dominant-area) district. May differ from the engine
+       * zoning stamp on split-zone parcels; the warm inset MUST key on THIS, not
+       * the stamped sliver, or edge resolution misses the single per-parcel row.
+       */
+      governingDistrict: string;
     }
   | {
       ok: false;
@@ -38,6 +44,7 @@ export async function buildBastropPerParcelSetbackDescriptor(
   district: string,
   cityKey: string,
   fetchImpl?: typeof fetch,
+  centroidLngLat?: [number, number],
 ): Promise<BastropPerParcelDescriptorResult> {
   const propId = propIdFromParcelNodeId(parcelNodeId);
   if (!propId) {
@@ -51,6 +58,7 @@ export async function buildBastropPerParcelSetbackDescriptor(
   const fetched = await fetchBastropPerParcelSetbackRecord(propId, {
     fetchImpl,
     districtCode: district,
+    centroidLngLat,
   });
   if (fetched.kind !== "parsed") {
     return {
@@ -60,9 +68,13 @@ export async function buildBastropPerParcelSetbackDescriptor(
     };
   }
 
-  const adapterTable = getSetbackTableForZoning(cityKey, district, {
+  // R26 — the DOMINANT-area layer-23 row governs the district, which may differ
+  // from the engine zoning stamp when a parcel is split-zoned (e.g. a sliver).
+  const governingDistrict = (fetched.resolvedDistrictCode ?? district).trim() || district;
+
+  const adapterTable = getSetbackTableForZoning(cityKey, governingDistrict, {
     bastropPerParcelRecord: fetched,
-    districtCode: district,
+    districtCode: governingDistrict,
   });
   const setbackTable = setbackTableDescriptorFromAdapter(adapterTable);
   if (!setbackTable?.rows?.length) {
@@ -76,6 +88,7 @@ export async function buildBastropPerParcelSetbackDescriptor(
   return {
     ok: true,
     record: fetched,
+    governingDistrict,
     descriptor: {
       ...base,
       setbackTable,

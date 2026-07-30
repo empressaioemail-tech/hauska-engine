@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { getSetbackTable } from "@hauska-engine/adapters";
 
 import bastropDescriptor from "../../property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
+import { scrubLotLineRing } from "../../boundary-primitive/lot-line-scrub.js";
 import { setbackTableDescriptorFromAdapter } from "../../property-reasoning/setback-table-from-adapter.js";
 import type { JurisdictionDescriptor } from "../../property-reasoning/types.js";
 import type { Ring } from "../geometry.js";
@@ -177,13 +178,38 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
 
 describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
   it("714 Spring warm → verify pass → emit depth-warm atoms", async () => {
+    // R5 near-rect gate (added 6849e34) correctly rejects a NON-CONVEX inset.
+    // The raw PARCEL_714_SPRING_33512 capture is a clean rectangle whose WEST
+    // boundary carries collinear sub-survey micro-vertices (v3/v4 turn ~0°),
+    // splitting one straight lot line into three segments. With rear-labeled
+    // (30ft) and side-labeled (10ft) roles landing on that single straight run,
+    // the inset develops a re-entrant 20ft step → a non-convex notch the R5 gate
+    // rightly fails. The PRODUCTION warm path scrubs the ring first
+    // (scrubLotLineRing, per depth-warm-bastrop-batch.mjs) BEFORE warmThenVerify;
+    // this test previously skipped that step, so its verify.pass=true expectation
+    // went stale when R5 landed. Scrub here to exercise the real production
+    // geometry: scrubbing collapses the collinear west run 6→4 vertices, yielding
+    // a convex envelope that passes. Labels reflect the 4-edge topology:
+    // south=front (Spring St), north=rear, east/west=side.
+    const scrubbedRing = scrubLotLineRing(PARCEL_714_SPRING_33512);
+    const scrubbedLabels = [
+      { index: 0, label: "side" as const },
+      { index: 1, label: "rear" as const },
+      { index: 2, label: "side" as const },
+      {
+        index: 3,
+        label: "front" as const,
+        roadClass: "residential" as const,
+        osmHighwayTag: "residential",
+      },
+    ];
     const result = await warmThenVerify({
       parcelNodeId: PARCEL_ID,
       district: "SF-1",
-      parcelRing: PARCEL_714_SPRING_33512,
+      parcelRing: scrubbedRing,
       descriptor,
       roads: [SPRING_ROAD],
-      edgeLabels: edgeLabels714SpringHonest(),
+      edgeLabels: scrubbedLabels,
       zoningFactAtomDid: `did:hauska:zoning-fact:${PARCEL_ID}`,
       promote: false,
     });

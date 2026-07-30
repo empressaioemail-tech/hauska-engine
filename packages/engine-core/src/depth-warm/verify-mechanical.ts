@@ -129,7 +129,7 @@ export function verifyWarmCandidateMechanically(
     const rectCheck = nearRectEnvelopeCheck(
       candidate.parcelRing,
       candidate.insetRing,
-      parcelVerts,
+      parcelVerts + 1,
     );
     if (!rectCheck.pass) {
       geometry.pass = false;

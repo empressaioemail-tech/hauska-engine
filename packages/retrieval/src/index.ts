@@ -21,6 +21,7 @@ import {
   applyStoredAtomCalibrationAtRead,
   type CalibrationOverlayPort,
 } from "@hauska-engine/engine-core/property-reasoning";
+import { isStaleBastropCitySetbackRule } from "@hauska-engine/adapters";
 import { resolveAttachingRoadNodes } from "@hauska-engine/engine-core/site-plan";
 import type {
   AccessPolicy,
@@ -229,7 +230,50 @@ export class HybridRetrieval {
       else if (row.entityType === "setback-rule") setbackRule = row;
       else if (row.entityType === "buildable-envelope") buildableEnvelope = row;
     }
-    const atoms = resolved.map((payload) => {
+
+    const zoningAdapter =
+      zoningFact && typeof zoningFact.sourceAdapter === "string"
+        ? zoningFact.sourceAdapter
+        : "";
+    const isBastropCityZoning =
+      zoningAdapter.includes("bastrop-city") ||
+      zoningAdapter.includes("txgio-zoning-stamp:bastrop-city-tx");
+    // R13/R27 — a stale/repealed-source Bastrop city setback rule is UNSERVABLE,
+    // and its DEPENDENT buildable-envelope is invalidated (not just card-suppressed)
+    // so no raw-chain / cached-tile consumer draws a repealed-source envelope.
+    let staleSetbackSuppressed = false;
+    if (
+      setbackRule &&
+      isBastropCityZoning &&
+      isStaleBastropCitySetbackRule({
+        parcelNodeId,
+        sourceAdapter:
+          typeof setbackRule.sourceAdapter === "string"
+            ? setbackRule.sourceAdapter
+            : null,
+        sourceCodeAtomDid:
+          setbackRule.sourceCodeAtomRef &&
+          typeof setbackRule.sourceCodeAtomRef === "object" &&
+          typeof (setbackRule.sourceCodeAtomRef as { atomDid?: string }).atomDid ===
+            "string"
+            ? (setbackRule.sourceCodeAtomRef as { atomDid: string }).atomDid
+            : null,
+      })
+    ) {
+      setbackRule = null;
+      staleSetbackSuppressed = true;
+      buildableEnvelope = null; // R27 — invalidate the dependent envelope on source-repeal.
+    }
+    const atoms = resolved
+      // R27 — drop the stale setback-rule + its dependent envelope from the raw
+      // atom chain too, so cached-tile / raw consumers can't re-draw dead code.
+      .filter(
+        (payload) =>
+          !staleSetbackSuppressed ||
+          (payload.entityType !== "setback-rule" &&
+            payload.entityType !== "buildable-envelope"),
+      )
+      .map((payload) => {
       const did =
         typeof payload.atomDid === "string" && payload.atomDid.startsWith("did:")
           ? payload.atomDid

@@ -11,3 +11,4 @@ export * from "./persist.js";
 export * from "./load-parcel-index.js";
 export * from "./consume.js";
 export * from "./lot-line-scrub.js";
+export * from "./parcel-currency.js";

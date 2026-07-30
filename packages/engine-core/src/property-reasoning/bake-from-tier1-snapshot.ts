@@ -13,7 +13,10 @@
  * (honest) rather than inventing buildable sqft.
  */
 
-import { getSetbackTableForZoning } from "@hauska-engine/adapters";
+import {
+  getSetbackTableForZoning,
+  requiresPerParcelSetbackRecord,
+} from "@hauska-engine/adapters";
 import type { PropertyAtomInstance } from "@hauska-engine/atoms";
 
 import { emitBuildableEnvelope } from "./emit-buildable-envelope.js";
@@ -255,6 +258,17 @@ export function emitFromTier1Snapshot(
     out.notes.push("setback-omitted-no-jurisdiction-key");
     return out;
   }
+
+  // R13 — jurisdictions whose setbacks are authored only from a per-parcel
+  // record must not get a breadth-baked setback scalar (jurisdiction-agnostic
+  // check lives in adapters to keep this module literal-free, WDLL 3.8).
+  if (requiresPerParcelSetbackRecord(cityKey)) {
+    out.notes.push(
+      "setback-omitted-jurisdiction-requires-per-parcel-record",
+    );
+    return out;
+  }
+
   if (!setbackTable) {
     out.notes.push(`setback-table-missing:${cityKey}`);
     return out;

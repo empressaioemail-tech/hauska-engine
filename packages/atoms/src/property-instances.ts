@@ -109,6 +109,22 @@ export type ZoningFactAtomInstance = ContractZoningFactAtomInstance &
     prefixMatched?: string;
   };
 
+/** R22/R24/R25/R26 — full-field + disclosure metadata surfaced on the PE card. */
+export interface SetbackRuleDisplayMeta {
+  /** Minimum lot size verbatim (e.g. "1/4 ac"). */
+  minLotSize?: string;
+  /** R22 — side yard resolved from a building/fire-code deferral (5ft), not a printed scalar. */
+  sideFireCodeDeferral?: boolean;
+  /** City's verbatim side-yard language when deferred to building/fire code. */
+  sideCityLanguage?: string;
+  /** R26 — dominant district when a split-zone parcel's stamp differed. */
+  resolvedDistrictCode?: string | null;
+  /** R26/R25 — minor zones present on a split-zoned parcel. */
+  splitZoneMinorZones?: Array<{ districtCode: string | null; shapeArea?: number }>;
+  /** R25 — conflicting second source (e.g. Bastrop layer-83 Revisions). */
+  secondSource?: { source: string; note: string; citationUrl?: string };
+}
+
 export type SetbackRuleAtomInstance = ContractSetbackRuleAtomInstance &
   EnginePropertyPersistence & {
     districtCode?: string;
@@ -119,6 +135,10 @@ export type SetbackRuleAtomInstance = ContractSetbackRuleAtomInstance &
     maxHeightFt?: number;
     maxLotCoveragePct?: number;
     maxImperviousPct?: number;
+    /** Minimum lot size verbatim (R24 full-field parity). */
+    minLotSize?: string;
+    /** R22/R24/R25/R26 — display + disclosure metadata for the PE card. */
+    displayMeta?: SetbackRuleDisplayMeta;
   };
 
 export type BuildableEnvelopeAtomInstance = ContractBuildableEnvelopeAtomInstance &

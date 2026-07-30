@@ -107,6 +107,12 @@ export {
   type SetbackTableResolveOptions,
   type BastropPerParcelSetbackParsed,
   type BastropChartDisagreement,
+  BASTROP_AUTHORITATIVE_SETBACK_ADAPTER,
+  bastropSetbackPendingRewarmReason,
+  isAuthoritativeBastropCitySetbackSource,
+  isBastropCountyParcelNodeId,
+  isStaleBastropCitySetbackRule,
+  requiresPerParcelSetbackRecord,
 } from "./local/setbacks";
 
 /** Master WDLL 3.10 — public-record permit-outcome fuel for calibration. */

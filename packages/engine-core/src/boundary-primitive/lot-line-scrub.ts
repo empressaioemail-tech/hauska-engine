@@ -361,7 +361,7 @@ export function nearRectEnvelopeCheck(
   const reasons: string[] = [];
   const parcelEdgeCount = openRing(parcelRing).length;
   const insetVertexCount = insetRing ? openRing(insetRing).length : 0;
-  const vertCap = maxInsetVerts ?? parcelEdgeCount;
+  const vertCap = maxInsetVerts ?? parcelEdgeCount + 1;
 
   if (!insetRing) reasons.push("inset ring is null");
   if (!isNearRectangularParcelRing(parcelRing)) {
