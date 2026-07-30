@@ -59,9 +59,15 @@ function leadingDistrictToken(districtName: string): string {
 function isRepealedB3PlaceType(code: string): boolean {
   return (
     /^P-[1-5](?:$|[-_\s])/.test(code) ||
-    /^P-(?:CS|EC)(?:$|[-_\s])/.test(code) ||
-    /^PDD(?:$|[-_\s])/.test(code)
+    /^P-(?:CS|EC)(?:$|[-_\s])/.test(code)
   );
+}
+
+/** BDC districts whose scalars live on layer 23 only (not ordinance chart). */
+export function isBdcPerParcelDistrictCode(code: string): boolean {
+  return /^(MU|GC|PDD|PI|IND|OS)(?:$|[-_\s])/.test(code) ||
+    /^P\/OS(?:$|[-_\s])/.test(code) ||
+    /^P-OS(?:$|[-_\s])/.test(code);
 }
 
 /** BDC Euclidean districts with ordinance-text scalar rows in bastrop-development-code. */
@@ -76,12 +82,7 @@ function isBdcEuclideanCode(code: string): boolean {
  * through to the legacy bastrop-tx county table.
  */
 function isKnownBdcDistrictCode(code: string): boolean {
-  return (
-    isBdcEuclideanCode(code) ||
-    /^(MU|GC|PI|IND|OS)(?:$|[-_\s])/.test(code) ||
-    /^P\/OS(?:$|[-_\s])/.test(code) ||
-    /^P-OS(?:$|[-_\s])/.test(code)
-  );
+  return isBdcEuclideanCode(code) || isBdcPerParcelDistrictCode(code);
 }
 
 function isBastropCityJurisdiction(normalizedKey: string): boolean {
@@ -130,8 +131,10 @@ export function getSetbackTable(jurisdictionKey: string): SetbackTable | null {
  *   - Without a per-parcel record, returns bastrop-development-code for
  *     edition/citation lookup only — callers MUST NOT use chart scalars as
  *     warm authors for Bastrop city (fetch layer 23 first).
- *   - Repealed B3 Place Types (P-1..P-5, P-CS, P-EC, PDD) → null
+ *   - Repealed B3 Place Types (P-1..P-5, P-CS, P-EC) → null
  *     (honest-decline). Do NOT silently serve bastrop-city-tx as current.
+ *   - MU / GC / PDD (layer 23 only): without `bastropPerParcelRecord` → null
+ *     so callers fetch layer 23 instead of honest-decline on missing chart rows.
  *
  * County / other jurisdictions: fall through to the keyed table
  * (e.g. bastrop-tx legacy R-MD rows for non-city codes).
@@ -156,6 +159,11 @@ export function getSetbackTableForZoning(
   if (isBastropCityJurisdiction(normalized)) {
     if (code && isRepealedB3PlaceType(code)) {
       // Explicit: repealed B3 is not current law. Honest-decline.
+      return null;
+    }
+
+    if (code && isBdcPerParcelDistrictCode(code) && !options?.bastropPerParcelRecord) {
+      // MU/GC/PDD numbers come from layer 23 — not bastrop-development-code chart.
       return null;
     }
 
@@ -203,11 +211,13 @@ export function listSetbackTables(): SetbackTable[] {
 
 export {
   BASTROP_PARCELS_ONE_CLICK_LAYER_23,
+  BASTROP_ZONE_TYPE_CLASS,
   fetchBastropPerParcelSetbackRecord,
   flagBastropChartDisagreement,
   parseBastropPerParcelAttributes,
   parseScalarSetbackFeet,
   parseSideSetbackText,
+  selectBastropLayer23Attributes,
   setbackTableFromBastropPerParcelRecord,
   type BastropChartDisagreement,
   type BastropPerParcelHonestDecline,

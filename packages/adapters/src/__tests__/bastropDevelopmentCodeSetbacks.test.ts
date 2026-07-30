@@ -70,15 +70,12 @@ describe("bastrop-development-code setback router (WDLL STEP 3)", () => {
     }
   });
 
-  it("MU / GC have no fabricated rows (CORRECTION C honest-decline via missing district)", () => {
-    const table = getSetbackTableForZoning("bastrop-tx", "MU");
-    expect(table!.jurisdictionKey).toBe("bastrop-development-code");
-    const mu = table!.districts.find((d) =>
-      leading(d.district_name) === "MU",
-    );
-    const gc = getSetbackTable("bastrop-development-code")!.districts.find(
-      (d) => leading(d.district_name) === "GC",
-    );
+  it("MU / GC chart has no fabricated rows; without layer 23 record router returns null", () => {
+    expect(getSetbackTableForZoning("bastrop-tx", "MU")).toBeNull();
+    expect(getSetbackTableForZoning("bastrop-tx", "GC")).toBeNull();
+    const bdc = getSetbackTable("bastrop-development-code")!;
+    const mu = bdc.districts.find((d) => leading(d.district_name) === "MU");
+    const gc = bdc.districts.find((d) => leading(d.district_name) === "GC");
     expect(mu).toBeUndefined();
     expect(gc).toBeUndefined();
   });
@@ -88,7 +85,7 @@ describe("bastrop-development-code setback router (WDLL STEP 3)", () => {
     expect(table).toBeNull();
   });
 
-  it("repealed P-5 / P-EC / PDD honest-decline (null), archival table still loadable", () => {
+  it("repealed P-5 / P-EC honest-decline (null); PDD requires layer 23 (null without record)", () => {
     expect(getSetbackTableForZoning("bastrop-tx", "P-5")).toBeNull();
     expect(getSetbackTableForZoning("bastrop-tx", "P-EC")).toBeNull();
     expect(getSetbackTableForZoning("bastrop-city-tx", "P-3")).toBeNull();

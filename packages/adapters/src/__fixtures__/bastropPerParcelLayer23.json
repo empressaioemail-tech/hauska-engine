@@ -10,6 +10,7 @@
   },
   "34089": {
     "prop_id": 34089,
+    "ZoneTypeClass": 7,
     "FrontSetback_": "20",
     "SideSetback_": "5 (Corner Side Street Setback: 10 ft)",
     "RearSetback_": "20",
@@ -19,10 +20,34 @@
   },
   "34841_mu_non_scalar": {
     "prop_id": 34841,
+    "ZoneTypeClass": 6,
     "FrontSetback_": "15",
-    "SideSetback_": "Reference Building Code/Fire Code",
+    "SideSetback_": "None - Reference Building Code/Fire Code",
     "RearSetback_": "15",
-    "MaxBuildingHt": 45,
+    "MaxBuildingHt": 40,
+    "MaxImpervisionCoverage": "60%",
     "Ordinance_Link": "https://www.cityofbastrop.org/example/ordinance-34841-mu.pdf"
+  },
+  "34841_sf1_overlap": {
+    "prop_id": 34841,
+    "ZoneTypeClass": 3,
+    "FrontSetback_": "25",
+    "SideSetback_": "5 ft (Corner Side Street Setback: 15 ft)",
+    "RearSetback_": "25",
+    "MaxBuildingHt": 35,
+    "MaxImpervisionCoverage": "50%",
+    "Ordinance_Link": "https://www.cityofbastrop.org/example/ordinance-34841-sf1.pdf",
+    "Shape__Area": 12000
+  },
+  "34841_mu_overlap": {
+    "prop_id": 34841,
+    "ZoneTypeClass": 6,
+    "FrontSetback_": "15",
+    "SideSetback_": "None - Reference Building Code/Fire Code",
+    "RearSetback_": "15",
+    "MaxBuildingHt": 40,
+    "MaxImpervisionCoverage": "60%",
+    "Ordinance_Link": "https://www.cityofbastrop.org/example/ordinance-34841-mu.pdf",
+    "Shape__Area": 8000
   }
 }
