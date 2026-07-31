@@ -30,6 +30,7 @@ import {
   primitiveNormalsAgreeWithRing,
   recomputeBoundaryEdgesForRing,
 } from "../src/boundary-primitive/recompute-for-ring.ts";
+import { relabelBoundaryEdgesFromRoadLabels } from "../src/boundary-primitive/relabel-from-roads.ts";
 import {
   fetchBcadParcelRings,
   scrubLotLineRing,
@@ -284,6 +285,7 @@ const stats = {
     "no-setback-row": 0,
     "no-boundary-primitive": 0,
     "superseded-prop-id": 0,
+    "front-orientation-unresolved": 0,
     other: 0,
   },
   atomWrites: 0,
@@ -305,6 +307,18 @@ for (const row of parcelRows) {
   }
 
   const propId = parcelNodeId.split(":")[1];
+  /** @type {string | null} */
+  let situsAddress = null;
+  if (propId) {
+    const [situsRow] = await txSql`
+      SELECT situs_address FROM txgio_parcel
+      WHERE county_fips = ${COUNTY_FIPS} AND prop_id = ${propId}
+      LIMIT 1
+    `;
+    const raw =
+      typeof situsRow?.situs_address === "string" ? situsRow.situs_address.trim() : "";
+    situsAddress = raw || null;
+  }
   /** @type {[number, number] | undefined} */
   let centroidLngLat;
   /** @type {import('../src/boundary-primitive/parcel-currency.ts').ParcelCurrencyResult | null} */
@@ -457,7 +471,23 @@ for (const row of parcelRows) {
   const labelResult = labelEdgesFromRoads({
     parcelRing: parcelRingWorking,
     roads,
+    situsAddress,
   });
+
+  // R30 — re-warm must RE-DERIVE edge roles from current road-nodes + situs,
+  // not reuse stale promoted roles from the stored boundary primitive.
+  if (
+    boundaryEdges?.length &&
+    labelResult.ok &&
+    (args.forceRepromote || ringSwapped)
+  ) {
+    boundaryEdges = relabelBoundaryEdgesFromRoadLabels({
+      storedEdges: boundaryEdges,
+      edgeLabels: labelResult.edgeLabels,
+      roads,
+      countyFips: COUNTY_FIPS,
+    });
+  }
 
   if (!boundaryEdges?.length && !labelResult.ok) {
     const key = labelResult.decline in stats.declines ? labelResult.decline : "other";
@@ -480,6 +510,7 @@ for (const row of parcelRows) {
       zoningFactAtomDid: row.zoning_fact_did,
       storage: dryRun ? undefined : storageHandle?.storage,
       promote: !dryRun,
+      situsAddress,
     });
   } catch (err) {
     stats.declines.other++;

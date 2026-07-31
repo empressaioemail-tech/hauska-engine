@@ -179,7 +179,7 @@ describe("labelEdgesFromRoads situs-street front preference", () => {
     expect(front.frontBasis).toBe("adjacency-heuristic");
   });
 
-  it("ambiguous match (curving street on two edges): heuristic fallback", () => {
+  it("ambiguous match (curving street on two edges): closest situs edge wins (R30)", () => {
     const front = frontOf(
       labelEdgesFromRoads({
         parcelRing: CORNER_RING,
@@ -187,8 +187,10 @@ describe("labelEdgesFromRoads situs-street front preference", () => {
         situsAddress: "901 PECAN ST",
       }),
     );
-    expect(front.index).toBe(SOUTH_EDGE);
-    expect(front.frontBasis).toBe("adjacency-heuristic");
+    // Curving Pecan is adjacent to west + north; west is closer to the situs
+    // frontage than south (Pine heuristic would have picked south).
+    expect(front.index).toBe(WEST_EDGE);
+    expect(front.frontBasis).toBe("situs-street-match");
   });
 
   it("empty situs string behaves as no situs", () => {

@@ -66,6 +66,8 @@ export interface VerifyResult {
     geometry: GeometryCorrectnessResult;
     roadClassification: MechanicalGateResult;
     setbackEdgeDistance: MechanicalGateResult;
+    /** R31 — front edge must match fresh road/situs labeling, not merely magnitudes. */
+    frontOrientation: MechanicalGateResult;
   };
 }
 

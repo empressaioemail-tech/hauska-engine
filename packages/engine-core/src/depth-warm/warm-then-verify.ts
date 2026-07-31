@@ -20,6 +20,8 @@ export interface WarmThenVerifyInput extends WarmComputeInput {
   zoningFactAtomDid: string;
   storage?: StoragePort;
   promote?: boolean;
+  /** R31 — situs for front-orientation verify gate (optional). */
+  situsAddress?: string | null;
 }
 
 export interface WarmThenVerifyResult {
@@ -37,7 +39,10 @@ export async function warmThenVerify(
   input: WarmThenVerifyInput,
 ): Promise<WarmThenVerifyResult> {
   const candidate = computeWarmCandidate(input);
-  const verify = verifyWarmCandidateMechanically(candidate, input.descriptor);
+  const verify = verifyWarmCandidateMechanically(candidate, input.descriptor, {
+    situsAddress: input.situsAddress,
+    roads: input.roads,
+  });
 
   if (!verify.pass) {
     return { candidate, verify, promoted: null, atoms: null };
