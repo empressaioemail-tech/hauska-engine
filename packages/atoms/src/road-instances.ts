@@ -110,6 +110,12 @@ export interface ContractRoadNodeAtomInstance {
   countyFips: string;
   osmWayId: number;
   classification: RoadClassification;
+  /**
+   * True when osmHighwayTag is in the engine front-ineligible pedestrian set
+   * (footway/path/cycleway/…). Authoritative street-vs-pedestrian flag for
+   * map render and consumers — same denylist as frontage, not a second taxonomy.
+   */
+  isPedestrianWay: boolean;
   centerline: RoadCenterline;
   row: RoadRow;
   attachPoints: ReadonlyArray<RoadAttachPoint>;

@@ -9,10 +9,11 @@
  * the same interface once pgvector + embedding pipeline are wired.
  */
 
-import { isPropertyAtomInstance, buildAtomDid } from "@hauska-engine/atoms";
+import { isPropertyAtomInstance, buildAtomDid, isPedestrianOsmHighwayTag } from "@hauska-engine/atoms";
 import type {
   AtomLink,
   CodeAtomEntityType,
+  RoadNodeAtomInstance,
   StoredAtomInstance,
 } from "@hauska-engine/atoms";
 import type { Scope } from "@hauska-engine/atom-contract-pin";
@@ -149,6 +150,25 @@ export interface HybridRetrievalOptions {
    * parcel node / atom DID. Absent → served atoms keep asserted placeholders.
    */
   calibrationOverlay?: CalibrationOverlayPort | null;
+}
+
+/**
+ * Ensure near-bbox (and any road wire) carries isPedestrianWay without re-ingest.
+ * Prefers the persisted flag; otherwise derives from provenance.osmHighwayTag
+ * via the shared atoms denylist (same as emit / frontage).
+ */
+export function ensureRoadPedestrianWayFlag(
+  road: StoredAtomInstance,
+): StoredAtomInstance {
+  const body = road as Partial<RoadNodeAtomInstance> & StoredAtomInstance;
+  if (typeof body.isPedestrianWay === "boolean") return road;
+  const prov = body.row?.provenance as { osmHighwayTag?: string } | undefined;
+  const tag =
+    typeof prov?.osmHighwayTag === "string" ? prov.osmHighwayTag : undefined;
+  return {
+    ...body,
+    isPedestrianWay: isPedestrianOsmHighwayTag(tag),
+  } as StoredAtomInstance;
 }
 
 export class HybridRetrieval {
@@ -391,12 +411,14 @@ export class HybridRetrieval {
     const roads = listFn
       ? await listFn(input.countyFips, bbox, { limit })
       : [];
+    // Enrich isPedestrianWay for pre-flag atoms (no re-ingest) from osmHighwayTag.
+    const enriched = roads.map(ensureRoadPedestrianWayFlag);
     return {
       countyFips: input.countyFips,
       bbox,
       limit,
-      count: roads.length,
-      roads,
+      count: enriched.length,
+      roads: enriched,
     };
   }
 

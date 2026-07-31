@@ -35,6 +35,8 @@ export interface BoundaryFacingRoad {
   classification: RoadClassification;
   provenance: string;
   osmHighwayTag?: string;
+  /** Mirrors road-node isPedestrianWay when known (same engine denylist). */
+  isPedestrianWay?: boolean;
 }
 
 export interface BoundaryResolvedSetback {
