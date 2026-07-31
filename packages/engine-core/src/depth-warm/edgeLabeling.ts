@@ -178,9 +178,15 @@ export function normalizeStreetNameForMatch(raw: string): string {
   return tokens.join(" ");
 }
 
+export type LabelEdgesDeclineReason =
+  | "invalid-parcel-ring"
+  | "no-roads-available"
+  | "no-road-adjacency"
+  | "front-orientation-unresolved";
+
 export type LabelEdgesResult =
   | { ok: true; edgeLabels: EdgeLabelDraft[] }
-  | { ok: false; decline: string };
+  | { ok: false; decline: LabelEdgesDeclineReason };
 
 interface XY {
   x: number;
@@ -332,10 +338,14 @@ export function labelEdgesFromRoads(input: {
       const prior = situsMatchByEdge.get(hit.edgeIndex);
       situsMatchByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
     }
-    // Exactly one matching edge → unambiguous. Zero → no match. Two or more
-    // (corner lot on a curving street) → ambiguous; fall through unchanged.
-    if (situsMatchByEdge.size === 1) {
-      frontHit = [...situsMatchByEdge.values()][0]!;
+    // R30: when situs matches one or more edges, the CLOSEST situs-matching
+    // edge wins front (907 Chestnut on a lot hugging Chestnut on two edges).
+    // Zero matches → fall through to heuristic or fail-closed below.
+    if (situsMatchByEdge.size >= 1) {
+      const matches = [...situsMatchByEdge.values()].sort(
+        (a, b) => a.distanceM - b.distanceM,
+      );
+      frontHit = matches[0]!;
       frontBasis = "situs-street-match";
     }
   }
@@ -350,6 +360,29 @@ export function labelEdgesFromRoads(input: {
     });
     frontHit = frontCandidates[0]!;
     frontBasis = "adjacency-heuristic";
+  }
+
+  // R30 fail-closed: situs was provided but did not match any adjacent road,
+  // and the heuristic picked a different street class — decline rather than
+  // inset the wrong edge (distant-road / wrong-street frontage).
+  if (
+    situsKey &&
+    !frontHit &&
+    frontCandidates.length === 0
+  ) {
+    return { ok: false, decline: "front-orientation-unresolved" };
+  }
+  if (situsKey && frontBasis === "adjacency-heuristic" && frontHit) {
+    const situsAdjacentEligible = hits.some(
+      (h) =>
+        !isAlleyClassification(h.road.classification) &&
+        isFrontEligibleRoad(h.road) &&
+        h.road.name &&
+        normalizeStreetNameForMatch(h.road.name) === situsKey,
+    );
+    if (situsAdjacentEligible) {
+      return { ok: false, decline: "front-orientation-unresolved" };
+    }
   }
 
   let rearHit: EdgeRoadHit | null = null;

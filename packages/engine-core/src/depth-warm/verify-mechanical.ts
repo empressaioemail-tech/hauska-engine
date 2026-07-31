@@ -13,7 +13,11 @@ import { openRing, projectRing } from "./geometry.js";
 import { isConvexPlanarRing } from "../geometry/polygon-inset.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { geometryCorrectnessGate } from "./geometry.js";
-import type { VerifyResult, WarmCandidate } from "./types.js";
+import type { VerifyResult, WarmCandidate, WarmRoadSource } from "./types.js";
+import {
+  labelEdgesFromRoads,
+  type LabelEdgesResult,
+} from "./edgeLabeling.js";
 import {
   buildFlatSetbackFallback,
   resolveInsetFeetForEdge,
@@ -106,12 +110,80 @@ export function verifySetbackEdgeDistance(
   return { pass: reasons.length === 0, reasons };
 }
 
+export interface FrontOrientationVerifyInput {
+  situsAddress?: string | null;
+  roads?: ReadonlyArray<WarmRoadSource>;
+}
+
+/**
+ * R31 — front edge ROLE must match fresh road/situs labeling. Catches
+ * mis-oriented envelopes where correct magnitudes land on wrong edges.
+ */
+export function verifyFrontEdgeOrientation(
+  candidate: WarmCandidate,
+  descriptor: JurisdictionDescriptor,
+  input?: FrontOrientationVerifyInput,
+): { pass: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const roads = input?.roads ?? candidate.roads;
+  const fresh: LabelEdgesResult = labelEdgesFromRoads({
+    parcelRing: candidate.parcelRing,
+    roads,
+    situsAddress: input?.situsAddress ?? null,
+  });
+  if (!fresh.ok) {
+    reasons.push(`fresh front labeling declined: ${fresh.decline}`);
+    return { pass: false, reasons };
+  }
+  const freshFront = fresh.edgeLabels.find((e) => e.label === "front");
+  const warmFront = candidate.edges.find((e) => e.label === "front");
+  if (!freshFront) {
+    reasons.push("fresh labeling produced no front edge");
+    return { pass: false, reasons };
+  }
+  if (!warmFront) {
+    reasons.push("warm candidate has no front edge");
+    return { pass: false, reasons };
+  }
+  if (freshFront.index !== warmFront.index) {
+    reasons.push(
+      `front edge index ${warmFront.index} != fresh ${freshFront.index} (basis ${freshFront.frontBasis ?? "?"})`,
+    );
+  }
+  const flatFallback = buildFlatSetbackFallback(descriptor, candidate.district);
+  const freshByIndex = new Map(fresh.edgeLabels.map((e) => [e.index, e]));
+  for (const edge of candidate.edges) {
+    const freshEdge = freshByIndex.get(edge.index);
+    if (freshEdge && freshEdge.label !== edge.label) {
+      reasons.push(
+        `edge ${edge.index}: warm role ${edge.label} != fresh role ${freshEdge.label}`,
+      );
+    }
+    const roleForInset = freshEdge?.label ?? edge.label;
+    const appliedFt = candidate.insetFeetPerEdge[edge.index];
+    if (appliedFt === undefined) continue;
+    const expectedForRole = resolveInsetFeetForEdge(
+      descriptor,
+      candidate.district,
+      { label: roleForInset, roadClass: edge.roadClass },
+      flatFallback,
+    );
+    if (Math.abs(appliedFt - expectedForRole) > 0.01) {
+      reasons.push(
+        `edge ${edge.index}: applied ${appliedFt}ft != ${expectedForRole}ft for role ${roleForInset}`,
+      );
+    }
+  }
+  return { pass: reasons.length === 0, reasons };
+}
+
 /**
  * Run all mechanical gates. Fail closed on any miss.
  */
 export function verifyWarmCandidateMechanically(
   candidate: WarmCandidate,
   descriptor: JurisdictionDescriptor,
+  orientationInput?: FrontOrientationVerifyInput,
 ): VerifyResult {
   const geometry = geometryCorrectnessGate(
     candidate.parcelRing,
@@ -154,9 +226,17 @@ export function verifyWarmCandidateMechanically(
 
   const roadClassification = verifyRoadClassificationMatchesSource(candidate);
   const setbackEdgeDistance = verifySetbackEdgeDistance(candidate, descriptor);
+  const frontOrientation =
+    orientationInput?.situsAddress != null &&
+    orientationInput.situsAddress.trim() !== ""
+      ? verifyFrontEdgeOrientation(candidate, descriptor, orientationInput)
+      : { pass: true, reasons: [] as string[] };
 
   const pass =
-    geometry.pass && roadClassification.pass && setbackEdgeDistance.pass;
+    geometry.pass &&
+    roadClassification.pass &&
+    setbackEdgeDistance.pass &&
+    frontOrientation.pass;
 
   return {
     pass,
@@ -164,6 +244,7 @@ export function verifyWarmCandidateMechanically(
       geometry,
       roadClassification,
       setbackEdgeDistance,
+      frontOrientation,
     },
   };
 }
