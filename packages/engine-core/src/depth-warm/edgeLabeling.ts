@@ -12,6 +12,7 @@
  */
 
 import type { RoadClassification } from "@hauska-engine/atoms";
+import { isPedestrianOsmHighwayTag } from "@hauska-engine/atoms";
 
 import { projectRing, type Ring } from "./geometry.js";
 import type { WarmEdgeRole, WarmRoadProvenanceKind, WarmRoadSource } from "./types.js";
@@ -19,20 +20,14 @@ import type { WarmEdgeRole, WarmRoadProvenanceKind, WarmRoadSource } from "./typ
 /** Default max metres from edge midpoint to road centerline. */
 export const DEFAULT_ROAD_PROXIMITY_THRESHOLD_M = 25;
 
-/** OSM highway tags that must never win front labeling (pedestrian / non-ROW). */
-export const FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS = new Set([
-  "footway",
-  "path",
-  "steps",
-  "cycleway",
-  "pedestrian",
-  "bridleway",
-  "corridor",
-  "platform",
-  "bus_guideway",
-  "proposed",
-  "construction",
-]);
+/**
+ * OSM highway tags that must never win front labeling (pedestrian / non-ROW).
+ * Re-export of the atoms package set — ONE taxonomy with isPedestrianWay.
+ */
+export {
+  PEDESTRIAN_OSM_HIGHWAY_TAG_SET as FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS,
+  isPedestrianOsmHighwayTag,
+} from "@hauska-engine/atoms";
 
 export function isFrontEligibleRoad(road: WarmRoadSource): boolean {
   if (
@@ -43,7 +38,7 @@ export function isFrontEligibleRoad(road: WarmRoadSource): boolean {
   }
   const tag = road.osmHighwayTag?.trim().toLowerCase() ?? "";
   if (!tag || tag === "county-surveyed" || tag === "county-roadway") return true;
-  return !FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS.has(tag);
+  return !isPedestrianOsmHighwayTag(tag);
 }
 
 function countyProvenanceRank(kind: WarmRoadProvenanceKind | undefined): number {

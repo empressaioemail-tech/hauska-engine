@@ -35,6 +35,7 @@ export * from "./instances.js";
 export * from "./property-instances.js";
 export * from "./road-instances.js";
 export * from "./boundary-instances.js";
+export * from "./pedestrian-way.js";
 export * from "./workspace-instances.js";
 export * from "./document-instances.js";
 export * from "./registry.js";

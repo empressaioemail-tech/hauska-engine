@@ -92,6 +92,7 @@ export function emitCountyRoadwayRoadNode(
     countyFips: descriptor.countyFips,
     osmWayId: syntheticWayId,
     classification: obs.classification,
+    isPedestrianWay: false,
     centerline: { type: "LineString", coordinates: [...obs.centerline] },
     row: {
       assumedWidthFt: widthFt,

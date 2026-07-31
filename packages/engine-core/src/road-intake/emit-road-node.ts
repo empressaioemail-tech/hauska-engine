@@ -1,4 +1,4 @@
-import { buildAtomDid, roadNodeIdFromParts, type RoadNodeAtomInstance } from "@hauska-engine/atoms";
+import { buildAtomDid, isPedestrianOsmHighwayTag, roadNodeIdFromParts, type RoadNodeAtomInstance } from "@hauska-engine/atoms";
 
 import {
   buildPropertyReadContract,
@@ -60,6 +60,8 @@ export function emitRoadNode(
     countyFips: descriptor.countyFips,
     osmWayId: obs.osmWayId,
     classification: obs.classification,
+    /** Derived from FRONT_INELIGIBLE_OSM_HIGHWAY_TAGS — not a second taxonomy. */
+    isPedestrianWay: isPedestrianOsmHighwayTag(obs.osmHighwayTag),
     centerline: { type: "LineString", coordinates: [...obs.centerline] },
     row: {
       assumedWidthFt: widthFt,
