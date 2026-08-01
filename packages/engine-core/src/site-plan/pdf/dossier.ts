@@ -113,7 +113,7 @@ export const DOSSIER_CAPS = {
 } as const;
 
 // Standing dossier lines (§8 family). One spelling each, everywhere.
-export const DOSSIER_KICKER = "PROPERTY DOSSIER";
+export const DOSSIER_KICKER = "SMART SITE X-RAY";
 export const DOSSIER_VERDICT_HEADING = "VERDICT";
 export const DOSSIER_VERDICT_QUALIFIER =
   "The requesting application's deterministic verdict, rendered verbatim.";
