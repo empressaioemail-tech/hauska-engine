@@ -226,12 +226,14 @@ curl -s -H "Authorization: Bearer <key>" \
   | jq '.buildableEnvelope.readContract.axes'
 ```
 
-## Health (`GET /healthz`)
+## Health (`GET /healthz` + `GET /health/search`)
 
 Observability surface per [`76e_platform_observability_sprint`](../../doc_repo/76e_platform_observability_sprint.md). Returns `{status, db, corpus}`:
 
 - **`corpus`** — atom count from the loaded snapshot (`storage.countAtoms()`). Zero count → HTTP 503 / `status: fail`.
 - **`db`** — substrate Neon liveness via `SELECT 1` when `SUBSTRATE_DATABASE_URL` (or `DATABASE_URL`) is set. When unset, `db.status` is `not_configured` and overall status is `warn` (snapshot-only mode).
+
+**`GET /health/search`** — runs a real bounded `/search` (`jurisdiction=bastrop_tx`, `limit=3`) and returns **HTTP 503** when the search path throws or returns zero results. Use this for uptime alerts: `/health` alone stayed 200 while every `/search` OOM'd. Emits `hauska_health=true, check=search`.
 
 **Cloud Run note:** Google Front End reserves exact `/healthz` (no trailing slash) and returns a platform 404 before the request reaches the container. Use **`/healthz/`** (trailing slash) for uptime checks and hub polling on Cloud Run; the handler and signal emit are identical.
 

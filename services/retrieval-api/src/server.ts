@@ -16,6 +16,11 @@ import {
   emitHealthzSignal,
   httpStatusForHealthz,
 } from "./healthz.js";
+import {
+  buildSearchHealthPayload,
+  emitSearchHealthSignal,
+  httpStatusForSearchHealth,
+} from "./search-health.js";
 import { runCentralTxNodeGraphTally } from "./central-tx-tally.js";
 import { resolveSubstrateDatabaseUrl } from "./substrate-db-probe.js";
 import {
@@ -28,6 +33,7 @@ function isPublicHealthPath(path: string): boolean {
     path === "/health" ||
     path === "/healthz" ||
     path === "/healthz/" ||
+    path === "/health/search" ||
     path === "/health/spine" ||
     path === "/health/spine/run" ||
     path === "/ready"
@@ -154,11 +160,22 @@ export function buildApp(options: ServerOptions = {}): Hono {
       service: "retrieval-api",
       startedAt,
       links: {
+        searchHealth: "/health/search",
         spineHealth: "/health/spine",
         spineHealthRun: "/health/spine/run",
       },
     }),
   );
+
+  /**
+   * Bounded live /search probe. /health alone stayed 200 while every /search
+   * OOM'd — this endpoint must return non-200 when the search path is dead.
+   */
+  app.get("/health/search", async (c) => {
+    const payload = await buildSearchHealthPayload({ retrieval });
+    emitSearchHealthSignal(payload);
+    return c.json(payload, httpStatusForSearchHealth(payload));
+  });
 
   /**
    * COMPLETE-BASTROP B1 — latest persisted spine source+engine probe summary.

@@ -37,7 +37,26 @@ import {
   matchesAtomQuery,
   rankSearchResults,
   scoreAtomSearch,
+  tokenize,
 } from "./search-scoring.js";
+
+/**
+ * Hard cap on bodies materialized per search. The live substrate table is
+ * multi-million-row / multi-GB (Central-TX breadth). The previous
+ * `SELECT body FROM atoms ORDER BY updated_at DESC` with no WHERE/LIMIT
+ * loaded the entire relation into the Node heap and OOM'd every /search.
+ */
+export const SEARCH_CANDIDATE_CAP = 2_000;
+
+/** Code-corpus entity types served by HTTP `/search` (property atoms have own routes). */
+const CODE_SEARCH_ENTITY_TYPES = [
+  "code-section",
+  "code-definition",
+  "code-amendment",
+  "code-cross-reference",
+  "code-edition",
+  "jurisdiction-corpus",
+] as const;
 
 interface AtomBodyRow {
   body: unknown;
@@ -666,10 +685,57 @@ export class PgStorage implements StoragePort {
   }
 
   async search(query: AtomQuery): Promise<ReadonlyArray<AtomSearchResult>> {
+    const limit = query.limit ?? 25;
+    const candidateCap = Math.min(
+      Math.max(limit * 40, 250),
+      SEARCH_CANDIDATE_CAP,
+    );
+    const tokens = tokenize((query.q ?? "").toLowerCase().trim());
+
+    const jurisdictionFrag = query.jurisdiction
+      ? this.sql`AND jurisdiction_tenant = ${query.jurisdiction}`
+      : this.sql``;
+
+    // Prefer an explicit entityType; otherwise restrict to code-corpus types so
+    // a bare /search never seq-scans millions of property/road atoms.
+    const entityTypeFrag = query.entityType
+      ? this.sql`AND entity_type = ${query.entityType}`
+      : this.sql`AND entity_type IN ${this.sql([...CODE_SEARCH_ENTITY_TYPES])}`;
+
+    let textFrag = this.sql``;
+    if (tokens.length > 0) {
+      // Any-token match (OR) — scoreAtomSearch requires matched > 0, then ranks
+      // by token ratio. Searchable surface matches buildSnippet fields + body.
+      const orClause = tokens.reduce((acc, token, i) => {
+        const pattern = `%${escapeLikePattern(token)}%`;
+        const clause = this.sql`(
+          section_number ILIKE ${pattern}
+          OR entity_id ILIKE ${pattern}
+          OR body->>'title' ILIKE ${pattern}
+          OR body->>'bodyText' ILIKE ${pattern}
+          OR body->>'term' ILIKE ${pattern}
+          OR body->>'definitionText' ILIKE ${pattern}
+          OR body->>'referenceText' ILIKE ${pattern}
+          OR body->>'amendmentText' ILIKE ${pattern}
+          OR body->>'editionLabel' ILIKE ${pattern}
+          OR body->>'jurisdictionName' ILIKE ${pattern}
+          OR body->>'ordinanceId' ILIKE ${pattern}
+        )`;
+        if (i === 0) return clause;
+        return this.sql`${acc} OR ${clause}`;
+      }, this.sql``);
+      textFrag = this.sql`AND (${orClause})`;
+    }
+
     const rows = await this.sql<AtomBodyRow[]>`
       SELECT body
       FROM atoms
+      WHERE TRUE
+        ${jurisdictionFrag}
+        ${entityTypeFrag}
+        ${textFrag}
       ORDER BY updated_at DESC
+      LIMIT ${candidateCap}
     `;
     const results: AtomSearchResult[] = [];
     for (const row of rows) {
@@ -680,7 +746,7 @@ export class PgStorage implements StoragePort {
       const scored = scoreAtomSearch(inst, atomDid, query);
       if (scored) results.push(scored);
     }
-    return rankSearchResults(results, query.limit ?? 25);
+    return rankSearchResults(results, limit);
   }
 
   async getSectionsBySectionNumber(
