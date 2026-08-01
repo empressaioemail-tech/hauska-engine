@@ -38,8 +38,30 @@ class FakePgBackend {
     const backend = this;
     const jsonMarker = Symbol("json");
 
-    const sql = (strings: TemplateStringsArray, ...params: unknown[]) => {
-      const text = strings.join("?").replace(/\s+/g, " ").trim();
+    const sql = ((
+      strings: TemplateStringsArray | readonly unknown[],
+      ...params: unknown[]
+    ) => {
+      // postgres.sql(array) helper used for IN (...entity types...).
+      if (Array.isArray(strings) && !("raw" in strings)) {
+        return { __sqlIn: strings };
+      }
+
+      const text = (strings as TemplateStringsArray)
+        .join("?")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      // Nested fragment builders (AND jurisdiction..., AND entity_type..., OR ILIKE...)
+      // are invoked as tagged templates too; only top-level awaits need rows.
+      if (
+        text.startsWith("AND ") ||
+        text.startsWith("OR ") ||
+        text.startsWith("(") ||
+        text === ""
+      ) {
+        return { __sqlFrag: text, params };
+      }
 
       if (text.startsWith("INSERT INTO atoms")) {
         const paramsCopy = [...params];
@@ -104,12 +126,6 @@ class FakePgBackend {
         return Promise.resolve(row ? [{ body: row.body }] : []);
       }
 
-      if (text.startsWith("SELECT body FROM atoms ORDER BY updated_at")) {
-        return Promise.resolve(
-          [...backend.atoms.values()].map((row) => ({ body: row.body })),
-        );
-      }
-
       if (
         text.startsWith(
           "SELECT body FROM atoms WHERE entity_type = 'code-section'",
@@ -128,6 +144,14 @@ class FakePgBackend {
         );
       }
 
+      // Bounded search (and any other body SELECT). Fake returns the small
+      // in-memory set; production SQL pushes jurisdiction/entityType/q + LIMIT.
+      if (text.startsWith("SELECT body FROM atoms")) {
+        return Promise.resolve(
+          [...backend.atoms.values()].map((row) => ({ body: row.body })),
+        );
+      }
+
       if (text.startsWith("SELECT COUNT(*)::text AS count FROM atoms")) {
         return Promise.resolve([{ count: String(backend.atoms.size) }]);
       }
@@ -143,6 +167,13 @@ class FakePgBackend {
       }
 
       return Promise.resolve([]);
+    }) as ((
+      strings: TemplateStringsArray,
+      ...params: unknown[]
+    ) => Promise<unknown[]>) & {
+      unsafe: () => Promise<unknown[]>;
+      json: (value: unknown) => unknown;
+      end: () => Promise<void>;
     };
 
     sql.unsafe = async () => [];
@@ -179,6 +210,45 @@ describe("PgStorage", () => {
       limit: 5,
     });
     expect(results[0]?.atomDid).toBe(STORAGE_PORT_PROOF_ATOM_DID);
+  });
+
+  it("search SQL is bounded (WHERE + LIMIT) — never SELECT body FROM atoms alone", async () => {
+    const backend = new FakePgBackend();
+    const calls: string[] = [];
+    const baseSql = backend.makeSql();
+    const spySql = ((
+      strings: TemplateStringsArray | readonly unknown[],
+      ...params: unknown[]
+    ) => {
+      if (Array.isArray(strings) && "raw" in strings) {
+        const text = (strings as TemplateStringsArray)
+          .join("?")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (text.startsWith("SELECT body FROM atoms")) calls.push(text);
+      }
+      return (baseSql as unknown as (...args: unknown[]) => unknown)(
+        strings,
+        ...params,
+      );
+    }) as unknown as typeof baseSql;
+    Object.assign(spySql, baseSql);
+
+    const storage = new PgStorage(spySql as never);
+    await storage.writeAtom(buildStoragePortProofAtom());
+    await storage.search({
+      q: "storage-port-proof",
+      jurisdiction: "storage-port-proof",
+      limit: 5,
+    });
+
+    expect(calls.length).toBeGreaterThan(0);
+    for (const text of calls) {
+      expect(text).toMatch(/WHERE/i);
+      expect(text).toMatch(/LIMIT/i);
+      // The pathological full-table form that OOM'd Cloud Run.
+      expect(text).not.toBe("SELECT body FROM atoms ORDER BY updated_at DESC");
+    }
   });
 
   it("getSectionsBySectionNumber returns exact section hits", async () => {
