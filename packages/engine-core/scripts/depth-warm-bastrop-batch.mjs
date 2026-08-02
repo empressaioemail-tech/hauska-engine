@@ -666,6 +666,8 @@ for (const row of parcelRows) {
       ...result.verify.gates.roadClassification.reasons,
       ...result.verify.gates.setbackEdgeDistance.reasons,
       ...result.verify.gates.frontOrientation.reasons,
+      ...result.verify.gates.r32PerEdgeInset.reasons,
+      ...result.verify.gates.facesAnswer.reasons,
     ];
     const bucket = bucketVerifyFailReasons(reasons);
     stats.failureBuckets[bucket] = (stats.failureBuckets[bucket] ?? 0) + 1;

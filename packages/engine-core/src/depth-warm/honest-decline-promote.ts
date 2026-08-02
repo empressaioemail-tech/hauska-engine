@@ -4,14 +4,15 @@
  */
 import type { StoragePort } from "@hauska-engine/storage";
 import {
+  BUILDABLE_ENVELOPE_DERIVATION_METHOD,
   buildAtomDid,
   type BuildableEnvelopeAtomInstance,
 } from "@hauska-engine/atoms";
+import { createWidthedConfidence } from "@empressaio/atom-contract/read-contract";
 import {
   buildPropertyReadContract,
   contentHashExcludingProvenance,
   propertyEntityId,
-  propertyNotApplicableConsequence,
 } from "../property-reasoning/confidence.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { writePropertyAtomIfEnabled } from "../property-reasoning/write-property-atom.js";
@@ -38,7 +39,7 @@ export async function promoteHonestVerifyDecline(
   const version = 1;
   const entityId = propertyEntityId(input.parcelNodeId, "envelope", version);
   const atomDid = buildAtomDid("buildable-envelope", entityId).raw;
-  const emptyReason =
+  const declineReason =
     input.verifyReasons.slice(0, 3).join("; ") ||
     "Mechanical warm verify failed — honest decline.";
 
@@ -63,11 +64,11 @@ export async function promoteHonestVerifyDecline(
     versionStamp: `${input.parcelNodeId}:buildable-envelope-decline:${version}:${extractedAt}`,
     outcome: {
       kind: "no-buildable-area",
-      emptyReason,
+      reason: declineReason,
     },
     reasoningChain: {
       reasoningKind: "derived",
-      derivationMethod: "depth-warm-verify-decline",
+      derivationMethod: BUILDABLE_ENVELOPE_DERIVATION_METHOD,
       inputAtomRefs: [
         {
           atomDid: input.zoningFactAtomDid,
@@ -77,12 +78,12 @@ export async function promoteHonestVerifyDecline(
       ],
     },
     readContract: buildPropertyReadContract({
-      asserted: {
+      asserted: createWidthedConfidence({
         estimate: 0.5,
         n: 0,
         intervalWidth: 0.2,
         provenance: "asserted",
-      },
+      }),
       calibrated: null,
       consequence: {
         kind: "property-risk",
@@ -94,7 +95,7 @@ export async function promoteHonestVerifyDecline(
     }),
     contentHash: "",
     recipeVersion: RECIPE_VERSION,
-    warmVerifyDecline: emptyReason,
+    warmVerifyDecline: declineReason,
     warmVerifyDeclineCode: input.declineCode,
   };
   instance.contentHash = contentHashExcludingProvenance(instance);
@@ -118,6 +119,12 @@ export function bucketVerifyFailReasons(reasons: string[]): string {
   }
   if (text.includes("orientation") || text.includes("front")) {
     return "front-orientation";
+  }
+  if (text.includes("facesanswer") || text.includes("situs")) {
+    return "faces-answer";
+  }
+  if (text.includes("r32")) {
+    return "r32-per-edge-inset";
   }
   if (text.includes("geometry") || text.includes("ring")) {
     return "geometry";

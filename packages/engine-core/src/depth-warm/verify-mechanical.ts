@@ -19,6 +19,10 @@ import {
   type LabelEdgesResult,
 } from "./edgeLabeling.js";
 import {
+  verifyFacesAnswerMatch,
+  verifyR32PerEdgeInset,
+} from "./cert-equivalent-gates.js";
+import {
   buildFlatSetbackFallback,
   resolveInsetFeetForEdge,
 } from "./warm-compute.js";
@@ -232,11 +236,58 @@ export function verifyWarmCandidateMechanically(
       ? verifyFrontEdgeOrientation(candidate, descriptor, orientationInput)
       : { pass: true, reasons: [] as string[] };
 
+  const roads = orientationInput?.roads ?? candidate.roads;
+  const freshLabels: LabelEdgesResult = labelEdgesFromRoads({
+    parcelRing: candidate.parcelRing,
+    roads,
+    situsAddress: orientationInput?.situsAddress ?? null,
+  });
+
+  const r32EdgeLabels =
+    freshLabels.ok
+      ? freshLabels.edgeLabels
+      : candidate.edges.map((e) => ({ index: e.index, label: e.label }));
+
+  const r32PerEdgeInset =
+    candidate.empty || !candidate.insetRing
+      ? { pass: false, reasons: ["warm candidate marked empty — cannot promote"] }
+      : verifyR32PerEdgeInset({
+          parcelRing: candidate.parcelRing,
+          insetRing: candidate.insetRing,
+          edgeLabels: r32EdgeLabels,
+          descriptor,
+          district: candidate.district,
+        });
+
+  const facesAnswerResult =
+    freshLabels.ok
+      ? verifyFacesAnswerMatch({
+          situsAddress: orientationInput?.situsAddress ?? null,
+          roads,
+          parcelRing: candidate.parcelRing,
+        })
+      : {
+          pass: !(orientationInput?.situsAddress?.trim()),
+          reasons:
+            orientationInput?.situsAddress?.trim()
+              ? [`fresh labeling declined: ${freshLabels.decline}`]
+              : [],
+          facesAnswer: !(orientationInput?.situsAddress?.trim()),
+          frontStreetResolved: null,
+          answerFrontKey: null,
+        };
+  const facesAnswer = {
+    pass: facesAnswerResult.pass,
+    reasons: facesAnswerResult.reasons,
+  };
+
   const pass =
     geometry.pass &&
     roadClassification.pass &&
     setbackEdgeDistance.pass &&
-    frontOrientation.pass;
+    frontOrientation.pass &&
+    r32PerEdgeInset.pass &&
+    facesAnswer.pass;
 
   return {
     pass,
@@ -245,6 +296,8 @@ export function verifyWarmCandidateMechanically(
       roadClassification,
       setbackEdgeDistance,
       frontOrientation,
+      r32PerEdgeInset,
+      facesAnswer,
     },
   };
 }

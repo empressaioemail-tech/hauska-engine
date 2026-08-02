@@ -27,11 +27,14 @@ import {
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import {
   labelEdgesFromRoads,
-  normalizeStreetNameForMatch,
 } from "../src/depth-warm/edgeLabeling.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 import { openRing } from "../src/depth-warm/geometry.ts";
-import { measurePerEdgeInsetForRings } from "../src/depth-warm/measure-inset.ts";
+import {
+  DEFAULT_R32_INSET_TOL_FT,
+  verifyFacesAnswerMatch,
+  verifyR32PerEdgeInset,
+} from "../src/depth-warm/cert-equivalent-gates.ts";
 import { computeWarmCandidateFromBoundary } from "../src/boundary-primitive/consume.ts";
 import { relabelBoundaryEdgesFromRoadLabels } from "../src/boundary-primitive/relabel-from-roads.ts";
 import {
@@ -44,7 +47,7 @@ import { loadLayer23CityPropIds } from "./bastrop-layer23-roster.mjs";
 
 const COUNTY = "48021";
 const BASTROP_CITY_KEY = "bastrop-city-tx";
-const INSET_TOL_FT = 1.0;
+const INSET_TOL_FT = DEFAULT_R32_INSET_TOL_FT;
 
 const BLOCK13_QUARANTINE = new Set([
   "48021:34145", "48021:34121", "48021:34153", "48021:34137",
@@ -356,45 +359,24 @@ try {
       });
     }
 
-    const freshFront = freshLabels.find((e) => e.label === "front");
-    const answerFrontKey = key.frontStreet
-      ? normalizeStreetNameForMatch(key.frontStreet)
-      : null;
-    let frontFacesAnswer = !answerFrontKey;
-    let frontStreetResolved = null;
-    if (freshFront && answerFrontKey) {
-      const backingRoad = roads.find((r) => r.osmWayId === freshFront.osmWayId) ?? null;
-      frontStreetResolved = backingRoad?.name ?? null;
-      if (frontStreetResolved) {
-        const roadKey = normalizeStreetNameForMatch(frontStreetResolved);
-        frontFacesAnswer =
-          roadKey === answerFrontKey ||
-          roadKey.includes(answerFrontKey) ||
-          answerFrontKey.includes(roadKey);
-      }
-    }
+    const facesAnswerResult = verifyFacesAnswerMatch({
+      situsAddress,
+      roads,
+      parcelRing: ring,
+    });
+    const frontFacesAnswer = facesAnswerResult.facesAnswer;
+    const frontStreetResolved = facesAnswerResult.frontStreetResolved;
 
-    const r32Measured = measurePerEdgeInsetForRings(ring, insetRing) ?? [];
-    const nEdges = openRing(ring).length;
-    let insetGatePass = true;
-    for (let i = 0; i < nEdges; i++) {
-      const role =
-        freshLabels.find((e) => e.index === i)?.label ??
-        warmCandidate?.edges.find((e) => e.index === i)?.label ??
-        boundaryEdges?.find((e) => e.edgeIndex === i)?.role ??
-        "?";
-      const expected = expectedFtForRole(role, key);
-      const r32 = r32Measured[i]?.insetFeet ?? null;
-      const edgeOk = r32 != null && Math.abs(r32 - expected) <= INSET_TOL_FT;
-      if (!edgeOk) insetGatePass = false;
-      parcelResult.edges.push({
-        edgeIndex: i,
-        role,
-        expectedFt: expected,
-        r32IndexMatched_ft: r32 == null ? null : Number(r32.toFixed(2)),
-        insetPass: edgeOk,
-      });
-    }
+    const r32Gate = verifyR32PerEdgeInset({
+      parcelRing: ring,
+      insetRing,
+      edgeLabels: freshLabels,
+      descriptor,
+      district: key.district,
+      toleranceFt: INSET_TOL_FT,
+      setbackKey: { F: key.F, S: key.S, C: key.C, R: key.R },
+    });
+    const insetGatePass = r32Gate.pass;
 
     parcelResult.gates = {
       district: { pass: districtOk, served: servedDistrict, expected: key.district },
@@ -403,12 +385,13 @@ try {
         served: servedSetbacks,
         expected: { front: key.F, rear: key.R, side: key.S, sideCorner: key.C },
       },
-      perEdgeInset: { pass: insetGatePass },
+      perEdgeInset: { pass: insetGatePass, reasons: r32Gate.reasons },
       frontOrientation: {
         pass: frontFacesAnswer && engineOrient.pass,
         frontStreetResolved,
         facesAnswer: frontFacesAnswer,
         engineOrientPass: engineOrient.pass,
+        reasons: facesAnswerResult.reasons,
       },
     };
 

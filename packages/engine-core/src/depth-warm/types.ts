@@ -68,6 +68,10 @@ export interface VerifyResult {
     setbackEdgeDistance: MechanicalGateResult;
     /** R31 — front edge must match fresh road/situs labeling, not merely magnitudes. */
     frontOrientation: MechanicalGateResult;
+    /** R33 / R32 — per-edge inset remeasure (cert-equivalent). */
+    r32PerEdgeInset: MechanicalGateResult;
+    /** R33 — situs front-street token matches resolved OSM road name. */
+    facesAnswer: MechanicalGateResult;
   };
 }
 
