@@ -70,6 +70,7 @@ export {
 export { computeAttributionCoverage } from "./calibration/attribution.js";
 
 export * as siteTopography from "./site-topography/index.js";
+export * as registry from "./registry/index.js";
 export * as envelope from "./envelope/index.js";
 export {
   sealEnvelope,
