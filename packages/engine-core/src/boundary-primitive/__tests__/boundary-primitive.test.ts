@@ -175,13 +175,22 @@ describe("boundary primitive honesty + method (U2.3–U2.5)", () => {
       sourceUrl: "test://",
     });
 
+    // R7 (district-default-for-role): an unmapped-adjacency edge with a KNOWN
+    // role must NO LONGER decline with "unmapped-adjacency" (which NaN'd the
+    // whole envelope). It resolves to the district-table setback for its role;
+    // it may only decline with "no-setback-row" if the district genuinely has
+    // no table row. The adjacencyKind provenance is still recorded on the atom.
     for (const atom of atoms) {
       if (atom.adjacencyKind === "unmapped") {
-        expect(atom.setback).toEqual({
-          kind: "unmapped-adjacency",
-          reason: expect.any(String),
-        });
-        expect("feet" in atom.setback).toBe(false);
+        // The old "unmapped-adjacency" decline is retired.
+        expect(
+          "kind" in atom.setback && atom.setback.kind === "unmapped-adjacency",
+        ).toBe(false);
+        // Either a resolved setback (feet) or an honest no-setback-row decline.
+        const resolved = "feet" in atom.setback;
+        const honestDecline =
+          "kind" in atom.setback && atom.setback.kind === "no-setback-row";
+        expect(resolved || honestDecline).toBe(true);
       }
     }
   });

@@ -98,15 +98,21 @@ function resolveSetbackForEdge(
   descriptor: JurisdictionDescriptor,
   district: string,
   role: RoadEdgeRole,
-  adjacencyKind: BoundaryAdjacencyKind,
+  // adjacencyKind is recorded on the atom as provenance (see caller) but does
+  // NOT gate the setback VALUE anymore (R7): the value comes from the district
+  // table by role, so an unmapped-adjacency edge with a known role resolves.
+  _adjacencyKind: BoundaryAdjacencyKind,
   _roadClass?: RoadClassification,
 ): BoundaryResolvedSetback | BoundarySetbackAbsence {
-  if (adjacencyKind === "unmapped") {
-    return {
-      kind: "unmapped-adjacency",
-      reason: "No parcel or ROW adjacency mapped for this edge.",
-    };
-  }
+  // R7 (district-default-for-role): an edge with a KNOWN district and a KNOWN
+  // role (front/side/rear/side_corner — RoadEdgeRole has no "unknown" member,
+  // so the role is always known here) resolves to the DISTRICT's setback for
+  // that role EVEN WHEN adjacency is unmapped. The setback VALUE comes from the
+  // district table by ROLE; adjacency only picks the role (already resolved).
+  // Unmapped adjacency is therefore NOT a decline — only a genuinely missing
+  // district row (no-setback-row) declines. This closes the primitive-bake
+  // strand where an unmapped edge nulled the whole envelope for city parcels
+  // that skip the R28/R30 re-warm path.
 
   // WDLL 7 / RULING 2: NUMBER from flat district table by edge ROLE.
   // Road class may identify ROW/alley adjacency and front EDGE; never the VALUE.
