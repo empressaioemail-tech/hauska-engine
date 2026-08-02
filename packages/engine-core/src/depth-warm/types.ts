@@ -81,5 +81,15 @@ export interface PromotedDepthWarmBundle {
 /** Marker written on promoted atoms — read path uses this to skip cold derive. */
 export const DEPTH_WARM_PROMOTION_MARKER = "depth-warm-promoted-v1" as const;
 
+/**
+ * The recipe version a promoted atom was warmed under — the REWARM TRIGGER
+ * (OPS-4). Every promoted atom carries this; the performance ledger compares a
+ * jurisdiction's atoms' recipeVersion against the current RECIPE_VERSION to know
+ * what needs rewarming after a recipe improvement. Distinct from the promotion
+ * marker (which says "this came from a warm"): recipeVersion says "under which
+ * version of the correctness recipe." Bump on any recipe ruling change.
+ */
+export const RECIPE_VERSION = "1.0.0" as const;
+
 export const DEPTH_WARM_SOURCE_CITATION =
   "depth-warm-verified mechanical promote (27c R3 WDLL 6)" as const;
