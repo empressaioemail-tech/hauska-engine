@@ -407,3 +407,54 @@ helper in `confidence.ts` is ready to drop into those 5 remaining call sites wit
 same 2-line swap pattern used here.
 
 ---
+
+## FINAL STEPS — full monorepo build/tsc/test on branch HEAD
+
+Branch HEAD after all 5 tasks: `76629f2e7626ad439156fe44b34029a8e07d1381`
+(`feat/phase-a-foundation`, 6 commits ahead of the `a156497` origin/main tip at clone
+time: fec86e0 A2, eb7e5ef A2-notes, ecf0c4d A3, 1fa1c9d A4, 309edd6 A5, 76629f2 A6).
+
+Ran from repo root (`P:/tmp/phase-a-engine-20260802`), not just engine-core, so this
+covers all 19 typecheck/build-scripted workspace projects (adapters, atoms, storage,
+corpus, document-ingest, engine-core, workspace, retrieval, services/engine-api,
+services/pipeline-runner, services/retrieval-api, identity, og-sources, og-title,
+atom-contract-pin, tools/permit-outcome-cli, tools/rrc-ratio-report, tools/ingest-cli,
+tools/migrate-legacy-codes).
+
+`pnpm run typecheck` (root, `pnpm -r run typecheck`): every project reported "Done",
+zero tsc errors anywhere.
+
+`pnpm run build` (root, `pnpm -r run build`): every project reported "Done", zero tsc
+errors anywhere.
+
+`pnpm run test` (root, `pnpm -r run test`): exit code 0. Per-package summary (raw
+Vitest "Test Files" / "Tests" lines, grepped from the full run, saved at
+`_scratch/full-test-output.txt` in this worktree — NOT committed, too large/noisy for
+the repo; reproducible by re-running `pnpm run test` from repo root on this commit):
+
+```
+packages/og-sources test:       Test Files  3 passed (3)       Tests  23 passed (23)
+packages/og-title test:         Test Files  4 passed (4)       Tests  34 passed (34)
+packages/adapters test:         Test Files  28 passed (28)     Tests  400 passed (400)
+packages/atoms test:            Test Files  8 passed (8)       Tests  140 passed (140)
+packages/storage test:          Test Files  5 passed (5)       Tests  18 passed (18)
+packages/workspace test:        Test Files  1 passed (1)       Tests  6 passed (6)
+packages/document-ingest test:  Test Files  2 passed (2)       Tests  15 passed (15)
+packages/corpus test:           Test Files  14 passed (14)     Tests  111 passed (111)
+packages/engine-core test:      Test Files  91 passed (91)     Tests  604 passed | 2 skipped (606)
+tools/migrate-legacy-codes test: Test Files 8 passed (8)       Tests  36 passed (36)
+packages/retrieval test:        Test Files  3 passed (3)       Tests  17 passed (17)
+services/engine-api test:       Test Files  17 passed (17)     Tests  99 passed (99)
+services/retrieval-api test:    Test Files  13 passed (13)     Tests  79 passed (79)
+```
+
+Totals: 197 test files passed, 1582 tests passed, 2 skipped (both pre-existing,
+in `packages/engine-core` — the LIVE-gated Block-13-network boundary-primitive tests
+that `.skipIf(!LIVE)` when `BOUNDARY_LIVE_TEST` env is unset; unrelated to any Phase A
+change), 0 failed. Root command exit code: 0.
+
+GATE (final): PASS. Full monorepo build + typecheck + test all green on branch HEAD.
+Ready for PR.
+
+---
+
