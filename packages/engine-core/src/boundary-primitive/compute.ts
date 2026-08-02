@@ -99,12 +99,19 @@ function resolveSetbackForEdge(
   district: string,
   role: RoadEdgeRole,
   adjacencyKind: BoundaryAdjacencyKind,
-  _roadClass?: RoadClassification,
+  _roadClass: RoadClassification | undefined,
+  roleIsKnown: boolean,
 ): BoundaryResolvedSetback | BoundarySetbackAbsence {
-  if (adjacencyKind === "unmapped") {
+  // R7: an edge with a KNOWN district and KNOWN role (front/side/rear/side_corner)
+  // resolves to that district's setback for that role even when adjacency is
+  // unmapped — only genuinely role-unknowable edges (labelEdgesFromRoads declined
+  // entirely, so `role` is a hardcoded fallback, not a resolved fact) still decline.
+  // This closes the primitive-bake gap so parcels that skip re-warm aren't stranded
+  // with null envelopes when the district/role are already known.
+  if (adjacencyKind === "unmapped" && !roleIsKnown) {
     return {
       kind: "unmapped-adjacency",
-      reason: "No parcel or ROW adjacency mapped for this edge.",
+      reason: "No parcel or ROW adjacency mapped for this edge, and edge role is unresolved.",
     };
   }
 
@@ -156,6 +163,7 @@ export function computeBoundaryEdgeAtoms(
   for (const edgeInterior of interiorFacts.edges) {
     const i = edgeInterior.edgeIndex;
     const label = labelByIndex.get(i);
+    const roleIsKnown = label != null;
     const role = label?.label ?? "side";
     const roadClass = label?.roadClass;
     const neighborPropId = neighbors[i] ?? null;
@@ -166,6 +174,7 @@ export function computeBoundaryEdgeAtoms(
       warmRoleToRoadRole(role),
       adjacencyKind,
       roadClass,
+      roleIsKnown,
     );
 
     const boundaryEdgeId = boundaryEdgeIdFromParts(

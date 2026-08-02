@@ -192,3 +192,87 @@ GATE A4: PASS. Build + tsc + test green. Loader returns Bastrop's frozen row
 correctly by FIPS lookup.
 
 ---
+
+## Task A5 — Close R7 at primitive bake
+
+File: `packages/engine-core/src/boundary-primitive/compute.ts`.
+
+Found `resolveSetbackForEdge` (originally lines 97-122) — the function the dispatch
+pointed at (~line 104 was exactly the unconditional `unmapped-adjacency` decline on any
+`adjacencyKind === "unmapped"` edge, regardless of whether the edge's ROLE was known).
+
+### Key finding before implementing: how "role known" is actually represented
+
+`computeBoundaryEdgeAtoms` calls `labelEdgesFromRoads` ONCE for the whole parcel ring
+(not per-edge). Read `edgeLabeling.ts`: it is all-or-nothing — either EVERY edge in the
+ring gets a resolved role (front/side/rear/side_corner) via `{ ok: true, edgeLabels }`,
+or the WHOLE thing declines via `{ ok: false, decline: <reason> }` (reasons:
+invalid-parcel-ring, no-roads-available, no-road-adjacency,
+front-orientation-unresolved). When it declines, `edgeLabels = []` at the call site, and
+EVERY edge's `role` falls back to the hardcoded default `"side"` — that fallback is NOT
+a resolved fact, it is a punt. So "genuinely role-unknowable" (per dispatch language)
+= `labelResult.ok === false` for the parcel = `labelByIndex.get(i)` returns `undefined`
+for edge i. "Known role" = `labelByIndex.get(i)` returns a real label. This is the
+correct signal to thread into R7, NOT a per-role check on the (already-defaulted) role
+string itself.
+
+### Implementation
+
+1. `resolveSetbackForEdge` gained a `roleIsKnown: boolean` parameter. The unconditional
+   `if (adjacencyKind === "unmapped")` decline became
+   `if (adjacencyKind === "unmapped" && !roleIsKnown)` — i.e., decline ONLY when BOTH
+   adjacency is unmapped AND the role is genuinely unresolved. When adjacency is
+   unmapped but role IS known, falls through to the existing
+   `resolveDistrictEdgeSetback(descriptor, district, role)` call (the same flat
+   district-table-by-role resolver already used for the mapped-adjacency path — no new
+   resolution logic needed, R7 just widens WHEN it's reached).
+2. Call site: `const roleIsKnown = label != null;` (where `label =
+   labelByIndex.get(i)`), passed through to `resolveSetbackForEdge`.
+
+No other files touched for A5.
+
+### Ripple check — existing test preserved
+
+`boundary-primitive.test.ts` "U2.3 unmapped edges do not invent setback feet" uses
+`roads: []` (zero roads) -> `labelEdgesFromRoads` declines with `no-roads-available` ->
+`edgeLabels = []` -> every edge has `roleIsKnown = false` -> R7's new condition still
+declines exactly as before. Verified this test PASSES unchanged (see full suite run
+below) — confirms R7 did not weaken the genuinely-unknown-role case.
+
+### Tests added
+
+`packages/engine-core/src/boundary-primitive/__tests__/r7-known-role-unmapped-adjacency.test.ts`
+(2 tests, "R7 — known role + unmapped adjacency resolves to district default (A5)"):
+
+1. "known role (front, via situs-street-match) + no neighbor/ROW adjacency -> district
+   default setback, not decline" — isolated single-parcel fixture (no neighbor parcels
+   registered at all in the adjacency index), one road matched to the parcel via situs
+   address so `labelEdgesFromRoads` succeeds for the whole ring. Debug-verified
+   (temporary throwaway test, removed) the actual per-edge shape: front edge lands on
+   `adjacencyKind: "ROW"` (matched to the supplied road — already-mapped, unaffected by
+   R7, asserted here only to confirm labeling worked). Rear/side edges (3 of 4 edges)
+   land on `adjacencyKind: "unmapped"` (isolated parcel, no neighbor, no road touches
+   those edges) with a GENUINELY KNOWN role (rear/side, resolved by
+   `labelEdgesFromRoads` for the whole ring) — asserts these now resolve to the SF-1
+   district defaults (30ft rear / 10ft side) via `district-setback-table` provenance,
+   NOT `unmapped-adjacency` decline. This is gate case (1) from the dispatch.
+2. "genuinely-unknown role (no roads at all, labeling declines) -> still declines
+   unmapped-adjacency, unchanged" — same ring, `roads: []`. Asserts EVERY edge still
+   declines with `{ kind: "unmapped-adjacency", reason: <string> }` and no `feet` key —
+   preserving R7's carve-out for genuinely role-unknowable edges. This is gate case (2)
+   from the dispatch.
+
+### Verification (2026-08-02)
+
+`pnpm run typecheck` (tsc --noEmit) in `packages/engine-core`: clean, zero errors.
+`pnpm run build` (tsc -b) in `packages/engine-core`: clean, zero errors.
+`pnpm vitest run src/boundary-primitive/__tests__/r7-known-role-unmapped-adjacency.test.ts`:
+1 file, 2 tests, ALL PASS.
+Full engine-core suite (`pnpm run test`): 90 test files, 600 passed, 2 skipped
+(pre-existing, unrelated), 0 failed — includes U2.3 unmapped-edges-honest-decline
+UNCHANGED and PASSING.
+
+GATE A5: PASS. Build + tsc + test green. Both new R7 test cases pass. No other
+tests broke — did NOT need to stop/revert/punt this task.
+
+---
