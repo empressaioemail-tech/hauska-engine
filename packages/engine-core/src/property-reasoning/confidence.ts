@@ -19,6 +19,52 @@ export function sha256HexCanonical(input: string): string {
   return createHash("sha256").update(input, "utf8").digest("hex");
 }
 
+/**
+ * Provenance keys that are PROVENANCE, not CONTENT — timestamps and
+ * timestamp-bearing version stamps. Excluded from the content hash so two
+ * rewarms of the same content (same geometry / setback values / district /
+ * edge-roles / recipe-version) produce the SAME hash even though they ran at
+ * different times (OPS-3 I2 — rewarm-determinism). Without this, the atom
+ * content-hash changes on every rewarm and persisted==recompute (R10) can
+ * never hold. `versionStamp` embeds `extractedAt` (`...:<version>:<ts>`), so it
+ * is provenance too and is stripped.
+ */
+const PROVENANCE_KEYS = new Set<string>([
+  "extractedAt",
+  "fetchedAt",
+  "assembledAt",
+  "assertedAt",
+  "verifiedAt",
+  "depthWarmVerifiedAt",
+  "effectiveDate",
+  "versionStamp",
+]);
+
+/** Recursively drop provenance/timestamp keys so the result hashes by CONTENT. */
+function stripProvenance(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripProvenance);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (PROVENANCE_KEYS.has(k)) continue;
+      out[k] = stripProvenance(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Content hash of an atom instance EXCLUDING provenance/timestamp fields. Two
+ * atoms with identical content but different warm/extract timestamps hash
+ * equal; two atoms with different content hash differently. This is the
+ * rewarm-deterministic hash (OPS-3 I2). Use in place of
+ * `sha256HexCanonical(JSON.stringify(instance))` for promoted atoms.
+ */
+export function contentHashExcludingProvenance(instance: unknown): string {
+  return sha256HexCanonical(JSON.stringify(stripProvenance(instance)));
+}
+
 export function matchBasisDefaultEstimate(basis: MatchBasis): number {
   switch (basis) {
     case "exact":

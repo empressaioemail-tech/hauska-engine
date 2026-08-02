@@ -11,6 +11,7 @@ import {
   propertyEntityId,
   propertyNotApplicableConsequence,
   sha256HexCanonical,
+  contentHashExcludingProvenance,
   widthedFromFieldProvenance,
   widthedFromMatchBasis,
 } from "./confidence.js";
@@ -256,6 +257,6 @@ export function emitSetbackRule(
     }),
     contentHash: "",
   };
-  instance.contentHash = sha256HexCanonical(JSON.stringify(instance));
+  instance.contentHash = contentHashExcludingProvenance(instance);
   return instance;
 }

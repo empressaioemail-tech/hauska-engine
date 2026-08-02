@@ -10,6 +10,7 @@ import {
   propertyEntityId,
   propertyNotApplicableConsequence,
   sha256HexCanonical,
+  contentHashExcludingProvenance,
 } from "./confidence.js";
 import type { EmitBuildableEnvelopeInputs, HonestAbsence } from "./types.js";
 
@@ -104,6 +105,6 @@ export function emitBuildableEnvelope(
     }),
     contentHash: "",
   };
-  instance.contentHash = sha256HexCanonical(JSON.stringify(instance));
+  instance.contentHash = contentHashExcludingProvenance(instance);
   return instance;
 }

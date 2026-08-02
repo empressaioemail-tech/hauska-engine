@@ -20,6 +20,7 @@ import {
   buildPropertyReadContract,
   propertyNotApplicableConsequence,
   sha256HexCanonical,
+  contentHashExcludingProvenance,
   widthedFromMatchBasis,
 } from "../property-reasoning/confidence.js";
 import { resolveDistrictEdgeSetback } from "../property-reasoning/resolve-road-class-setback.js";
@@ -254,7 +255,7 @@ export function computeBoundaryEdgeAtoms(
         assembledAt: input.extractedAt,
       }),
     };
-    instance.contentHash = sha256HexCanonical(JSON.stringify(instance));
+    instance.contentHash = contentHashExcludingProvenance(instance);
     atoms.push(instance);
   }
 
