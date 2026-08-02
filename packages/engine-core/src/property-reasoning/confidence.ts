@@ -19,6 +19,59 @@ export function sha256HexCanonical(input: string): string {
   return createHash("sha256").update(input, "utf8").digest("hex");
 }
 
+/**
+ * A6 (Phase A determinism) — timestamp keys that are PROVENANCE, not content.
+ * These must never affect a content hash / idempotency signature: two rewarms
+ * of identical inputs (same geometry, setback values, district, edge-roles,
+ * recipe_version) must produce the SAME hash even when warmed at different
+ * wall-clock times. `versionStamp` is excluded too because it embeds the
+ * timestamp string directly (`${entityId}:${kind}:${version}:${extractedAt}`).
+ */
+const CONTENT_HASH_EXCLUDED_KEYS: ReadonlySet<string> = new Set([
+  "fetchedAt",
+  "extractedAt",
+  "assembledAt",
+  "assertedAt",
+  "warmAt",
+  "warmVerifiedAt",
+  "depthWarmVerifiedAt",
+  "promotedAt",
+  "versionStamp",
+  "contentHash",
+]);
+
+/**
+ * Deep-clone `value`, dropping any object key in CONTENT_HASH_EXCLUDED_KEYS at
+ * any nesting depth. Used to build the input to a content hash / idempotency
+ * signature so provenance timestamps never change the hash of identical
+ * content (rewarm-determinism — same frozen inputs must hash equal regardless
+ * of when they were warmed).
+ */
+export function stripTimestampsForHash(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((v) => stripTimestampsForHash(v));
+  }
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (CONTENT_HASH_EXCLUDED_KEYS.has(k)) continue;
+      out[k] = stripTimestampsForHash(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Content hash over `instance` with provenance timestamps excluded (A6).
+ * Use in place of `sha256HexCanonical(JSON.stringify(instance))` for any atom
+ * whose hash must be rewarm-deterministic (same frozen inputs -> same hash,
+ * independent of warmAt/extractedAt/fetchedAt wall-clock values).
+ */
+export function contentHashExcludingTimestamps(instance: unknown): string {
+  return sha256HexCanonical(JSON.stringify(stripTimestampsForHash(instance)));
+}
+
 export function matchBasisDefaultEstimate(basis: MatchBasis): number {
   switch (basis) {
     case "exact":

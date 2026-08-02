@@ -8,9 +8,9 @@ import type { WidthedConfidence } from "@empressaio/atom-contract/read-contract"
 
 import {
   buildPropertyReadContract,
+  contentHashExcludingTimestamps,
   propertyEntityId,
   propertyNotApplicableConsequence,
-  sha256HexCanonical,
   widthedFromFieldProvenance,
   widthedFromMatchBasis,
 } from "./confidence.js";
@@ -256,6 +256,8 @@ export function emitSetbackRule(
     }),
     contentHash: "",
   };
-  instance.contentHash = sha256HexCanonical(JSON.stringify(instance));
+  // A6: exclude provenance timestamps from the hash — content hash must be
+  // rewarm-deterministic, not wall-clock-dependent.
+  instance.contentHash = contentHashExcludingTimestamps(instance);
   return instance;
 }
