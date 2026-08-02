@@ -276,3 +276,134 @@ GATE A5: PASS. Build + tsc + test green. Both new R7 test cases pass. No other
 tests broke — did NOT need to stop/revert/punt this task.
 
 ---
+
+## Task A6 — Determinism: timestamp out of content-hash
+
+### Grep findings (2026-08-02)
+
+Searched engine-core for hash/signature computation
+(`sha256HexCanonical|contentHash|inputSignature|idempotency`). Found the pattern is
+NOT confined to promote.ts/warm-compute.ts — it is a repo-wide convention across
+EVERY property/road atom emitter. Every one of these emitter files does the identical
+thing: build `instance` with `contentHash: ""` as a placeholder field, THEN compute
+`instance.contentHash = sha256HexCanonical(JSON.stringify(instance))` — hashing the
+WHOLE atom object, timestamps included:
+
+- `property-reasoning/emit-buildable-envelope.ts` (buildable-envelope atom — feeds
+  depth-warm promote.ts, IN SCOPE)
+- `property-reasoning/emit-setback-rule.ts` (setback-rule atom — feeds depth-warm
+  promote.ts, IN SCOPE)
+- `boundary-primitive/compute.ts` (property-boundary-edge atom — the A5-touched file,
+  part of the warm/inset/cert path, IN SCOPE)
+- `property-reasoning/emit-zoning-fact.ts` (zoning-fact atom, x2 call sites — OUT OF
+  SCOPE for this dispatch, not on the depth-warm promote path; NOT changed)
+- `road-intake/emit-road-node.ts`, `emit-county-road-node.ts`,
+  `emit-county-roadway-node.ts`, `emit-caldwell-cad-road-node.ts` (road-node atoms —
+  OUT OF SCOPE, not on the depth-warm promote path; NOT changed)
+
+GROUND-TRUTH (2026-08-02, confirmed by reading `emit-buildable-envelope.ts` line 64-107
+and `emit-setback-rule.ts` line 144-259): timestamps ARE currently included in the
+hash. `instance.fetchedAt = extractedAt`, `instance.extractedAt = extractedAt`,
+`instance.versionStamp` embeds the raw timestamp string
+(`${entityId}:${kind}:${version}:${extractedAt}`), and nested
+`instance.readContract.assembledAt` / `instance.readContract.axes.consequence.assertedAt`
+are also timestamp fields, all inside the object that gets `JSON.stringify`'d and
+hashed. This directly violates rewarm-determinism: two rewarms of identical inputs
+at different wall-clock times would produce different atoms.
+
+### Scope decision
+
+Fixed the 3 files that are actually on this dispatch's warm/inset/cert path
+(buildable-envelope, setback-rule, property-boundary-edge). Did NOT touch
+zoning-fact or the 4 road-node emitters — same bug pattern, but genuinely out of
+scope for "Phase A foundation" (dispatch names promote.ts/warm-compute.ts as the
+locus; property-boundary-edge is in-scope because A5 already touched compute.ts and
+it's explicitly named in the standing invariants as part of the warm/inset/cert
+path). Flagging as OPEN below rather than silently expanding the diff.
+
+### Implementation
+
+`packages/engine-core/src/property-reasoning/confidence.ts` — added three new
+exports, no existing export removed or changed in signature:
+1. `CONTENT_HASH_EXCLUDED_KEYS` (module-private Set): fetchedAt, extractedAt,
+   assembledAt, assertedAt, warmAt, warmVerifiedAt, depthWarmVerifiedAt, promotedAt,
+   versionStamp, contentHash.
+2. `stripTimestampsForHash(value)`: recursive deep-clone that drops any object key
+   in the excluded set AT ANY NESTING DEPTH (handles the nested
+   `readContract.assembledAt` / `readContract.axes.consequence.assertedAt` case, not
+   just top-level fields — a flat top-level omit would have missed those).
+3. `contentHashExcludingTimestamps(instance)`: `sha256HexCanonical(JSON.stringify(
+   stripTimestampsForHash(instance)))` — drop-in replacement for the old
+   `sha256HexCanonical(JSON.stringify(instance))` call pattern.
+
+Applied `contentHashExcludingTimestamps` in place of the old pattern in:
+- `property-reasoning/emit-buildable-envelope.ts` (import swapped, 1 call site).
+- `property-reasoning/emit-setback-rule.ts` (import swapped, 1 call site).
+- `boundary-primitive/compute.ts` (import swapped, 1 call site — this is the SAME
+  file A5 touched; A5's `roleIsKnown` change and A6's hash change are independent
+  edits to the same file, both verified together).
+
+`contentHash: ""` placeholder pattern is UNCHANGED in all three files (still needed —
+the field must exist before stripTimestampsForHash normalizes the object shape;
+`contentHash` itself is in the excluded-keys set so the placeholder empty string
+never pollutes the hash of a re-hash / doesn't matter either way).
+
+### Tests added
+
+`packages/engine-core/src/property-reasoning/__tests__/content-hash-determinism.test.ts`
+(4 tests, 2 describe blocks):
+
+"stripTimestampsForHash / contentHashExcludingTimestamps (A6 unit)":
+1. "strips timestamp keys at any nesting depth" — a synthetic object with
+   fetchedAt/extractedAt/assembledAt/assertedAt/versionStamp/contentHash at top level
+   AND nested 2 levels deep; asserts the stripped result keeps only non-timestamp
+   keys at every depth.
+2. "two objects identical except timestamp values hash equal" — two objects sharing
+   geometry/district content but different fetchedAt/extractedAt/nested
+   readContract.assembledAt; asserts `contentHashExcludingTimestamps` returns the
+   SAME hash for both.
+3. "two objects differing in real content hash differently" — negative control:
+   same timestamp, different `district` field; asserts hashes DIFFER (proves the
+   function isn't just returning a constant).
+
+"promoted atom content hash is rewarm-deterministic (A6 integration)":
+4. "two promotions of identical warm content at different extractedAt hash equal" —
+   builds a real `WarmCandidate` via `computeWarmCandidate` (same fixture as the
+   existing warm-verify-loop tests: PARCEL_714_SPRING_33512 + edgeLabels714SpringHonest),
+   then calls `emitDepthWarmPromotion` TWICE with the same candidate but
+   `extractedAt: "2026-01-01T00:00:00.000Z"` vs `extractedAt: "2026-12-31T23:59:59.000Z"`.
+   Asserts: both buildable-envelope atoms' `contentHash` are equal and non-empty; both
+   setback-rule atoms' `contentHash` are equal and non-empty; sanity-checks the two
+   promotions really DID carry different `extractedAt` values (proving the test isn't
+   accidentally comparing identical inputs).
+
+### Verification (2026-08-02)
+
+`pnpm run typecheck` (tsc --noEmit) in `packages/engine-core`: clean, zero errors.
+`pnpm run build` (tsc -b) in `packages/engine-core`: clean, zero errors.
+`pnpm vitest run src/property-reasoning/__tests__/content-hash-determinism.test.ts`:
+1 file, 4 tests, ALL PASS.
+Full engine-core suite (`pnpm run test`): 91 test files, 604 passed, 2 skipped
+(pre-existing, unrelated), 0 failed. No test anywhere in the suite asserts a literal
+contentHash string value (grepped `contentHash.*toBe\(['"]` — zero matches), so no
+existing test could have broken from a hash-value change; confirmed none did.
+
+GATE A6: PASS (code-change branch — timestamps WERE included in the hash prior to
+this change; fixed, not a no-op). Build + tsc + test green. Content-hash is
+timestamp-independent, verified both by direct unit test (stripTimestampsForHash /
+contentHashExcludingTimestamps) and by integration test proving two real promoted
+atoms built from identical warm content at different extractedAt values hash equal.
+
+### OPEN (for the planner / a future task, not fixed here — scope discipline)
+
+`property-reasoning/emit-zoning-fact.ts` (2 call sites) and all 4 road-node emitters
+in `road-intake/` (`emit-road-node.ts`, `emit-county-road-node.ts`,
+`emit-county-roadway-node.ts`, `emit-caldwell-cad-road-node.ts`) have the IDENTICAL
+timestamp-in-hash bug pattern and were NOT fixed by this task — they are outside the
+depth-warm/boundary-primitive promote path this Phase A dispatch scopes to. If
+rewarm-determinism matters for zoning-fact or road-node atoms too (plausible — they're
+also part of the frozen-input rewarm state), the same `contentHashExcludingTimestamps`
+helper in `confidence.ts` is ready to drop into those 5 remaining call sites with the
+same 2-line swap pattern used here.
+
+---

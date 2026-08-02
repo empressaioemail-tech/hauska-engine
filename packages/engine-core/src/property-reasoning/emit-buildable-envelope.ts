@@ -7,9 +7,9 @@ import {
 import {
   buildPropertyReadContract,
   composeDerivedAssertedConfidence,
+  contentHashExcludingTimestamps,
   propertyEntityId,
   propertyNotApplicableConsequence,
-  sha256HexCanonical,
 } from "./confidence.js";
 import type { EmitBuildableEnvelopeInputs, HonestAbsence } from "./types.js";
 
@@ -104,6 +104,9 @@ export function emitBuildableEnvelope(
     }),
     contentHash: "",
   };
-  instance.contentHash = sha256HexCanonical(JSON.stringify(instance));
+  // A6: exclude provenance timestamps (fetchedAt/extractedAt/assembledAt/
+  // assertedAt/versionStamp) from the hash — content hash must be
+  // rewarm-deterministic, not wall-clock-dependent.
+  instance.contentHash = contentHashExcludingTimestamps(instance);
   return instance;
 }

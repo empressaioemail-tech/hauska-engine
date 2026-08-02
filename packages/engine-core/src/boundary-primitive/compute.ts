@@ -18,8 +18,8 @@ import type { WarmRoadSource } from "../depth-warm/types.js";
 import { classifyOsmHighwayTag } from "../road-intake/classify.js";
 import {
   buildPropertyReadContract,
+  contentHashExcludingTimestamps,
   propertyNotApplicableConsequence,
-  sha256HexCanonical,
   widthedFromMatchBasis,
 } from "../property-reasoning/confidence.js";
 import { resolveDistrictEdgeSetback } from "../property-reasoning/resolve-road-class-setback.js";
@@ -257,7 +257,9 @@ export function computeBoundaryEdgeAtoms(
         assembledAt: input.extractedAt,
       }),
     };
-    instance.contentHash = sha256HexCanonical(JSON.stringify(instance));
+    // A6: exclude provenance timestamps from the hash — content hash must be
+    // rewarm-deterministic, not wall-clock-dependent.
+    instance.contentHash = contentHashExcludingTimestamps(instance);
     atoms.push(instance);
   }
 
