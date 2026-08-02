@@ -149,6 +149,7 @@ export function emitDepthWarmPromotion(
     geojson?: unknown;
     depthWarmPromotion?: string;
     depthWarmVerifiedAt?: string;
+    recipeVersion?: string;
   };
   if (candidate.insetRing) {
     envAtom.geojson = buildGeojson(candidate.insetRing);
