@@ -16,6 +16,7 @@ import {
   resolveInsetFeetForEdge,
 } from "../depth-warm/warm-compute.js";
 import type { WarmCandidate, WarmEdgeInfo, WarmRoadSource } from "../depth-warm/types.js";
+import { RECIPE_VERSION } from "../recipe-version.js";
 
 export const BOUNDARY_PRIMITIVE_WARM_AGENT_ID =
   "depth-warm-boundary-primitive-v1" as const;
@@ -130,5 +131,6 @@ export function computeWarmCandidateFromBoundary(
     emptyReason: inset.emptyReason,
     warmAt,
     warmAgentId,
+    recipeVersion: RECIPE_VERSION,
   };
 }

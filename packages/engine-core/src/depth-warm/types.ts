@@ -53,6 +53,8 @@ export interface WarmCandidate {
   emptyReason?: string;
   warmAt: string;
   warmAgentId: string;
+  /** Recipe version this candidate was warmed under (rewarm trigger). See recipe-version.ts. */
+  recipeVersion: string;
 }
 
 export interface MechanicalGateResult {

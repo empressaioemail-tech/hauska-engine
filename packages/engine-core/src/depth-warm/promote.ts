@@ -12,6 +12,7 @@ import type { StoragePort } from "@hauska-engine/storage";
 import { createWidthedConfidence } from "@empressaio/atom-contract/read-contract";
 import { emitBuildableEnvelope } from "../property-reasoning/emit-buildable-envelope.js";
 import { emitSetbackRule, resolveSetbackTableRow } from "../property-reasoning/emit-setback-rule.js";
+import { RECIPE_VERSION } from "../recipe-version.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { writePropertyAtomIfEnabled } from "../property-reasoning/write-property-atom.js";
 import type { PromotedDepthWarmBundle, WarmCandidate } from "./types.js";
@@ -147,14 +148,21 @@ export function emitDepthWarmPromotion(
     geojson?: unknown;
     depthWarmPromotion?: string;
     depthWarmVerifiedAt?: string;
+    recipe_version?: string;
   };
   if (candidate.insetRing) {
     envAtom.geojson = buildGeojson(candidate.insetRing);
   }
   envAtom.depthWarmPromotion = DEPTH_WARM_PROMOTION_MARKER;
   envAtom.depthWarmVerifiedAt = extractedAt;
+  envAtom.recipe_version = RECIPE_VERSION;
 
-  return [setbackAtom, envAtom];
+  const setbackAtomWithRecipe = setbackAtom as SetbackRuleAtomInstance & {
+    recipe_version?: string;
+  };
+  setbackAtomWithRecipe.recipe_version = RECIPE_VERSION;
+
+  return [setbackAtomWithRecipe, envAtom];
 }
 
 export async function promoteDepthWarmToStorage(

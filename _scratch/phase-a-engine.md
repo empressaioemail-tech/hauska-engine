@@ -73,3 +73,57 @@ GATE A2: PASS. Script present at
 commit `fec86e0`. Full 4-gate cert confirmed by reading, not weakened/rewritten.
 
 ---
+
+## Task A3 — recipe_version field (the rewarm trigger)
+
+New source-of-truth: `packages/engine-core/src/recipe-version.ts` exports
+`RECIPE_VERSION = "1.0.0"` (const, single string literal in the whole repo — verified
+by grep no other file hardcodes the "1.0.0" string as a recipe version).
+
+Stamped in TWO layers so the field is present both on the working `WarmCandidate`
+(pre-promotion, in case anything reads it before promote) and on the DURABLE promoted
+atoms (which is what the dispatch gate cares about):
+
+1. `packages/engine-core/src/depth-warm/types.ts` — added `recipeVersion: string` to
+   the `WarmCandidate` interface.
+2. `packages/engine-core/src/depth-warm/warm-compute.ts` — `computeWarmCandidateWithLabels`
+   (the road-labeling warm path) now stamps `recipeVersion: RECIPE_VERSION` on construction.
+3. `packages/engine-core/src/boundary-primitive/consume.ts` — `computeWarmCandidateFromBoundary`
+   (the boundary-primitive warm path, used by the cert script and S2-U3 offset-consume) also
+   stamps `recipeVersion: RECIPE_VERSION`. This is the SECOND WarmCandidate construction site
+   in the repo (grepped for `warmAgentId:` object-literal sites to confirm there are exactly
+   two — warm-compute.ts and consume.ts — both now covered).
+4. `injectBadWarmCandidate` in warm-compute.ts spreads `...good`, so it inherits recipeVersion
+   automatically — no separate stamp needed there (it's a demo/test-only bad-inject helper, not
+   a legitimate warm path).
+5. `packages/engine-core/src/depth-warm/promote.ts` — `emitDepthWarmPromotion` now imports
+   `RECIPE_VERSION` and stamps `recipe_version` (snake_case, matching the dispatch's requested
+   field name and the existing `depthWarmPromotion`/`depthWarmVerifiedAt` atom-metadata
+   convention) on BOTH promoted atoms: the `buildableEnvelopeAtom` (envAtom.recipe_version) and
+   the `setbackRuleAtom` (setbackAtomWithRecipe.recipe_version). Stamped from the imported
+   constant directly (not from candidate.recipeVersion) to guarantee promote-time truth even if
+   a stale candidate object were passed in — single import path, no re-hardcode.
+
+Test added: `packages/engine-core/src/depth-warm/__tests__/recipe-version.test.ts`
+(2 tests): (1) `computeWarmCandidate stamps recipeVersion equal to RECIPE_VERSION constant`
+— asserts the WarmCandidate carries it. (2) `promoted atoms (setback-rule + buildable-envelope)
+carry recipe_version equal to the constant` — asserts BOTH promoted atom shapes carry
+`recipe_version === RECIPE_VERSION` via `emitDepthWarmPromotion`.
+
+### Verification (2026-08-02)
+
+`pnpm run typecheck` (tsc --noEmit) in `packages/engine-core`: clean, zero errors.
+`pnpm run build` (tsc -b) in `packages/engine-core`: clean, zero errors.
+`pnpm vitest run src/depth-warm` in `packages/engine-core`: 7 test files, 38 tests, ALL PASS
+(including the 2 new recipe-version tests). Full raw output:
+
+```
+ Test Files  7 passed (7)
+      Tests  38 passed (38)
+```
+
+GATE A3: PASS. Build + tsc + new test all green. Promoted atom shape (both
+setback-rule and buildable-envelope) includes `recipe_version` stamped from the single
+`RECIPE_VERSION` constant.
+
+---

@@ -8,6 +8,7 @@ import type { RoadClassification } from "@hauska-engine/atoms";
 
 import { computeWarmCandidateFromBoundary } from "../boundary-primitive/consume.js";
 import { resolveDistrictEdgeSetback } from "../property-reasoning/resolve-road-class-setback.js";
+import { RECIPE_VERSION } from "../recipe-version.js";
 import type { JurisdictionDescriptor, RoadEdgeRole } from "../property-reasoning/types.js";
 import {
   insetPerEdge,
@@ -156,6 +157,7 @@ function computeWarmCandidateWithLabels(
     emptyReason: inset.emptyReason,
     warmAt,
     warmAgentId,
+    recipeVersion: RECIPE_VERSION,
   };
 }
 
