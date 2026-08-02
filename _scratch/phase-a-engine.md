@@ -127,3 +127,68 @@ setback-rule and buildable-envelope) includes `recipe_version` stamped from the 
 `RECIPE_VERSION` constant.
 
 ---
+
+## Task A4 — Registry-as-engine-input loader (Bastrop Rail C row)
+
+### Source files used (doc_repo)
+
+Exact filenames from the dispatch existed as-is — no fallback search needed:
+- `P:/doc_repo/_land_records/txgio_stratmap_county_matrix_2026-08-02.json` (254 county rows,
+  confirmed Bastrop at line 181: fips 48021, in_stratmap true, download_url
+  `.../stratmap25-landparcels_48021_lp.zip`, flags [STALE], vintage_yyyymm 202503,
+  vintage_date 2025-03-01, feature_count 63357, prop_id_bad_count 138, prop_id_bad_rate 0.0022).
+- `P:/doc_repo/_land_records/txgio_stratmap_rail_c_adapter_registry.yaml` (Rail C
+  adapter_routing_rules + coverage_summary + a Bastrop `county_examples` entry confirming
+  adapter_path stratmap_bulk_zip, flags [STALE]).
+
+GROUND-TRUTH (2026-08-02): Bastrop's `prop_id_bad_rate` (0.0022) is far under the
+HIGH_PROP_ID_BAD_RATE threshold (0.25) and Bastrop does NOT appear in the YAML's
+`high_prop_id_bad_counties` list (Dimmit/Floyd/Lipscomb/Motley/Oldham/Roberts/
+Robertson/Travis only). Per `adapter_routing_rules` rule 2
+(`when: in_stratmap && STALE` -> `path: stratmap_bulk_zip, join_key: prop_id`, no
+owner-match gate — that gate is rule 3, only for HIGH_PROP_ID_BAD_RATE), Bastrop routes
+stratmap_bulk_zip / prop_id join with `ownerMatchRequired: false`. This is what the
+frozen fixture row encodes.
+
+### Files created (hauska-engine, all NEW, additive only — no existing adapter touched)
+
+- `packages/engine-core/src/registry/types.ts` — `JurisdictionRegistryRow` interface:
+  fips, countyName, inStratmap, geometrySource (stratmap_bulk_zip |
+  cad_direct_arcgis_rest | cad_direct_arcgis_rest_or_cad_bulk), joinKey (prop_id |
+  geo_id_or_address_crosswalk), ownerMatchRequired, downloadUrl, vintageYyyymm,
+  vintageDate, flags, featureCount, propIdBadRate.
+- `packages/engine-core/src/registry/data/bastrop-48021.json` — frozen Bastrop row,
+  fields copied verbatim from the matrix JSON + YAML routing-rule derivation above.
+- `packages/engine-core/src/registry/loader.ts` — `loadRegistryRowByFips` (returns
+  null if not onboarded), `requireRegistryRowByFips` (throws
+  `RegistryRowNotFoundError`), `listRegistryFipsCodes`. Reads only the committed frozen
+  JSON under `./data` — no network, no live DB, fully deterministic.
+- `packages/engine-core/src/registry/index.ts` — barrel export, matching the
+  `depth-warm`/`boundary-primitive` subpackage convention.
+- `packages/engine-core/package.json` — added `"./registry"` export entry (types +
+  import) alongside the existing `./depth-warm`, `./boundary-primitive` entries.
+
+Did NOT touch `packages/adapters/src/local/setbacks/bastrop-per-parcel-record.ts` — the
+hardcoded layer-23 adapter is untouched, exactly as instructed (additive-only, rip-out
+is a future task).
+
+Test added: `packages/engine-core/src/registry/__tests__/loader.test.ts` (5 tests):
+loader returns Bastrop's full row correctly by FIPS "48021" (all fields asserted); returns
+null for an un-onboarded FIPS (48453 / Travis, deliberately picked because it IS a
+HIGH_PROP_ID_BAD_RATE county in the source data, to make clear that absence ≠ a routing
+decision, it's simply not yet onboarded); requireRegistryRowByFips throws
+RegistryRowNotFoundError on a bogus FIPS; requireRegistryRowByFips returns the row for
+48021; listRegistryFipsCodes includes 48021.
+
+### Verification (2026-08-02)
+
+`pnpm run typecheck` (tsc --noEmit) in `packages/engine-core`: clean, zero errors.
+`pnpm run build` (tsc -b) in `packages/engine-core`: clean, zero errors.
+`pnpm vitest run src/registry`: 1 file, 5 tests, ALL PASS.
+Full engine-core suite (`pnpm run test`): 89 test files, 598 passed, 2 skipped
+(pre-existing skips, unrelated to this change), 0 failed.
+
+GATE A4: PASS. Build + tsc + test green. Loader returns Bastrop's frozen row
+correctly by FIPS lookup.
+
+---

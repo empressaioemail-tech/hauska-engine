@@ -1,0 +1,14 @@
+{
+  "fips": "48021",
+  "countyName": "Bastrop",
+  "inStratmap": true,
+  "geometrySource": "stratmap_bulk_zip",
+  "joinKey": "prop_id",
+  "ownerMatchRequired": false,
+  "downloadUrl": "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48021_lp.zip",
+  "vintageYyyymm": "202503",
+  "vintageDate": "2025-03-01",
+  "flags": ["STALE"],
+  "featureCount": 63357,
+  "propIdBadRate": 0.0022
+}

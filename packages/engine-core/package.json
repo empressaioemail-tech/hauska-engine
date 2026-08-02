@@ -58,6 +58,10 @@
     "./boundary-primitive": {
       "types": "./src/boundary-primitive/index.ts",
       "import": "./src/boundary-primitive/index.ts"
+    },
+    "./registry": {
+      "types": "./src/registry/index.ts",
+      "import": "./src/registry/index.ts"
     }
   },
   "scripts": {
