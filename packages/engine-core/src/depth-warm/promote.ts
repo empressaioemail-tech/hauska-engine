@@ -18,6 +18,7 @@ import type { PromotedDepthWarmBundle, WarmCandidate } from "./types.js";
 import {
   DEPTH_WARM_PROMOTION_MARKER,
   DEPTH_WARM_SOURCE_CITATION,
+  RECIPE_VERSION,
 } from "./types.js";
 
 function aggregateSetbacks(candidate: WarmCandidate): {
@@ -51,6 +52,7 @@ function buildGeojson(insetRing: NonNullable<WarmCandidate["insetRing"]>) {
         properties: {
           kind: "buildable-envelope",
           depthWarm: DEPTH_WARM_PROMOTION_MARKER,
+          recipeVersion: RECIPE_VERSION,
         },
       },
     ],
@@ -147,12 +149,14 @@ export function emitDepthWarmPromotion(
     geojson?: unknown;
     depthWarmPromotion?: string;
     depthWarmVerifiedAt?: string;
+    recipeVersion?: string;
   };
   if (candidate.insetRing) {
     envAtom.geojson = buildGeojson(candidate.insetRing);
   }
   envAtom.depthWarmPromotion = DEPTH_WARM_PROMOTION_MARKER;
   envAtom.depthWarmVerifiedAt = extractedAt;
+  envAtom.recipeVersion = RECIPE_VERSION;
 
   return [setbackAtom, envAtom];
 }
