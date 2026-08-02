@@ -137,6 +137,25 @@ const DIRECTIONAL_TOKENS = new Set([
 const UNIT_CUT_RE =
   /\b(APT|APARTMENT|UNIT|STE|SUITE|BLDG|BUILDING|LOT|TRLR|FL|RM|BOX)\b.*$/;
 
+/** Canonical token expansions for facesAnswer (R33 corollary). */
+const STREET_TOKEN_CANONICAL: Record<string, string> = {
+  JR: "JUNIOR",
+  JUNIOR: "JUNIOR",
+  SR: "SENIOR",
+  SENIOR: "SENIOR",
+};
+
+function canonicalizeStreetTokens(tokens: string[]): string[] {
+  return tokens.map((t) => STREET_TOKEN_CANONICAL[t] ?? t);
+}
+
+/** Expand abbreviation tokens after suffix/directional stripping (R33). */
+export function expandStreetAbbreviationTokens(normalizedCore: string): string {
+  if (!normalizedCore.trim()) return "";
+  const tokens = normalizedCore.split(" ").filter(Boolean);
+  return canonicalizeStreetTokens(tokens).join(" ");
+}
+
 /**
  * Normalize a situs address or road display name to a comparable street-name
  * core: uppercase, punctuation stripped, leading house number + unit dropped,
@@ -175,7 +194,8 @@ export function normalizeStreetNameForMatch(raw: string): string {
     tokens = tokens.slice(0, -1);
   }
   if (tokens.length > 1 && DIRECTIONAL_TOKENS.has(tokens[0]!)) tokens = tokens.slice(1);
-  return tokens.join(" ");
+  const core = tokens.join(" ");
+  return expandStreetAbbreviationTokens(core);
 }
 
 export type LabelEdgesDeclineReason =

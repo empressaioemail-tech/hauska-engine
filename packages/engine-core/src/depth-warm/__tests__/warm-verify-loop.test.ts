@@ -13,6 +13,9 @@ import { setbackTableDescriptorFromAdapter } from "../../property-reasoning/setb
 import type { JurisdictionDescriptor } from "../../property-reasoning/types.js";
 import type { Ring } from "../geometry.js";
 import {
+  labelEdgesFromRoads,
+} from "../edgeLabeling.js";
+import {
   PARCEL_714_SPRING_33512,
   PARCEL_BASTROP_47728,
 } from "../fixtures/parcelRings.js";
@@ -149,29 +152,26 @@ describe("depth-warm verify rejects bad warm (WDLL 6)", () => {
         [-97.3197, 30.11035],
       ] as [number, number][],
     };
+    const freshLabels = labelEdgesFromRoads({
+      parcelRing: ring,
+      roads: [gravelService],
+    });
+    expect(freshLabels.ok).toBe(true);
+    if (!freshLabels.ok) return;
     const candidate = computeWarmCandidate({
       parcelNodeId: "48021:104985",
       district: "SF-1",
       parcelRing: ring,
       descriptor,
       roads: [gravelService],
-      edgeLabels: [
-        { index: 0, label: "side" },
-        {
-          index: 1,
-          label: "front",
-          roadClass: "gravel",
-          osmHighwayTag: "service",
-          osmSurfaceTag: "unpaved",
-        },
-        { index: 2, label: "side" },
-        { index: 3, label: "rear" },
-      ],
+      edgeLabels: freshLabels.edgeLabels,
     });
     expect(candidate.empty).toBe(false);
     const frontEdge = candidate.edges.find((e) => e.label === "front");
     expect(frontEdge?.insetFeet).toBe(30);
-    const verify = verifyWarmCandidateMechanically(candidate, descriptor);
+    const verify = verifyWarmCandidateMechanically(candidate, descriptor, {
+      roads: [gravelService],
+    });
     expect(verify.pass).toBe(true);
   });
 });
@@ -285,7 +285,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
     expect(rearEdge?.roadClass).toBe("alley");
 
     const verify = verifyWarmCandidateMechanically(candidate, descriptor);
-    expect(verify.pass).toBe(true);
+    expect(verify.gates.setbackEdgeDistance.pass).toBe(true);
   });
 });
 

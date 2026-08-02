@@ -43,6 +43,12 @@ import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import { BASTROP_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
 import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parcel-geometry-resolver.ts";
+import {
+  bucketVerifyFailReasons,
+  promoteHonestVerifyDecline,
+} from "../src/depth-warm/honest-decline-promote.ts";
+import { loadLayer23CityPropIds } from "./bastrop-layer23-roster.mjs";
+import { upsertCountyFacetLedger } from "./upsert-county-facet-ledger.mjs";
 
 const COUNTY_FIPS = "48021";
 const BASTROP_CITY_KEY = "bastrop-city-tx";
@@ -97,6 +103,17 @@ function isPlaceTypeDistrict(district, codes) {
   );
 }
 
+/** Quarantined Block-13 — never re-warm (cert reference). */
+const BLOCK13_QUARANTINE = new Set([
+  "48021:34145",
+  "48021:34121",
+  "48021:34153",
+  "48021:34137",
+  "48021:34169",
+  "48021:34177",
+  "48021:34161",
+]);
+
 function parseArgs(argv) {
   const out = {
     limit: 500,
@@ -107,6 +124,12 @@ function parseArgs(argv) {
     cityCohort: false,
     placeTypeCohort: false,
     forceRepromote: false,
+    forceOverwrite: false,
+    layer23CityCohort: false,
+    diagnoseFailures: false,
+    upsertLedger: false,
+    districtPrefix: null,
+    excludeParcels: new Set(),
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -116,12 +139,34 @@ function parseArgs(argv) {
     else if (a.startsWith("--offset=")) out.offset = Number(a.slice("--offset=".length));
     else if (a === "--parcel") out.parcel = String(argv[++i] || "").trim();
     else if (a.startsWith("--parcel=")) out.parcel = a.slice("--parcel=".length).trim();
+    else if (a === "--district-prefix") out.districtPrefix = String(argv[++i] || "").trim();
+    else if (a.startsWith("--district-prefix=")) {
+      out.districtPrefix = a.slice("--district-prefix=".length).trim();
+    }
+    else if (a === "--exclude-parcel") {
+      for (const id of String(argv[++i] || "").split(",")) {
+        const t = id.trim();
+        if (t) out.excludeParcels.add(t);
+      }
+    }
+    else if (a.startsWith("--exclude-parcel=")) {
+      for (const id of a.slice("--exclude-parcel=".length).split(",")) {
+        const t = id.trim();
+        if (t) out.excludeParcels.add(t);
+      }
+    }
     else if (a === "--promote") out.promote = true;
     else if (a === "--dry-run") out.dryRun = true;
     else if (a === "--city-cohort") out.cityCohort = true;
     else if (a === "--place-type-cohort") out.placeTypeCohort = true;
     else if (a === "--force-repromote") out.forceRepromote = true;
+    else if (a === "--force-overwrite") out.forceOverwrite = true;
+    else if (a === "--layer23-city-cohort") out.layer23CityCohort = true;
+    else if (a === "--diagnose-failures") out.diagnoseFailures = true;
+    else if (a === "--upsert-ledger") out.upsertLedger = true;
   }
+  if (out.forceOverwrite) out.forceRepromote = true;
+  for (const id of BLOCK13_QUARANTINE) out.excludeParcels.add(id);
   return out;
 }
 
@@ -178,7 +223,13 @@ const txSql = postgres(txgioUrl, { ssl: "require", max: 2, prepare: false });
 
 const cityBbox = BASTROP_CITY_BBOX;
 let cityParcelIds = null;
-if (args.cityCohort && !args.parcel) {
+/** @type {{ count: number; where: string } | null} */
+let layer23RosterMeta = null;
+if (args.layer23CityCohort && !args.parcel) {
+  const roster = await loadLayer23CityPropIds({ districtPrefix: args.districtPrefix });
+  layer23RosterMeta = { count: roster.count, where: roster.where };
+  cityParcelIds = roster.parcelNodeIds.filter((id) => !args.excludeParcels.has(id));
+} else if (args.cityCohort && !args.parcel) {
   cityParcelIds = await loadCityParcelNodeIds(txSql, cityBbox);
 }
 
@@ -224,6 +275,15 @@ const placeTypeSqlFilter = args.placeTypeCohort
   ? sql`AND split_part(body->>'district', ' ', 1) = ANY(${placeTypeDistrictCodes})`
   : sql``;
 
+const districtPrefixFilter = args.districtPrefix
+  ? sql`AND split_part(body->>'district', ' ', 1) = ${args.districtPrefix}`
+  : sql``;
+
+const excludeParcelIds = [...args.excludeParcels];
+const excludeFilter = excludeParcelIds.length
+  ? sql`AND body->>'parcelNodeId' <> ALL(${excludeParcelIds})`
+  : sql``;
+
 const parcelRows = args.parcel
   ? await sql`
       SELECT body->>'parcelNodeId' AS parcel_node_id,
@@ -246,7 +306,9 @@ const parcelRows = args.parcel
           AND body->>'parcelNodeId' = ANY(${cityParcelIds})
           AND NOT (body ? 'absence')
           AND coalesce(body->>'district', '') <> ''
-          ${placeTypeSqlFilter}
+          ${args.layer23CityCohort ? sql`` : placeTypeSqlFilter}
+          ${args.layer23CityCohort ? sql`` : districtPrefixFilter}
+          ${excludeFilter}
         ORDER BY body->>'parcelNodeId'
         OFFSET ${args.offset}
         LIMIT ${args.limit}
@@ -261,6 +323,8 @@ const parcelRows = args.parcel
           AND NOT (body ? 'absence')
           AND coalesce(body->>'district', '') <> ''
           ${placeTypeSqlFilter}
+          ${districtPrefixFilter}
+          ${excludeFilter}
         ORDER BY body->>'parcelNodeId'
         OFFSET ${args.offset}
         LIMIT ${args.limit}
@@ -288,16 +352,31 @@ const stats = {
     "front-orientation-unresolved": 0,
     other: 0,
   },
+  failureBuckets: {},
+  honestDeclines: 0,
   atomWrites: 0,
   wallMsPerParcel: [],
 };
 
 const sampleOutcomes = [];
+const failureSamples = [];
+
+/** @param {string} bucket @param {string} parcelNodeId @param {string[]} reasons */
+function recordEarlyDecline(bucket, parcelNodeId, reasons) {
+  stats.declines[bucket in stats.declines ? bucket : "other"]++;
+  stats.failureBuckets[bucket] = (stats.failureBuckets[bucket] ?? 0) + 1;
+  if (args.diagnoseFailures && failureSamples.length < 30) {
+    failureSamples.push({ parcelNodeId, bucket, reasons: reasons.slice(0, 3) });
+  }
+}
 
 for (const row of parcelRows) {
   const parcelT0 = performance.now();
   const parcelNodeId = row.parcel_node_id;
-  const district = normalizeDistrict(row.district);
+  const district =
+    args.layer23CityCohort && args.districtPrefix
+      ? normalizeDistrict(args.districtPrefix)
+      : normalizeDistrict(row.district);
   if (!district) continue;
 
   if (args.placeTypeCohort && !isPlaceTypeDistrict(row.district, placeTypeDistrictCodes)) {
@@ -326,15 +405,19 @@ for (const row of parcelRows) {
   if (propId) {
     currencyResult = await assertParcelCurrencyInBcad(propId);
     if (!currencyResult.ok) {
-      stats.declines["superseded-prop-id"]++;
+      recordEarlyDecline("superseded-prop-id", parcelNodeId, [currencyResult.reason]);
       stats.processed++;
       stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
-      if (sampleOutcomes.length < 8) {
-        sampleOutcomes.push({
+      if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
+        await promoteHonestVerifyDecline(storageHandle.storage, {
           parcelNodeId,
-          verifyPass: false,
-          reasons: [currencyResult.reason],
+          zoningFactAtomDid: row.zoning_fact_did,
+          descriptor: baseDescriptor,
+          verifyReasons: [currencyResult.reason],
+          declineCode: "superseded-prop-id",
         });
+        stats.honestDeclines++;
+        stats.atomWrites++;
       }
       continue;
     }
@@ -342,8 +425,19 @@ for (const row of parcelRows) {
   }
 
   if (!(await districtHasPerParcelSetbackRow(parcelNodeId, district, centroidLngLat))) {
-    stats.declines["no-setback-row"]++;
+    recordEarlyDecline("no-setback-row", parcelNodeId, ["no per-parcel layer-23 setback row"]);
     stats.processed++;
+    if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
+      await promoteHonestVerifyDecline(storageHandle.storage, {
+        parcelNodeId,
+        zoningFactAtomDid: row.zoning_fact_did,
+        descriptor: baseDescriptor,
+        verifyReasons: ["no per-parcel layer-23 setback row"],
+        declineCode: "no-setback-row",
+      });
+      stats.honestDeclines++;
+      stats.atomWrites++;
+    }
     continue;
   }
 
@@ -356,15 +450,26 @@ for (const row of parcelRows) {
     centroidLngLat,
   );
   if (!builtDescriptor.ok) {
-    stats.declines["no-setback-row"]++;
+    recordEarlyDecline("no-setback-row", parcelNodeId, [builtDescriptor.reason]);
     stats.processed++;
+    if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
+      await promoteHonestVerifyDecline(storageHandle.storage, {
+        parcelNodeId,
+        zoningFactAtomDid: row.zoning_fact_did,
+        descriptor: baseDescriptor,
+        verifyReasons: [builtDescriptor.reason],
+        declineCode: builtDescriptor.code ?? "no-setback-row",
+      });
+      stats.honestDeclines++;
+      stats.atomWrites++;
+    }
     continue;
   }
   // R26 — key the warm inset on the DOMINANT-area district (per-parcel record),
   // not the stamped sliver, so edge resolution matches the single per-parcel row.
   const warmDistrict = builtDescriptor.governingDistrict || district;
 
-  if (!args.forceRepromote) {
+  if (!args.forceRepromote && !args.forceOverwrite) {
     const [existing] = await sql`
       SELECT 1 FROM atoms
       WHERE entity_type = 'buildable-envelope'
@@ -491,9 +596,20 @@ for (const row of parcelRows) {
 
   if (!boundaryEdges?.length && !labelResult.ok) {
     const key = labelResult.decline in stats.declines ? labelResult.decline : "other";
-    stats.declines[key]++;
+    recordEarlyDecline(key, parcelNodeId, [`label declined: ${labelResult.decline}`]);
     stats.processed++;
     stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+    if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
+      await promoteHonestVerifyDecline(storageHandle.storage, {
+        parcelNodeId,
+        zoningFactAtomDid: row.zoning_fact_did,
+        descriptor: builtDescriptor.descriptor,
+        verifyReasons: [`label declined: ${labelResult.decline}`],
+        declineCode: key,
+      });
+      stats.honestDeclines++;
+      stats.atomWrites++;
+    }
     continue;
   }
 
@@ -545,16 +661,37 @@ for (const row of parcelRows) {
     }
   } else {
     stats.verifyFail++;
+    const reasons = [
+      ...result.verify.gates.geometry.reasons,
+      ...result.verify.gates.roadClassification.reasons,
+      ...result.verify.gates.setbackEdgeDistance.reasons,
+      ...result.verify.gates.frontOrientation.reasons,
+      ...result.verify.gates.r32PerEdgeInset.reasons,
+      ...result.verify.gates.facesAnswer.reasons,
+    ];
+    const bucket = bucketVerifyFailReasons(reasons);
+    stats.failureBuckets[bucket] = (stats.failureBuckets[bucket] ?? 0) + 1;
+    if (args.diagnoseFailures && failureSamples.length < 30) {
+      failureSamples.push({ parcelNodeId, bucket, reasons: reasons.slice(0, 3) });
+    }
     if (sampleOutcomes.length < 8) {
       sampleOutcomes.push({
         parcelNodeId,
         verifyPass: false,
-        reasons: [
-          ...result.verify.gates.geometry.reasons,
-          ...result.verify.gates.roadClassification.reasons,
-          ...result.verify.gates.setbackEdgeDistance.reasons,
-        ].slice(0, 3),
+        reasons: reasons.slice(0, 3),
+        bucket,
       });
+    }
+    if (args.forceOverwrite && !dryRun && storageHandle?.storage) {
+      await promoteHonestVerifyDecline(storageHandle.storage, {
+        parcelNodeId,
+        zoningFactAtomDid: row.zoning_fact_did,
+        descriptor: builtDescriptor.descriptor,
+        verifyReasons: reasons,
+        declineCode: bucket,
+      });
+      stats.honestDeclines++;
+      stats.atomWrites++;
     }
   }
 }
@@ -584,16 +721,23 @@ const costJson = {
     placeTypeDistrictCodes,
     placeTypeCohort: args.placeTypeCohort,
     extrapolationDenominator,
-    cityCohort: args.cityCohort,
+    cityCohort: args.cityCohort || args.layer23CityCohort,
+    layer23CityCohort: args.layer23CityCohort,
+    layer23Roster: layer23RosterMeta,
     cityParcelUniverse: cityParcelIds?.length ?? null,
-    cityBbox: args.cityCohort ? cityBbox : null,
+    cityBbox: args.cityCohort && !args.layer23CityCohort ? cityBbox : null,
+    districtPrefix: args.districtPrefix,
+    excludeParcels: excludeParcelIds,
+    forceOverwrite: args.forceOverwrite,
   },
   roadsLoaded: stats.roadsLoaded,
   outcomes: {
     promoted: stats.promoted,
     verifyPass: stats.verifyPass,
     verifyFail: stats.verifyFail,
+    honestDeclines: stats.honestDeclines,
     declines: stats.declines,
+    failureBuckets: stats.failureBuckets,
   },
   cost: {
     wallMsTotal,
@@ -611,6 +755,7 @@ const costJson = {
       "usd = 0.25 CU × $0.16/hr wall + $0.000002/atom-write; extrapolation = usdPerParcel × extrapolationDenominator (place-type when --place-type-cohort)",
   },
   sampleOutcomes,
+  failureSamples: args.diagnoseFailures ? failureSamples : undefined,
   wdll9Note: {
     parcel: "48021:33512 (714 Spring St)",
     status: "PARTIAL",
@@ -621,6 +766,20 @@ const costJson = {
 };
 
 console.log(JSON.stringify(costJson, null, 2));
+
+if (args.upsertLedger && !dryRun && layer23RosterMeta) {
+  const ledgerUrl = txgioUrl;
+  const ledgerResult = await upsertCountyFacetLedger({
+    countyFips: COUNTY_FIPS,
+    databaseUrl: ledgerUrl,
+    rosterSize: layer23RosterMeta.count - excludeParcelIds.length,
+    promotedCount: stats.promoted,
+    honestDeclineCount: stats.honestDeclines,
+    districtPrefix: args.districtPrefix,
+    costUsd: Number(usdSample.toFixed(4)),
+  });
+  console.log(JSON.stringify({ event: "county-facet-ledger.upserted", ...ledgerResult }, null, 2));
+}
 
 await sql.end({ timeout: 5 });
 await txSql.end({ timeout: 5 });
