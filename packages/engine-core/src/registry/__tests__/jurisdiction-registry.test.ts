@@ -15,6 +15,7 @@ describe("jurisdiction registry loader (registry-as-engine-input)", () => {
     expect(row).not.toBeNull();
     expect(row).toBe(BASTROP_REGISTRY_ROW);
     expect(row?.railC.geometrySource).toBe("stratmap_bulk_zip");
+    expect(row?.railPerParcel?.featureServerLayerUrl).toContain("Parcels_One_Click");
     // prop_id bad-rate is low (0.0022) → prop_id join is safe for Bastrop.
     expect(row?.join.joinKey).toBe("prop_id");
     // The owner-match firewall is ALWAYS required (anti-fabrication, R9).

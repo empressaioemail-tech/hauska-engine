@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
- * Dominant-district roster (R26) — parcels whose governing district matches prefix.
- * Post-warm: setback-rule.districtCode. Pre-warm fallback: zoning-fact district prefix.
+ * Dominant-district warm/cert roster (R26).
+ * Phase D: cohort SOURCE = registry-keyed layer-23 enumeration (ALL city parcels
+ * for the district), NOT atom-backed setback-rule (chicken-and-egg).
+ * R26 dominance still resolves at warm time via per-parcel layer-23 fetch.
  */
 import postgres from "postgres";
 import { resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 import { fetchBastropPerParcelSetbackRecord } from "@hauska-engine/adapters";
-import { loadLayer23CityPropIds } from "./bastrop-layer23-roster.mjs";
+import { loadRegistryDistrictCohort } from "../src/registry/parcel-cohort-loader.ts";
+import { loadLayer23CityPropIds, loadLayer23CityRosterCount } from "./bastrop-layer23-roster.mjs";
 
 const COUNTY_FIPS = "48021";
 
@@ -20,9 +23,7 @@ function districtPrefix(code) {
   return code.trim().split(/\s+/)[0] ?? "";
 }
 
-/**
- * Roster from served atoms: setback-rule districtCode = dominant district after warm (R26).
- */
+/** @deprecated Phase D — atom-backed roster caused chicken-and-egg coverage gap. */
 export async function loadDominantDistrictRosterFromAtoms(district, sql) {
   const rows = await sql`
     SELECT DISTINCT ON (body->>'parcelNodeId')
@@ -38,7 +39,8 @@ export async function loadDominantDistrictRosterFromAtoms(district, sql) {
 }
 
 /**
- * Expand roster with honest-decline envelopes (recipe 1.0.0, no promote marker).
+ * Honest-decline envelopes already on substrate (recipe 1.0.0) — merged so cert
+ * grades parcels that declined before layer-23 stamp caught up.
  */
 export async function loadHonestDeclineRosterForDistrict(district, sql) {
   const rows = await sql`
@@ -76,23 +78,38 @@ export async function fetchDominantDistrictForParcel(propId, zoningStamp, centro
 }
 
 /**
- * Full dominant-district roster: setback-rule cohort + honest-declines, minus Block-13 quarantine.
+ * Full district roster: registry layer-23 enumeration + honest-decline merge,
+ * minus Block-13 quarantine.
+ *
+ * @param {string} district
+ * @param {{ excludeBlock13?: boolean; fetchImpl?: typeof fetch; countyFips?: string }} [options]
  */
 export async function loadDominantDistrictRoster(district, options = {}) {
-  const { excludeBlock13 = true } = options;
+  const { excludeBlock13 = true, fetchImpl, countyFips = COUNTY_FIPS } = options;
+
+  const fromLayer23 = await loadRegistryDistrictCohort(countyFips, district, { fetchImpl });
+
   const url = resolveSubstrateDatabaseUrl();
   const sql = postgres(url, { ssl: "require", max: 2, prepare: false });
+  let fromDecline = [];
   try {
-    const fromSetback = await loadDominantDistrictRosterFromAtoms(district, sql);
-    const fromDecline = await loadHonestDeclineRosterForDistrict(district, sql);
-    const merged = [...new Set([...fromSetback, ...fromDecline])];
-    const filtered = excludeBlock13
-      ? merged.filter((id) => !BLOCK13_QUARANTINE.has(id))
-      : merged;
-    return { parcelNodeIds: filtered.sort(), source: "setback-rule-districtCode+honest-decline" };
+    fromDecline = await loadHonestDeclineRosterForDistrict(district, sql);
   } finally {
     await sql.end();
   }
+
+  const merged = [...new Set([...fromLayer23.parcelNodeIds, ...fromDecline])];
+  const filtered = excludeBlock13
+    ? merged.filter((id) => !BLOCK13_QUARANTINE.has(id))
+    : merged;
+
+  return {
+    parcelNodeIds: filtered.sort(),
+    source: `${fromLayer23.source}+honest-decline`,
+    cohortOrigin: "layer-23-registry",
+    layer23Count: fromLayer23.count,
+    where: fromLayer23.where,
+  };
 }
 
-export { BLOCK13_QUARANTINE, districtPrefix };
+export { BLOCK13_QUARANTINE, districtPrefix, loadLayer23CityPropIds, loadLayer23CityRosterCount };
