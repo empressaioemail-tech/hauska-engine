@@ -33,22 +33,4 @@ export {
   type DefectClass,
   type PreflightDeps,
   type ScopeAnnotation,
-  type SourceProbeResult,
-  type CostProbeResult,
-  type GeometryParityProbeResult,
-  type SupersededCohortProbeResult,
-  type MixedVintageProbeResult,
 } from "./onboard-preflight.js";
-export {
-  buildGeometryParityProbe,
-  buildServePathHealthProbe,
-  buildCostSampleProbe,
-  GEOMETRY_PARITY_SAMPLE_CAVEAT,
-  COST_MODEL_USD_PER_COMPUTE_HOUR,
-  COST_MODEL_USD_PER_1K_EXTERNAL_CALLS,
-  COST_SAMPLE_UNMEASURABLE_SENTINEL_USD,
-  type GradeOneParcelFn,
-  type GeometrySampleDeps,
-  type ServePathHealthDeps,
-  type CostSampleDeps,
-} from "./preflight-probes.js";
