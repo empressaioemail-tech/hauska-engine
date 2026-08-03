@@ -55,6 +55,10 @@ import {
   loadDominantDistrictRoster,
   BLOCK13_QUARANTINE,
 } from "./bastrop-dominant-district-roster.mjs";
+import {
+  runOnboardPreflight,
+  deriveScopeAnnotations,
+} from "../src/registry/onboard-preflight.ts";
 
 const COUNTY = "48021";
 const INSET_TOL_FT = 1.0;
@@ -85,6 +89,11 @@ function parseArgs(argv) {
     rosterFrom: "block13",
     districtPrefix: null,
     rosterFile: null,
+    // SCOPE 3 (cert-with-scope-annotation): optional rowId to look up a
+    // pre-flight row report for. Absent by default — the existing Bastrop
+    // full-coverage invocation never sets this, so scopeAnnotations stays
+    // empty/absent and the report is byte-identical to before.
+    preflightRowId: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -95,6 +104,10 @@ function parseArgs(argv) {
       out.districtPrefix = a.slice("--district-prefix=".length).trim();
     } else if (a === "--roster-file") out.rosterFile = String(argv[++i] || "").trim();
     else if (a.startsWith("--roster-file=")) out.rosterFile = a.slice("--roster-file=".length).trim();
+    else if (a === "--preflight-row-id") out.preflightRowId = String(argv[++i] || "").trim();
+    else if (a.startsWith("--preflight-row-id=")) {
+      out.preflightRowId = a.slice("--preflight-row-id=".length).trim();
+    }
   }
   return out;
 }
@@ -202,6 +215,27 @@ const descriptor = {
   sourceAdapter: "bastrop-per-parcel-record-layer-23",
 };
 
+// SCOPE 3 (cert-with-scope-annotation, operator-ruled 2026-08-03): when the
+// caller names a pre-flight row (--preflight-row-id), attach scopeAnnotations
+// derived from that row's declined CORE rails. Absent by default — the
+// existing Bastrop full-coverage invocation never sets --preflight-row-id,
+// so the report carries no scopeAnnotations key at all (byte-identical to
+// before this change).
+let scopeAnnotations;
+if (args.preflightRowId) {
+  const rowForFips = await import("../src/registry/jurisdiction-registry.ts").then((m) =>
+    Object.values(m).find(
+      (v) => v && typeof v === "object" && "rowId" in v && v.rowId === args.preflightRowId,
+    ),
+  );
+  if (rowForFips) {
+    const { report: preflightReport } = await runOnboardPreflight(rowForFips.fips, {});
+    const rowReport = preflightReport.rows.find((r) => r.rowId === args.preflightRowId);
+    const annotations = deriveScopeAnnotations(rowReport);
+    if (annotations.length > 0) scopeAnnotations = annotations;
+  }
+}
+
 const report = {
   when: new Date().toISOString(),
   cert:
@@ -216,6 +250,7 @@ const report = {
   rosterSize: rosterLoad.parcelNodeIds.length,
   parcels: {},
   score: { pass: 0, fail: 0, honestDecline: 0, staleResidue: 0, total: rosterLoad.parcelNodeIds.length },
+  ...(scopeAnnotations ? { scopeAnnotations } : {}),
 };
 
 try {
