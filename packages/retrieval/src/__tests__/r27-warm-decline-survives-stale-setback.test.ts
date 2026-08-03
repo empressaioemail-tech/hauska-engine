@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { StoredAtomInstance } from "@hauska-engine/atoms";
+import type {
+  PropertyAtomInstance,
+  StoredAtomInstance,
+} from "@hauska-engine/atoms";
 import { InMemoryStorage } from "@hauska-engine/storage";
 
 import { HybridRetrieval } from "../index.js";
@@ -8,28 +11,36 @@ import { envelopeServeIndependentOfStaleSetback } from "../envelope-serve-indepe
 const PARCEL = "48021:141364";
 
 function writeAtom(storage: InMemoryStorage, body: Record<string, unknown>) {
-  return storage.writePropertyAtom(body as StoredAtomInstance);
+  return storage.writePropertyAtom(body as unknown as PropertyAtomInstance);
+}
+
+function asStoredAtom(body: Record<string, unknown>): StoredAtomInstance {
+  return body as unknown as StoredAtomInstance;
 }
 
 describe("envelopeServeIndependentOfStaleSetback", () => {
   it("returns true for warm-verify decline envelopes", () => {
     expect(
-      envelopeServeIndependentOfStaleSetback({
-        entityType: "buildable-envelope",
-        entityId: PARCEL,
-        warmVerifyDeclineCode: "superseded-prop-id",
-        warmVerifyDecline: "prop_id absent from county cadastral",
-      } as StoredAtomInstance),
+      envelopeServeIndependentOfStaleSetback(
+        asStoredAtom({
+          entityType: "buildable-envelope",
+          entityId: PARCEL,
+          warmVerifyDeclineCode: "superseded-prop-id",
+          warmVerifyDecline: "prop_id absent from county cadastral",
+        }),
+      ),
     ).toBe(true);
   });
 
   it("returns false for breadth-bake dependent envelopes", () => {
     expect(
-      envelopeServeIndependentOfStaleSetback({
-        entityType: "buildable-envelope",
-        entityId: PARCEL,
-        sourceCitation: "breadth tier1 bake",
-      } as StoredAtomInstance),
+      envelopeServeIndependentOfStaleSetback(
+        asStoredAtom({
+          entityType: "buildable-envelope",
+          entityId: PARCEL,
+          sourceCitation: "breadth tier1 bake",
+        }),
+      ),
     ).toBe(false);
   });
 });
@@ -73,7 +84,10 @@ describe("getPropertyAtomChain — R27 warm decline survives stale setback suppr
 
     expect(chain.setbackRule).toBeNull();
     expect(chain.buildableEnvelope).not.toBeNull();
-    expect(chain.buildableEnvelope?.warmVerifyDeclineCode).toBe("superseded-prop-id");
+    const buildableEnvelope = chain.buildableEnvelope as
+      | (StoredAtomInstance & { warmVerifyDeclineCode?: string })
+      | null;
+    expect(buildableEnvelope?.warmVerifyDeclineCode).toBe("superseded-prop-id");
     expect(chain.atoms.some((a) => a.type === "buildable-envelope")).toBe(true);
     expect(chain.atoms.some((a) => a.type === "setback-rule")).toBe(false);
   });
