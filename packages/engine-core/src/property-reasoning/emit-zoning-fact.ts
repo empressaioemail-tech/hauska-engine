@@ -7,6 +7,7 @@ import {
   sha256HexCanonical,
   widthedFromMatchBasis,
 } from "./confidence.js";
+import { lookupDistrictCodeSectionRefs } from "./district-code-section-map.js";
 import type {
   JurisdictionDescriptor,
   ParcelZoningObservation,
@@ -75,6 +76,12 @@ export function emitZoningFact(
   const reasoningChain = (parcelObs.reasoningChain ?? {
     reasoningKind: "observed" as const,
   }) as ZoningFactAtomInstance["reasoningChain"];
+
+  // Optional narrative code-section refs (district-requirements + permitted-use
+  // table), from the static per-jurisdiction map. Unmapped jurisdiction/district
+  // => both fields absent, identical to pre-existing behavior.
+  const codeSectionRefs = lookupDistrictCodeSectionRefs(descriptor.key, district);
+
   const instance: ZoningFactAtomInstance = {
     entityType: "zoning-fact",
     atomDid,
@@ -95,6 +102,12 @@ export function emitZoningFact(
     matchBasis: parcelObs.matchBasis,
     prefixMatched: parcelObs.prefixMatched,
     reasoningChain,
+    ...(codeSectionRefs
+      ? {
+          sourceCodeAtomRef: codeSectionRefs.districtRequirements,
+          codeSectionRefs,
+        }
+      : {}),
     readContract: buildPropertyReadContract({
       asserted,
       consequence: propertyNotApplicableConsequence(
