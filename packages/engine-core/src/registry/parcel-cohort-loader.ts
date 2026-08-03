@@ -13,8 +13,23 @@ export interface RegistryDistrictCohort {
   registryVersion: string;
 }
 
-function buildWhereClause(row: JurisdictionRegistryRow, districtPrefix: string | null): string {
-  const rail = row.railPerParcel!;
+/**
+ * buildWhereClause handles both parcel-filter variants: a city-scoped cohort
+ * (`cityFilter`, the Bastrop shape) and a whole-county cohort (`noFilter` —
+ * e.g. unincorporated county), with no non-null assertion on `railPerParcel`.
+ * Kept exported so pre-flight can reuse it to validate a row's filter shape
+ * without duplicating the branch.
+ */
+export function buildWhereClause(
+  row: JurisdictionRegistryRow,
+  districtPrefix: string | null,
+): string {
+  if (!row.railPerParcel) {
+    throw new Error(
+      `registry cohort: no railPerParcel row for FIPS ${row.fips} (honest-absence — not onboarded for factory warm)`,
+    );
+  }
+  const rail = row.railPerParcel;
   let districtClause = "";
   if (districtPrefix) {
     const base = districtPrefix.trim().split(/\s+/)[0] ?? "";
@@ -28,8 +43,18 @@ function buildWhereClause(row: JurisdictionRegistryRow, districtPrefix: string |
         : `'${String(districtValue).replace(/'/g, "''")}'`;
     districtClause = ` AND ${rail.districtField} = ${quoted}`;
   }
-  const cityVal = String(rail.cityFilter.value).replace(/'/g, "''");
-  return `${rail.cityFilter.field} = '${cityVal}'${districtClause}`;
+
+  if (rail.parcelFilter.kind === "noFilter") {
+    // Whole-county cohort: no city/boundary predicate. districtClause alone
+    // (leading " AND ...") is invalid SQL on its own, so strip the leading
+    // " AND " when it is the only clause, and fall back to an always-true
+    // predicate when there is no district filter either.
+    if (!districtClause) return "1=1";
+    return districtClause.replace(/^ AND /, "");
+  }
+
+  const cityVal = String(rail.parcelFilter.value).replace(/'/g, "''");
+  return `${rail.parcelFilter.field} = '${cityVal}'${districtClause}`;
 }
 
 /**
