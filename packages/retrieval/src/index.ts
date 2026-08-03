@@ -23,6 +23,7 @@ import {
   type CalibrationOverlayPort,
 } from "@hauska-engine/engine-core/property-reasoning";
 import { isStaleBastropCitySetbackRule } from "@hauska-engine/adapters";
+import { envelopeServeIndependentOfStaleSetback } from "./envelope-serve-independent.js";
 import { resolveAttachingRoadNodes } from "@hauska-engine/engine-core/site-plan";
 import type {
   AccessPolicy,
@@ -282,17 +283,20 @@ export class HybridRetrieval {
     ) {
       setbackRule = null;
       staleSetbackSuppressed = true;
-      buildableEnvelope = null; // R27 — invalidate the dependent envelope on source-repeal.
+      if (!envelopeServeIndependentOfStaleSetback(buildableEnvelope)) {
+        buildableEnvelope = null; // R27 — invalidate dependent envelope on source-repeal.
+      }
     }
     const atoms = resolved
-      // R27 — drop the stale setback-rule + its dependent envelope from the raw
-      // atom chain too, so cached-tile / raw consumers can't re-draw dead code.
-      .filter(
-        (payload) =>
-          !staleSetbackSuppressed ||
-          (payload.entityType !== "setback-rule" &&
-            payload.entityType !== "buildable-envelope"),
-      )
+      // R27 — drop stale setback-rule; drop dependent envelope only (warm declines survive).
+      .filter((payload) => {
+        if (!staleSetbackSuppressed) return true;
+        if (payload.entityType === "setback-rule") return false;
+        if (payload.entityType === "buildable-envelope") {
+          return envelopeServeIndependentOfStaleSetback(payload);
+        }
+        return true;
+      })
       .map((payload) => {
       const did =
         typeof payload.atomDid === "string" && payload.atomDid.startsWith("did:")
