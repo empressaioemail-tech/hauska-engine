@@ -52,6 +52,12 @@ export interface SearchInput {
   jurisdiction?: string;
   entityType?: CodeAtomEntityType;
   limit?: number;
+  /**
+   * Default false: superseded-edition code-section results are excluded.
+   * true includes them (annotated isCurrentEdition: false rather than
+   * dropped). Unresolvable edition status is never excluded (fail-open).
+   */
+  includeSuperseded?: boolean;
 }
 
 export interface SearchOutput {
@@ -189,8 +195,57 @@ export class HybridRetrieval {
       ...(input.entityType ? { entityType: input.entityType } : {}),
       limit: input.limit ?? 25,
     };
-    const results = await this.storage.search(baseQuery);
-    return { results, totalCandidates: results.length };
+    const rawResults = await this.storage.search(baseQuery);
+    const annotated = await this.annotateEditionCurrency(rawResults);
+
+    if (input.includeSuperseded) {
+      return { results: annotated, totalCandidates: annotated.length };
+    }
+    // Exclude only rows POSITIVELY known superseded; unresolved (undefined)
+    // and current (true) both stay — fail-open on unknown edition status.
+    const filtered = annotated.filter((r) => r.isCurrentEdition !== false);
+    return { results: filtered, totalCandidates: filtered.length };
+  }
+
+  /**
+   * Resolve each distinct jurisdictionTenant's current edition ONCE (no
+   * per-row storage calls), then annotate code-section results with
+   * editionId / isCurrentEdition. Non-code-section rows and rows already
+   * lacking an editionId pass through unchanged. Unresolvable jurisdiction
+   * or edition => isCurrentEdition left undefined (fail-open honest flag,
+   * never excluded).
+   */
+  private async annotateEditionCurrency(
+    results: ReadonlyArray<import("@hauska-engine/storage").AtomSearchResult>,
+  ): Promise<ReadonlyArray<import("@hauska-engine/storage").AtomSearchResult>> {
+    const jurisdictionTenants = [
+      ...new Set(
+        results
+          .filter((r) => typeof r.editionId === "string" && r.editionId.length > 0)
+          .map((r) => r.jurisdictionTenant),
+      ),
+    ];
+    if (jurisdictionTenants.length === 0) return results;
+
+    const currentEditionByTenant = new Map<string, string | null>();
+    await Promise.all(
+      jurisdictionTenants.map(async (tenant) => {
+        try {
+          const corpus = await this.storage.getAtom("jurisdiction-corpus", tenant);
+          currentEditionByTenant.set(tenant, corpus?.currentEditionId ?? null);
+        } catch {
+          // Unresolvable corpus => leave unset; annotation below stays undefined.
+        }
+      }),
+    );
+
+    return results.map((r) => {
+      if (!r.editionId) return r;
+      if (!currentEditionByTenant.has(r.jurisdictionTenant)) return r;
+      const currentEditionId = currentEditionByTenant.get(r.jurisdictionTenant);
+      if (currentEditionId == null) return r; // unresolvable => fail-open, undefined stays
+      return { ...r, isCurrentEdition: r.editionId === currentEditionId };
+    });
   }
 
   async getAtom(input: GetAtomInput): Promise<GetAtomOutput> {
