@@ -60,15 +60,26 @@ const deps = {
     if (!layerUrl) return { reachable: false, detail: "no zoning source wired on row" };
     return probeHttpReachable(`${layerUrl.replace(/\/$/, "")}?f=json`, "zoning source");
   },
+  // NOTE: buildable-envelope atom bodies carry `parcelNodeId` (e.g.
+  // "48021:34145"), never a `countyFips` key — confirmed against
+  // emit-buildable-envelope.ts and every other county-scoped query in this
+  // repo (block13-cert-grade.mjs, depth-warm-*-batch.mjs, tally-*-depth.mjs
+  // all filter on `body->>'parcelNodeId' LIKE '<fips>:%'`). Filtering on a
+  // key that never exists on the row silently matches zero atoms — a 0/0
+  // "PASS" that looks like "measured, zero superseded" but is actually
+  // "measurement path broken" (caught live against Bastrop 2026-08-03; see
+  // onboard-preflight.ts's MEASURE-EMPTY-COHORT decline, which is the
+  // backstop for this class of bug even after this fix).
   probeSupersededCohort: sql
     ? async (row) => {
+        const fipsPrefix = `${row.fips}:%`;
         const [{ total }] = await sql`
           SELECT count(*)::int AS total FROM atoms
-          WHERE entity_type = 'buildable-envelope' AND body->>'countyFips' = ${row.fips}
+          WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' LIKE ${fipsPrefix}
         `;
         const [{ superseded }] = await sql`
           SELECT count(*)::int AS superseded FROM atoms
-          WHERE entity_type = 'buildable-envelope' AND body->>'countyFips' = ${row.fips}
+          WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' LIKE ${fipsPrefix}
             AND body ? 'supersededVintage'
         `;
         return { supersededCount: superseded, totalCount: total };
@@ -76,9 +87,10 @@ const deps = {
     : undefined,
   probeMixedVintageResidue: sql
     ? async (row) => {
+        const fipsPrefix = `${row.fips}:%`;
         const [{ residue }] = await sql`
           SELECT count(*)::int AS residue FROM atoms
-          WHERE entity_type = 'buildable-envelope' AND body->>'countyFips' = ${row.fips}
+          WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' LIKE ${fipsPrefix}
             AND body ? 'staleResidue'
         `;
         return { residueCount: residue, measured: true };
