@@ -48,6 +48,7 @@ import {
   promoteHonestVerifyDecline,
 } from "../src/depth-warm/honest-decline-promote.ts";
 import { loadLayer23CityPropIds } from "./bastrop-layer23-roster.mjs";
+import { loadDominantDistrictRoster } from "./bastrop-dominant-district-roster.mjs";
 import { upsertCountyFacetLedger } from "./upsert-county-facet-ledger.mjs";
 
 const COUNTY_FIPS = "48021";
@@ -126,6 +127,7 @@ function parseArgs(argv) {
     forceRepromote: false,
     forceOverwrite: false,
     layer23CityCohort: false,
+    dominantDistrictCohort: false,
     diagnoseFailures: false,
     upsertLedger: false,
     districtPrefix: null,
@@ -162,6 +164,7 @@ function parseArgs(argv) {
     else if (a === "--force-repromote") out.forceRepromote = true;
     else if (a === "--force-overwrite") out.forceOverwrite = true;
     else if (a === "--layer23-city-cohort") out.layer23CityCohort = true;
+    else if (a === "--dominant-district-cohort") out.dominantDistrictCohort = true;
     else if (a === "--diagnose-failures") out.diagnoseFailures = true;
     else if (a === "--upsert-ledger") out.upsertLedger = true;
   }
@@ -224,10 +227,24 @@ const txSql = postgres(txgioUrl, { ssl: "require", max: 2, prepare: false });
 const cityBbox = BASTROP_CITY_BBOX;
 let cityParcelIds = null;
 /** @type {{ count: number; where: string } | null} */
-let layer23RosterMeta = null;
-if (args.layer23CityCohort && !args.parcel) {
-  const roster = await loadLayer23CityPropIds({ districtPrefix: args.districtPrefix });
-  layer23RosterMeta = { count: roster.count, where: roster.where };
+let cohortRosterMeta = null;
+const useDominantDistrictCohort =
+  (args.dominantDistrictCohort || args.layer23CityCohort) && !args.parcel;
+if (useDominantDistrictCohort) {
+  if (args.layer23CityCohort && !args.dominantDistrictCohort) {
+    console.warn(
+      "DEPRECATED: --layer23-city-cohort replaced by --dominant-district-cohort (R26 dominant district)",
+    );
+  }
+  if (!args.districtPrefix) {
+    console.error("FATAL: --district-prefix required for dominant-district cohort");
+    process.exit(1);
+  }
+  const roster = await loadDominantDistrictRoster(args.districtPrefix);
+  cohortRosterMeta = {
+    count: roster.parcelNodeIds.length,
+    where: `dominant-district:${args.districtPrefix} (${roster.source})`,
+  };
   cityParcelIds = roster.parcelNodeIds.filter((id) => !args.excludeParcels.has(id));
 } else if (args.cityCohort && !args.parcel) {
   cityParcelIds = await loadCityParcelNodeIds(txSql, cityBbox);
@@ -306,8 +323,8 @@ const parcelRows = args.parcel
           AND body->>'parcelNodeId' = ANY(${cityParcelIds})
           AND NOT (body ? 'absence')
           AND coalesce(body->>'district', '') <> ''
-          ${args.layer23CityCohort ? sql`` : placeTypeSqlFilter}
-          ${args.layer23CityCohort ? sql`` : districtPrefixFilter}
+          ${useDominantDistrictCohort ? sql`` : placeTypeSqlFilter}
+          ${useDominantDistrictCohort ? sql`` : districtPrefixFilter}
           ${excludeFilter}
         ORDER BY body->>'parcelNodeId'
         OFFSET ${args.offset}
@@ -374,7 +391,7 @@ for (const row of parcelRows) {
   const parcelT0 = performance.now();
   const parcelNodeId = row.parcel_node_id;
   const district =
-    args.layer23CityCohort && args.districtPrefix
+    useDominantDistrictCohort && args.districtPrefix
       ? normalizeDistrict(args.districtPrefix)
       : normalizeDistrict(row.district);
   if (!district) continue;
@@ -721,11 +738,12 @@ const costJson = {
     placeTypeDistrictCodes,
     placeTypeCohort: args.placeTypeCohort,
     extrapolationDenominator,
-    cityCohort: args.cityCohort || args.layer23CityCohort,
+    cityCohort: args.cityCohort || useDominantDistrictCohort,
+    dominantDistrictCohort: useDominantDistrictCohort,
     layer23CityCohort: args.layer23CityCohort,
-    layer23Roster: layer23RosterMeta,
+    cohortRoster: cohortRosterMeta,
     cityParcelUniverse: cityParcelIds?.length ?? null,
-    cityBbox: args.cityCohort && !args.layer23CityCohort ? cityBbox : null,
+    cityBbox: args.cityCohort && !useDominantDistrictCohort ? cityBbox : null,
     districtPrefix: args.districtPrefix,
     excludeParcels: excludeParcelIds,
     forceOverwrite: args.forceOverwrite,
@@ -767,12 +785,12 @@ const costJson = {
 
 console.log(JSON.stringify(costJson, null, 2));
 
-if (args.upsertLedger && !dryRun && layer23RosterMeta) {
+if (args.upsertLedger && !dryRun && cohortRosterMeta) {
   const ledgerUrl = txgioUrl;
   const ledgerResult = await upsertCountyFacetLedger({
     countyFips: COUNTY_FIPS,
     databaseUrl: ledgerUrl,
-    rosterSize: layer23RosterMeta.count - excludeParcelIds.length,
+    rosterSize: cohortRosterMeta.count - excludeParcelIds.length,
     promotedCount: stats.promoted,
     honestDeclineCount: stats.honestDeclines,
     districtPrefix: args.districtPrefix,
