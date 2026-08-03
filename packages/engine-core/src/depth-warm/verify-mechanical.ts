@@ -21,6 +21,8 @@ import {
 import {
   verifyFacesAnswerMatch,
   verifyR32PerEdgeInset,
+  isNoDeterminableFrontageSitus,
+  R35_ORIENTATION_DECLINE,
 } from "./cert-equivalent-gates.js";
 import {
   buildFlatSetbackFallback,
@@ -128,6 +130,9 @@ export function verifyFrontEdgeOrientation(
   descriptor: JurisdictionDescriptor,
   input?: FrontOrientationVerifyInput,
 ): { pass: boolean; reasons: string[] } {
+  if (isNoDeterminableFrontageSitus(input?.situsAddress)) {
+    return { pass: true, reasons: [R35_ORIENTATION_DECLINE] };
+  }
   const reasons: string[] = [];
   const roads = input?.roads ?? candidate.roads;
   const fresh: LabelEdgesResult = labelEdgesFromRoads({
@@ -236,6 +241,8 @@ export function verifyWarmCandidateMechanically(
       ? verifyFrontEdgeOrientation(candidate, descriptor, orientationInput)
       : { pass: true, reasons: [] as string[] };
 
+  const r35OrientationDecline = isNoDeterminableFrontageSitus(orientationInput?.situsAddress);
+
   const roads = orientationInput?.roads ?? candidate.roads;
   const freshLabels: LabelEdgesResult = labelEdgesFromRoads({
     parcelRing: candidate.parcelRing,
@@ -285,9 +292,9 @@ export function verifyWarmCandidateMechanically(
     geometry.pass &&
     roadClassification.pass &&
     setbackEdgeDistance.pass &&
-    frontOrientation.pass &&
+    (r35OrientationDecline || frontOrientation.pass) &&
     r32PerEdgeInset.pass &&
-    facesAnswer.pass;
+    (r35OrientationDecline || facesAnswer.pass);
 
   return {
     pass,

@@ -18,6 +18,28 @@ import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 
 export const DEFAULT_R32_INSET_TOL_FT = 1.0;
 
+/** R35 — disclosed orientation decline for landlocked / no-frontage parcels. */
+export const R35_ORIENTATION_DECLINE =
+  "front orientation not determinable — no street frontage";
+
+/**
+ * R35 — situs indicates no determinable street frontage (lot-behind, landlocked, flag).
+ * Never guess a front edge; honest-decline orientation instead.
+ */
+export function isNoDeterminableFrontageSitus(
+  situsAddress: string | null | undefined,
+): boolean {
+  if (!situsAddress?.trim()) return false;
+  const upper = situsAddress.trim().toUpperCase();
+  if (/\bLOT\s+BEHIND\b/.test(upper)) return true;
+  if (/\bLANDLOCKED\b/.test(upper)) return true;
+  if (/\bFLAG\s+LOT\b/.test(upper)) return true;
+  if (/\bREAR\s+OF\b/.test(upper)) return true;
+  const segment = situsStreetSegment(situsAddress.trim());
+  if (!/^\d+\s+\S/.test(segment) && /\b(LOT|TRACT|PARCEL)\b/.test(upper)) return true;
+  return false;
+}
+
 /**
  * R33 facesAnswer — situs front-street token matches OSM road name after
  * normalization + abbreviation expansion. Substring match retained for partial names.
@@ -48,12 +70,25 @@ export interface FacesAnswerVerifyResult {
   facesAnswer: boolean;
   frontStreetResolved: string | null;
   answerFrontKey: string | null;
+  /** R35 — orientation axis honestly declined (cert PASS with disclosure). */
+  orientationHonestDecline?: string;
 }
 
 /**
  * R33 facesAnswer gate — shared by warm promote and mechanical cert.
  */
 export function verifyFacesAnswerMatch(input: FacesAnswerVerifyInput): FacesAnswerVerifyResult {
+  if (isNoDeterminableFrontageSitus(input.situsAddress)) {
+    return {
+      pass: true,
+      reasons: [R35_ORIENTATION_DECLINE],
+      facesAnswer: false,
+      frontStreetResolved: null,
+      answerFrontKey: situsFrontStreetToken(input.situsAddress),
+      orientationHonestDecline: R35_ORIENTATION_DECLINE,
+    };
+  }
+
   const answerFrontKeyRaw = situsFrontStreetToken(input.situsAddress);
   const answerFrontKey = answerFrontKeyRaw
     ? expandStreetAbbreviationTokens(normalizeStreetNameForMatch(answerFrontKeyRaw))
