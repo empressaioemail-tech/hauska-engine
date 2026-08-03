@@ -12,10 +12,28 @@ import {
 import { verifyFrontEdgeOrientation } from "../verify-mechanical.js";
 
 describe("R35 no-determinable-frontage orientation decline", () => {
-  it("detects lot-behind / landlocked situs patterns", () => {
+  it("detects lot-behind / landlocked / null-situs patterns", () => {
     expect(isNoDeterminableFrontageSitus("LOT BEHIND 2208 PECAN , BASTROP, TX")).toBe(true);
+    expect(isNoDeterminableFrontageSitus(null)).toBe(true);
+    expect(isNoDeterminableFrontageSitus("")).toBe(true);
     expect(isNoDeterminableFrontageSitus("909 PECAN ST , BASTROP, TX")).toBe(false);
     expect(isNoDeterminableFrontageSitus("908 PINE , BASTROP, TX")).toBe(false);
+  });
+
+  it("null-situs re-plat successor passes with R35 decline (8741972 class)", () => {
+    const result = verifyFacesAnswerMatch({
+      situsAddress: null,
+      roads: [],
+      parcelRing: [
+        [-97.32, 30.11],
+        [-97.319, 30.11],
+        [-97.319, 30.109],
+        [-97.32, 30.109],
+        [-97.32, 30.11],
+      ],
+    });
+    expect(result.pass).toBe(true);
+    expect(result.orientationHonestDecline).toBe(R35_ORIENTATION_DECLINE);
   });
 
   it("facesAnswer gate passes with disclosed R35 decline (48021:53859 class)", () => {
