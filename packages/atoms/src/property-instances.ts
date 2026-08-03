@@ -9,6 +9,7 @@
  */
 
 import type {
+  AtomInputRef,
   BuildableEnvelopeAtomInstance as ContractBuildableEnvelopeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
   SetbackMatchBasis,
@@ -107,6 +108,19 @@ export type ZoningFactAtomInstance = ContractZoningFactAtomInstance &
     districtLabel?: string;
     matchBasis?: MatchBasis;
     prefixMatched?: string;
+    /**
+     * Optional narrative code-section citation for the district's dimensional
+     * requirements (same AtomInputRef shape as setback-rule's
+     * `sourceCodeAtomRef`, role "rule" / entityType "code-section"). Present
+     * only when a static jurisdiction map resolves the district; absent
+     * otherwise (WDLL 3.8 — honest absence, no invented citation).
+     */
+    sourceCodeAtomRef?: AtomInputRef;
+    /** Both refs together — district requirements + permitted-use table. */
+    codeSectionRefs?: {
+      districtRequirements: AtomInputRef;
+      permittedUseTable: AtomInputRef;
+    };
   };
 
 /** R22/R24/R25/R26 — full-field + disclosure metadata surfaced on the PE card. */
