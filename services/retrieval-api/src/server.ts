@@ -299,6 +299,8 @@ export function buildApp(options: ServerOptions = {}): Hono {
       ])
       .optional(),
     limit: z.coerce.number().min(1).max(100).default(25),
+    /** Default false: superseded-edition code-section results are excluded. */
+    includeSuperseded: z.boolean().default(false),
   });
 
   app.get("/search", async (c) => {
@@ -307,6 +309,7 @@ export function buildApp(options: ServerOptions = {}): Hono {
       jurisdiction: c.req.query("jurisdiction") ?? undefined,
       entityType: c.req.query("entityType") ?? undefined,
       limit: c.req.query("limit") ?? undefined,
+      includeSuperseded: c.req.query("includeSuperseded") === "true",
     });
     if (!parsed.success) {
       return c.json(

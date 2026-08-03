@@ -42,6 +42,16 @@ export interface AtomSearchResult {
   /** Prose snippet from the atom's bodyText/term/definition. */
   snippet: string;
   score: number;
+  /** code-section rows only: the code-edition entityId the section belongs to. */
+  editionId?: string | null;
+  /**
+   * Populated by the retrieval layer (not the storage port) after a
+   * jurisdiction-corpus lookup: true when `editionId` matches the
+   * jurisdiction's current edition, false when it does not, undefined when
+   * edition status could not be resolved (fail-open — never treated as
+   * superseded). Storage-port search() implementations leave this unset.
+   */
+  isCurrentEdition?: boolean;
 }
 
 /** Node kinds servable by the county node roster (CC browse). */

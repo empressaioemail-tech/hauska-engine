@@ -62,6 +62,7 @@ export function buildSearchResult(
     sectionNumber: inst.entityType === "code-section" ? inst.sectionNumber : null,
     snippet,
     score,
+    editionId: inst.entityType === "code-section" ? inst.codeEditionId : null,
   };
 }
 
