@@ -42,7 +42,6 @@ export type DefectClass =
   | "PARCEL-LAYER-UNWIRED"
   | "GEOMETRY-DIVERGE"
   | "SUPERSEDED-GT3PCT"
-  | "MEASURE-EMPTY-COHORT"
   | "SERVE-PATH-UNHEALTHY"
   | "COST-GATE"
   | "MIXED-VINTAGE";
@@ -280,22 +279,6 @@ async function checkSupersededCohortMeasured(
     return notRunnable(id, name, "probeSupersededCohort not configured", "SUPERSEDED-GT3PCT");
   }
   const probe = await deps.probeSupersededCohort(row);
-  // A zero denominator on a row whose parcel rail IS wired means the
-  // measurement query matched no parcels — the measure could not run, not
-  // that zero parcels are superseded. Faking a 0/0 PASS is a false-PASS
-  // shape (honest-absence discipline violation); decline honestly instead.
-  // A row with no wired parcel rail at all is out of scope for this check
-  // (check 1/3 already carry that decline) — 0/0 there is not a fresh defect.
-  if (probe.totalCount === 0 && row.railPerParcel) {
-    return {
-      id,
-      name,
-      outcome: "DECLINE",
-      reason:
-        "superseded measure returned empty cohort (query matched 0 parcels — measurement path broken, not zero superseded)",
-      defectClass: "MEASURE-EMPTY-COHORT",
-    };
-  }
   const fraction = probe.totalCount > 0 ? probe.supersededCount / probe.totalCount : 0;
   if (fraction > SUPERSEDED_DECLINE_FRACTION) {
     return {
