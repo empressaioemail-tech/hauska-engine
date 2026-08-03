@@ -84,6 +84,15 @@ export interface GetAtomOutput {
 
 export interface PropertyAtomChainWire {
   parcelNodeId: string;
+  /**
+   * zoningFact / setbackRule / buildableEnvelope: each served slot is
+   * guaranteed to carry `atomDid` (backfilled via buildAtomDid when the
+   * stored row predates the field — same fallback the `atoms` list below
+   * already used). `sourceCitation` and, when the entity type carries one,
+   * `sourceCodeAtomRef` (setback-rule always; zoning-fact when the district
+   * code-section map resolves) pass through as their own properties on the
+   * stored instance — additive, no wrapping, honest absence when unset.
+   */
   zoningFact: StoredAtomInstance | null;
   setbackRule: StoredAtomInstance | null;
   buildableEnvelope: StoredAtomInstance | null;
@@ -100,6 +109,24 @@ export interface PropertyAtomChainWire {
     accessPolicy: string;
     payload: StoredAtomInstance;
   }>;
+}
+
+/**
+ * Guarantee `atomDid` on a served property/road atom slot without mutating
+ * the caller's object. Same fallback the atoms-list mapper already used
+ * (buildAtomDid(entityType, entityId) when the stored atomDid is missing or
+ * not a `did:`-prefixed string) — pulled out so the top-level chain slots
+ * (zoningFact / setbackRule / buildableEnvelope) get the identical guarantee
+ * the atoms list already had. `sourceCitation` / `sourceCodeAtomRef` are
+ * left untouched (already own-properties on the stored instance when present).
+ */
+function withGuaranteedAtomDid<T extends StoredAtomInstance>(payload: T): T {
+  const existing = (payload as { atomDid?: unknown }).atomDid;
+  if (typeof existing === "string" && existing.startsWith("did:")) return payload;
+  return {
+    ...payload,
+    atomDid: buildAtomDid(payload.entityType, payload.entityId).raw,
+  };
 }
 
 export interface RoadAtomChainWire {
@@ -374,9 +401,11 @@ export class HybridRetrieval {
     });
     return {
       parcelNodeId,
-      zoningFact,
-      setbackRule,
-      buildableEnvelope,
+      zoningFact: zoningFact ? withGuaranteedAtomDid(zoningFact) : null,
+      setbackRule: setbackRule ? withGuaranteedAtomDid(setbackRule) : null,
+      buildableEnvelope: buildableEnvelope
+        ? withGuaranteedAtomDid(buildableEnvelope)
+        : null,
       attachingRoads: attaching.roads,
       atoms,
     };
