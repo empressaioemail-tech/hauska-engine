@@ -21,11 +21,33 @@ export type JoinKey =
   | "prop_id" // default; safe when prop_id bad-rate is low
   | "geo_id_or_address_crosswalk"; // for high-prop_id-bad-rate counties (e.g. Travis)
 
+/**
+ * Rail A per-parcel authoritative record layer — the warm COHORT source for
+ * onboard(fips). The engine reads THIS from the frozen registry row instead of
+ * hardcoding Bastrop AGOL constants at warm time.
+ *
+ * TODO(onboard-fips): per-state provider resolves districtField + value mapping
+ * from the registry's Rail-A metadata when a second jurisdiction lands.
+ */
+export interface PerParcelCohortRail {
+  /** ArcGIS FeatureServer layer URL (Rail A / per-parcel setback record). */
+  readonly featureServerLayerUrl: string;
+  /** City boundary filter (e.g. CITY = 'BASTROP'). */
+  readonly cityFilter: { readonly field: string; readonly value: string };
+  /** Layer field holding the district code (e.g. ZoneTypeClass). */
+  readonly districtField: string;
+  /** Map district prefix → layer field value (Bastrop: ZoneTypeClass int). */
+  readonly districtValueByPrefix: Readonly<Record<string, number | string>>;
+  readonly propIdField: string;
+}
+
 /** A frozen source-adapter row for one jurisdiction (FIPS-keyed). */
 export interface JurisdictionRegistryRow {
   /** County FIPS (e.g. "48021" for Bastrop). */
   readonly fips: string;
   readonly countyName: string;
+  /** Rail A per-parcel record layer — cohort source for factory warm (Phase D). */
+  readonly railPerParcel?: PerParcelCohortRail;
   /** Rail C geometry source + how to reach it. */
   readonly railC: {
     readonly geometrySource: GeometrySource;
@@ -58,9 +80,31 @@ export interface JurisdictionRegistryRow {
  * is safe. STALE (202503) — a fresher county ArcGIS override may apply, but the
  * StratMap zip is the geometry spine.
  */
+/** Bastrop Parcels_One_Click layer 23 — authoritative per-parcel setback record. */
+const BASTROP_PARCELS_ONE_CLICK_LAYER_23 =
+  "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/23";
+
 export const BASTROP_REGISTRY_ROW: JurisdictionRegistryRow = {
   fips: "48021",
   countyName: "Bastrop",
+  railPerParcel: {
+    featureServerLayerUrl: BASTROP_PARCELS_ONE_CLICK_LAYER_23,
+    cityFilter: { field: "CITY", value: "BASTROP" },
+    districtField: "ZoneTypeClass",
+    districtValueByPrefix: {
+      "P/OS": 1,
+      RR: 2,
+      "SF-1": 3,
+      "SF-2": 4,
+      "SF-3": 5,
+      MU: 6,
+      GC: 7,
+      PI: 8,
+      IND: 9,
+      PDD: 10,
+    },
+    propIdField: "prop_id",
+  },
   railC: {
     geometrySource: "stratmap_bulk_zip",
     downloadUrl:

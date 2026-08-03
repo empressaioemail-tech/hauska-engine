@@ -243,7 +243,9 @@ if (useDominantDistrictCohort) {
   const roster = await loadDominantDistrictRoster(args.districtPrefix);
   cohortRosterMeta = {
     count: roster.parcelNodeIds.length,
-    where: `dominant-district:${args.districtPrefix} (${roster.source})`,
+    where: roster.where ?? `dominant-district:${args.districtPrefix} (${roster.source})`,
+    cohortOrigin: roster.cohortOrigin ?? "legacy-atoms",
+    layer23Count: roster.layer23Count ?? null,
   };
   cityParcelIds = roster.parcelNodeIds.filter((id) => !args.excludeParcels.has(id));
 } else if (args.cityCohort && !args.parcel) {
@@ -301,8 +303,14 @@ const excludeFilter = excludeParcelIds.length
   ? sql`AND body->>'parcelNodeId' <> ALL(${excludeParcelIds})`
   : sql``;
 
-const parcelRows = args.parcel
-  ? await sql`
+const useLayer23RegistryCohort =
+  useDominantDistrictCohort && cohortRosterMeta?.cohortOrigin === "layer-23-registry";
+
+/** @type {{ parcel_node_id: string; district: string | null; zoning_fact_did: string | null }[]} */
+let parcelRows;
+
+if (args.parcel) {
+  parcelRows = await sql`
       SELECT body->>'parcelNodeId' AS parcel_node_id,
              body->>'district' AS district,
              atom_did AS zoning_fact_did
@@ -312,9 +320,33 @@ const parcelRows = args.parcel
         AND NOT (body ? 'absence')
         AND coalesce(body->>'district', '') <> ''
       LIMIT 1
-    `
-  : cityParcelIds
-    ? await sql`
+    `;
+} else if (useLayer23RegistryCohort && cityParcelIds?.length) {
+  const batchIds = cityParcelIds.slice(args.offset, args.offset + args.limit);
+  const zfRows =
+    batchIds.length === 0
+      ? []
+      : await sql`
+          SELECT body->>'parcelNodeId' AS parcel_node_id,
+                 body->>'district' AS district,
+                 atom_did AS zoning_fact_did
+          FROM atoms
+          WHERE entity_type = 'zoning-fact'
+            AND body->>'parcelNodeId' = ANY(${batchIds})
+            AND NOT (body ? 'absence')
+            AND coalesce(body->>'district', '') <> ''
+        `;
+  const zfById = new Map(zfRows.map((r) => [r.parcel_node_id, r]));
+  parcelRows = batchIds.map((id) => {
+    const zf = zfById.get(id);
+    return {
+      parcel_node_id: id,
+      district: zf?.district ?? args.districtPrefix ?? null,
+      zoning_fact_did: zf?.zoning_fact_did ?? null,
+    };
+  });
+} else if (cityParcelIds) {
+  parcelRows = await sql`
         SELECT body->>'parcelNodeId' AS parcel_node_id,
                body->>'district' AS district,
                atom_did AS zoning_fact_did
@@ -329,8 +361,9 @@ const parcelRows = args.parcel
         ORDER BY body->>'parcelNodeId'
         OFFSET ${args.offset}
         LIMIT ${args.limit}
-      `
-    : await sql`
+      `;
+} else {
+  parcelRows = await sql`
         SELECT body->>'parcelNodeId' AS parcel_node_id,
                body->>'district' AS district,
                atom_did AS zoning_fact_did
@@ -346,6 +379,7 @@ const parcelRows = args.parcel
         OFFSET ${args.offset}
         LIMIT ${args.limit}
       `;
+}
 
 const stats = {
   cohortSize: parcelRows.length,
@@ -365,9 +399,10 @@ const stats = {
     "already-promoted": 0,
     "no-setback-row": 0,
     "no-boundary-primitive": 0,
-    "superseded-prop-id": 0,
-    "front-orientation-unresolved": 0,
-    other: 0,
+      "superseded-prop-id": 0,
+      "front-orientation-unresolved": 0,
+      "no-zoning-fact-stamp": 0,
+      other: 0,
   },
   failureBuckets: {},
   honestDeclines: 0,
@@ -395,6 +430,15 @@ for (const row of parcelRows) {
       ? normalizeDistrict(args.districtPrefix)
       : normalizeDistrict(row.district);
   if (!district) continue;
+
+  if (!row.zoning_fact_did) {
+    recordEarlyDecline("no-zoning-fact-stamp", parcelNodeId, [
+      "layer-23 roster parcel missing zoning-fact atom (substrate stamp required before promote)",
+    ]);
+    stats.processed++;
+    stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+    continue;
+  }
 
   if (args.placeTypeCohort && !isPlaceTypeDistrict(row.district, placeTypeDistrictCodes)) {
     stats.declines["no-setback-row"]++;
