@@ -18,9 +18,9 @@ import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 
 export const DEFAULT_R32_INSET_TOL_FT = 1.0;
 
-/** R35 — disclosed orientation decline for landlocked / no-frontage parcels. */
+/** R35 — disclosed orientation decline for landlocked / no-frontage / null-situs parcels. */
 export const R35_ORIENTATION_DECLINE =
-  "front orientation not determinable — no street frontage";
+  "front orientation not determinable — no situs/frontage";
 
 /**
  * R35 — situs indicates no determinable street frontage (lot-behind, landlocked, flag).
@@ -29,7 +29,7 @@ export const R35_ORIENTATION_DECLINE =
 export function isNoDeterminableFrontageSitus(
   situsAddress: string | null | undefined,
 ): boolean {
-  if (!situsAddress?.trim()) return false;
+  if (!situsAddress?.trim()) return true;
   const upper = situsAddress.trim().toUpperCase();
   if (/\bLOT\s+BEHIND\b/.test(upper)) return true;
   if (/\bLANDLOCKED\b/.test(upper)) return true;

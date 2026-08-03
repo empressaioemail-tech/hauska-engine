@@ -36,7 +36,12 @@ import { DEPTH_WARM_PROMOTION_MARKER, RECIPE_VERSION } from "../src/depth-warm/t
 import { openRing } from "../src/depth-warm/geometry.ts";
 import { measurePerEdgeInsetForRings } from "../src/depth-warm/measure-inset.ts";
 import { computeWarmCandidateFromBoundary } from "../src/boundary-primitive/consume.ts";
+import { computeWarmCandidate } from "../src/depth-warm/warm-compute.ts";
 import { relabelBoundaryEdgesFromRoadLabels } from "../src/boundary-primitive/relabel-from-roads.ts";
+import {
+  primitiveNormalsAgreeWithRing,
+  recomputeBoundaryEdgesForRing,
+} from "../src/boundary-primitive/recompute-for-ring.ts";
 import {
   verifyFrontEdgeOrientation,
   verifyWarmCandidateMechanically,
@@ -405,6 +410,22 @@ try {
         boundaryEdges = null;
       }
     }
+    // R28 — recompute primitive when stored normals disagree with BCAD ring.
+    if (boundaryEdges?.length) {
+      const ringVerts = openRing(ring).length;
+      if (boundaryEdges.length === ringVerts) {
+        const agree = primitiveNormalsAgreeWithRing(boundaryEdges, ring);
+        if (!agree.ok) {
+          const rebuilt = recomputeBoundaryEdgesForRing({
+            storedEdges: boundaryEdges,
+            ring,
+            roads,
+          });
+          const rebuiltAgree = primitiveNormalsAgreeWithRing(rebuilt, ring);
+          boundaryEdges = rebuiltAgree.ok ? rebuilt : null;
+        }
+      }
+    }
     if (boundaryEdges?.length && labelResult.ok) {
       boundaryEdges = relabelBoundaryEdgesFromRoadLabels({
         storedEdges: boundaryEdges,
@@ -423,6 +444,24 @@ try {
         boundaryEdges,
         roads,
         descriptor,
+      });
+    }
+    // Edge-count mismatch (TXGIO primitive vs BCAD ring): warm uses road-label path.
+    if ((!warmCandidate || warmCandidate.empty) && labelResult.ok) {
+      warmCandidate = computeWarmCandidate({
+        parcelNodeId,
+        district: key.district,
+        parcelRing: ring,
+        descriptor,
+        roads,
+        edgeLabels: freshLabels.map((e) => ({
+          index: e.index,
+          label: e.label,
+          roadClass: e.roadClass,
+          osmHighwayTag: e.osmHighwayTag,
+          osmSurfaceTag: e.osmSurfaceTag,
+          roadProvenanceKind: e.roadProvenanceKind,
+        })),
       });
     }
 
