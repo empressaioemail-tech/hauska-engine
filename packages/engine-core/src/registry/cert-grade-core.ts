@@ -1,0 +1,563 @@
+/**
+ * Cert-grade core — the reusable per-parcel grading machinery behind THE
+ * proven Block-13 harness (scripts/block13-cert-grade.mjs). Lives in src/ so
+ * it can be imported by other src/ modules (e.g. preflight-probes.ts, the
+ * OPS-8 pre-flight geometry-parity probe) WITHOUT pulling in a CLI script's
+ * top-level side effects (arg parsing, DB connection setup, process.exit).
+ *
+ * Dependency direction: scripts/block13-cert-grade.mjs imports FROM this
+ * module (script depends on src). No src/ module may import from scripts/ —
+ * that direction previously dragged a CLI script's whole module graph into
+ * whatever test file transitively imported it (postmortem: PR #218 was
+ * reverted after CI flagged this as an architectural smell; the reversion
+ * turned out to trace to a pre-existing, unrelated PDF-decode test flake —
+ * see the #218 rework PR description for the mechanism writeup — but the
+ * inversion is still the correct fix regardless, since script-depends-on-src
+ * is the only safe direction for a package's public import graph).
+ *
+ * Two entry points, mirroring the roster loop's two modes:
+ *   - gradeOneParcelInQueryMode: dominant-district layer-23 answer key
+ *     (--roster-from=query / --roster-from=file).
+ *   - gradeBlock13Parcel: the frozen BLOCK-13 answer key
+ *     (--roster-from=block13, the default).
+ * Both reuse the identical gate logic; only the answer-key source differs.
+ */
+import type { Sql } from "postgres";
+import { fetchBastropPerParcelSetbackRecord } from "@hauska-engine/adapters";
+import type { PgStorage } from "@hauska-engine/storage";
+
+import {
+  fetchBcadParcelRings,
+  scrubLotLineRing,
+  ringCentroidLngLat,
+} from "../boundary-primitive/index.js";
+import {
+  readBoundaryEdgesForParcel,
+  BoundaryPrimitiveMissingError,
+} from "../boundary-primitive/read.js";
+import { labelEdgesFromRoads } from "../depth-warm/edgeLabeling.js";
+import { DEPTH_WARM_PROMOTION_MARKER, RECIPE_VERSION } from "../depth-warm/types.js";
+import { openRing } from "../depth-warm/geometry.js";
+import { measurePerEdgeInsetForRings } from "../depth-warm/measure-inset.js";
+import { computeWarmCandidateFromBoundary } from "../boundary-primitive/consume.js";
+import { computeWarmCandidate } from "../depth-warm/warm-compute.js";
+import { relabelBoundaryEdgesFromRoadLabels } from "../boundary-primitive/relabel-from-roads.js";
+import {
+  primitiveNormalsAgreeWithRing,
+  recomputeBoundaryEdgesForRing,
+} from "../boundary-primitive/recompute-for-ring.js";
+import {
+  verifyFrontEdgeOrientation,
+  verifyWarmCandidateMechanically,
+} from "../depth-warm/verify-mechanical.js";
+import {
+  streetNamesMatchForFacesAnswer,
+  isNoDeterminableFrontageSitus,
+  R35_ORIENTATION_DECLINE,
+} from "../depth-warm/cert-equivalent-gates.js";
+
+export const CERT_GRADE_COUNTY_FIPS = "48021";
+export const CERT_GRADE_INSET_TOL_FT = 1.0;
+
+/** Frozen Block-13 regression roster + answer key. */
+export const BLOCK13_ROSTER = [
+  "48021:34145",
+  "48021:34121",
+  "48021:34153",
+  "48021:34137",
+  "48021:34169",
+  "48021:34177",
+  "48021:34161",
+];
+
+export interface Block13AnswerKey {
+  readonly situs: string;
+  readonly district: string;
+  readonly F: number;
+  readonly S: number;
+  readonly C: number | null;
+  readonly R: number;
+  readonly frontStreet: string;
+}
+
+export const ANSWER_KEY_BLOCK13: Readonly<Record<string, Block13AnswerKey>> = {
+  "48021:34145": { situs: "909 Pecan", district: "GC", F: 20, S: 5, C: null, R: 20, frontStreet: "Pecan" },
+  "48021:34121": { situs: "907 Chestnut", district: "GC", F: 20, S: 5, C: null, R: 20, frontStreet: "Chestnut" },
+  "48021:34153": { situs: "909 Chestnut", district: "GC", F: 20, S: 5, C: null, R: 20, frontStreet: "Chestnut" },
+  "48021:34137": { situs: "908 Pine", district: "SF-1", F: 25, S: 5, C: 15, R: 25, frontStreet: "Pine" },
+  "48021:34169": { situs: "906 Pine", district: "SF-1", F: 25, S: 5, C: 15, R: 25, frontStreet: "Pine" },
+  "48021:34177": { situs: "901 Pecan", district: "MU", F: 15, S: 5, C: null, R: 15, frontStreet: "Pecan" },
+  "48021:34161": { situs: "905 Pecan", district: "MU", F: 15, S: 5, C: null, R: 15, frontStreet: "Pecan" },
+};
+
+export function resolveBlock13Key(
+  parcelNodeId: string,
+): { ok: true; key: Block13AnswerKey } | { ok: false; reason: string } {
+  const key = ANSWER_KEY_BLOCK13[parcelNodeId];
+  if (!key) return { ok: false, reason: "not in BLOCK13 answer key" };
+  return { ok: true, key };
+}
+
+export function expectedFtForRole(
+  role: string,
+  key: { F: number; R: number; S: number; C: number | null },
+): number {
+  if (role === "front") return key.F;
+  if (role === "rear") return key.R;
+  if (role === "side_corner") return key.C ?? key.S;
+  return key.S;
+}
+
+export function situsFrontStreetToken(situs: string | null | undefined): string | null {
+  if (!situs?.trim()) return null;
+  const streetPart = situs.split(",")[0]?.trim() ?? situs.trim();
+  const m = /^\d+\s+(.+)$/.exec(streetPart);
+  return m ? m[1]!.trim() : streetPart;
+}
+
+interface Layer23Key {
+  district: string;
+  F: number;
+  S: number;
+  C: number | null;
+  R: number;
+  frontStreet: string | null;
+}
+
+export async function buildLayer23Key(
+  parcelNodeId: string,
+  district: string | null,
+  centroidLngLat: [number, number],
+  zoningStamp: string | null,
+): Promise<{ ok: true; key: Layer23Key } | { ok: false; code: string; reason?: string }> {
+  const fetched = await fetchBastropPerParcelSetbackRecord(parcelNodeId.split(":")[1]!, {
+    districtCode: zoningStamp ?? district ?? undefined,
+    centroidLngLat,
+  });
+  if (fetched.kind !== "parsed") {
+    return { ok: false, code: fetched.code, reason: fetched.reason };
+  }
+  const d = (fetched.resolvedDistrictCode ?? district ?? "").trim() || (district ?? "");
+  const C =
+    fetched.sideCornerFt != null &&
+    fetched.sideInteriorFt != null &&
+    fetched.sideCornerFt !== fetched.sideInteriorFt
+      ? fetched.sideCornerFt
+      : null;
+  return {
+    ok: true,
+    key: {
+      district: d.split(/\s+/)[0]!,
+      F: fetched.frontFt,
+      S: fetched.sideInteriorFt ?? fetched.sideCornerFt,
+      C,
+      R: fetched.rearFt,
+      frontStreet: null,
+    },
+  };
+}
+
+/** Grading context shared across a roster run — the caller (script or probe) owns and closes these. */
+export interface CertGradeContext {
+  readonly sql: Sql;
+  readonly txSql: Sql;
+  readonly storage: PgStorage;
+  readonly roads: unknown[];
+  readonly descriptor: unknown;
+}
+
+export interface ParcelGradeResult {
+  pass: boolean;
+  gates: Record<string, unknown>;
+  edges: unknown[];
+  honestDecline?: boolean;
+  declineReason?: string;
+  error?: string;
+  reason?: string;
+  district?: string;
+  answerKey?: unknown;
+  situs?: string | null;
+  orientationHonestDecline?: string | null;
+}
+
+/**
+ * Grade a single parcel in "query" mode (dominant-district layer-23 answer
+ * key, R28/R33 warm==cert parity gates). Same gates, same pass/decline
+ * semantics as the frozen Block-13 path — only the answer-key source differs.
+ */
+export async function gradeOneParcelInQueryMode(
+  parcelNodeId: string,
+  ctx: CertGradeContext & { districtPrefix: string | null },
+): Promise<ParcelGradeResult> {
+  const { sql, txSql, storage, roads, descriptor, districtPrefix } = ctx;
+  const propId = parcelNodeId.split(":")[1]!;
+  const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
+
+  const [envRowPre] = await sql`
+    SELECT body FROM atoms
+    WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+  const envPre = envRowPre?.body;
+  const warmDecline = envPre?.warmVerifyDecline ?? null;
+  const isPromotedPre = envPre?.depthWarmPromotion === DEPTH_WARM_PROMOTION_MARKER;
+  const recipeVersionPre = envPre?.recipeVersion ?? null;
+
+  if (warmDecline && recipeVersionPre === RECIPE_VERSION && !isPromotedPre) {
+    parcelResult.pass = true;
+    parcelResult.honestDecline = true;
+    parcelResult.declineReason = warmDecline;
+    return parcelResult;
+  }
+
+  if (isPromotedPre && recipeVersionPre !== RECIPE_VERSION) {
+    parcelResult.error = "stale-residue";
+    return parcelResult;
+  }
+
+  if (!isPromotedPre || recipeVersionPre !== RECIPE_VERSION) {
+    const [zf] = await sql`
+      SELECT 1 FROM atoms WHERE entity_type = 'zoning-fact'
+        AND body->>'parcelNodeId' = ${parcelNodeId} AND NOT (body ? 'absence') LIMIT 1
+    `;
+    if (!zf) {
+      parcelResult.pass = true;
+      parcelResult.honestDecline = true;
+      parcelResult.declineReason = "no-zoning-fact-on-substrate";
+      return parcelResult;
+    }
+    parcelResult.error = "missing-single-vintage-state";
+    return parcelResult;
+  }
+
+  const [situsRow] = await txSql`
+    SELECT situs_address FROM txgio_parcel
+    WHERE county_fips = ${CERT_GRADE_COUNTY_FIPS} AND prop_id = ${propId} LIMIT 1
+  `;
+  const situsAddress: string | null = situsRow?.situs_address?.trim() ?? null;
+  parcelResult.situs = situsAddress;
+
+  let ring: unknown = null;
+  try {
+    const bcad = await fetchBcadParcelRings([propId]);
+    const bcadRing = bcad[0]?.ring;
+    ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
+  } catch (err) {
+    parcelResult.error = "bcad-fetch-failed";
+    parcelResult.reason = err instanceof Error ? err.message : String(err);
+    return parcelResult;
+  }
+  if (!ring) {
+    parcelResult.error = "no-ring";
+    return parcelResult;
+  }
+
+  const centroidLngLat = ringCentroidLngLat(ring as never);
+
+  const [zfRow] = await sql`
+    SELECT body FROM atoms WHERE entity_type = 'zoning-fact'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+  const stampedDistrict = zfRow?.body?.district ?? districtPrefix ?? null;
+
+  const keyBuilt = await buildLayer23Key(parcelNodeId, stampedDistrict, centroidLngLat, stampedDistrict);
+  if (!keyBuilt.ok) {
+    parcelResult.error = keyBuilt.code;
+    parcelResult.reason = keyBuilt.reason;
+    return parcelResult;
+  }
+  const key: Layer23Key = {
+    ...keyBuilt.key,
+    frontStreet: situsFrontStreetToken(situsAddress),
+  };
+  parcelResult.answerKey = key;
+
+  return gradeAgainstKey(parcelNodeId, propId, key, situsAddress, ring, { sql, txSql, storage, roads, descriptor });
+}
+
+/**
+ * Grade a single parcel against the frozen BLOCK13 answer key
+ * (--roster-from=block13, the default invocation).
+ */
+export async function gradeBlock13Parcel(
+  parcelNodeId: string,
+  ctx: CertGradeContext,
+): Promise<ParcelGradeResult> {
+  const { sql, txSql, storage, roads, descriptor } = ctx;
+  const propId = parcelNodeId.split(":")[1]!;
+  const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
+
+  const resolved = resolveBlock13Key(parcelNodeId);
+  if (!resolved.ok) {
+    parcelResult.error = resolved.reason;
+    return parcelResult;
+  }
+  const key: Block13AnswerKey = { ...resolved.key };
+  parcelResult.district = key.district;
+  parcelResult.answerKey = key;
+
+  const [situsRow] = await txSql`
+    SELECT situs_address FROM txgio_parcel
+    WHERE county_fips = ${CERT_GRADE_COUNTY_FIPS} AND prop_id = ${propId} LIMIT 1
+  `;
+  const situsAddress: string | null = situsRow?.situs_address?.trim() ?? null;
+  parcelResult.situs = situsAddress;
+
+  let ring: unknown = null;
+  try {
+    const bcad = await fetchBcadParcelRings([propId]);
+    const bcadRing = bcad[0]?.ring;
+    ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
+  } catch (err) {
+    parcelResult.error = "bcad-fetch-failed";
+    parcelResult.reason = err instanceof Error ? err.message : String(err);
+    return parcelResult;
+  }
+  if (!ring) {
+    parcelResult.error = "no-ring";
+    return parcelResult;
+  }
+
+  return gradeAgainstKey(parcelNodeId, propId, key, situsAddress, ring, { sql, txSql, storage, roads, descriptor }, true);
+}
+
+/**
+ * Shared post-key grading body (R28/R33 warm==cert parity gates): district,
+ * setbacks, per-edge inset, front orientation. Identical between query mode
+ * and block13 mode; only how `key`/`answerFrontToken` were built differs,
+ * which the two callers above already resolved before calling in.
+ */
+async function gradeAgainstKey(
+  parcelNodeId: string,
+  propId: string,
+  key: { district: string; F: number; S: number; C: number | null; R: number; frontStreet: string | null },
+  situsAddress: string | null,
+  ring: unknown,
+  ctx: CertGradeContext,
+  isBlock13Mode = false,
+): Promise<ParcelGradeResult> {
+  const { sql, storage, roads, descriptor } = ctx;
+  const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
+
+  const [zfRow] = await sql`
+    SELECT body FROM atoms WHERE entity_type = 'zoning-fact'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+
+  const [envRow] = await sql`
+    SELECT body FROM atoms
+    WHERE entity_type = 'buildable-envelope'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+      AND body->>'depthWarmPromotion' = ${DEPTH_WARM_PROMOTION_MARKER}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+  let insetRing = envRow?.body?.geojson?.features?.[0]?.geometry?.coordinates?.[0];
+  if (!insetRing?.length && !isBlock13Mode) {
+    const [fallback] = await sql`
+      SELECT body FROM atoms
+      WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' = ${parcelNodeId}
+      ORDER BY updated_at DESC NULLS LAST LIMIT 1
+    `;
+    insetRing = fallback?.body?.geojson?.features?.[0]?.geometry?.coordinates?.[0];
+  }
+  if (!insetRing?.length) {
+    parcelResult.error = "no-promoted-envelope-geojson";
+    return parcelResult;
+  }
+
+  const [srRow] = await sql`
+    SELECT body FROM atoms WHERE entity_type = 'setback-rule'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+  const zoningFact = zfRow?.body ?? null;
+  const setbackRule = srRow?.body ?? null;
+
+  const servedDistrict = zoningFact?.district ?? setbackRule?.districtCode ?? null;
+  const districtOk =
+    (setbackRule?.districtCode == null ||
+      setbackRule.districtCode.split(/\s+/)[0] === key.district) &&
+    (zoningFact?.district == null ||
+      zoningFact.district.split(/\s+/)[0] === key.district ||
+      setbackRule?.districtCode?.split(/\s+/)[0] === key.district);
+
+  const servedSetbacks = setbackRule
+    ? {
+        front: setbackRule.front,
+        rear: setbackRule.rear,
+        side: setbackRule.sideInteriorFt ?? setbackRule.side,
+        sideCorner: setbackRule.sideCornerFt,
+      }
+    : null;
+  const setbackServedOk =
+    !!servedSetbacks &&
+    servedSetbacks.front === key.F &&
+    servedSetbacks.rear === key.R &&
+    servedSetbacks.side === key.S &&
+    (key.C == null || servedSetbacks.sideCorner === key.C);
+
+  const labelResult = labelEdgesFromRoads({ parcelRing: ring as never, roads: roads as never, situsAddress });
+  const freshLabels = labelResult.ok ? labelResult.edgeLabels : [];
+
+  let boundaryEdges: Awaited<ReturnType<typeof readBoundaryEdgesForParcel>> | null = null;
+  try {
+    boundaryEdges = await readBoundaryEdgesForParcel(storage, parcelNodeId);
+  } catch (e) {
+    if (!(e instanceof BoundaryPrimitiveMissingError)) throw e;
+  }
+  if (boundaryEdges?.length) {
+    const ringVerts = openRing(ring as never).length;
+    if (boundaryEdges.length > ringVerts) {
+      boundaryEdges = boundaryEdges.filter((e) => e.edgeIndex < ringVerts);
+    } else if (boundaryEdges.length < ringVerts) {
+      boundaryEdges = null;
+    }
+  }
+  // R28 — recompute primitive when stored normals disagree with BCAD ring.
+  if (boundaryEdges?.length) {
+    const ringVerts = openRing(ring as never).length;
+    if (boundaryEdges.length === ringVerts) {
+      const agree = primitiveNormalsAgreeWithRing(boundaryEdges, ring as never);
+      if (!agree.ok) {
+        const rebuilt = recomputeBoundaryEdgesForRing({
+          storedEdges: boundaryEdges,
+          ring: ring as never,
+          roads: roads as never,
+        });
+        const rebuiltAgree = primitiveNormalsAgreeWithRing(rebuilt, ring as never);
+        boundaryEdges = rebuiltAgree.ok ? rebuilt : null;
+      }
+    }
+  }
+  if (boundaryEdges?.length && labelResult.ok) {
+    boundaryEdges = relabelBoundaryEdgesFromRoadLabels({
+      storedEdges: boundaryEdges,
+      edgeLabels: freshLabels,
+      roads: roads as never,
+      countyFips: CERT_GRADE_COUNTY_FIPS,
+    });
+  }
+
+  let warmCandidate: ReturnType<typeof computeWarmCandidateFromBoundary> | ReturnType<typeof computeWarmCandidate> | null = null;
+  if (boundaryEdges?.length) {
+    warmCandidate = computeWarmCandidateFromBoundary({
+      parcelNodeId,
+      district: key.district,
+      parcelRing: ring as never,
+      boundaryEdges,
+      roads: roads as never,
+      descriptor: descriptor as never,
+    });
+  }
+  // Edge-count mismatch (TXGIO primitive vs BCAD ring): warm uses road-label path.
+  if ((!warmCandidate || (warmCandidate as { empty?: boolean }).empty) && labelResult.ok) {
+    warmCandidate = computeWarmCandidate({
+      parcelNodeId,
+      district: key.district,
+      parcelRing: ring as never,
+      descriptor: descriptor as never,
+      roads: roads as never,
+      edgeLabels: freshLabels.map((e) => ({
+        index: e.index,
+        label: e.label,
+        roadClass: e.roadClass,
+        osmHighwayTag: e.osmHighwayTag,
+        osmSurfaceTag: e.osmSurfaceTag,
+        roadProvenanceKind: e.roadProvenanceKind,
+      })),
+    });
+  }
+
+  let setbackGate: { pass: boolean; reasons: string[] } = { pass: false, reasons: ["no-warm-candidate"] };
+  let engineOrient: { pass: boolean; reasons?: string[] } = { pass: false, reasons: ["no-warm-candidate"] };
+  if (warmCandidate) {
+    const full = verifyWarmCandidateMechanically(warmCandidate as never, descriptor as never, {
+      situsAddress,
+      roads: roads as never,
+    });
+    setbackGate = full.gates.setbackEdgeDistance;
+    engineOrient = verifyFrontEdgeOrientation(warmCandidate as never, descriptor as never, {
+      situsAddress,
+      roads: roads as never,
+    });
+  }
+
+  const freshFront = freshLabels.find((e) => e.label === "front");
+  const answerFrontToken = isBlock13Mode ? key.frontStreet : (key.frontStreet ?? situsFrontStreetToken(situsAddress));
+  let frontStreetResolved: string | null = null;
+  let frontFacesAnswer = !answerFrontToken;
+  if (freshFront && answerFrontToken) {
+    const backingRoad = (roads as Array<{ osmWayId: unknown; name?: string }>).find(
+      (r) => r.osmWayId === freshFront.osmWayId,
+    ) ?? null;
+    frontStreetResolved = backingRoad?.name ?? null;
+    if (frontStreetResolved) {
+      frontFacesAnswer = streetNamesMatchForFacesAnswer(answerFrontToken, frontStreetResolved);
+    }
+  }
+
+  const r32Measured = measurePerEdgeInsetForRings(ring as never, insetRing) ?? [];
+  const nEdges = openRing(ring as never).length;
+  let insetGatePass = true;
+  for (let i = 0; i < nEdges; i++) {
+    const role =
+      freshLabels.find((e) => e.index === i)?.label ??
+      (warmCandidate as { edges?: Array<{ index: number; label: string }> } | null)?.edges?.find(
+        (e) => e.index === i,
+      )?.label ??
+      boundaryEdges?.find((e) => e.edgeIndex === i)?.role ??
+      "?";
+    const expected = expectedFtForRole(role, key);
+    const r32 = r32Measured[i]?.insetFeet ?? null;
+    const edgeOk = r32 != null && Math.abs(r32 - expected) <= CERT_GRADE_INSET_TOL_FT;
+    if (!edgeOk) insetGatePass = false;
+    parcelResult.edges.push({
+      edgeIndex: i,
+      role,
+      expectedFt: expected,
+      r32IndexMatched_ft: r32 == null ? null : Number(r32.toFixed(2)),
+      insetPass: edgeOk,
+    });
+  }
+
+  const r35NoFrontage = isNoDeterminableFrontageSitus(situsAddress);
+
+  parcelResult.gates = {
+    district: {
+      pass: districtOk,
+      served: servedDistrict,
+      servedSetbackRuleDistrict: setbackRule?.districtCode ?? null,
+      expected: key.district,
+    },
+    setbacks: {
+      pass: setbackServedOk && setbackGate.pass,
+      served: servedSetbacks,
+      expected: { front: key.F, rear: key.R, side: key.S, sideCorner: key.C },
+      engineVerifyPass: setbackGate.pass,
+    },
+    perEdgeInset: { pass: insetGatePass },
+    frontOrientation: {
+      pass: r35NoFrontage || (frontFacesAnswer && engineOrient.pass),
+      frontStreetResolved,
+      answerFrontStreet: answerFrontToken,
+      facesAnswer: frontFacesAnswer,
+      engineOrientPass: engineOrient.pass,
+      orientationHonestDecline: r35NoFrontage ? R35_ORIENTATION_DECLINE : null,
+    },
+  };
+
+  if (r35NoFrontage) {
+    parcelResult.orientationHonestDecline = R35_ORIENTATION_DECLINE;
+  }
+
+  parcelResult.pass =
+    districtOk &&
+    setbackServedOk &&
+    setbackGate.pass &&
+    insetGatePass &&
+    (r35NoFrontage || (frontFacesAnswer && engineOrient.pass));
+
+  return parcelResult;
+}
