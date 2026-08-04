@@ -130,6 +130,34 @@ describe("buildGeometryParityProbe", () => {
     await probe(ROW);
     expect(loadSample.mock.calls[0]).toEqual(loadSample.mock.calls[1]);
   });
+
+  it("threads the row's railC.cadastralQueryUrl into gradeOneParcel's ctx (fix/unzoned-cert-cadastral-url-param — never lets a non-Bastrop row silently grade against Bastrop's cadastral service)", async () => {
+    const capturedCtxs: unknown[] = [];
+    const capturingGrader: GradeOneParcelFn = async (_id, ctx) => {
+      capturedCtxs.push(ctx);
+      return { pass: true, gates: {}, edges: [] };
+    };
+    const nonBastropRow = {
+      ...ROW,
+      rowId: "Travis-test",
+      fips: "48453",
+      railC: { ...ROW.railC, cadastralQueryUrl: "https://traviscad.example/query" },
+    };
+    const probe = buildGeometryParityProbe({
+      sql: {} as never,
+      txSql: {} as never,
+      storage: {} as never,
+      descriptor: {},
+      loadSample: makeSampleLoader(["48453:1"]),
+      loadRoads: makeRoadsLoader(),
+      gradeOneParcel: capturingGrader,
+    });
+    await probe(nonBastropRow);
+    expect(capturedCtxs).toHaveLength(1);
+    expect((capturedCtxs[0] as { cadastralQueryUrl?: string }).cadastralQueryUrl).toBe(
+      "https://traviscad.example/query",
+    );
+  });
 });
 
 describe("buildServePathHealthProbe", () => {

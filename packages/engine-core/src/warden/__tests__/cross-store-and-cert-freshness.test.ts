@@ -4,6 +4,7 @@ import { runCrossStoreConsistencyCheck } from "../cross-store-consistency.js";
 import { runCertFreshnessCheck } from "../cert-freshness.js";
 import { BASTROP_REGISTRY_ROW } from "../../registry/jurisdiction-registry.js";
 import * as certGradeCore from "../../registry/cert-grade-core.js";
+import type { JurisdictionRegistryRow } from "../../registry/jurisdiction-registry.js";
 
 const FIXED_NOW = () => new Date("2026-08-04T00:00:00.000Z");
 const FIPS = "48021";
@@ -78,6 +79,30 @@ describe("runCrossStoreConsistencyCheck", () => {
     expect(flag?.evidence.currentGrade).toBe(true);
     vi.restoreAllMocks();
   });
+
+  it("threads the row's railC.cadastralQueryUrl into gradeOneParcel's ctx for a non-Bastrop row (fix/unzoned-cert-cadastral-url-param)", async () => {
+    const spy = vi
+      .spyOn(certGradeCore, "gradeOneParcelInQueryMode")
+      .mockResolvedValue({ pass: true, gates: {}, edges: [] });
+    const nonBastropRow: JurisdictionRegistryRow = {
+      ...BASTROP_REGISTRY_ROW,
+      rowId: "Travis-test",
+      fips: "48453",
+      railC: { ...BASTROP_REGISTRY_ROW.railC, cadastralQueryUrl: "https://traviscad.example/query" },
+    };
+    await runCrossStoreConsistencyCheck({
+      sweepId: "test-sweep",
+      fips: "48453",
+      rowId: "Travis-test",
+      now: FIXED_NOW,
+      deps: { ctx: stubCtx, sample: ["48453:1"], row: nonBastropRow },
+    });
+    expect(spy).toHaveBeenCalledWith(
+      "48453:1",
+      expect.objectContaining({ cadastralQueryUrl: "https://traviscad.example/query" }),
+    );
+    vi.restoreAllMocks();
+  });
 });
 
 describe("runCertFreshnessCheck", () => {
@@ -133,6 +158,35 @@ describe("runCertFreshnessCheck", () => {
       },
     });
     expect(findings.some((f) => f.severity === "flag" && f.evidence.detail?.toString().includes("stale evidence"))).toBe(true);
+    vi.restoreAllMocks();
+  });
+
+  it("threads the row's railC.cadastralQueryUrl into gradeOneParcel's ctx for a non-Bastrop row (fix/unzoned-cert-cadastral-url-param)", async () => {
+    const spy = vi
+      .spyOn(certGradeCore, "gradeOneParcelInQueryMode")
+      .mockResolvedValue({ pass: true, gates: {}, edges: [] });
+    const nonBastropRow: JurisdictionRegistryRow = {
+      ...BASTROP_REGISTRY_ROW,
+      rowId: "Travis-test",
+      fips: "48453",
+      railC: { ...BASTROP_REGISTRY_ROW.railC, cadastralQueryUrl: "https://traviscad.example/query" },
+    };
+    await runCertFreshnessCheck({
+      sweepId: "test-sweep",
+      fips: "48453",
+      rowId: "Travis-test",
+      now: FIXED_NOW,
+      deps: {
+        ctx: stubCtx,
+        sample: ["48453:1"],
+        row: nonBastropRow,
+        priorVerdict: { passByParcel: { "48453:1": true }, artifactPath: "fake.json", artifactTs: "2026-08-01T00:00:00.000Z" },
+      },
+    });
+    expect(spy).toHaveBeenCalledWith(
+      "48453:1",
+      expect.objectContaining({ cadastralQueryUrl: "https://traviscad.example/query" }),
+    );
     vi.restoreAllMocks();
   });
 });

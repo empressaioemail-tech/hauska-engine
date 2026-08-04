@@ -77,6 +77,15 @@ export interface LedgerIngestBody {
 /** Small, extendable fips→county-name map for roster-mirror payloads (Bastrop-network only today). */
 export const FIPS_TO_COUNTY_NAME: Readonly<Record<string, string>> = {
   "48021": "Bastrop",
+  "48027": "Bell",
+  "48029": "Bexar",
+  "48055": "Caldwell",
+  "48091": "Comal",
+  "48187": "Guadalupe",
+  "48209": "Hays",
+  "48309": "McLennan",
+  "48453": "Travis",
+  "48491": "Williamson",
 };
 
 export function countyNameForFips(fips: string): string {

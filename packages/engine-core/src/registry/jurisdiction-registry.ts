@@ -14,6 +14,7 @@
  * (staged, not yet warm-eligible) — see onboard-preflight.ts for the gate
  * that promotes a row toward "active".
  */
+import { BASTROP_BCAD_PARCELS_URL } from "../boundary-primitive/lot-line-scrub.js";
 
 /** How a jurisdiction's parcel GEOMETRY (Rail C) is sourced. */
 export type GeometrySource =
@@ -144,6 +145,19 @@ export interface JurisdictionRegistryRow {
     readonly featureCount: number | null;
     /** Fraction of parcels with an unusable prop_id (empty/zero). */
     readonly propIdBadRate: number | null;
+    /**
+     * Live cadastral-ring query endpoint (ArcGIS FeatureServer query URL,
+     * see BASTROP_BCAD_PARCELS_URL) for this row's county — the per-parcel
+     * grade path (cert-grade-core.ts) queries THIS row's cadastral service
+     * for BCAD-style ring fetches, never a hardcoded county default. Optional
+     * and additive: absent on a non-48021 row means the grader must fail
+     * loud rather than silently defaulting to Bastrop's endpoint (see
+     * gradeUnzonedParcel / gradeOneParcelInQueryMode / gradeBlock13Parcel in
+     * cert-grade-core.ts). 48021 rows populate this with the current
+     * BASTROP_BCAD_PARCELS_URL value so their behavior stays explicit and
+     * byte-equivalent to the prior hardcoded-default behavior.
+     */
+    readonly cadastralQueryUrl?: string | null;
   };
   /** How CAD attributes join to geometry, and the fabrication firewall. */
   readonly join: {
@@ -202,6 +216,7 @@ export const BASTROP_REGISTRY_ROW: JurisdictionRegistryRow = {
     vintageYyyymm: "202503",
     featureCount: 63357,
     propIdBadRate: 0.0022,
+    cadastralQueryUrl: BASTROP_BCAD_PARCELS_URL,
   },
   join: {
     joinKey: "prop_id",
@@ -244,6 +259,7 @@ export const BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow
       vintageYyyymm: "202503",
       featureCount: 63357,
       propIdBadRate: 0.0022,
+      cadastralQueryUrl: BASTROP_BCAD_PARCELS_URL,
     },
     join: {
       joinKey: "prop_id",
@@ -314,6 +330,7 @@ export const ELGIN_REGISTRY_ROW: JurisdictionRegistryRow = {
     vintageYyyymm: "202503",
     featureCount: 63357,
     propIdBadRate: 0.0022,
+    cadastralQueryUrl: BASTROP_BCAD_PARCELS_URL,
     // NOTE: railC (Rail C geometry) is the Bastrop-side StratMap county zip,
     // which covers Elgin's Bastrop-county-side parcels (fips 48021). This
     // does NOT cover the ~500-parcel Travis-county-side sliver (fips 48453,

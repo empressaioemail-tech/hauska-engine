@@ -32,6 +32,18 @@ describe("ledger-report-client, countyNameForFips", () => {
   it("falls back to the fips itself for an unmapped fips", () => {
     expect(countyNameForFips("99999")).toBe("99999");
   });
+
+  it("resolves the Central-TX county fan added 2026-08-04", () => {
+    expect(countyNameForFips("48027")).toBe("Bell");
+    expect(countyNameForFips("48029")).toBe("Bexar");
+    expect(countyNameForFips("48055")).toBe("Caldwell");
+    expect(countyNameForFips("48091")).toBe("Comal");
+    expect(countyNameForFips("48187")).toBe("Guadalupe");
+    expect(countyNameForFips("48209")).toBe("Hays");
+    expect(countyNameForFips("48309")).toBe("McLennan");
+    expect(countyNameForFips("48453")).toBe("Travis");
+    expect(countyNameForFips("48491")).toBe("Williamson");
+  });
 });
 
 describe("ledger-report-client, buildLedgerIngestBody", () => {

@@ -106,8 +106,15 @@ export async function runCertFreshnessCheck(params: {
     let result: ParcelGradeResult;
     try {
       result = isUnzoned
-        ? await gradeUnzonedParcel(parcelNodeId, { sql: deps.ctx.sql })
-        : await gradeOneParcelInQueryMode(parcelNodeId, { ...deps.ctx, districtPrefix: null });
+        ? await gradeUnzonedParcel(parcelNodeId, {
+            sql: deps.ctx.sql,
+            cadastralQueryUrl: deps.row.railC.cadastralQueryUrl,
+          })
+        : await gradeOneParcelInQueryMode(parcelNodeId, {
+            ...deps.ctx,
+            districtPrefix: null,
+            cadastralQueryUrl: deps.ctx.cadastralQueryUrl ?? deps.row.railC.cadastralQueryUrl,
+          });
     } catch (err) {
       findings.push({
         ts: now().toISOString(),

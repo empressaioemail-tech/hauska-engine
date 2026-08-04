@@ -121,6 +121,7 @@ export function buildGeometryParityProbe(
           roads,
           descriptor: deps.descriptor,
           districtPrefix: null,
+          cadastralQueryUrl: row.railC.cadastralQueryUrl,
         });
       } catch (err) {
         failed.push(`${parcelNodeId} (grade threw: ${err instanceof Error ? err.message : String(err)})`);
@@ -351,6 +352,7 @@ export function buildCostSampleProbe(
           roads,
           descriptor: deps.descriptor,
           districtPrefix: null,
+          cadastralQueryUrl: row.railC.cadastralQueryUrl,
         });
       } catch {
         // A single parcel's grade throwing does not abort the cost sample —
