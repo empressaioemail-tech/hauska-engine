@@ -276,6 +276,90 @@ export async function gradeOneParcelInQueryMode(
   return gradeAgainstKey(parcelNodeId, propId, key, situsAddress, ring, { sql, txSql, storage, roads, descriptor });
 }
 
+/** Decline code minted by the unzoned-county envelope cascade (property-reasoning/cascade-unzoned-envelope-decline.ts). */
+export const UNZONED_CASCADE_DECLINE_CODE = "unzoned-no-district-basis";
+
+/**
+ * Grade a single parcel on the unzoned-county cert branch
+ * (--grade-mode=unzoned). Asserts the parcel is a genuine, coherent
+ * zoning-absence: honest-absence zoning-fact present with NO district and
+ * NO setback-rule atom (a setback-rule on an absence parcel would itself be
+ * a contract violation per the planner's 2026-08-03 ruling — never minted by
+ * the cascade); the cascade envelope decline present
+ * (warmVerifyDeclineCode === unzoned-no-district-basis, post cascade-bake
+ * state); and the parcel's cadastral ring actually resolves (an absence
+ * parcel still needs to be a REAL parcel, not a dangling node id). Same
+ * result shape as gradeOneParcelInQueryMode / gradeBlock13Parcel so
+ * block13-cert-grade.mjs can drive either grader interchangeably.
+ */
+export async function gradeUnzonedParcel(
+  parcelNodeId: string,
+  ctx: Pick<CertGradeContext, "sql">,
+): Promise<ParcelGradeResult> {
+  const { sql } = ctx;
+  const propId = parcelNodeId.split(":")[1]!;
+  const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
+
+  const [zfRow] = await sql`
+    SELECT body FROM atoms WHERE entity_type = 'zoning-fact'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+  const zoningFact = zfRow?.body ?? null;
+  const district: string | null = zoningFact?.district ?? null;
+  const absenceKind: string | null = zoningFact?.absence?.kind ?? null;
+  parcelResult.district = district ?? undefined;
+
+  if (!zoningFact || district !== null || absenceKind !== "no-zoning-stamp") {
+    parcelResult.pass = false;
+    parcelResult.reason = "expected-unzoned-but-district-present";
+    return parcelResult;
+  }
+
+  const [srRow] = await sql`
+    SELECT 1 FROM atoms WHERE entity_type = 'setback-rule'
+      AND body->>'parcelNodeId' = ${parcelNodeId} LIMIT 1
+  `;
+  if (srRow) {
+    parcelResult.pass = false;
+    parcelResult.reason = "unexpected-setback-rule";
+    return parcelResult;
+  }
+
+  const [envRow] = await sql`
+    SELECT body FROM atoms WHERE entity_type = 'buildable-envelope'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+  const envelope = envRow?.body ?? null;
+  if (!envelope || envelope.warmVerifyDeclineCode !== UNZONED_CASCADE_DECLINE_CODE) {
+    parcelResult.pass = false;
+    parcelResult.reason = "cascade-missing";
+    return parcelResult;
+  }
+
+  try {
+    const bcad = await fetchBcadParcelRings([propId]);
+    const bcadRing = bcad[0]?.ring;
+    const ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
+    if (!ring) {
+      parcelResult.pass = false;
+      parcelResult.reason = "cadastral-ring-unresolved";
+      return parcelResult;
+    }
+  } catch (err) {
+    parcelResult.pass = false;
+    parcelResult.reason = "cadastral-ring-unresolved";
+    parcelResult.error = err instanceof Error ? err.message : String(err);
+    return parcelResult;
+  }
+
+  parcelResult.pass = true;
+  parcelResult.honestDecline = true;
+  parcelResult.declineReason = envelope.warmVerifyDecline ?? UNZONED_CASCADE_DECLINE_CODE;
+  return parcelResult;
+}
+
 /**
  * Grade a single parcel against the frozen BLOCK13 answer key
  * (--roster-from=block13, the default invocation).

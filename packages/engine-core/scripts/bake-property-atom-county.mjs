@@ -15,6 +15,22 @@
  *       --county=48055 [--limit=0] [--offset=0] [--batch=200] [--spike-pp=40]
  *
  * Acceptance: WDLL breadth items 2,3,7.
+ *
+ * --cascade-absence-only mode (additive; named-decline-beats-silent-absence
+ * cascade for the 48021 unzoned cohort): reads DIRECTLY from substrate
+ * (DATABASE_URL only — no CORTEX_DATABASE_URL / cortex snapshot scan in this
+ * mode). Finds parcels that already carry an absence zoning-fact
+ * (absence.kind = 'no-zoning-stamp', no district) AND have no
+ * buildable-envelope atom yet; mints ONLY a buildable-envelope honest-decline
+ * (R27 persisted-decline shape, code unzoned-no-district-basis) for each.
+ * NEVER mints or updates zoning-fact or setback-rule atoms; NEVER touches a
+ * parcel whose zoning-fact carries a real district (city cohort) — enforced
+ * in the query itself. Idempotent/resumable: re-running skips parcels that
+ * already have an envelope atom.
+ *
+ *   PROPERTY_ATOM_PATH=1 DATABASE_URL=...hauska_mcp... \
+ *     pnpm --filter @hauska-engine/engine-core run bake-property-atom-county -- \
+ *       --county=48021 --cascade-absence-only [--batch=200]
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -26,6 +42,7 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import { emitFromTier1Snapshot } from "../src/property-reasoning/bake-from-tier1-snapshot.ts";
+import { buildCascadeEnvelopeDecline } from "../src/property-reasoning/cascade-unzoned-envelope-decline.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LEDGER_DIR = join(
@@ -54,6 +71,7 @@ function parseArgs(argv) {
     batch: 200,
     spikePp: 40,
     dryRun: false,
+    cascadeAbsenceOnly: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -69,6 +87,7 @@ function parseArgs(argv) {
     else if (a.startsWith("--spike-pp="))
       out.spikePp = Number(a.slice("--spike-pp=".length));
     else if (a === "--dry-run") out.dryRun = true;
+    else if (a === "--cascade-absence-only") out.cascadeAbsenceOnly = true;
   }
   return out;
 }
@@ -92,17 +111,25 @@ if (!substrateUrl) {
   console.error("FATAL: DATABASE_URL or SUBSTRATE_DATABASE_URL required.");
   process.exit(1);
 }
-if (!cortexUrl) {
+// --cascade-absence-only reads/writes substrate only — no cortex snapshot scan.
+if (!args.cascadeAbsenceOnly && !cortexUrl) {
   console.error("FATAL: CORTEX_DATABASE_URL required.");
   process.exit(1);
 }
 
 const handle = createPgStorage({ databaseUrl: substrateUrl, maxConnections: 8 });
-const cortexSql = postgres(cortexUrl, {
-  max: 4,
-  ssl: "require",
-  prepare: false,
-});
+const cortexSql = args.cascadeAbsenceOnly
+  ? null
+  : postgres(cortexUrl, {
+      max: 4,
+      ssl: "require",
+      prepare: false,
+    });
+
+if (args.cascadeAbsenceOnly) {
+  await runCascadeAbsenceOnly();
+  process.exit(process.exitCode ?? 0);
+}
 
 const t0 = performance.now();
 const prefix = `node:${args.county}:`;
@@ -377,4 +404,170 @@ try {
 } finally {
   await cortexSql.end({ timeout: 5 });
   await handle.close();
+}
+
+/**
+ * --cascade-absence-only: mint ONLY a buildable-envelope honest-decline
+ * (unzoned-no-district-basis) for parcels that already carry an absence
+ * zoning-fact (absence.kind = 'no-zoning-stamp', no district) and have no
+ * buildable-envelope atom yet. Reads/writes substrate directly — no cortex
+ * snapshot. NEVER mints or updates a zoning-fact or setback-rule atom.
+ * HARD CONSTRAINT enforced in the query itself: only parcels whose LATEST
+ * zoning-fact carries no district (body->>'district' IS NULL) are selected
+ * — a parcel with a real district (city cohort) is never returned by this
+ * query and therefore never written to in this mode.
+ */
+async function runCascadeAbsenceOnly() {
+  const cascadeHandle = handle;
+  const sql = cascadeHandle.sql;
+  const county = args.county;
+  const t0c = performance.now();
+
+  const summary = {
+    event: "cascade-absence-only",
+    county,
+    name: COUNTY_NAMES[county],
+    dryRun: args.dryRun,
+    scanned: 0,
+    cascaded: 0,
+    skippedExisting: 0,
+    errors: 0,
+  };
+
+  console.log(
+    JSON.stringify({
+      event: "cascade-absence-only.start",
+      county,
+      name: COUNTY_NAMES[county],
+      dryRun: args.dryRun,
+    }),
+  );
+
+  const pageSize = Math.max(50, Math.min(args.batch, 500));
+  let atomBatch = [];
+  let lastParcelNodeId = "";
+
+  async function flush() {
+    if (atomBatch.length === 0) return;
+    if (!args.dryRun) {
+      await cascadeHandle.storage.writePropertyAtomsBatch(atomBatch);
+    }
+    atomBatch = [];
+  }
+
+  try {
+    while (true) {
+      if (args.limit > 0 && summary.scanned >= args.limit) break;
+      const take =
+        args.limit > 0
+          ? Math.min(pageSize, args.limit - summary.scanned)
+          : pageSize;
+
+      // Keyset (not OFFSET) pagination on parcel_node_id — stable across a
+      // long-running resumable scan. Latest zoning-fact per parcel in this
+      // county that is a genuine absence (no district — the
+      // unincorporated/unzoned cohort). A parcel whose latest zoning-fact
+      // carries a real district (city cohort) is excluded by the
+      // `district IS NULL` predicate below and is never returned by this
+      // query, hence never written to in this mode (HARD CONSTRAINT).
+      const rows = await sql`
+        SELECT DISTINCT ON (body->>'parcelNodeId')
+          body->>'parcelNodeId' AS parcel_node_id,
+          atom_did,
+          body->'baseFacts'->>'situsCity' AS situs_city,
+          body->>'district' AS district,
+          body->'absence'->>'kind' AS absence_kind
+        FROM atoms
+        WHERE entity_type = 'zoning-fact'
+          AND jurisdiction_tenant LIKE ${`breadth_${county}_%`}
+          AND body->>'parcelNodeId' > ${lastParcelNodeId}
+        ORDER BY body->>'parcelNodeId', updated_at DESC NULLS LAST
+        LIMIT ${take}
+      `;
+      if (rows.length === 0) break;
+
+      const absenceRows = rows.filter(
+        (r) => r.district === null && r.absence_kind === "no-zoning-stamp",
+      );
+      const candidateIds = absenceRows.map((r) => r.parcel_node_id);
+      const existingEnvelopeIds = new Set();
+      if (candidateIds.length > 0) {
+        const existing = await sql`
+          SELECT DISTINCT body->>'parcelNodeId' AS parcel_node_id
+          FROM atoms
+          WHERE entity_type = 'buildable-envelope'
+            AND body->>'parcelNodeId' IN ${sql(candidateIds)}
+        `;
+        for (const e of existing) existingEnvelopeIds.add(e.parcel_node_id);
+      }
+
+      const extractedAt = new Date().toISOString();
+      for (const row of rows) {
+        summary.scanned += 1;
+        const isAbsence =
+          row.district === null && row.absence_kind === "no-zoning-stamp";
+        if (isAbsence && existingEnvelopeIds.has(row.parcel_node_id)) {
+          summary.skippedExisting += 1;
+        } else if (isAbsence) {
+          try {
+            const decline = buildCascadeEnvelopeDecline(
+              {
+                parcelNodeId: row.parcel_node_id,
+                atomDid: row.atom_did,
+                situsCity: row.situs_city,
+              },
+              county,
+              extractedAt,
+            );
+            atomBatch.push(decline);
+            summary.cascaded += 1;
+            if (atomBatch.length >= args.batch) await flush();
+          } catch (err) {
+            summary.errors += 1;
+            console.error(
+              JSON.stringify({
+                event: "cascade-absence-only.emit-error",
+                parcelNodeId: row.parcel_node_id,
+                error: String(err?.message || err),
+              }),
+            );
+          }
+        }
+        // Non-absence (city-cohort) rows are counted in `scanned` for an
+        // honest denominator but are never cascaded and never skipped —
+        // they are simply not this mode's concern.
+        if (summary.scanned % 1000 === 0) {
+          await flush();
+          console.log(
+            JSON.stringify({
+              event: "cascade-absence-only.progress",
+              county,
+              scanned: summary.scanned,
+              cascaded: summary.cascaded,
+              skippedExisting: summary.skippedExisting,
+              errors: summary.errors,
+              wallMs: Math.round(performance.now() - t0c),
+            }),
+          );
+        }
+      }
+
+      lastParcelNodeId = rows[rows.length - 1].parcel_node_id;
+      if (rows.length < take) break;
+    }
+
+    await flush();
+    summary.wallMs = Math.round(performance.now() - t0c);
+    console.log(
+      JSON.stringify({
+        event: "cascade-absence-only.done",
+        ...summary,
+      }),
+    );
+  } catch (err) {
+    console.error(err);
+    process.exitCode = 1;
+  } finally {
+    await cascadeHandle.close();
+  }
 }
