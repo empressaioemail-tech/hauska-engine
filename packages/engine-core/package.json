@@ -91,7 +91,9 @@
     "tally-caldwell-depth": "tsx scripts/tally-caldwell-depth.mjs",
     "backfill-bastrop-zoning-fact-provenance": "tsx scripts/backfill-bastrop-zoning-fact-provenance.mjs",
     "backfill-bastrop-zoning-fact-code-refs": "tsx scripts/backfill-bastrop-zoning-fact-code-refs.mjs",
-    "onboard-preflight": "tsx scripts/onboard-preflight.mjs"
+    "onboard-preflight": "tsx scripts/onboard-preflight.mjs",
+    "preflight-and-report": "tsx scripts/preflight-and-report.mjs",
+    "cert-grade-and-report": "tsx scripts/cert-grade-and-report.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
