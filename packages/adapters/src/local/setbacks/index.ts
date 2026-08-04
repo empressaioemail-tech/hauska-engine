@@ -47,6 +47,8 @@ const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = {
   // Sole authoring survivor for city Euclidean VALUES (WDLL STEP 3 item 1+3).
   "bastrop-development-code": bastropDevelopmentCode as SetbackTable,
   "elgin-development-code": elginDevelopmentCode as SetbackTable,
+  // Tier-1 stamps cityKey/jurisdictionKey as elgin-tx — alias to the ratified table.
+  "elgin-tx": elginDevelopmentCode as SetbackTable,
   "austin-tx": austinTx as SetbackTable,
   "san-antonio-tx": sanAntonioTx as SetbackTable,
   "utah-unincorporated": utahUnincorporated as SetbackTable,
@@ -180,6 +182,10 @@ export function getSetbackTableForZoning(
 
     // R13 (AMENDMENT 8): city BDC districts require layer-23 per-parcel record.
     return null;
+  }
+
+  if (normalized === "elgin-tx" || normalized === "elgin-development-code") {
+    return SETBACK_TABLES["elgin-development-code"] ?? null;
   }
 
   return SETBACK_TABLES[normalized] ?? null;

@@ -89,12 +89,17 @@ const COUNTY_FIPS_TO_DISTRICT_MAP_KEY: Readonly<Record<string, string>> = {
 
 export function descriptorForCounty(
   parcelNodeId: string,
+  /** cityKey from tier-1 snapshot (e.g. elgin_tx, bastrop_city_tx) or situsCity fallback */
   cityHint: string | null | undefined,
   countyFips: string,
   setbackTable?: JurisdictionDescriptor["setbackTable"],
 ): JurisdictionDescriptor {
   const city = (cityHint || "unknown").toLowerCase().replace(/\s+/g, "_");
-  const districtMapKey = COUNTY_FIPS_TO_DISTRICT_MAP_KEY[countyFips];
+  const cityNorm = city.replace(/-/g, "_");
+  const districtMapKey =
+    cityNorm === "elgin_tx"
+      ? "elgin_tx"
+      : COUNTY_FIPS_TO_DISTRICT_MAP_KEY[countyFips];
   return {
     key: districtMapKey ?? `breadth_${countyFips}`,
     displayName: `Breadth bake ${countyFips}`,

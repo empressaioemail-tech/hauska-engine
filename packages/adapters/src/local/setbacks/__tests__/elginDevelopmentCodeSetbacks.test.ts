@@ -92,10 +92,17 @@ describe("elgin-development-code.json — ratified shape", () => {
 
   it("is registered in SETBACK_TABLES and reachable through getSetbackTable/getSetbackTableForZoning (ratified 2026-08-04)", () => {
     expect(SETBACK_JURISDICTION_KEYS).toContain("elgin-development-code");
+    expect(SETBACK_JURISDICTION_KEYS).toContain("elgin-tx");
     expect(getSetbackTable("elgin-development-code")).not.toBeNull();
+    expect(getSetbackTable("elgin-tx")).not.toBeNull();
+    expect(getSetbackTable("elgin-tx")).toBe(getSetbackTable("elgin-development-code"));
     expect(getSetbackTableForZoning("elgin-development-code", "R-1")).not.toBeNull();
     expect(getSetbackTableForZoning("elgin-development-code", "R-1")?.jurisdictionKey).toBe(
       "elgin-development-code",
+    );
+    expect(getSetbackTableForZoning("elgin-tx", "R-1")).not.toBeNull();
+    expect(getSetbackTableForZoning("elgin-tx", "R-1")).toBe(
+      getSetbackTableForZoning("elgin-development-code", "R-1"),
     );
   });
 
