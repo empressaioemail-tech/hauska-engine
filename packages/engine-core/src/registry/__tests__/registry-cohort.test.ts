@@ -7,7 +7,11 @@ import {
   loadJurisdictionRegistryRow,
   loadJurisdictionRegistryRowsForFips,
 } from "../jurisdiction-registry.js";
-import { loadRegistryDistrictCohort, buildWhereClause } from "../parcel-cohort-loader.js";
+import {
+  loadRegistryDistrictCohort,
+  loadRegistryDistrictCohortByRow,
+  buildWhereClause,
+} from "../parcel-cohort-loader.js";
 
 describe("registry cohort rail (Phase D)", () => {
   it("Bastrop registry row carries railPerParcel cohort config", () => {
@@ -104,7 +108,62 @@ describe("ParcelCohortFilter discriminated union (onboard-fips foundation)", () 
   // cohort fetch is exercised directly against buildWhereClause above (the
   // WHERE-clause construction is the part loadRegistryDistrictCohort's
   // pagination loop consumes verbatim); loadRegistryDistrictCohort itself
-  // stays fips-keyed to the active row until it grows a rowId-keyed variant.
+  // stays fips-keyed to the active row. loadRegistryDistrictCohortByRow
+  // (S4, below) is the disambiguated rowId-keyed variant.
+});
+
+describe("loadRegistryDistrictCohortByRow (S4 — rowId-keyed, mocked AGOL)", () => {
+  it("resolves the exact row by rowId, not just fips — county-unincorporated cohort (noFilter)", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      // county-unincorporated is a noFilter row: no CITY= predicate, only the
+      // district clause (or 1=1 with none) — proves it did NOT silently
+      // resolve to the Bastrop-city cityFilter row despite sharing fips 48021.
+      expect(url).not.toContain("CITY+%3D+%27BASTROP%27");
+      expect(url).toContain("ZoneTypeClass+%3D+3");
+      return {
+        ok: true,
+        json: async () => ({ features: [{ attributes: { prop_id: "999001" } }] }),
+      } as Response;
+    });
+    const loaded = await loadRegistryDistrictCohortByRow(
+      "Bastrop County (unincorporated)",
+      "SF-1",
+      { fetchImpl },
+    );
+    expect(loaded.count).toBe(1);
+    expect(loaded.parcelNodeIds).toEqual(["48021:999001"]);
+    expect(loaded.source).toContain("Bastrop");
+  });
+
+  it("resolves the Elgin row distinctly from the Bastrop-city row on the same fips", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      expect(url).toContain("CITY_LIMIT+%3D+%27ELGIN%27");
+      return {
+        ok: true,
+        json: async () => ({ features: [{ attributes: { PROP_ID: "77" } }] }),
+      } as Response;
+    });
+    const loaded = await loadRegistryDistrictCohortByRow("Elgin", null, { fetchImpl });
+    expect(loaded.parcelNodeIds).toEqual(["48021:77"]);
+  });
+
+  it("throws a named honest-absence error for an unknown rowId", async () => {
+    await expect(loadRegistryDistrictCohortByRow("Not A Real Row", null)).rejects.toThrow(
+      /unknown rowId Not A Real Row/,
+    );
+  });
+
+  it("matches loadRegistryDistrictCohort's output shape for the Bastrop row (same WHERE, same pagination)", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        features: [{ attributes: { prop_id: "141364" } }, { attributes: { prop_id: "109388" } }],
+      }),
+    })) as unknown as typeof fetch;
+    const byFips = await loadRegistryDistrictCohort("48021", "MU", { fetchImpl });
+    const byRow = await loadRegistryDistrictCohortByRow("Bastrop", "MU", { fetchImpl });
+    expect(byRow).toEqual(byFips);
+  });
 });
 
 describe("multi-row-per-fips registry (onboard-fips foundation)", () => {

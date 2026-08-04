@@ -18,6 +18,7 @@ export type {
 } from "./jurisdiction-registry.js";
 export {
   loadRegistryDistrictCohort,
+  loadRegistryDistrictCohortByRow,
   buildWhereClause,
   type RegistryDistrictCohort,
 } from "./parcel-cohort-loader.js";
@@ -59,6 +60,7 @@ export {
   buildGeometryParityProbe,
   buildServePathHealthProbe,
   buildCostSampleProbe,
+  buildOnboardPreflightDeps,
   GEOMETRY_PARITY_SAMPLE_CAVEAT,
   COST_MODEL_USD_PER_COMPUTE_HOUR,
   COST_MODEL_USD_PER_1K_EXTERNAL_CALLS,
@@ -67,4 +69,5 @@ export {
   type GeometrySampleDeps,
   type ServePathHealthDeps,
   type CostSampleDeps,
+  type OnboardPreflightDepsInput,
 } from "./preflight-probes.js";
