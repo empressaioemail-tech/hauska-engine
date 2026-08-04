@@ -87,6 +87,7 @@
     "boundary-primitive-caldwell": "tsx scripts/boundary-primitive-caldwell.mjs",
     "tally-caldwell-depth": "tsx scripts/tally-caldwell-depth.mjs",
     "backfill-bastrop-zoning-fact-provenance": "tsx scripts/backfill-bastrop-zoning-fact-provenance.mjs",
+    "backfill-bastrop-zoning-fact-code-refs": "tsx scripts/backfill-bastrop-zoning-fact-code-refs.mjs",
     "onboard-preflight": "tsx scripts/onboard-preflight.mjs"
   },
   "dependencies": {
