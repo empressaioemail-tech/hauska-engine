@@ -546,3 +546,46 @@ export async function fetchCaldwellRoadsForIngest(
     scope,
   };
 }
+
+export type ElginRoadIngestScope = "elgin-city";
+
+/** Default Elgin city OSM ingest — ELGIN_CITY_BBOX from AGOL Elgin_Zoning extent. */
+export function resolveElginRoadIngestBbox(
+  env: NodeJS.ProcessEnv = process.env,
+): { bbox: OverpassBbox; scope: ElginRoadIngestScope | "custom" } {
+  const raw = env.ELGIN_ROAD_BBOX?.trim();
+  if (raw) {
+    const parts = raw.split(",").map((s) => Number(s.trim()));
+    if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
+      throw new Error(
+        "ELGIN_ROAD_BBOX must be south,west,north,east (four comma-separated numbers)",
+      );
+    }
+    return {
+      bbox: { south: parts[0]!, west: parts[1]!, north: parts[2]!, east: parts[3]! },
+      scope: "custom",
+    };
+  }
+  return { bbox: { ...ELGIN_CITY_BBOX }, scope: "elgin-city" };
+}
+
+export async function fetchElginRoadsForIngest(
+  env: NodeJS.ProcessEnv = process.env,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{
+  elements: ParsedOsmElement[];
+  elapsedMs: number;
+  query: string;
+  bbox: OverpassBbox;
+  scope: ElginRoadIngestScope | "custom";
+}> {
+  const { bbox, scope } = resolveElginRoadIngestBbox(env);
+  const single = await fetchOverpassRoadsInBbox(bbox, fetchImpl);
+  return {
+    elements: single.elements,
+    elapsedMs: single.elapsedMs,
+    query: single.query,
+    bbox,
+    scope,
+  };
+}
