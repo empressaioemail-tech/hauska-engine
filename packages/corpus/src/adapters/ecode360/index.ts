@@ -202,11 +202,22 @@ export class ECode360Adapter implements CodeSourceAdapter {
     // caller explicitly injects its own `http` (tests do this to stub
     // the network; a caller injecting a live client is responsible for
     // its own UA choice).
+    //
+    // Rate: 0.5 rps, not 1. The 2026-07-29/30 proof ran at 0.5 rps
+    // deliberately and cleared a mid-crawl 429. The OPS-9 S3 proving
+    // run (2026-08-04) reproduced a live 429 + Cloudflare challenge
+    // TWICE at this adapter's then-default of 1 rps (two independent
+    // attempts, each blocked 16-21s in, one after a 20s backoff-retry)
+    // and then completed cleanly end-to-end with zero blocks at 0.5
+    // rps on the very next attempt, same UA, same headers, same
+    // target. 1 rps is empirically unsafe against this host's
+    // Cloudflare tier; 0.5 rps is the only rate verified live twice
+    // (proof + S3 rerun) to complete without a block.
     this.http =
       opts.http ??
       new RespectfulFetch({
         userAgent: CIVIL_USER_AGENT,
-        maxRequestsPerSecondPerHost: 1,
+        maxRequestsPerSecondPerHost: 0.5,
       });
     this.baseUrl = opts.baseUrl ?? "https://ecode360.com";
     this.robotsRulesCache = opts.robotsRules;
@@ -335,7 +346,107 @@ export class ECode360Adapter implements CodeSourceAdapter {
       this.normalizePage(html, pageUrl, blocks);
     }
 
-    return { metadata: raw.metadata, blocks };
+    return { metadata: raw.metadata, blocks: this.dedupeSectionBlocks(blocks) };
+  }
+
+  /**
+   * Belt-and-braces safety net for `collectParentUrls()`'s shape-driven
+   * container exclusion (see that method's doc comment for the root
+   * cause this defends against): if a TOC shape ever slips past the
+   * container check — a node mixing fragment-href section children
+   * with non-fragment-href container children, or any other future
+   * shape this adapter hasn't seen yet — the same section heading can
+   * still arrive twice in `blocks`, sourced from two different pages.
+   *
+   * Distinguishing "nav-only occurrence" from "body-bearing occurrence"
+   * per-page is NOT reliable here: a section with genuinely empty body
+   * text (a reserved/placeholder section, several exist in this corpus)
+   * is indistinguishable from a nav-only duplicate by paragraph count
+   * alone. Dedupe instead at the (sectionLabel, content-hash) level —
+   * group each `section`-kind heading with the paragraph/definition/etc.
+   * blocks that follow it up to the next heading, hash that group's
+   * concatenated text, and keep only the first occurrence of each
+   * (label, hash) pair. Two occurrences of the same label with
+   * DIFFERENT content hashes are kept (that would mean genuinely
+   * different content under the same label, which this dedup should
+   * never silently discard). Every drop is counted and logged — never
+   * silent, per the fail-loud posture this file already commits to for
+   * blocked fetches.
+   */
+  private dedupeSectionBlocks(
+    blocks: ReadonlyArray<NormalizedBlock>,
+  ): ReadonlyArray<NormalizedBlock> {
+    // First pass: slice `blocks` into runs, each starting at a heading
+    // (or the leading run before the first heading) and running to the
+    // next heading.
+    interface Run {
+      heading: NormalizedBlock | undefined;
+      body: NormalizedBlock[];
+    }
+    const runs: Run[] = [];
+    let current: Run = { heading: undefined, body: [] };
+    for (const block of blocks) {
+      if (block.kind === "heading") {
+        runs.push(current);
+        current = { heading: block, body: [] };
+      } else {
+        current.body.push(block);
+      }
+    }
+    runs.push(current);
+
+    const seen = new Map<string, true>();
+    const kept: NormalizedBlock[] = [];
+    let droppedCount = 0;
+    const droppedLabels: string[] = [];
+
+    for (const run of runs) {
+      if (!run.heading) {
+        // Leading run before any heading (never observed in practice,
+        // but handled so this pass is total over any input).
+        kept.push(...run.body);
+        continue;
+      }
+      const isSectionHeading =
+        run.heading.kind === "heading" && "label" in run.heading && !!run.heading.label;
+      if (!isSectionHeading) {
+        // Only section-labeled headings (§ x.xx.xxx) are deduped —
+        // structural headings (part/article/division) legitimately
+        // repeat across the document only when they ARE the same node
+        // visited twice, which the container-exclusion fix already
+        // prevents; leaving them unguarded here avoids over-reaching
+        // beyond the diagnosed failure mode.
+        kept.push(run.heading, ...run.body);
+        continue;
+      }
+      const label = (run.heading as { label?: string }).label ?? "";
+      const contentText = run.body
+        .map((b) => ("text" in b ? b.text : JSON.stringify(b)))
+        .join(" ");
+      const key = `${label}${hashString(contentText)}`;
+      if (seen.has(key)) {
+        droppedCount++;
+        droppedLabels.push(label);
+        continue;
+      }
+      seen.set(key, true);
+      kept.push(run.heading, ...run.body);
+    }
+
+    if (droppedCount > 0) {
+      // Fail-loud, not fail-silent: this is a safety net catching a
+      // shape this adapter's TOC-walk exclusion didn't anticipate, so
+      // an operator needs to see it happened even though the run
+      // otherwise succeeds.
+      // eslint-disable-next-line no-console -- deliberate operator-facing signal, not debug noise
+      console.warn(
+        `ECode360Adapter.normalize: dropped ${droppedCount} duplicate section marker(s) ` +
+          `(identical label + content hash seen on more than one fetched page): ` +
+          `${droppedLabels.join(", ")}`,
+      );
+    }
+
+    return kept;
   }
 
   // ---- internal ----
@@ -479,15 +590,49 @@ export class ECode360Adapter implements CodeSourceAdapter {
     return fragments;
   }
 
+  /**
+   * Walk the TOC tree and collect the URLs of pages that actually carry
+   * unique content — excluding pure navigational container nodes whose
+   * "content" is entirely covered by their own children's pages.
+   *
+   * Diagnosed 2026-08-04 (OPS-9 S3 fix): the TOC endpoint returns a JSON
+   * tree (see raw/toc.json in the proof artifacts) where EVERY node —
+   * chapter, division, part, article, subarticle, section — carries an
+   * `href`. Sections (`type: "section"`) carry a fragment href of the
+   * shape `/{parentGuid}#{ownGuid}`; the original implementation
+   * collected every non-fragment href as a "parent page," which is
+   * correct for a node whose children are section leaves (its own page
+   * IS the content page for those sections) but WRONG for a node whose
+   * children are themselves separately-paged containers (part/article/
+   * etc. with their own non-fragment hrefs) — that container's own page
+   * is pure chrome/summary and eCode360 renders the FIRST child's
+   * section markers on it too, producing a duplicate content-marker
+   * for every section under that child. Confirmed live: `39654739`
+   * ("ADMINISTRATION", type `part`) has two `article` children
+   * (`39654740`, `39654761`), each separately paged; collecting
+   * `39654739`'s own page tripled the `§ 1.02.001` marker (present on
+   * `39654739`, `39654740`, and `39654761` instead of just the latter
+   * two). The July 2026-07-29/30 proof's own normalized.json excludes
+   * `39654739` from its 149-page effective set, confirming this
+   * exclusion is the historically correct behavior, not a new rule.
+   *
+   * Rule (verified shape-driven, not a hardcoded page list — checked
+   * against all 44 container/child-href collision nodes in the live
+   * Smithville tree with zero mixed cases): a node's own page is
+   * collected only when it is NOT a pure container of other paged
+   * nodes — i.e., when it has no children, or when none of its direct
+   * children carry a non-fragment href of their own. A node all of
+   * whose children carry non-fragment hrefs (distinct pages) is a nav
+   * container; skip its own href and let the recursive walk collect
+   * its children's (and their descendants') pages instead. A node
+   * that mixes fragment-href section children with non-fragment-href
+   * container children was not observed in the live tree, but if one
+   * appears, this rule still collects that node's own page (since not
+   * ALL of its children are non-fragment), which is the safe default —
+   * it may occasionally re-collect a page a container child would also
+   * separately cover, but never drops real section content.
+   */
   private collectParentUrls(tocJson: string): ReadonlyArray<string> {
-    // The TOC endpoint returns a JSON tree (see raw/toc.json in the
-    // proof artifacts): every node with an `href` starting with `/`
-    // (not a `#`-only fragment) is a distinct parent page. Sections
-    // (`type: "section"`) carry an `href` of the shape
-    // `/{parentGuid}#{ownGuid}` — the parent page is `/{parentGuid}`,
-    // already covered by the parent node's own entry, so only
-    // non-fragment hrefs are collected here to avoid re-fetching the
-    // same parent once per child section.
     let root: unknown;
     try {
       root = JSON.parse(tocJson);
@@ -499,10 +644,25 @@ export class ECode360Adapter implements CodeSourceAdapter {
       if (!node || typeof node !== "object") return;
       const n = node as Record<string, unknown>;
       const href = typeof n.href === "string" ? n.href : undefined;
-      if (href && href.startsWith("/") && !href.includes("#")) {
-        urls.add(`${this.baseUrl}${href}`);
-      }
       const children = Array.isArray(n.children) ? n.children : [];
+
+      if (href && href.startsWith("/") && !href.includes("#")) {
+        const isPureContainer =
+          children.length > 0 &&
+          children.every((child) => {
+            if (!child || typeof child !== "object") return false;
+            const childHref = (child as Record<string, unknown>).href;
+            return (
+              typeof childHref === "string" &&
+              childHref.startsWith("/") &&
+              !childHref.includes("#")
+            );
+          });
+        if (!isPureContainer) {
+          urls.add(`${this.baseUrl}${href}`);
+        }
+      }
+
       for (const child of children) visit(child);
     };
     visit(root);
@@ -576,4 +736,19 @@ function escapeSelectorId(id: string): string {
   // (e.g. "39654684"), so escape per CSS.escape's leading-digit rule
   // without pulling in a DOM CSS.escape polyfill.
   return id.replace(/^(\d)/, "\\3$1 ").replace(/([.:#[\]])/g, "\\$1");
+}
+
+/**
+ * Small deterministic string hash (FNV-1a, 32-bit) used by
+ * `dedupeSectionBlocks()` to key duplicate-content detection. Not
+ * cryptographic — collision resistance within one document's section
+ * count (hundreds, not millions) is all this needs.
+ */
+function hashString(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
 }
