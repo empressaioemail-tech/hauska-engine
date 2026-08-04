@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { emitFromTier1Snapshot } from "../bake-from-tier1-snapshot.js";
+import {
+  descriptorForCounty,
+  emitFromTier1Snapshot,
+} from "../bake-from-tier1-snapshot.js";
 
 /** Minimal GIS provenance so district-present fixtures pass A1 M0 guard. */
 function gisProv(opts: {
@@ -197,5 +200,87 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
     };
     expect(zoning?.sourceAdapter).toBe("txgio-zoning-stamp:bastrop-city-tx");
     expect(zoning?.sourceUrl).toContain("Zoning_Place_Type");
+  });
+});
+
+describe("descriptorForCounty — district-code-section-map key resolution (48021 fix)", () => {
+  it("resolves 48021 (Bastrop) to jurisdiction key bastrop_tx, not the generic breadth_ key", () => {
+    const descriptor = descriptorForCounty("48021:TEST-001", "Bastrop", "48021");
+    expect(descriptor.key).toBe("bastrop_tx");
+    // jurisdictionTenant is unaffected — cascade SQL LIKE 'breadth_48021_%' and
+    // the road-intake emitters key off this field, not descriptor.key.
+    expect(descriptor.jurisdictionTenant).toBe("breadth_48021_bastrop");
+  });
+
+  it("falls back to breadth_${fips} for an unmapped county (byte-identical to pre-fix)", () => {
+    const descriptor = descriptorForCounty("48029:TEST-001", "San Antonio", "48029");
+    expect(descriptor.key).toBe("breadth_48029");
+  });
+});
+
+describe("emitFromTier1Snapshot — bake path mints district code-section refs (48021 fix)", () => {
+  it("Bastrop district parcel (SF-1) carries sourceCodeAtomRef + codeSectionRefs via the bake path", () => {
+    const result = emitFromTier1Snapshot(
+      "48021:TEST-REFS-1",
+      {
+        bakedAt: "2026-08-03T00:00:00.000Z",
+        baseFacts: { situsCity: "Bastrop" },
+        zoning: {
+          district: "SF-1",
+          jurisdictionKey: "bastrop-tx",
+          provenance: gisProv({
+            sourceUrl:
+              "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoning_Place_Type/FeatureServer/0",
+            codeField: "PlaceTypeClass",
+            cityKey: "bastrop-city-tx",
+            layerName: "Zoning_Place_Type",
+          }),
+        },
+      },
+      "48021",
+    );
+    const zoning = result.atoms.find((a) => a.entityType === "zoning-fact") as {
+      sourceCodeAtomRef?: { atomDid: string };
+      codeSectionRefs?: {
+        districtRequirements: { atomDid: string };
+        permittedUseTable: { atomDid: string };
+      };
+    };
+    expect(zoning?.sourceCodeAtomRef).toMatchObject({
+      atomDid: "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+    });
+    expect(zoning?.codeSectionRefs).toMatchObject({
+      districtRequirements: {
+        atomDid: "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+      },
+      permittedUseTable: {
+        atomDid: "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-008",
+      },
+    });
+  });
+
+  it("unmapped county (San Antonio, 48029) emits with no code-section refs — byte-identical to pre-fix behavior", () => {
+    const result = emitFromTier1Snapshot(
+      "48029:TEST-REFS-2",
+      {
+        bakedAt: "2026-08-03T00:00:00.000Z",
+        zoning: {
+          district: "R-6",
+          jurisdictionKey: "san_antonio_tx",
+          provenance: gisProv({
+            sourceUrl: "https://example.test/sa-zoning",
+            codeField: "Base",
+            cityKey: "san-antonio-tx",
+          }),
+        },
+      },
+      "48029",
+    );
+    const zoning = result.atoms.find((a) => a.entityType === "zoning-fact") as {
+      sourceCodeAtomRef?: unknown;
+      codeSectionRefs?: unknown;
+    };
+    expect(zoning?.sourceCodeAtomRef).toBeUndefined();
+    expect(zoning?.codeSectionRefs).toBeUndefined();
   });
 });
