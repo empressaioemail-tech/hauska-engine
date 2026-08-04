@@ -70,6 +70,84 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
     });
   });
 
+  it("emits full atom chain for elgin-tx R-1 (STEP 2 Option A)", () => {
+    const result = emitFromTier1Snapshot(
+      "48021:TEST-ELGIN-R1",
+      {
+        bakedAt: "2026-08-04T00:00:00.000Z",
+        baseFacts: { situsCity: "Elgin" },
+        zoning: {
+          district: "R-1",
+          jurisdictionKey: "elgin-tx",
+          provenance: gisProv({
+            sourceUrl:
+              "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Elgin_Zoning/FeatureServer/0",
+            codeField: "Zone_Code",
+            cityKey: "elgin-tx",
+            layerName: "Elgin_Zoning",
+          }),
+        },
+        envelope: { status: "declined", declineReason: "atom_path_pending" } as {
+          status: string;
+        },
+      },
+      "48021",
+    );
+    expect(result.zoningPresent).toBe(true);
+    expect(result.setbackPresent).toBe(true);
+    expect(result.envelopePresent).toBe(true);
+    expect(result.notes).toEqual(
+      expect.arrayContaining(["zoning", "setback", "envelope"]),
+    );
+    expect(result.notes).not.toContain("setback-table-missing:elgin-tx");
+
+    const zoning = result.atoms.find((a) => a.entityType === "zoning-fact") as {
+      district?: string;
+      sourceCodeAtomRef?: { atomDid: string };
+      codeSectionRefs?: {
+        districtRequirements: { atomDid: string };
+        permittedUseTable: { atomDid: string };
+      };
+    };
+    expect(zoning?.district).toBe("R-1");
+    expect(zoning?.sourceCodeAtomRef).toMatchObject({
+      atomDid:
+        "did:hauska:code-section:elgin_tx/elgin-code-of-ordinances-current-supplement/46-233",
+    });
+    expect(zoning?.codeSectionRefs).toMatchObject({
+      districtRequirements: {
+        atomDid:
+          "did:hauska:code-section:elgin_tx/elgin-code-of-ordinances-current-supplement/46-233",
+      },
+      permittedUseTable: {
+        atomDid:
+          "did:hauska:code-section:elgin_tx/elgin-code-of-ordinances-current-supplement/46-231",
+      },
+    });
+    expect(zoning?.sourceCodeAtomRef?.atomDid).not.toContain("bastrop_tx");
+
+    const setback = result.atoms.find((a) => a.entityType === "setback-rule");
+    expect(setback).toMatchObject({
+      entityType: "setback-rule",
+      front: 25,
+      side: 7.5,
+      rear: 10,
+      sourceCodeAtomRef: {
+        role: "rule",
+        entityType: "code-section",
+      },
+    });
+
+    const envelope = result.atoms.find(
+      (a) => a.entityType === "buildable-envelope",
+    );
+    expect(envelope).toMatchObject({
+      entityType: "buildable-envelope",
+      reasoningChain: { reasoningKind: "derived" },
+      outcome: { kind: "provisional-front-edge" },
+    });
+  });
+
   it("emits setback-RULE for san-antonio-tx R-6", () => {
     const result = emitFromTier1Snapshot(
       "48029:TEST-SA-R6",
@@ -215,6 +293,18 @@ describe("descriptorForCounty — district-code-section-map key resolution (4802
   it("falls back to breadth_${fips} for an unmapped county (byte-identical to pre-fix)", () => {
     const descriptor = descriptorForCounty("48029:TEST-001", "San Antonio", "48029");
     expect(descriptor.key).toBe("breadth_48029");
+  });
+
+  it("resolves Elgin city hint on 48021 to elgin_tx, not bastrop_tx county default", () => {
+    expect(descriptorForCounty("48021:TEST-ELGIN", "elgin-tx", "48021").key).toBe(
+      "elgin_tx",
+    );
+  });
+
+  it("keeps Bastrop city hint on 48021 on bastrop_tx county default", () => {
+    expect(
+      descriptorForCounty("48021:TEST-BASTROP", "bastrop-city-tx", "48021").key,
+    ).toBe("bastrop_tx");
   });
 });
 
