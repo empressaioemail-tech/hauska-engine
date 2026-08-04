@@ -31,6 +31,7 @@ export {
   BASTROP_CITY_BBOX,
   CALDWELL_COUNTY_BBOX,
   LOCKHART_CITY_BBOX,
+  ELGIN_CITY_BBOX,
   resolveCaldwellRoadIngestBbox,
   fetchCaldwellRoadsForIngest,
   OSM_OVERPASS_URL,

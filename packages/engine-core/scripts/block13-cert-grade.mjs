@@ -20,6 +20,7 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
+import elginDescriptor from "../src/property-reasoning/fixtures/descriptors/elgin_tx_descriptor.json" with { type: "json" };
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import {
   loadDominantDistrictRoster,
@@ -60,6 +61,11 @@ function parseArgs(argv) {
     // "" leaves every existing invocation (block13 + query + file rosters)
     // byte-identical — this flag is additive and off by default.
     gradeMode: "",
+    // --answer-key=descriptor uses descriptor setback table (Elgin path);
+    // absent or layer23 keeps Bastrop layer-23 answer key (byte-identical default).
+    answerKey: null,
+    descriptorKey: null,
+    descriptorFile: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -75,8 +81,34 @@ function parseArgs(argv) {
       out.preflightRowId = a.slice("--preflight-row-id=".length).trim();
     } else if (a === "--grade-mode") out.gradeMode = String(argv[++i] || "").trim();
     else if (a.startsWith("--grade-mode=")) out.gradeMode = a.slice("--grade-mode=".length).trim();
+    else if (a === "--answer-key") out.answerKey = String(argv[++i] || "").trim();
+    else if (a.startsWith("--answer-key=")) out.answerKey = a.slice("--answer-key=".length).trim();
+    else if (a === "--descriptor") out.descriptorKey = String(argv[++i] || "").trim();
+    else if (a.startsWith("--descriptor=")) out.descriptorKey = a.slice("--descriptor=".length).trim();
+    else if (a === "--descriptor-file") out.descriptorFile = String(argv[++i] || "").trim();
+    else if (a.startsWith("--descriptor-file=")) {
+      out.descriptorFile = a.slice("--descriptor-file=".length).trim();
+    }
   }
   return out;
+}
+
+function resolveCertDescriptor(args) {
+  if (args.answerKey !== "descriptor") {
+    return {
+      ...bastropDescriptor,
+      sourceAdapter: "bastrop-per-parcel-record-layer-23",
+    };
+  }
+  if (args.descriptorFile) {
+    return JSON.parse(fs.readFileSync(args.descriptorFile, "utf8"));
+  }
+  if (args.descriptorKey === "elgin_tx") {
+    return elginDescriptor;
+  }
+  throw new Error(
+    "--answer-key=descriptor requires --descriptor=elgin_tx or --descriptor-file=...",
+  );
 }
 
 async function loadRoster(args) {
@@ -129,10 +161,8 @@ const roadRows = await sql`
 `;
 const roads = roadRows.map((r) => roadAtomToWarmSource(r.body)).filter(Boolean);
 
-const descriptor = {
-  ...bastropDescriptor,
-  sourceAdapter: "bastrop-per-parcel-record-layer-23",
-};
+const descriptor = resolveCertDescriptor(args);
+const answerKeyMode = args.answerKey === "descriptor" ? "descriptor" : "layer23";
 
 // SCOPE 3 (cert-with-scope-annotation, operator-ruled 2026-08-03): when the
 // caller names a pre-flight row (--preflight-row-id), attach scopeAnnotations
@@ -171,6 +201,8 @@ const report = {
   // Additive — only present when --grade-mode is passed, so the default
   // invocation's report stays byte-identical to before this change.
   ...(args.gradeMode ? { gradeMode: args.gradeMode } : {}),
+  ...(args.answerKey ? { answerKey: args.answerKey } : {}),
+  ...(args.descriptorKey ? { descriptorKey: args.descriptorKey } : {}),
 };
 
 try {
@@ -187,6 +219,7 @@ try {
         roads,
         descriptor,
         districtPrefix: rosterLoad.districtPrefix ?? null,
+        answerKeyMode,
       });
     } else {
       parcelResult = await gradeBlock13Parcel(parcelNodeId, {

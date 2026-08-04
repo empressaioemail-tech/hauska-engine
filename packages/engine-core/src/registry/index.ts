@@ -46,6 +46,7 @@ export {
   expectedFtForRole,
   situsFrontStreetToken,
   buildLayer23Key,
+  buildDescriptorSetbackKey,
   BLOCK13_ROSTER,
   ANSWER_KEY_BLOCK13,
   CERT_GRADE_COUNTY_FIPS,
