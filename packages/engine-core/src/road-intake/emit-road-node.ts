@@ -123,3 +123,25 @@ export function bastropRoadIntakeDescriptor(): RoadIntakeDescriptor {
     sourceUrl: "https://overpass-api.de/api/interpreter",
   };
 }
+
+/** Elgin city limits OSM ingest (48021 Bastrop-county side) — depth-warm city streets. */
+export function elginOsmRoadIntakeDescriptor(): RoadIntakeDescriptor {
+  return {
+    key: "elgin_tx_osm",
+    displayName: "Elgin city OSM roads (Bastrop county side best-available)",
+    jurisdictionTenant: "breadth_48021_bastrop",
+    countyFips: "48021",
+    defaultAccessPolicy: "public-free",
+    assumedRowWidthFt: {
+      highway: 100,
+      major_collector: 60,
+      minor_collector: 50,
+      residential: 50,
+      alley: 20,
+      gravel: 30,
+      unclassified: 40,
+    },
+    sourceAdapter: "road-intake-elgin-osm",
+    sourceUrl: "https://overpass-api.de/api/interpreter",
+  };
+}

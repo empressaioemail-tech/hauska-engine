@@ -6,6 +6,7 @@ export {
   emitRoadNode,
   parseOsmWayElement,
   bastropRoadIntakeDescriptor,
+  elginOsmRoadIntakeDescriptor,
 } from "./emit-road-node.js";
 export {
   emitCountySurveyedRoadNode,
@@ -34,6 +35,8 @@ export {
   ELGIN_CITY_BBOX,
   resolveCaldwellRoadIngestBbox,
   fetchCaldwellRoadsForIngest,
+  resolveElginRoadIngestBbox,
+  fetchElginRoadsForIngest,
   OSM_OVERPASS_URL,
   OVERPASS_MAX_ATTEMPTS,
   OVERPASS_RETRY_BASE_MS,
