@@ -441,8 +441,52 @@ export function buildOnboardPreflightDeps(input: OnboardPreflightDepsInput): Pre
     sampleSize = 5,
   ): Promise<string[]> {
     const cohort = await loadRegistryDistrictCohortByRow(row.rowId, null);
-    const sortedIds = [...cohort.parcelNodeIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    return sortedIds.slice(0, sampleSize);
+    // Two eligibility filters, both wave-2-proven necessary (Comal/Bell
+    // 2026-08-04 false "geometry parity" declines):
+    //   (a) degenerate prop_ids — the lexicographic-first sample lands on
+    //       prop segment 0/empty (the propIdBadRate class), where many txgio
+    //       parcels share one id and the CAD join is ambiguous by
+    //       construction; and
+    //   (b) for an unzoned-regime row, city-districted parcels — the
+    //       unzoned-mode grade correctly fails them
+    //       (expected-unzoned-but-district-present), but they are the city
+    //       stamp path's parcels, not this row's, mirroring the cascade's
+    //       city-aware skip.
+    const sortedIds = [...cohort.parcelNodeIds]
+      .filter((id) => {
+        const seg = id.split(":")[1] ?? "";
+        const n = Number(seg);
+        return Number.isInteger(n) && n > 0;
+      })
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const sql = input.sql;
+    if (row.zoningRegime !== "unzoned" || !sql) {
+      return sortedIds.slice(0, sampleSize);
+    }
+    const picked: string[] = [];
+    for (let i = 0; i < sortedIds.length && picked.length < sampleSize; i += 200) {
+      const chunk = sortedIds.slice(i, i + 200);
+      const rows = await sql`
+        SELECT DISTINCT ON (body->>'parcelNodeId')
+          body->>'parcelNodeId' AS pid,
+          body->>'district' AS district
+        FROM atoms
+        WHERE entity_type = 'zoning-fact'
+          AND body->>'parcelNodeId' = ANY(${chunk})
+        ORDER BY body->>'parcelNodeId', updated_at DESC NULLS LAST
+      `;
+      const districted = new Set(
+        (rows as unknown as Array<{ pid: string; district: string | null }>)
+          .filter((r) => r.district !== null)
+          .map((r) => r.pid),
+      );
+      for (const id of chunk) {
+        if (districted.has(id)) continue;
+        picked.push(id);
+        if (picked.length >= sampleSize) break;
+      }
+    }
+    return picked;
   }
 
   const hasGradingCreds = Boolean(input.sql && input.txSql && input.storage);
