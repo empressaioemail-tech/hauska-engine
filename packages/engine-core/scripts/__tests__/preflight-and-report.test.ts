@@ -7,10 +7,16 @@
  * it here never spawns onboard-preflight.mjs or performs any network call -
  * no live DB/network required.
  */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 
 // @ts-expect-error, .mjs has no type declarations; the exported function shape is asserted at the call sites below.
-import { buildPreflightIngestPayload } from "../preflight-and-report.mjs";
+import { buildPreflightIngestPayload, stripLeadingArgSeparator } from "../preflight-and-report.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SCRIPT_SOURCE = readFileSync(join(HERE, "../preflight-and-report.mjs"), "utf8");
 
 /** Fixture shaped like onboard-preflight.mjs's `{ report, ledgerEvents }` stdout. */
 const FIXTURE_ALL_PASS = {
@@ -93,5 +99,44 @@ describe("preflight-and-report.mjs, buildPreflightIngestPayload", () => {
     expect(gateSummaries).toHaveLength(1);
     expect(gateSummaries[0]).toMatchObject({ rowId: "Elgin", fips: "48021", passCount: 1, declineCount: 1 });
     expect(gateSummaries[0].checks).toHaveLength(2);
+  });
+});
+
+describe("preflight-and-report.mjs, stripLeadingArgSeparator", () => {
+  it("drops a single leading bare '--'", () => {
+    expect(stripLeadingArgSeparator(["--", "--fips=48021"])).toEqual(["--fips=48021"]);
+  });
+
+  it("is a no-op when there is no leading '--'", () => {
+    expect(stripLeadingArgSeparator(["--fips=48021"])).toEqual(["--fips=48021"]);
+  });
+
+  it("does not touch a '--' that is not the first element", () => {
+    expect(stripLeadingArgSeparator(["--fips=48021", "--", "extra"])).toEqual(["--fips=48021", "--", "extra"]);
+  });
+
+  it("handles an empty argv", () => {
+    expect(stripLeadingArgSeparator([])).toEqual([]);
+  });
+});
+
+describe("preflight-and-report.mjs, spawn invocation shape (Windows EINVAL fix, grep-pinned)", () => {
+  it("never spawns a .cmd/.bat package-manager shim (the source of the Windows spawn EINVAL)", () => {
+    // The old buggy invocation shape: spawn("pnpm.cmd" on win32, ...). The
+    // fix comment above documents that string in prose, so this checks for
+    // the executable CODE pattern (spawn( followed by a platform ternary
+    // choosing a pnpm shim), not a bare substring match.
+    expect(SCRIPT_SOURCE).not.toMatch(/spawn\(\s*\n?\s*process\.platform === "win32" \? "pnpm/);
+  });
+
+  it("spawns process.execPath directly with a resolved tsx/cli path (no shell)", () => {
+    expect(SCRIPT_SOURCE).toMatch(/createRequire\(import\.meta\.url\)/);
+    expect(SCRIPT_SOURCE).toMatch(/\.resolve\("tsx\/cli"\)/);
+    expect(SCRIPT_SOURCE).toMatch(/spawn\(process\.execPath,/);
+    expect(SCRIPT_SOURCE).toMatch(/shell:\s*false/);
+  });
+
+  it("strips a leading bare '--' before parsing/forwarding argv", () => {
+    expect(SCRIPT_SOURCE).toMatch(/stripLeadingArgSeparator\(/);
   });
 });
