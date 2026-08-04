@@ -39,6 +39,7 @@
 import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 import { loadJurisdictionRegistryRowById } from "../src/registry/jurisdiction-registry.ts";
 // bastrop-dominant-district-roster.mjs is imported LAZILY (inside
@@ -61,11 +62,27 @@ import {
 } from "../src/registry/ledger-report-client.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(HERE, "../../..");
-const TARGET_SCRIPT_RELATIVE = "scripts/block13-cert-grade.mjs";
+const PACKAGE_DIR = join(HERE, "..");
+const TARGET_SCRIPT_ABSOLUTE = join(PACKAGE_DIR, "scripts", "block13-cert-grade.mjs");
 const COUNTY_FIPS = "48021"; // matches block13-cert-grade.mjs's own COUNTY constant, Bastrop-network only today.
 
-function extractWrapperArgs(argv) {
+/**
+ * Resolves tsx's CLI entry through normal Node module resolution from this
+ * package (works identically under pnpm's symlinked node_modules on every
+ * platform), so the target script can be run as
+ * `process.execPath <tsxCli> <targetScript> ...args` with NO shell and NO
+ * .cmd/.bat shim involved. This is what fixes the Windows spawn EINVAL below.
+ */
+const requireFromHere = createRequire(import.meta.url);
+const TSX_CLI_PATH = requireFromHere.resolve("tsx/cli");
+
+/** Drops a single leading bare "--" argv separator (e.g. from `pnpm run <script> -- --preflight-row-id=Bastrop`), never inner occurrences. Exported for the pinning test. */
+export function stripLeadingArgSeparator(argv) {
+  return argv.length > 0 && argv[0] === "--" ? argv.slice(1) : argv;
+}
+
+function extractWrapperArgs(rawArgv) {
+  const argv = stripLeadingArgSeparator(rawArgv);
   const passthrough = [];
   let withQuarantine = false;
   let preflightRowId = null;
@@ -84,19 +101,25 @@ function extractWrapperArgs(argv) {
 }
 
 /**
- * Spawns the existing block13-cert-grade.mjs the same way this repo's other
- * multi-script drivers do (see scripts/bake-property-atom-metro.mjs): via
- * `pnpm --filter @hauska-engine/engine-core exec tsx <script>` from the
- * monorepo root, inheriting env. Never throws for a non-zero exit, the
- * target script's own exit semantics are preserved and reported.
+ * Spawns the existing block13-cert-grade.mjs directly via
+ * `process.execPath <resolved tsx/cli> <script> ...args`, never through a
+ * package-manager shim. Node >=20.12 on Windows rejects `spawn()`ing a
+ * `.cmd`/`.bat` shim (e.g. `pnpm.cmd`) without `shell: true`
+ * (https://nodejs.org/en/blog/vulnerability/february-2024-security-releases,
+ * "Improper handling of ... Windows path"; the fix landed as a hardening
+ * default that turns the old `pnpm.cmd` spawn into `Error: spawn EINVAL`).
+ * Resolving tsx's own CLI entry and invoking it with the Node binary
+ * sidesteps the shim question entirely, on every platform, no shell:true
+ * needed. Never throws for a non-zero exit, the target script's own exit
+ * semantics are preserved and reported.
  */
 function runTargetScript(args) {
-  return new Promise((resolve) => {
-    const child = spawn(
-      process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-      ["--filter", "@hauska-engine/engine-core", "exec", "tsx", TARGET_SCRIPT_RELATIVE, ...args],
-      { cwd: REPO_ROOT, env: process.env, shell: false },
-    );
+  return new Promise((resolvePromise) => {
+    const child = spawn(process.execPath, [TSX_CLI_PATH, TARGET_SCRIPT_ABSOLUTE, ...args], {
+      cwd: PACKAGE_DIR,
+      env: process.env,
+      shell: false,
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => {
@@ -105,8 +128,8 @@ function runTargetScript(args) {
     child.stderr.on("data", (d) => {
       stderr += d.toString();
     });
-    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
-    child.on("error", (err) => resolve({ code: 1, stdout, stderr: stderr + String(err) }));
+    child.on("close", (code) => resolvePromise({ code: code ?? 1, stdout, stderr }));
+    child.on("error", (err) => resolvePromise({ code: 1, stdout, stderr: stderr + String(err) }));
   });
 }
 

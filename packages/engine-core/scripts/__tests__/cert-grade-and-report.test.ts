@@ -11,10 +11,59 @@
  * without a live DB by src/property-reasoning/__tests__/cascade-unzoned-envelope-decline.test.ts
  * (that module's DB calls are all inside functions, never at module scope).
  */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 
 // @ts-expect-error, .mjs has no type declarations; the exported function shapes are asserted at the call sites below.
-import { buildCertGradeIngestPayload, buildQuarantineIngestPayload } from "../cert-grade-and-report.mjs";
+import { buildCertGradeIngestPayload, buildQuarantineIngestPayload, stripLeadingArgSeparator } from "../cert-grade-and-report.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SCRIPT_SOURCE = readFileSync(join(HERE, "../cert-grade-and-report.mjs"), "utf8");
+
+describe("cert-grade-and-report.mjs, stripLeadingArgSeparator", () => {
+  it("drops a single leading bare '--'", () => {
+    expect(stripLeadingArgSeparator(["--", "--preflight-row-id=Bastrop"])).toEqual(["--preflight-row-id=Bastrop"]);
+  });
+
+  it("is a no-op when there is no leading '--'", () => {
+    expect(stripLeadingArgSeparator(["--preflight-row-id=Bastrop"])).toEqual(["--preflight-row-id=Bastrop"]);
+  });
+
+  it("does not touch a '--' that is not the first element", () => {
+    expect(stripLeadingArgSeparator(["--preflight-row-id=Bastrop", "--", "extra"])).toEqual([
+      "--preflight-row-id=Bastrop",
+      "--",
+      "extra",
+    ]);
+  });
+
+  it("handles an empty argv", () => {
+    expect(stripLeadingArgSeparator([])).toEqual([]);
+  });
+});
+
+describe("cert-grade-and-report.mjs, spawn invocation shape (Windows EINVAL fix, grep-pinned)", () => {
+  it("never spawns a .cmd/.bat package-manager shim (the source of the Windows spawn EINVAL)", () => {
+    // The old buggy invocation shape: spawn("pnpm.cmd" on win32, ...). The
+    // fix comment above documents that string in prose, so this checks for
+    // the executable CODE pattern (spawn( followed by a platform ternary
+    // choosing a pnpm shim), not a bare substring match.
+    expect(SCRIPT_SOURCE).not.toMatch(/spawn\(\s*\n?\s*process\.platform === "win32" \? "pnpm/);
+  });
+
+  it("spawns process.execPath directly with a resolved tsx/cli path (no shell)", () => {
+    expect(SCRIPT_SOURCE).toMatch(/createRequire\(import\.meta\.url\)/);
+    expect(SCRIPT_SOURCE).toMatch(/\.resolve\("tsx\/cli"\)/);
+    expect(SCRIPT_SOURCE).toMatch(/spawn\(process\.execPath,/);
+    expect(SCRIPT_SOURCE).toMatch(/shell:\s*false/);
+  });
+
+  it("strips a leading bare '--' before building the target script's argv", () => {
+    expect(SCRIPT_SOURCE).toMatch(/stripLeadingArgSeparator\(/);
+  });
+});
 
 /** Fixture shaped like block13-cert-grade.mjs's stdout report. */
 const FIXTURE_BLOCK13_PASS = {
