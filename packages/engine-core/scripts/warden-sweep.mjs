@@ -6,15 +6,35 @@
  * JSON. FILES-NEVER-FIXES: this script and every module it imports from
  * src/warden/** read state and report findings; none of them write an atom.
  *
- *   DATABASE_URL=... NODE_OPTIONS=--use-system-ca \
+ *   DATABASE_URL=... TXGIO_DATABASE_URL=... NODE_OPTIONS=--use-system-ca \
  *     pnpm --filter @hauska-engine/engine-core exec tsx scripts/warden-sweep.mjs \
  *       --row-id=Bastrop [--checks=neighborConsistency,servePathTruth] \
  *       [--sample=10] [--cert-artifact=path/to/cert.json] [--out=path/to/report.json]
  *
- * Env:
- *   DATABASE_URL (+ optional TXGIO_DATABASE_URL/CORTEX_DATABASE_URL) — required
- *     for neighborConsistency, crossStoreConsistency, certFreshness.
- *   RETRIEVAL_API_URL + RETRIEVAL_API_KEY — required for servePathTruth.
+ * Env — THREE separate connections/endpoints, each serving a DIFFERENT store.
+ * Mixing these up is the exact bug this script's header once let slip through
+ * (a live prod sweep hit `PostgresError: relation "txgio_parcel" does not
+ * exist` because neighborConsistency's adjacency loader was wired to the
+ * wrong connection — see the git history on this comment block):
+ *   DATABASE_URL — the ATOMS Neon (zoning-fact / buildable-envelope /
+ *     road-node atoms). Required for neighborConsistency, crossStoreConsistency,
+ *     certFreshness (all read atoms; loadZoningByParcel/loadDbTruthForParcel/
+ *     loadRoadsForFips all query this connection, never txgio_parcel).
+ *   TXGIO_DATABASE_URL (falls back to CORTEX_DATABASE_URL, then DATABASE_URL
+ *     — see the honest-degrade note below) — the LDT DEPLOYMENT Neon carrying
+ *     `txgio_parcel` (cadastral geometry + bbox). In prod this is the
+ *     legacy-design-tools-prod DEPLOYMENT_DATABASE_URL secret, a DIFFERENT
+ *     database from the atoms Neon. Required for neighborConsistency's
+ *     adjacency load (loadParcelAdjacencyIndexFromNeon reads txgio_parcel)
+ *     and for crossStoreConsistency/certFreshness's situs-address lookup
+ *     inside cert-grade-core.ts (also txgio_parcel, via ctx.txSql — never
+ *     ctx.sql). The DATABASE_URL fallback exists so a single-Neon local dev
+ *     setup (one DB carrying both tables) still runs; it is NOT a safe prod
+ *     default when the two stores are actually separate deployments, which
+ *     is why prod must set TXGIO_DATABASE_URL explicitly.
+ *   RETRIEVAL_API_URL + RETRIEVAL_API_KEY — the deployed retrieval-api.
+ *     Required for servePathTruth only (health/search, search, atom-chain
+ *     probes — no DB connection).
  *   LEDGER_INGEST_URL + LEDGER_INGEST_KEY — optional; when set, findings are
  *     also POSTed to the cortex-side onboarding-ledger per the pinned
  *     contract in src/warden/ledger-write.ts. Absent, artifact-only.
@@ -179,10 +199,14 @@ async function main() {
 
   if (requestedChecks.includes("neighborConsistency")) {
     checksRun.push("neighborConsistency");
-    if (!sql) {
-      console.log("[warden-sweep] neighborConsistency: skipped, DATABASE_URL not configured");
+    if (!sql || !txSql) {
+      console.log("[warden-sweep] neighborConsistency: skipped, DATABASE_URL/TXGIO_DATABASE_URL not configured");
     } else {
-      const index = await loadParcelAdjacencyIndexFromNeon(sql, row.fips);
+      // txgio_parcel lives in the TXGIO Neon (the ldt deployment DB), NOT the
+      // atoms Neon — the adjacency index MUST be built from txSql. zoningByParcel
+      // below correctly stays on sql (the atoms DB), since zoning-fact atoms
+      // live there.
+      const index = await loadParcelAdjacencyIndexFromNeon(txSql, row.fips);
       const zoningByParcel = await loadZoningByParcel(cohort.parcelNodeIds);
       // Also resolve every neighbor referenced by the cohort so cross-cohort
       // edges (a cohort parcel bordering a parcel outside the row's filter,
