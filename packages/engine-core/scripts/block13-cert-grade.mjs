@@ -183,10 +183,18 @@ const answerKeyMode = args.answerKey === "descriptor" ? "descriptor" : "layer23"
 // Env-gated identically to the CLI: RETRIEVAL_API_URL / RETRIEVAL_API_KEY
 // absent (this script never required them) means check 6 still honestly
 // declines not-runnable, same as before — no behavior change without env.
+// Resolved once (SCOPE 3 + the cadastral-query-url thread below) when the
+// caller names a pre-flight row. Absent by default — the existing Bastrop
+// full-coverage invocation never sets --preflight-row-id, so
+// resolvedRegistryRow stays undefined and the roster loop's grading calls
+// below fall through to the legacy Bastrop-default cadastralQueryUrl
+// (byte-identical to before this change).
+let resolvedRegistryRow;
 let scopeAnnotations;
 if (args.preflightRowId) {
   const rowForFips = loadJurisdictionRegistryRowById(args.preflightRowId);
   if (rowForFips) {
+    resolvedRegistryRow = rowForFips;
     const preflightDeps = buildOnboardPreflightDeps({
       sql,
       txSql,
@@ -240,7 +248,14 @@ try {
     let parcelResult;
 
     if (args.gradeMode === "unzoned") {
-      parcelResult = await gradeUnzonedParcel(parcelNodeId, { sql });
+      parcelResult = await gradeUnzonedParcel(parcelNodeId, {
+        sql,
+        // Byte-identical default invocation: absent --preflight-row-id (or a
+        // row that doesn't resolve), cadastralQueryUrl stays undefined and
+        // gradeUnzonedParcel's resolveCadastralQueryUrl falls back to the
+        // legacy Bastrop default for 48021 parcels (see cert-grade-core.ts).
+        cadastralQueryUrl: resolvedRegistryRow?.railC.cadastralQueryUrl,
+      });
     } else if (rosterLoad.mode === "query") {
       parcelResult = await gradeOneParcelInQueryMode(parcelNodeId, {
         sql,
@@ -250,6 +265,7 @@ try {
         descriptor,
         districtPrefix: rosterLoad.districtPrefix ?? null,
         answerKeyMode,
+        cadastralQueryUrl: resolvedRegistryRow?.railC.cadastralQueryUrl,
       });
     } else {
       parcelResult = await gradeBlock13Parcel(parcelNodeId, {

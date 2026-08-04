@@ -30,6 +30,7 @@ import {
   fetchBcadParcelRings,
   scrubLotLineRing,
   ringCentroidLngLat,
+  BASTROP_BCAD_PARCELS_URL,
 } from "../boundary-primitive/index.js";
 import {
   readBoundaryEdgesForParcel,
@@ -205,6 +206,43 @@ export interface CertGradeContext {
   readonly descriptor: unknown;
   /** When "descriptor", answer key comes from descriptor setback table; default layer-23 (Bastrop). */
   readonly answerKeyMode?: "layer23" | "descriptor";
+  /**
+   * The county's cadastral-ring query endpoint (registry row's
+   * railC.cadastralQueryUrl), threaded through to fetchBcadParcelRings so a
+   * non-Bastrop county's per-parcel grade queries ITS OWN cadastral service
+   * instead of silently defaulting to Bastrop's (see resolveCadastralQueryUrl
+   * below). Absent/undefined is legal only for a 48021 (Bastrop) parcel,
+   * which falls back to the legacy BASTROP_BCAD_PARCELS_URL default for
+   * back-compat; every other county fails loud instead of silently
+   * defaulting.
+   */
+  readonly cadastralQueryUrl?: string | null;
+}
+
+/**
+ * Resolve the cadastral query URL a grader should use for `parcelNodeId`.
+ * 48021 (Bastrop) parcels keep the legacy implicit default
+ * (BASTROP_BCAD_PARCELS_URL) when no explicit URL is supplied, so the
+ * existing Bastrop invocations (block13, dominant-district query mode, the
+ * unzoned county row) stay byte-identical. Every other county MUST carry an
+ * explicit `cadastralQueryUrl` (from its registry row) — absent that, this
+ * throws a named error rather than silently defaulting to Bastrop's
+ * cadastral service, which would either false-fail (cadastral-ring-unresolved
+ * against the wrong service) or, worse, resolve a cross-county prop_id
+ * collision and grade the wrong ring.
+ */
+export function resolveCadastralQueryUrl(
+  parcelNodeId: string,
+  cadastralQueryUrl: string | null | undefined,
+): string {
+  if (cadastralQueryUrl) return cadastralQueryUrl;
+  const fips = parcelNodeId.split(":")[0];
+  if (fips === CERT_GRADE_COUNTY_FIPS) return BASTROP_BCAD_PARCELS_URL;
+  throw new Error(
+    `cadastral query URL not configured for row (parcelNodeId=${parcelNodeId}, fips=${fips ?? "unknown"}) — ` +
+      `set railC.cadastralQueryUrl on this county's registry row (jurisdiction-registry.ts) instead of ` +
+      `relying on the Bastrop default.`,
+  );
 }
 
 export interface ParcelGradeResult {
@@ -233,6 +271,7 @@ export async function gradeOneParcelInQueryMode(
   const { sql, txSql, storage, roads, descriptor, districtPrefix } = ctx;
   const propId = parcelNodeId.split(":")[1]!;
   const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
+  const cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
 
   const [envRowPre] = await sql`
     SELECT body FROM atoms
@@ -280,7 +319,7 @@ export async function gradeOneParcelInQueryMode(
 
   let ring: unknown = null;
   try {
-    const bcad = await fetchBcadParcelRings([propId]);
+    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl);
     const bcadRing = bcad[0]?.ring;
     ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
   } catch (err) {
@@ -347,11 +386,20 @@ export const UNZONED_CASCADE_DECLINE_CODE = "unzoned-no-district-basis";
  */
 export async function gradeUnzonedParcel(
   parcelNodeId: string,
-  ctx: Pick<CertGradeContext, "sql">,
+  ctx: Pick<CertGradeContext, "sql" | "cadastralQueryUrl">,
 ): Promise<ParcelGradeResult> {
   const { sql } = ctx;
   const propId = parcelNodeId.split(":")[1]!;
   const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
+  let cadastralQueryUrl: string;
+  try {
+    cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
+  } catch (err) {
+    parcelResult.pass = false;
+    parcelResult.reason = "cadastral-query-url-not-configured";
+    parcelResult.error = err instanceof Error ? err.message : String(err);
+    return parcelResult;
+  }
 
   const [zfRow] = await sql`
     SELECT body FROM atoms WHERE entity_type = 'zoning-fact'
@@ -392,7 +440,7 @@ export async function gradeUnzonedParcel(
   }
 
   try {
-    const bcad = await fetchBcadParcelRings([propId]);
+    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl);
     const bcadRing = bcad[0]?.ring;
     const ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
     if (!ring) {
@@ -424,6 +472,7 @@ export async function gradeBlock13Parcel(
   const { sql, txSql, storage, roads, descriptor } = ctx;
   const propId = parcelNodeId.split(":")[1]!;
   const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
+  const cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
 
   const resolved = resolveBlock13Key(parcelNodeId);
   if (!resolved.ok) {
@@ -443,7 +492,7 @@ export async function gradeBlock13Parcel(
 
   let ring: unknown = null;
   try {
-    const bcad = await fetchBcadParcelRings([propId]);
+    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl);
     const bcadRing = bcad[0]?.ring;
     ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
   } catch (err) {
