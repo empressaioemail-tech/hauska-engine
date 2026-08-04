@@ -17,20 +17,41 @@
  * Acceptance: WDLL breadth items 2,3,7.
  *
  * --cascade-absence-only mode (additive; named-decline-beats-silent-absence
- * cascade for the 48021 unzoned cohort): reads DIRECTLY from substrate
- * (DATABASE_URL only — no CORTEX_DATABASE_URL / cortex snapshot scan in this
- * mode). Finds parcels that already carry an absence zoning-fact
- * (absence.kind = 'no-zoning-stamp', no district) AND have no
+ * cascade for the county-wide absence-zoning cohort): reads DIRECTLY from
+ * substrate (DATABASE_URL only — no CORTEX_DATABASE_URL / cortex snapshot
+ * scan in this mode). Finds parcels that already carry an absence
+ * zoning-fact (absence.kind = 'no-zoning-stamp', no district) AND have no
  * buildable-envelope atom yet; mints ONLY a buildable-envelope honest-decline
- * (R27 persisted-decline shape, code unzoned-no-district-basis) for each.
- * NEVER mints or updates zoning-fact or setback-rule atoms; NEVER touches a
- * parcel whose zoning-fact carries a real district (city cohort) — enforced
- * in the query itself. Idempotent/resumable: re-running skips parcels that
- * already have an envelope atom.
+ * (R27 persisted-decline shape) for each. NEVER mints or updates zoning-fact
+ * or setback-rule atoms; NEVER touches a parcel whose zoning-fact carries a
+ * real district (city cohort) — enforced in the query itself. Idempotent/
+ * resumable: re-running skips parcels that already have an envelope atom.
+ *
+ * CITY-AWARE (2026-08-04, REASON-OVERSTATES fix): mints one of TWO honest
+ * decline variants per parcel, keyed on the persisted jurisdiction_tenant's
+ * city segment (see cascade-unzoned-envelope-decline.ts for the full field
+ * decision + reliability caveat) — code unzoned-no-district-basis for a
+ * genuinely unincorporated/no-signal parcel, code no-district-on-record for
+ * a parcel whose situs address carried a town name (likely in-city, just not
+ * yet onboarded).
  *
  *   PROPERTY_ATOM_PATH=1 DATABASE_URL=...hauska_mcp... \
  *     pnpm --filter @hauska-engine/engine-core run bake-property-atom-county -- \
  *       --county=48021 --cascade-absence-only [--batch=200]
+ *
+ * --reword-city-parcels mode (additive backfill; UPDATE-in-place, dry-run
+ * default): finds EXISTING buildable-envelope rows carrying the old
+ * unzoned-no-district-basis code whose zoning-fact's jurisdiction_tenant now
+ * carries a city signal, and rewrites their warmVerifyDeclineCode/
+ * warmVerifyDecline to no-district-on-record in place (contentHash
+ * recomputed via contentHashExcludingProvenance so rewarm-determinism
+ * holds). Never touches a parcel with no city signal (correctly-worded
+ * already) or a parcel that already carries no-district-on-record
+ * (idempotent). Dry-run by default; pass --apply to persist.
+ *
+ *   PROPERTY_ATOM_PATH=1 DATABASE_URL=...hauska_mcp... \
+ *     pnpm --filter @hauska-engine/engine-core run bake-property-atom-county -- \
+ *       --county=48021 --reword-city-parcels [--apply] [--limit=N] [--batch=500]
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -42,7 +63,14 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import { emitFromTier1Snapshot } from "../src/property-reasoning/bake-from-tier1-snapshot.ts";
-import { buildCascadeEnvelopeDecline } from "../src/property-reasoning/cascade-unzoned-envelope-decline.ts";
+import {
+  buildCascadeEnvelopeDecline,
+  jurisdictionTenantCitySegment,
+  NO_DISTRICT_ON_RECORD_CODE,
+  NO_DISTRICT_ON_RECORD_REASON,
+  UNZONED_NO_DISTRICT_BASIS_CODE,
+} from "../src/property-reasoning/cascade-unzoned-envelope-decline.ts";
+import { contentHashExcludingProvenance } from "../src/property-reasoning/confidence.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LEDGER_DIR = join(
@@ -61,6 +89,15 @@ const COUNTY_NAMES = {
   "48309": "McLennan",
   "48453": "Travis",
   "48491": "Williamson",
+  "48113": "Dallas",
+  "48439": "Tarrant",
+  "48085": "Collin",
+  "48121": "Denton",
+  "48397": "Rockwall",
+  "48139": "Ellis",
+  "48251": "Johnson",
+  "48257": "Kaufman",
+  "48367": "Parker",
 };
 
 function parseArgs(argv) {
@@ -72,6 +109,8 @@ function parseArgs(argv) {
     spikePp: 40,
     dryRun: false,
     cascadeAbsenceOnly: false,
+    rewordCityParcels: false,
+    apply: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -88,6 +127,8 @@ function parseArgs(argv) {
       out.spikePp = Number(a.slice("--spike-pp=".length));
     else if (a === "--dry-run") out.dryRun = true;
     else if (a === "--cascade-absence-only") out.cascadeAbsenceOnly = true;
+    else if (a === "--reword-city-parcels") out.rewordCityParcels = true;
+    else if (a === "--apply") out.apply = true;
   }
   return out;
 }
@@ -111,14 +152,16 @@ if (!substrateUrl) {
   console.error("FATAL: DATABASE_URL or SUBSTRATE_DATABASE_URL required.");
   process.exit(1);
 }
-// --cascade-absence-only reads/writes substrate only — no cortex snapshot scan.
-if (!args.cascadeAbsenceOnly && !cortexUrl) {
+// --cascade-absence-only and --reword-city-parcels read/write substrate
+// only — no cortex snapshot scan.
+const substrateOnlyMode = args.cascadeAbsenceOnly || args.rewordCityParcels;
+if (!substrateOnlyMode && !cortexUrl) {
   console.error("FATAL: CORTEX_DATABASE_URL required.");
   process.exit(1);
 }
 
 const handle = createPgStorage({ databaseUrl: substrateUrl, maxConnections: 8 });
-const cortexSql = args.cascadeAbsenceOnly
+const cortexSql = substrateOnlyMode
   ? null
   : postgres(cortexUrl, {
       max: 4,
@@ -128,6 +171,11 @@ const cortexSql = args.cascadeAbsenceOnly
 
 if (args.cascadeAbsenceOnly) {
   await runCascadeAbsenceOnly();
+  process.exit(process.exitCode ?? 0);
+}
+
+if (args.rewordCityParcels) {
+  await runRewordCityParcels();
   process.exit(process.exitCode ?? 0);
 }
 
@@ -470,11 +518,20 @@ async function runCascadeAbsenceOnly() {
       // carries a real district (city cohort) is excluded by the
       // `district IS NULL` predicate below and is never returned by this
       // query, hence never written to in this mode (HARD CONSTRAINT).
+      // City-membership signal: jurisdiction_tenant (breadth_${fips}_${city}),
+      // NOT body->'baseFacts'->>'situsCity' — baseFacts is a Tier-1 SNAPSHOT
+      // field (cortex-side), never persisted onto the zoning-fact atom BODY
+      // (confirmed: ZoningFactAtomInstance carries no baseFacts key), so that
+      // JSON path was always NULL in this mode. jurisdiction_tenant IS a real
+      // persisted+indexed column, and descriptorForCounty() already folds
+      // situsCity into it at original bake time (see
+      // cascade-unzoned-envelope-decline.ts module doc for the full field
+      // decision + reliability caveat).
       const rows = await sql`
         SELECT DISTINCT ON (body->>'parcelNodeId')
           body->>'parcelNodeId' AS parcel_node_id,
           atom_did,
-          body->'baseFacts'->>'situsCity' AS situs_city,
+          jurisdiction_tenant,
           body->>'district' AS district,
           body->'absence'->>'kind' AS absence_kind
         FROM atoms
@@ -514,7 +571,7 @@ async function runCascadeAbsenceOnly() {
               {
                 parcelNodeId: row.parcel_node_id,
                 atomDid: row.atom_did,
-                situsCity: row.situs_city,
+                situsCity: jurisdictionTenantCitySegment(row.jurisdiction_tenant),
               },
               county,
               extractedAt,
@@ -569,5 +626,185 @@ async function runCascadeAbsenceOnly() {
     process.exitCode = 1;
   } finally {
     await cascadeHandle.close();
+  }
+}
+
+/**
+ * --reword-city-parcels: targeted UPDATE-in-place backfill (not a re-mint).
+ * Existing cascade envelope declines minted BEFORE the city-aware fix
+ * (2026-08-04) all carry warmVerifyDeclineCode = unzoned-no-district-basis,
+ * even for parcels whose zoning-fact jurisdiction_tenant now shows a city
+ * signal (Smithville-area remainder etc. — see cascade-unzoned-envelope-
+ * decline.ts module doc for the field decision). This clears that stale
+ * wording by rewriting warmVerifyDeclineCode/warmVerifyDecline to
+ * no-district-on-record on exactly those rows, recomputing contentHash via
+ * contentHashExcludingProvenance (same hash convention the fresh-mint path
+ * uses) so rewarm-determinism holds. Dry-run by default; --apply persists.
+ * Idempotent: a second run finds zero candidates (WHERE clause excludes rows
+ * already carrying no-district-on-record). Never touches zoning-fact or
+ * setback-rule atoms; never touches a parcel with no city signal (that
+ * parcel's unzoned-no-district-basis wording is already correct).
+ */
+async function runRewordCityParcels() {
+  const sql = handle.sql;
+  const county = args.county;
+  const t0r = performance.now();
+  const dryRun = !args.apply;
+
+  const summary = {
+    event: "reword-city-parcels",
+    county,
+    name: COUNTY_NAMES[county],
+    dryRun,
+    scanned: 0,
+    reworded: 0,
+    skippedNoCitySignal: 0,
+    skippedAlreadyReworded: 0,
+    errors: 0,
+  };
+
+  console.log(
+    JSON.stringify({
+      event: "reword-city-parcels.start",
+      county,
+      name: COUNTY_NAMES[county],
+      dryRun,
+    }),
+  );
+
+  const pageSize = Math.max(50, Math.min(args.batch, 500));
+  let lastEntityId = "";
+
+  try {
+    while (true) {
+      if (args.limit > 0 && summary.scanned >= args.limit) break;
+      const take =
+        args.limit > 0
+          ? Math.min(pageSize, args.limit - summary.scanned)
+          : pageSize;
+
+      // Keyset (not OFFSET) pagination on entity_id — stable across a
+      // long-running resumable backfill. Candidate envelopes:
+      // entity_type='buildable-envelope', code is the OLD
+      // unzoned-no-district-basis value, jurisdiction under this county's
+      // breadth-bake tenant prefix. Joined back to the LATEST zoning-fact for
+      // the same parcel to read that row's jurisdiction_tenant (the
+      // envelope's own jurisdictionTenant was minted from the SAME
+      // descriptor at cascade time, so in practice they match — the join
+      // guards against any future drift rather than trusting the envelope's
+      // copy blindly).
+      const rows = await sql`
+        SELECT
+          env.entity_id AS entity_id,
+          env.atom_did AS atom_did,
+          env.body AS body,
+          zf.jurisdiction_tenant AS zf_jurisdiction_tenant
+        FROM atoms env
+        LEFT JOIN LATERAL (
+          SELECT jurisdiction_tenant
+          FROM atoms z
+          WHERE z.entity_type = 'zoning-fact'
+            AND z.body->>'parcelNodeId' = env.body->>'parcelNodeId'
+          ORDER BY z.updated_at DESC NULLS LAST
+          LIMIT 1
+        ) zf ON true
+        WHERE env.entity_type = 'buildable-envelope'
+          AND env.jurisdiction_tenant LIKE ${`breadth_${county}_%`}
+          AND env.body->>'warmVerifyDeclineCode' = ${UNZONED_NO_DISTRICT_BASIS_CODE}
+          AND env.entity_id > ${lastEntityId}
+        ORDER BY env.entity_id
+        LIMIT ${take}
+      `;
+      if (rows.length === 0) break;
+
+      for (const row of rows) {
+        summary.scanned += 1;
+        try {
+          const citySegment = jurisdictionTenantCitySegment(
+            row.zf_jurisdiction_tenant,
+          );
+          if (!citySegment) {
+            summary.skippedNoCitySignal += 1;
+            continue;
+          }
+          const body =
+            row.body && typeof row.body === "object" ? { ...row.body } : {};
+          if (body.warmVerifyDeclineCode === NO_DISTRICT_ON_RECORD_CODE) {
+            summary.skippedAlreadyReworded += 1;
+            continue;
+          }
+
+          const next = {
+            ...body,
+            warmVerifyDeclineCode: NO_DISTRICT_ON_RECORD_CODE,
+            warmVerifyDecline: NO_DISTRICT_ON_RECORD_REASON,
+            outcome: {
+              kind: "no-buildable-area",
+              reason: NO_DISTRICT_ON_RECORD_REASON,
+            },
+          };
+          delete next.contentHash;
+          next.contentHash = contentHashExcludingProvenance(next);
+
+          if (dryRun) {
+            if (summary.reworded < 3) {
+              console.log(
+                `[reword-city-parcels] DRY sample entity_id=${row.entity_id} ` +
+                  `citySegment=${citySegment} old=${UNZONED_NO_DISTRICT_BASIS_CODE} ` +
+                  `new=${NO_DISTRICT_ON_RECORD_CODE}`,
+              );
+            }
+            summary.reworded += 1;
+            continue;
+          }
+
+          await sql`
+            UPDATE atoms
+            SET body = ${sql.json(next)},
+                content_hash = ${next.contentHash},
+                updated_at = NOW()
+            WHERE entity_type = 'buildable-envelope'
+              AND entity_id = ${row.entity_id}
+          `;
+          summary.reworded += 1;
+        } catch (err) {
+          summary.errors += 1;
+          console.error(
+            JSON.stringify({
+              event: "reword-city-parcels.emit-error",
+              entityId: row.entity_id,
+              error: String(err?.message || err),
+            }),
+          );
+        }
+        if (summary.scanned % 1000 === 0) {
+          console.log(
+            JSON.stringify({
+              event: "reword-city-parcels.progress",
+              county,
+              scanned: summary.scanned,
+              reworded: summary.reworded,
+              wallMs: Math.round(performance.now() - t0r),
+            }),
+          );
+        }
+      }
+
+      lastEntityId = rows[rows.length - 1].entity_id;
+      if (rows.length < take) break;
+    }
+
+    summary.wallMs = Math.round(performance.now() - t0r);
+    console.log(
+      JSON.stringify({
+        event: "reword-city-parcels.done",
+        ...summary,
+      }),
+    );
+  } catch (err) {
+    console.error(err);
+    process.exitCode = 1;
+  } finally {
+    await handle.close();
   }
 }

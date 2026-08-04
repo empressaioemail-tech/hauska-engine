@@ -359,7 +359,16 @@ export async function gradeOneParcelInQueryMode(
   return gradeAgainstKey(parcelNodeId, propId, key, situsAddress, ring, { sql, txSql, storage, roads, descriptor });
 }
 
-/** Decline code minted by the unzoned-county envelope cascade (property-reasoning/cascade-unzoned-envelope-decline.ts). */
+/**
+ * Decline code minted by the unzoned-county envelope cascade for the
+ * genuinely unincorporated / no-city-signal cohort
+ * (property-reasoning/cascade-unzoned-envelope-decline.ts). Deliberately
+ * distinct from that module's NO_DISTRICT_ON_RECORD_CODE (in-city-but-
+ * unonboarded cohort, added 2026-08-04) — gradeUnzonedParcel below asserts
+ * the parcel is genuinely unzoned, so it must keep matching ONLY this code;
+ * an in-city parcel is zoned (just not yet stamped) and correctly does NOT
+ * pass this grader.
+ */
 export const UNZONED_CASCADE_DECLINE_CODE = "unzoned-no-district-basis";
 
 /**

@@ -74,7 +74,7 @@ export interface LedgerIngestBody {
   readonly gateSummary?: LedgerGateSummary;
 }
 
-/** Small, extendable fips→county-name map for roster-mirror payloads (Bastrop-network only today). */
+/** Small, extendable fips→county-name map for roster-mirror payloads (Bastrop-network + Central-TX + DFW). */
 export const FIPS_TO_COUNTY_NAME: Readonly<Record<string, string>> = {
   "48021": "Bastrop",
   "48027": "Bell",
@@ -86,6 +86,15 @@ export const FIPS_TO_COUNTY_NAME: Readonly<Record<string, string>> = {
   "48309": "McLennan",
   "48453": "Travis",
   "48491": "Williamson",
+  "48113": "Dallas",
+  "48439": "Tarrant",
+  "48085": "Collin",
+  "48121": "Denton",
+  "48397": "Rockwall",
+  "48139": "Ellis",
+  "48251": "Johnson",
+  "48257": "Kaufman",
+  "48367": "Parker",
 };
 
 export function countyNameForFips(fips: string): string {

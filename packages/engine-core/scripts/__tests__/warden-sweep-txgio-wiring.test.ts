@@ -117,3 +117,27 @@ describe("loadParcelAdjacencyIndexFromNeon — behavioral pin: reads txgio_parce
     expect(atomsShapedThatWouldFailInProd.calls.some((c) => c.includes("txgio_parcel"))).toBe(true);
   });
 });
+
+describe("warden-sweep.mjs — envelopeIndependentOfStaleSetback stays code-generic (consumer-compat pin, REASON-OVERSTATES fix 2026-08-04)", () => {
+  // The unzoned-county cascade now mints TWO decline codes
+  // (unzoned-no-district-basis for unincorporated parcels,
+  // no-district-on-record for in-city-but-unonboarded parcels — see
+  // property-reasoning/cascade-unzoned-envelope-decline.ts). This helper
+  // must keep treating warmVerifyDeclineCode generically (any non-empty
+  // string) rather than being narrowed to a hardcoded list of known codes —
+  // narrowing it would silently stop recognizing the new code as an honest,
+  // serve-independent decline.
+  it("checks warmVerifyDeclineCode generically (non-empty-string), not a hardcoded code allowlist", () => {
+    const fnMatch = scriptSource.match(
+      /function envelopeIndependentOfStaleSetback\([\s\S]*?\n}/,
+    );
+    expect(fnMatch).not.toBeNull();
+    const fnSource = fnMatch![0];
+    expect(fnSource).toMatch(
+      /typeof envelopeBody\.warmVerifyDeclineCode === "string" && envelopeBody\.warmVerifyDeclineCode\.trim\(\)\.length > 0/,
+    );
+    // Must not have been narrowed to check against a specific code literal.
+    expect(fnSource).not.toContain("unzoned-no-district-basis");
+    expect(fnSource).not.toContain("no-district-on-record");
+  });
+});

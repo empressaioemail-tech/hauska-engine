@@ -44,6 +44,18 @@ describe("ledger-report-client, countyNameForFips", () => {
     expect(countyNameForFips("48453")).toBe("Travis");
     expect(countyNameForFips("48491")).toBe("Williamson");
   });
+
+  it("resolves the 9 DFW counties", () => {
+    expect(countyNameForFips("48113")).toBe("Dallas");
+    expect(countyNameForFips("48439")).toBe("Tarrant");
+    expect(countyNameForFips("48085")).toBe("Collin");
+    expect(countyNameForFips("48121")).toBe("Denton");
+    expect(countyNameForFips("48397")).toBe("Rockwall");
+    expect(countyNameForFips("48139")).toBe("Ellis");
+    expect(countyNameForFips("48251")).toBe("Johnson");
+    expect(countyNameForFips("48257")).toBe("Kaufman");
+    expect(countyNameForFips("48367")).toBe("Parker");
+  });
 });
 
 describe("ledger-report-client, buildLedgerIngestBody", () => {
