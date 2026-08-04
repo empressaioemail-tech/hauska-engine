@@ -43,6 +43,35 @@ describe("envelopeServeIndependentOfStaleSetback", () => {
       ),
     ).toBe(false);
   });
+
+  // Consumer-compat pin (REASON-OVERSTATES fix, 2026-08-04): this check is a
+  // generic non-empty-string test on warmVerifyDeclineCode, so BOTH cascade
+  // decline codes — the pre-existing unincorporated-cohort code and the new
+  // in-city-but-unonboarded code — must be treated as an honest, serve-
+  // independent decline with no code-string branching required here.
+  it("returns true for both unzoned-county cascade decline codes (additive, no branching needed)", () => {
+    expect(
+      envelopeServeIndependentOfStaleSetback(
+        asStoredAtom({
+          entityType: "buildable-envelope",
+          entityId: PARCEL,
+          warmVerifyDeclineCode: "unzoned-no-district-basis",
+          warmVerifyDecline:
+            "unzoned jurisdiction — no district basis for setbacks or envelope",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      envelopeServeIndependentOfStaleSetback(
+        asStoredAtom({
+          entityType: "buildable-envelope",
+          entityId: PARCEL,
+          warmVerifyDeclineCode: "no-district-on-record",
+          warmVerifyDecline: "no district on record — jurisdiction not yet onboarded",
+        }),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("getPropertyAtomChain — R27 warm decline survives stale setback suppression", () => {
