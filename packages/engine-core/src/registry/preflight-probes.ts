@@ -452,11 +452,19 @@ export function buildOnboardPreflightDeps(input: OnboardPreflightDepsInput): Pre
     //       (expected-unzoned-but-district-present), but they are the city
     //       stamp path's parcels, not this row's, mirroring the cascade's
     //       city-aware skip.
-    const sortedIds = [...cohort.parcelNodeIds]
+    // Degenerate-ONLY exclusion: prop segments are NOT always numeric (Elgin's
+    // cohort carries CAD refs like "R…"/"CHURCH" that grade fine), so a
+    // numeric-only filter would empty whole cohorts. Excluded: empty segment,
+    // literal junk strings, and numeric zero (the propIdBadRate class).
+    // Duplicates dropped too — the raw cohort can repeat an id, which would
+    // double-spend the small sample.
+    const DEGENERATE_SEGMENTS = new Set(["", "0", "null", "undefined", "NaN"]);
+    const sortedIds = [...new Set(cohort.parcelNodeIds)]
       .filter((id) => {
-        const seg = id.split(":")[1] ?? "";
+        const seg = (id.split(":")[1] ?? "").trim();
+        if (DEGENERATE_SEGMENTS.has(seg)) return false;
         const n = Number(seg);
-        return Number.isInteger(n) && n > 0;
+        return !(Number.isFinite(n) && n <= 0);
       })
       .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     const sql = input.sql;
