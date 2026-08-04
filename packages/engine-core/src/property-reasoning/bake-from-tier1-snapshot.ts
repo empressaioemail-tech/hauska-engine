@@ -73,6 +73,20 @@ export type EmitFromSnapshotResult = {
   envelopePresent: boolean;
 };
 
+/**
+ * FIPS county code -> district-code-section-map.ts jurisdiction key.
+ * Lets the breadth-bake path resolve narrative code-section refs
+ * (sourceCodeAtomRef / codeSectionRefs) via emitZoningFact's
+ * lookupDistrictCodeSectionRefs(descriptor.key, district) call, which keys
+ * strictly off JurisdictionDescriptor.key. Absence of an entry is honest —
+ * descriptorForCounty falls back to the pre-existing breadth_${fips} key,
+ * which never matches the map, so unmapped counties emit byte-identical to
+ * today (no refs).
+ */
+const COUNTY_FIPS_TO_DISTRICT_MAP_KEY: Readonly<Record<string, string>> = {
+  "48021": "bastrop_tx",
+};
+
 export function descriptorForCounty(
   parcelNodeId: string,
   cityHint: string | null | undefined,
@@ -80,8 +94,9 @@ export function descriptorForCounty(
   setbackTable?: JurisdictionDescriptor["setbackTable"],
 ): JurisdictionDescriptor {
   const city = (cityHint || "unknown").toLowerCase().replace(/\s+/g, "_");
+  const districtMapKey = COUNTY_FIPS_TO_DISTRICT_MAP_KEY[countyFips];
   return {
-    key: `breadth_${countyFips}`,
+    key: districtMapKey ?? `breadth_${countyFips}`,
     displayName: `Breadth bake ${countyFips}`,
     jurisdictionTenant: `breadth_${countyFips}_${city}`,
     parcelFips: countyFips,
