@@ -39,12 +39,21 @@
  *     also POSTed to the cortex-side onboarding-ledger per the pinned
  *     contract in src/warden/ledger-write.ts. Absent, artifact-only.
  *
+ * loadDbTruthForParcel (servePathTruth's DB-truth source) imports
+ * isStaleBastropCitySetbackRule read-only from @hauska-engine/adapters — the
+ * SAME R13 staleness predicate the retrieval-api's getPropertyAtomChain
+ * applies at serve time — so the servePathTruth comparator can distinguish a
+ * genuine serve defect from the DESIGNED envelope suppression that predicate
+ * drives (see src/warden/serve-path-truth.ts's header for the full
+ * narrowing rationale, calibration fix 2026-08-04).
+ *
  * Exit code: 0 on a clean sweep OR a sweep that produced flag findings
  * (findings are DATA, not a script failure) — non-zero ONLY on a tooling
  * failure (e.g. unknown --row-id, DB connection failure at startup).
  */
 import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
+import { isStaleBastropCitySetbackRule } from "@hauska-engine/adapters";
 
 import { loadJurisdictionRegistryRowById } from "../src/registry/jurisdiction-registry.ts";
 import { loadRegistryDistrictCohort } from "../src/registry/parcel-cohort-loader.ts";
@@ -151,23 +160,90 @@ async function loadZoningByParcel(parcelNodeIds) {
   return map;
 }
 
-/** Loads DB truth (zoning-fact presence + district, buildable-envelope presence) for the servePathTruth body-sanity comparison. */
+/**
+ * DEPTH_WARM_PROMOTION_MARKER mirrors
+ * packages/retrieval/src/envelope-serve-independent.ts's constant of the
+ * same name — read-only string literal, no import (that module lives in
+ * @hauska-engine/retrieval, which engine-core does not depend on; the value
+ * itself is a stable, already-published constant referenced by
+ * cert-grade-core.ts's own DEPTH_WARM_PROMOTION_MARKER in this same repo).
+ */
+const DEPTH_WARM_PROMOTION_MARKER = "depth-warm-promoted-v1";
+
+/**
+ * Mirrors envelopeServeIndependentOfStaleSetback
+ * (packages/retrieval/src/envelope-serve-independent.ts) read-only: true
+ * when a buildable-envelope row carries a marker that makes it independent
+ * of stale-setback suppression (depth-warm-promoted, or a warm-verify
+ * decline by string or code, or a sourceCitation mentioning
+ * depth-warm-verify-decline).
+ */
+function envelopeIndependentOfStaleSetback(envelopeBody) {
+  if (!envelopeBody || typeof envelopeBody !== "object") return false;
+  if (envelopeBody.depthWarmPromotion === DEPTH_WARM_PROMOTION_MARKER) return true;
+  if (typeof envelopeBody.warmVerifyDecline === "string" && envelopeBody.warmVerifyDecline.trim().length > 0) return true;
+  if (typeof envelopeBody.warmVerifyDeclineCode === "string" && envelopeBody.warmVerifyDeclineCode.trim().length > 0) return true;
+  const citation = envelopeBody.sourceCitation;
+  return typeof citation === "string" && citation.toLowerCase().includes("depth-warm-verify-decline");
+}
+
+/**
+ * Loads DB truth for the servePathTruth body-sanity comparison: zoning-fact
+ * presence + district, buildable-envelope presence, and (fix 3, 2026-08-04
+ * calibration pass) two fields the comparator needs to narrow the
+ * envelopePresent check to unambiguous-under-suppression cases only:
+ * setbackSourceStale (isStaleBastropCitySetbackRule, imported read-only from
+ * @hauska-engine/adapters — the SAME predicate getPropertyAtomChain applies
+ * at serve time) and envelopeServeIndependentOfStaleSetback (mirrored
+ * read-only above, since that helper lives in @hauska-engine/retrieval which
+ * engine-core does not depend on).
+ */
 async function loadDbTruthForParcel(parcelNodeId) {
-  if (!sql) return { hasZoningFact: false, district: null, hasBuildableEnvelope: false };
+  if (!sql) {
+    return {
+      hasZoningFact: false,
+      district: null,
+      hasBuildableEnvelope: false,
+      setbackSourceStale: null,
+      envelopeServeIndependentOfStaleSetback: null,
+    };
+  }
   const [zf] = await sql`
     SELECT body FROM atoms WHERE entity_type = 'zoning-fact'
       AND body->>'parcelNodeId' = ${parcelNodeId}
     ORDER BY updated_at DESC NULLS LAST LIMIT 1
   `;
   const [env] = await sql`
-    SELECT 1 FROM atoms WHERE entity_type = 'buildable-envelope'
-      AND body->>'parcelNodeId' = ${parcelNodeId} LIMIT 1
+    SELECT body FROM atoms WHERE entity_type = 'buildable-envelope'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+  const [sr] = await sql`
+    SELECT body FROM atoms WHERE entity_type = 'setback-rule'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
   `;
   const hasZoningFact = !!zf && !zf.body?.absence;
+
+  let setbackSourceStale = null;
+  if (sr) {
+    const sourceCodeAtomDid =
+      sr.body?.sourceCodeAtomRef && typeof sr.body.sourceCodeAtomRef === "object"
+        ? sr.body.sourceCodeAtomRef.atomDid ?? null
+        : null;
+    setbackSourceStale = isStaleBastropCitySetbackRule({
+      parcelNodeId,
+      sourceAdapter: sr.body?.sourceAdapter ?? null,
+      sourceCodeAtomDid,
+    });
+  }
+
   return {
     hasZoningFact,
     district: hasZoningFact ? (zf.body?.district ?? null) : null,
     hasBuildableEnvelope: !!env,
+    setbackSourceStale,
+    envelopeServeIndependentOfStaleSetback: env ? envelopeIndependentOfStaleSetback(env.body) : null,
   };
 }
 

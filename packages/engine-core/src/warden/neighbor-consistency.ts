@@ -26,6 +26,17 @@
  * (never a defect to chase; see 90_runbooks / doc_repo
  * zoning-coverage-is-wired-city-not-data), so patchy-absence has no meaning
  * there.
+ *
+ * DEDUP (first ground-truth sweep, 2026-08-04): a real sweep produced 81
+ * flags across 50 unique parcels — a parcel can legitimately be revisited
+ * more than once by the cohort/neighbor walk above (e.g. a duplicate cohort
+ * entry from ArcGIS pagination, or a parcel reachable via more than one
+ * neighbor edge path), and the naive per-visit push produced one finding per
+ * repeat rather than one finding per parcel. classifyNeighborConsistency now
+ * collects all per-visit candidate findings first, then dedups to exactly
+ * one finding per (parcelNodeId, checkId, defectClass) per sweep, unioning
+ * every visit's neighbor list into the surviving finding's
+ * evidence.neighbors so no neighbor-pair observation is silently dropped.
  */
 import {
   getParcelEdgeNeighbors,
@@ -56,6 +67,55 @@ function districtRoster(row: JurisdictionRegistryRow): ReadonlySet<string> {
   return new Set(Object.keys(byPrefix));
 }
 
+/** One candidate finding per cohort visit, pre-dedup. A parcel visited more than once (duplicate cohort entry, multiple neighbor-reachable paths) produces one candidate per visit. */
+interface CandidateFinding {
+  readonly parcelNodeId: string;
+  readonly defectClass: WardenFindingEvent["defectClass"];
+  readonly evidenceBase: Record<string, unknown>;
+  readonly neighbors: ReadonlyArray<{ parcelNodeId: string; district: string | null }>;
+}
+
+/** A single (parcelNodeId, defectClass) group accumulated across every visit that produced a candidate for it. */
+interface DedupEntry {
+  readonly parcelNodeId: string;
+  readonly defectClass: WardenFindingEvent["defectClass"];
+  readonly evidenceBase: Record<string, unknown>;
+  readonly neighborsByNodeId: Map<string, { parcelNodeId: string; district: string | null }>;
+}
+
+/**
+ * Collapses candidate findings to one per (parcelNodeId, defectClass) —
+ * checkId is constant ("neighborConsistency") for every candidate this
+ * classifier produces, so it is not part of the dedup key here. Every
+ * visit's neighbor list is unioned (by neighbor parcelNodeId) into the
+ * surviving finding's evidence.neighbors. The base evidence (parcel/roster/
+ * fraction fields) is taken from the FIRST visit that produced this key —
+ * those fields are stable across repeat visits of the same parcel (the
+ * parcel's own district and the row's roster don't change mid-sweep).
+ */
+function dedupCandidates(candidates: readonly CandidateFinding[]): DedupEntry[] {
+  const byKey = new Map<string, DedupEntry>();
+  const order: string[] = [];
+  for (const c of candidates) {
+    // JSON-encode the key parts so no character either field could ever
+    // carry can collide two distinct (parcelNodeId, defectClass) pairs.
+    const key = JSON.stringify([c.parcelNodeId, c.defectClass]);
+    let entry = byKey.get(key);
+    if (!entry) {
+      entry = {
+        parcelNodeId: c.parcelNodeId,
+        defectClass: c.defectClass,
+        evidenceBase: c.evidenceBase,
+        neighborsByNodeId: new Map(),
+      };
+      byKey.set(key, entry);
+      order.push(key);
+    }
+    for (const n of c.neighbors) entry.neighborsByNodeId.set(n.parcelNodeId, n);
+  }
+  return order.map((key) => byKey.get(key)!);
+}
+
 /**
  * Pure classifier over an already-loaded adjacency index + zoning-state map —
  * the unit-testable core (no DB/network). Callers (the sweep script or a
@@ -76,14 +136,15 @@ export function classifyNeighborConsistency(params: {
   readonly options?: NeighborConsistencyOptions;
 }): WardenFindingEvent[] {
   const { sweepId, fips, rowId, row, index, zoningByParcel, cohortParcelNodeIds, now, options } = params;
-  const findings: WardenFindingEvent[] = [];
 
   // Unzoned rows: honest-absence is the expected pass state — never flagged.
-  if (row.zoningRegime === "unzoned") return findings;
+  if (row.zoningRegime === "unzoned") return [];
 
   const roster = districtRoster(row);
   const threshold = options?.patchyAbsenceThresholdFraction ?? DEFAULT_PATCHY_ABSENCE_THRESHOLD;
   const artifactRef = `warden-sweep:${sweepId}:neighborConsistency`;
+
+  const candidates: CandidateFinding[] = [];
 
   for (const parcelNodeId of cohortParcelNodeIds) {
     const self = zoningByParcel.get(parcelNodeId);
@@ -99,24 +160,18 @@ export function classifyNeighborConsistency(params: {
       const neighborState = zoningByParcel.get(neighborNodeId);
       if (neighborState) neighborStates.push(neighborState);
     }
+    const neighborsForEvidence = neighborStates.map((n) => ({ parcelNodeId: n.parcelNodeId, district: n.district }));
 
     // (a) Roster drift: a stamped (non-null) district not in the row's current roster.
     if (self.district != null && roster.size > 0 && !roster.has(self.district)) {
-      findings.push({
-        ts: now().toISOString(),
-        sweepId,
-        rowId,
-        fips,
+      candidates.push({
         parcelNodeId,
-        checkId: "neighborConsistency",
         defectClass: "MIXED-VINTAGE-NEIGHBOR",
-        evidence: {
+        evidenceBase: {
           parcel: { parcelNodeId, district: self.district },
           currentRoster: [...roster],
-          neighbors: neighborStates.map((n) => ({ parcelNodeId: n.parcelNodeId, district: n.district })),
         },
-        severity: "flag",
-        artifactRef,
+        neighbors: neighborsForEvidence,
       });
       continue;
     }
@@ -127,22 +182,15 @@ export function classifyNeighborConsistency(params: {
       const districtedCount = neighborStates.filter((n) => n.district != null).length;
       const fraction = districtedCount / neighborStates.length;
       if (fraction >= threshold) {
-        findings.push({
-          ts: now().toISOString(),
-          sweepId,
-          rowId,
-          fips,
+        candidates.push({
           parcelNodeId,
-          checkId: "neighborConsistency",
           defectClass: "MIXED-VINTAGE-NEIGHBOR",
-          evidence: {
+          evidenceBase: {
             parcel: { parcelNodeId, district: null },
-            neighbors: neighborStates.map((n) => ({ parcelNodeId: n.parcelNodeId, district: n.district })),
             districtedFraction: fraction,
             thresholdFraction: threshold,
           },
-          severity: "flag",
-          artifactRef,
+          neighbors: neighborsForEvidence,
         });
       }
     }
@@ -152,7 +200,21 @@ export function classifyNeighborConsistency(params: {
     // flagged here — that is an ordinary zoning boundary.
   }
 
-  return findings;
+  return dedupCandidates(candidates).map((entry) => ({
+    ts: now().toISOString(),
+    sweepId,
+    rowId,
+    fips,
+    parcelNodeId: entry.parcelNodeId,
+    checkId: "neighborConsistency",
+    defectClass: entry.defectClass,
+    evidence: {
+      ...entry.evidenceBase,
+      neighbors: [...entry.neighborsByNodeId.values()],
+    },
+    severity: "flag",
+    artifactRef,
+  }));
 }
 
 /**
