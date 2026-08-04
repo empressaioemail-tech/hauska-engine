@@ -157,7 +157,7 @@ describe("central TX county fan registry rows (2026-08-04)", () => {
     expect(BEXAR_COUNTY_UNINCORPORATED_REGISTRY_ROW.railPerParcel?.propIdField).toBe("PropID");
 
     expect(CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW.railC.cadastralQueryUrl).toBe(
-      "https://services.arcgis.com/rVxY74DxxIDrDbc0/arcgis/rest/services/Caldwell_CAD_Parcel_Map/FeatureServer/0",
+      "https://services.arcgis.com/rVxY74DxxIDrDbc0/arcgis/rest/services/Caldwell_CAD_Parcel_Map/FeatureServer/1",
     );
 
     expect(COMAL_COUNTY_UNINCORPORATED_REGISTRY_ROW.railC.cadastralQueryUrl).toBe(
