@@ -161,4 +161,69 @@ describe("classifyNeighborConsistency", () => {
     // Only 1 of 2 neighbors districted = 50%, below the default 75% threshold.
     expect(findings).toHaveLength(0);
   });
+
+  it("calibration fix (dedup) — a parcel visited twice in cohortParcelNodeIds (e.g. duplicate ArcGIS pagination entry) produces exactly ONE finding, not one per visit", () => {
+    const index = buildThreeParcelIndex();
+    const zoningByParcel = zoningMap([
+      { parcelNodeId: `${COUNTY_FIPS}:34073`, propId: "34073", district: "P-5" }, // roster drift
+      { parcelNodeId: `${COUNTY_FIPS}:34081`, propId: "34081", district: "SF-1" },
+      { parcelNodeId: `${COUNTY_FIPS}:105054`, propId: "105054", district: "SF-1" },
+    ]);
+    const findings = classifyNeighborConsistency({
+      sweepId: "test-sweep",
+      fips: COUNTY_FIPS,
+      rowId: "Bastrop",
+      row: BASTROP_REGISTRY_ROW,
+      index,
+      zoningByParcel,
+      // The SAME parcel appears three times — reproduces a duplicate cohort
+      // entry (e.g. an ArcGIS pagination-boundary repeat) that previously
+      // produced one finding per repeat.
+      cohortParcelNodeIds: [
+        `${COUNTY_FIPS}:34073`,
+        `${COUNTY_FIPS}:34073`,
+        `${COUNTY_FIPS}:34081`,
+        `${COUNTY_FIPS}:105054`,
+        `${COUNTY_FIPS}:34073`,
+      ],
+      now: FIXED_NOW,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.parcelNodeId).toBe(`${COUNTY_FIPS}:34073`);
+    expect(findings[0]!.defectClass).toBe("MIXED-VINTAGE-NEIGHBOR");
+    // Every visit's neighbor observation is still present (unioned, not dropped).
+    const neighborIds = (findings[0]!.evidence.neighbors as Array<{ parcelNodeId: string }>).map((n) => n.parcelNodeId);
+    expect(neighborIds).toContain(`${COUNTY_FIPS}:34081`);
+    expect(neighborIds).toContain(`${COUNTY_FIPS}:105054`);
+    // No duplicate neighbor entries despite three visits.
+    expect(new Set(neighborIds).size).toBe(neighborIds.length);
+  });
+
+  it("calibration fix (dedup) — two DISTINCT flagged parcels each still produce their own single finding (dedup is per-parcel, not global)", () => {
+    const index = buildThreeParcelIndex();
+    const zoningByParcel = zoningMap([
+      { parcelNodeId: `${COUNTY_FIPS}:34073`, propId: "34073", district: "P-5" }, // roster drift #1
+      { parcelNodeId: `${COUNTY_FIPS}:34081`, propId: "34081", district: "P-2" }, // roster drift #2
+      { parcelNodeId: `${COUNTY_FIPS}:105054`, propId: "105054", district: "SF-1" },
+    ]);
+    const findings = classifyNeighborConsistency({
+      sweepId: "test-sweep",
+      fips: COUNTY_FIPS,
+      rowId: "Bastrop",
+      row: BASTROP_REGISTRY_ROW,
+      index,
+      zoningByParcel,
+      cohortParcelNodeIds: [
+        `${COUNTY_FIPS}:34073`,
+        `${COUNTY_FIPS}:34081`,
+        `${COUNTY_FIPS}:34073`,
+        `${COUNTY_FIPS}:105054`,
+      ],
+      now: FIXED_NOW,
+    });
+    expect(findings).toHaveLength(2);
+    const byParcel = new Map(findings.map((f) => [f.parcelNodeId, f]));
+    expect(byParcel.has(`${COUNTY_FIPS}:34073`)).toBe(true);
+    expect(byParcel.has(`${COUNTY_FIPS}:34081`)).toBe(true);
+  });
 });
