@@ -52,10 +52,26 @@ describe("backfill-bastrop-zoning-fact-code-refs.mjs — WHERE clause shape (pin
     // The candidate query's district predicate is <> '' (non-empty), which by
     // construction excludes absence.kind = 'no-zoning-stamp' rows (those
     // carry district: undefined / body has no 'district' key at all).
-    const candidateBlock = scriptSource.match(
-      /} else \{[\s\S]*?rows = await sql`[\s\S]*?`;\n\}/,
+    //
+    // Extraction is scoped to the backfill-candidate branch specifically (via
+    // its unique "WHERE-clause shape pinned by" comment, not a whole-module
+    // `} else {` positional match) so this stays robust to additional
+    // branches/modes being added to the script over time, and is
+    // line-ending-tolerant (\r?\n) so it does not depend on the working
+    // tree's checkout-time CRLF/LF normalization (core.autocrlf=true locally;
+    // .gitattributes only pins LF for the setback JSON tables, not .mjs
+    // scripts — see doc_repo memory "CRLF phantom-dirty files").
+    const candidateBlockAnchor = scriptSource.indexOf(
+      "// WHERE-clause shape pinned by",
     );
+    expect(candidateBlockAnchor).toBeGreaterThan(-1);
+
+    const candidateBlock = scriptSource
+      .slice(candidateBlockAnchor)
+      .match(/rows = await sql`[\s\S]*?`;\r?\n\}/);
     expect(candidateBlock).not.toBeNull();
+    expect(candidateBlock![0]).toContain("NOT (body ? 'codeSectionRefs')");
+    expect(candidateBlock![0]).toContain("coalesce(body->>'district','') <> ''");
   });
 
   it("never re-mints via emitZoningFact/emitFromTier1Snapshot — UPDATE-in-place only", () => {
