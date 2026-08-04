@@ -1,16 +1,21 @@
 /**
- * Elgin onboarding (2026-08-03) — elgin-development-code.json is a DRAFT
- * setback table (see the file's top-level "note": planner row-verification
- * + operator ratification required before serve). It is intentionally NOT
- * registered in SETBACK_TABLES (index.ts) yet — see the commented
- * TODO(elgin-review) entry there — so this test suite covers only:
+ * Elgin onboarding (2026-08-03 draft, 2026-08-04 RATIFIED by operator after
+ * planner row-verification — see doc_repo
+ * _sessions/2026-08-03_elgin_foundation_and_city_code_refs, and the
+ * ratification note on the elgin-development-code.json import in
+ * index.ts). elgin-development-code.json is now registered in
+ * SETBACK_TABLES (index.ts) and reachable through
+ * getSetbackTable/getSetbackTableForZoning. This test suite covers:
  *
  *   1. the raw JSON file's shape (8 districts, all required scalar fields);
  *   2. every cited atom_did actually exists as a code-section entityId in
  *      the frozen corpus snapshot (mechanical grep/load test, per dispatch);
- *   3. the table is NOT reachable through getSetbackTable/getSetbackTableForZoning
- *      yet (proves the review gate is honored — registering it is a separate,
- *      planner-gated step).
+ *   3. the table IS registered and reachable through
+ *      getSetbackTable/getSetbackTableForZoning (ratification wired it in);
+ *   4. conditional cells carry a structured, additive governed_by (or
+ *      governed_by_dwellings) object per the operator's ratification
+ *      directive, alongside the existing provenance quote/note — values are
+ *      byte-unchanged from the ratified draft.
  *
  * DID existence is checked against services/retrieval-api/corpus/snapshot.json
  * directly (not through the retrieval-api service) — this is a static,
@@ -45,12 +50,12 @@ function leadingToken(name: string): string {
   return (name.trim().split(/\s+/)[0] ?? "").toUpperCase();
 }
 
-describe("elgin-development-code.json — DRAFT shape (planner row-verification required before serve)", () => {
+describe("elgin-development-code.json — ratified shape", () => {
   const table = elginDevelopmentCode as SetbackTable;
 
-  it("carries the DRAFT provenance note", () => {
-    expect(table.note).toMatch(/DRAFT authored 2026-08-03/);
-    expect(table.note).toMatch(/planner row-verification \+ operator ratification required before serve/);
+  it("carries the authoring provenance note (source corpus + district roster)", () => {
+    expect(table.note).toMatch(/authored 2026-08-03/);
+    expect(table.note).toMatch(/Elgin Code of Ordinances/);
   });
 
   it("has exactly 8 districts, one per Sec. 46-203 roster entry (R-1..R-4, C-1..C-3, I)", () => {
@@ -85,10 +90,108 @@ describe("elgin-development-code.json — DRAFT shape (planner row-verification 
     expect(prov.side_ft.quote).toMatch(/D = 12 \+ L\/15/);
   });
 
-  it("is NOT yet registered in SETBACK_TABLES (review gate honored — registration is a separate, planner-gated step)", () => {
-    expect(SETBACK_JURISDICTION_KEYS).not.toContain("elgin-development-code");
-    expect(getSetbackTable("elgin-development-code")).toBeNull();
-    expect(getSetbackTableForZoning("elgin-development-code", "R-1")).toBeNull();
+  it("is registered in SETBACK_TABLES and reachable through getSetbackTable/getSetbackTableForZoning (ratified 2026-08-04)", () => {
+    expect(SETBACK_JURISDICTION_KEYS).toContain("elgin-development-code");
+    expect(getSetbackTable("elgin-development-code")).not.toBeNull();
+    expect(getSetbackTableForZoning("elgin-development-code", "R-1")).not.toBeNull();
+    expect(getSetbackTableForZoning("elgin-development-code", "R-1")?.jurisdictionKey).toBe(
+      "elgin-development-code",
+    );
+  });
+
+  it("C-2 conditional yard cells (front/rear/side/side_corner) carry governed_by routing to C-1 plus governed_by_dwellings routing to R-4, per operator ratification directive", () => {
+    const c2 = table.districts.find((d) => leadingToken(d.district_name) === "C-2")!;
+    const prov = c2.provenance as Record<
+      string,
+      {
+        governed_by?: { condition?: string; district?: string; section_number?: string; note?: string };
+        governed_by_dwellings?: { district?: string; section_number?: string };
+      }
+    >;
+    for (const field of ["front_ft", "rear_ft", "side_ft", "side_corner_ft"] as const) {
+      expect(prov[field].governed_by).toBeDefined();
+      expect(prov[field].governed_by?.condition).toBe("adjacent-to-residential");
+      expect(prov[field].governed_by?.district).toBe("C-1");
+      expect(prov[field].governed_by?.section_number).toBe("46-391");
+      expect(prov[field].governed_by_dwellings).toBeDefined();
+      expect(prov[field].governed_by_dwellings?.district).toBe("R-4");
+      expect(prov[field].governed_by_dwellings?.section_number).toBe("46-391");
+    }
+  });
+
+  it("I (Industrial) front/side cells carry governed_by adjoins-dwelling-district at 25 ft, section 46-441", () => {
+    const industrial = table.districts.find((d) => leadingToken(d.district_name) === "I")!;
+    const prov = industrial.provenance as Record<
+      string,
+      { governed_by?: { condition?: string; value_ft?: number; section_number?: string } }
+    >;
+    for (const field of ["front_ft", "side_ft"] as const) {
+      expect(prov[field].governed_by).toBeDefined();
+      expect(prov[field].governed_by?.condition).toBe("adjoins-dwelling-district");
+      expect(prov[field].governed_by?.value_ft).toBe(25);
+      expect(prov[field].governed_by?.section_number).toBe("46-441");
+    }
+  });
+
+  it("I (Industrial) rear cell carries governed_by conditions array (serviced-from-rear 30ft, adjoins-dwelling-district 25ft), section 46-441", () => {
+    const industrial = table.districts.find((d) => leadingToken(d.district_name) === "I")!;
+    const prov = industrial.provenance as Record<
+      string,
+      {
+        governed_by?: {
+          conditions?: Array<{ condition: string; value_ft?: number }>;
+          section_number?: string;
+        };
+      }
+    >;
+    const governedBy = prov.rear_ft.governed_by;
+    expect(governedBy).toBeDefined();
+    expect(governedBy?.section_number).toBe("46-441");
+    expect(governedBy?.conditions).toEqual([
+      { condition: "serviced-from-rear", value_ft: 30 },
+      { condition: "adjoins-dwelling-district", value_ft: 25 },
+    ]);
+  });
+
+  it("R-4 rear cell carries governed_by conditions array (default formula, backs-to-residential 50ft), section 46-333", () => {
+    const r4 = table.districts.find((d) => leadingToken(d.district_name) === "R-4")!;
+    const prov = r4.provenance as Record<
+      string,
+      {
+        governed_by?: {
+          conditions?: Array<{ condition: string; value_ft?: number; note?: string }>;
+          section_number?: string;
+        };
+      }
+    >;
+    const governedBy = prov.rear_ft.governed_by;
+    expect(governedBy).toBeDefined();
+    expect(governedBy?.section_number).toBe("46-333");
+    expect(governedBy?.conditions).toEqual([
+      { condition: "default", note: "same as side yard (formula D = 12 + L/15)" },
+      { condition: "backs-to-residential", value_ft: 50 },
+    ]);
+  });
+
+  it("governed_by is additive only — existing quote/note/confidence/verification_state/not_specified values are byte-unchanged from the ratified draft", () => {
+    const r4 = table.districts.find((d) => leadingToken(d.district_name) === "R-4")!;
+    const r4Prov = r4.provenance as Record<string, { quote: string; not_specified?: boolean }>;
+    expect(r4Prov.rear_ft.quote).toBe(
+      "Rear yard. For multiple-family dwellings, same as side yard except where property backs up to residentially zoned property the rear yard must have a depth of 50 feet including parking areas.",
+    );
+    expect(r4Prov.rear_ft.not_specified).toBe(true);
+
+    const c2 = table.districts.find((d) => leadingToken(d.district_name) === "C-2")!;
+    const c2Prov = c2.provenance as Record<string, { quote: string }>;
+    expect(c2Prov.front_ft.quote).toBe(
+      "Front, side and rear yards. There are no specific front, side or rear yard requirements for uses other than dwellings, except where the property is adjacent to residential property, then the yard requirements shall be the same as in the C-1 Neighborhood Shopping District.",
+    );
+
+    const industrial = table.districts.find((d) => leadingToken(d.district_name) === "I")!;
+    const iProv = industrial.provenance as Record<string, { quote: string }>;
+    expect(iProv.rear_ft.quote).toBe(
+      "Rear yard. Where a building is to be serviced from the rear there shall be provided an alley, service court, rear yard or combination thereof of not less than 30 feet in width ... In all other cases no rear yard is required; provided, however, that a building shall set back a distance of not less than 25 feet from the rear lot line that adjoins a dwelling district.",
+    );
   });
 });
 
