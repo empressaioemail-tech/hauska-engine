@@ -105,7 +105,7 @@ describe("central TX county fan registry rows (2026-08-04)", () => {
     }
   });
 
-  it("Bastrop, Elgin, and DFW-area rows are untouched by the county fan (pinned count + spot fields)", () => {
+  it("Bastrop and Elgin rows are untouched by the county fan (pinned count + spot fields)", () => {
     // Bastrop (48021) still resolves its three original rows unchanged.
     const bastropRows = loadJurisdictionRegistryRowsForFips("48021");
     expect(bastropRows).toHaveLength(3);
@@ -119,12 +119,12 @@ describe("central TX county fan registry rows (2026-08-04)", () => {
       "Parcels_One_Click",
     );
 
-    // No DFW-area fips (Dallas 48113, Tarrant 48439, Collin 48085, Denton
-    // 48121) rows exist on this registry yet — this session's scope is
-    // Central TX only; a concurrent DFW-area planner session owns those.
-    for (const dfwFips of ["48113", "48439", "48085", "48121"]) {
-      expect(loadJurisdictionRegistryRowsForFips(dfwFips)).toHaveLength(0);
-    }
+    // NOTE: deliberately no DFW-area fips (Dallas 48113, Tarrant 48439,
+    // Collin 48085, Denton 48121) absence assertions here. A concurrent
+    // DFW-area planner session is mandated to ADD those rows to this same
+    // file; an absence pin would red that session's legitimate CI run.
+    // This session's scope was Central TX only — that scope is documented
+    // in the class comment above, not enforced by a test.
   });
 
   it("Hays County row has no cadastralQueryUrl and no railPerParcel (loud-fail, not a borrowed default)", () => {
@@ -135,10 +135,15 @@ describe("central TX county fan registry rows (2026-08-04)", () => {
     );
   });
 
-  it("Travis County (48453) is absent from the registry — held on the geo_id/address crosswalk gap", () => {
-    expect(loadJurisdictionRegistryRowsForFips("48453")).toHaveLength(0);
-    expect(isJurisdictionOnboarded("48453")).toBe(false);
-  });
+  // NOTE: no Travis County (48453) absence-of-row test here by design. An
+  // absence pin is only valid for something that must NEVER exist; Travis's
+  // exclusion is a HOLD (blocked on the geo_id/address crosswalk gap), not a
+  // permanent exclusion, and a hard-coded absence assertion would red CI the
+  // moment a legitimate future session adds the row once that gap closes.
+  // The HOLD and its reasoning are recorded durably in the file-level
+  // comment above CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW's neighboring
+  // block in jurisdiction-registry.ts ("EXCLUDED: Travis County (48453)..."),
+  // not enforced here.
 
   it("spot-checks each county's cadastralQueryUrl and railC provenance values against the recon/StratMap sources", () => {
     expect(BELL_COUNTY_UNINCORPORATED_REGISTRY_ROW.railC.cadastralQueryUrl).toBe(
