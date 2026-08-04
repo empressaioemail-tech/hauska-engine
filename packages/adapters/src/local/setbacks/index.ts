@@ -11,15 +11,13 @@
  *   2. Append the import + entry to the SETBACK_TABLES record below.
  */
 
-// TODO(elgin-review): elgin-development-code.json is a DRAFT (authored
-// 2026-08-03 from corpus atoms; planner row-verification + operator
-// ratification required before serve — see the file's top-level "note").
-// This table has no review-status gate of its own (SetbackTable carries no
-// status field), so the draft is deliberately NOT wired into SETBACK_TABLES
-// below until reviewed — uncomment both the import and the SETBACK_TABLES
-// entry once ratified:
-//   import elginDevelopmentCode from "./elgin-development-code.json" with { type: "json" };
-//   "elgin-development-code": elginDevelopmentCode as SetbackTable,
+// elgin-development-code.json RATIFIED 2026-08-04 by operator (after
+// planner row-verification vs corpus atoms; see doc_repo
+// _sessions/2026-08-03_elgin_foundation_and_city_code_refs). Operator
+// directives: conditional cells route to their governing district's values
+// in display (see governed_by fields); story/corner rule details render in
+// the detail/X-ray surface from provenance notes.
+import elginDevelopmentCode from "./elgin-development-code.json" with { type: "json" };
 import grandCountyUt from "./grand-county-ut.json" with { type: "json" };
 import lemhiCountyId from "./lemhi-county-id.json" with { type: "json" };
 import bastropTx from "./bastrop-tx.json" with { type: "json" };
@@ -48,6 +46,7 @@ const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = {
   // CURRENT City of Bastrop Euclidean setbacks (BDC Sec. 14.02.003 / Ord. 2026-06).
   // Sole authoring survivor for city Euclidean VALUES (WDLL STEP 3 item 1+3).
   "bastrop-development-code": bastropDevelopmentCode as SetbackTable,
+  "elgin-development-code": elginDevelopmentCode as SetbackTable,
   "austin-tx": austinTx as SetbackTable,
   "san-antonio-tx": sanAntonioTx as SetbackTable,
   "utah-unincorporated": utahUnincorporated as SetbackTable,

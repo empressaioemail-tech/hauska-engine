@@ -227,7 +227,14 @@
           "confidence": 0.7,
           "verification_state": "transcribed",
           "not_specified": true,
-          "note": "Rear yard is DEFINED AS 'same as side yard' (a formula reference, D = 12 + L/15, see side_ft note) except a flat 50 ft override when backing residentially zoned property. Not a clean standalone scalar -- genuinely conditional on the formula's L (building length) input and on adjacency. Per planner instruction: not_specified rather than resolving the formula or picking one branch."
+          "note": "Rear yard is DEFINED AS 'same as side yard' (a formula reference, D = 12 + L/15, see side_ft note) except a flat 50 ft override when backing residentially zoned property. Not a clean standalone scalar -- genuinely conditional on the formula's L (building length) input and on adjacency. Per planner instruction: not_specified rather than resolving the formula or picking one branch.",
+          "governed_by": {
+            "conditions": [
+              { "condition": "default", "note": "same as side yard (formula D = 12 + L/15)" },
+              { "condition": "backs-to-residential", "value_ft": 50 }
+            ],
+            "section_number": "46-333"
+          }
         },
         "side_ft": {
           "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-333",
@@ -356,7 +363,17 @@
           "confidence": 0.7,
           "verification_state": "transcribed",
           "not_specified": true,
-          "note": "Non-dwelling uses in C-2 have NO yard requirement unless adjacent to residential property, in which case the C-1 table (this file's C-1 row) applies. Dwelling uses in C-2 are instead governed by the A-Multiple-Family Residential (this file's R-4) district's area regulations per this same section -- confirming the R-4/'A' district-naming mapping used in the registry row. Genuinely conditional; carrying verbatim rule text rather than inventing a scalar."
+          "note": "Non-dwelling uses in C-2 have NO yard requirement unless adjacent to residential property, in which case the C-1 table (this file's C-1 row) applies. Dwelling uses in C-2 are instead governed by the A-Multiple-Family Residential (this file's R-4) district's area regulations per this same section -- confirming the R-4/'A' district-naming mapping used in the registry row. Genuinely conditional; carrying verbatim rule text rather than inventing a scalar.",
+          "governed_by": {
+            "condition": "adjacent-to-residential",
+            "district": "C-1",
+            "section_number": "46-391",
+            "note": "no yard requirement for non-dwelling uses unless adjacent to residential property; then C-1's yard requirements govern. Dwelling uses are governed by R-4 (A-Multiple-Family) area regulations per the same section."
+          },
+          "governed_by_dwellings": {
+            "district": "R-4",
+            "section_number": "46-391"
+          }
         },
         "rear_ft": {
           "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-391",
@@ -365,7 +382,17 @@
           "confidence": 0.7,
           "verification_state": "transcribed",
           "not_specified": true,
-          "note": "Same conditional rule as front_ft; see that field's note."
+          "note": "Same conditional rule as front_ft; see that field's note.",
+          "governed_by": {
+            "condition": "adjacent-to-residential",
+            "district": "C-1",
+            "section_number": "46-391",
+            "note": "no yard requirement for non-dwelling uses unless adjacent to residential property; then C-1's yard requirements govern. Dwelling uses are governed by R-4 (A-Multiple-Family) area regulations per the same section."
+          },
+          "governed_by_dwellings": {
+            "district": "R-4",
+            "section_number": "46-391"
+          }
         },
         "side_ft": {
           "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-391",
@@ -374,7 +401,17 @@
           "confidence": 0.7,
           "verification_state": "transcribed",
           "not_specified": true,
-          "note": "Same conditional rule as front_ft; see that field's note."
+          "note": "Same conditional rule as front_ft; see that field's note.",
+          "governed_by": {
+            "condition": "adjacent-to-residential",
+            "district": "C-1",
+            "section_number": "46-391",
+            "note": "no yard requirement for non-dwelling uses unless adjacent to residential property; then C-1's yard requirements govern. Dwelling uses are governed by R-4 (A-Multiple-Family) area regulations per the same section."
+          },
+          "governed_by_dwellings": {
+            "district": "R-4",
+            "section_number": "46-391"
+          }
         },
         "side_corner_ft": {
           "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-391",
@@ -383,7 +420,17 @@
           "confidence": 0.7,
           "verification_state": "transcribed",
           "not_specified": true,
-          "note": "Same conditional rule as front_ft; see that field's note."
+          "note": "Same conditional rule as front_ft; see that field's note.",
+          "governed_by": {
+            "condition": "adjacent-to-residential",
+            "district": "C-1",
+            "section_number": "46-391",
+            "note": "no yard requirement for non-dwelling uses unless adjacent to residential property; then C-1's yard requirements govern. Dwelling uses are governed by R-4 (A-Multiple-Family) area regulations per the same section."
+          },
+          "governed_by_dwellings": {
+            "district": "R-4",
+            "section_number": "46-391"
+          }
         },
         "max_height_ft": {
           "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-392",
@@ -494,7 +541,13 @@
           "confidence": 0.7,
           "verification_state": "transcribed",
           "not_specified": true,
-          "note": "No front-yard requirement unless adjoining a dwelling district (then covered by the side-yard 25 ft rule, not a distinct front rule). None-unless-adjoining, per planner summary; carrying verbatim rule text rather than inventing a scalar."
+          "note": "No front-yard requirement unless adjoining a dwelling district (then covered by the side-yard 25 ft rule, not a distinct front rule). None-unless-adjoining, per planner summary; carrying verbatim rule text rather than inventing a scalar.",
+          "governed_by": {
+            "condition": "adjoins-dwelling-district",
+            "value_ft": 25,
+            "section_number": "46-441",
+            "note": "no requirement unless the lot line adjoins a dwelling district; then 25 ft."
+          }
         },
         "rear_ft": {
           "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-441",
@@ -503,7 +556,14 @@
           "confidence": 0.7,
           "verification_state": "transcribed",
           "not_specified": true,
-          "note": "No rear-yard requirement unless serviced from the rear (30 ft) or adjoining a dwelling district (25 ft) -- two different conditional floors, no unconditional scalar. None-unless-adjoining; carrying verbatim rule text rather than inventing a scalar."
+          "note": "No rear-yard requirement unless serviced from the rear (30 ft) or adjoining a dwelling district (25 ft) -- two different conditional floors, no unconditional scalar. None-unless-adjoining; carrying verbatim rule text rather than inventing a scalar.",
+          "governed_by": {
+            "conditions": [
+              { "condition": "serviced-from-rear", "value_ft": 30 },
+              { "condition": "adjoins-dwelling-district", "value_ft": 25 }
+            ],
+            "section_number": "46-441"
+          }
         },
         "side_ft": {
           "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-441",
@@ -512,7 +572,13 @@
           "confidence": 0.7,
           "verification_state": "transcribed",
           "not_specified": true,
-          "note": "No side-yard requirement unless adjoining a dwelling district (then 25 ft). None-unless-adjoining; carrying verbatim rule text rather than inventing a scalar."
+          "note": "No side-yard requirement unless adjoining a dwelling district (then 25 ft). None-unless-adjoining; carrying verbatim rule text rather than inventing a scalar.",
+          "governed_by": {
+            "condition": "adjoins-dwelling-district",
+            "value_ft": 25,
+            "section_number": "46-441",
+            "note": "no requirement unless the lot line adjoins a dwelling district; then 25 ft."
+          }
         },
         "side_corner_ft": {
           "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-441",
