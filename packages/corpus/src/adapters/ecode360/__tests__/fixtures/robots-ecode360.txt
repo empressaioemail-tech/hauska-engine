@@ -1,0 +1,56 @@
+User-agent: bingbot
+Disallow: /
+
+User-agent: bingpreview
+Disallow: /
+
+User-agent: msnbot
+Disallow: /
+
+User-agent: msnbot-media
+Disallow: /
+
+User-agent: adidxbot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: SemrushBot-SA
+Disallow: /
+
+User-agent: Slurp
+Disallow: /
+
+User-agent: Swiftbot
+Allow: /docs/LA1674
+Allow: /docs/LA1674/
+Allow: /docs/public/LA1674
+Allow: /docs/public/LA1674/
+User-agent: Applebot
+Disallow: /
+User-agent: PetalBot
+
+User-agent: *
+Disallow: /admin
+Disallow: /admin/
+Disallow: /archives
+Disallow: /archives/
+Disallow: /attachment
+Disallow: /attachment/
+Disallow: /dashboard
+Disallow: /dashboard/
+Disallow: /documents
+Disallow: /documents/
+Disallow: /output
+Disallow: /output/
+Disallow: /permissions
+Disallow: /permissions/
+Disallow: /print
+Disallow: /print/
+Disallow: /search
+Disallow: /search/
+Disallow: /user
+Disallow: /user/
+Disallow:
+Host: ecode360.com
