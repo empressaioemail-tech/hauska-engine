@@ -55,6 +55,22 @@ export const LOCKHART_CITY_BBOX = {
   east: -97.62483,
 } as const;
 
+/**
+ * City of Elgin limits (Bastrop-county side, 48021) from AGOL Elgin_Zoning
+ * FeatureServer/0 extent query (same layer as ELGIN_REGISTRY_ROW):
+ *   https://services3.arcgis.com/wdTkTU0MdZbNBEZy/arcgis/rest/services/Elgin_Zoning/FeatureServer/0/query?where=CITY_LIMIT%3D%27ELGIN%27&returnExtentOnly=true&outSR=4326&f=json
+ * Fetched 2026-08-04 by planner via curl; verbatim extent:
+ *   xmin=-97.410938698399292 ymin=30.313790730771967
+ *   xmax=-97.355026917826052 ymax=30.369229436331114
+ * OSM cross-check timed out (server busy); primary source is AGOL zoning envelope
+ * (aligns with Lockhart CAD City_Limits precedent, not undocumented Bastrop hand-tune).
+ */
+export const ELGIN_CITY_BBOX = {
+  south: 30.313790730771967,
+  west: -97.410938698399292,
+  north: 30.369229436331114,
+  east: -97.355026917826052,
+} as const;
 
 export type BastropRoadIngestScope = "city" | "county" | "county-tiled";
 
