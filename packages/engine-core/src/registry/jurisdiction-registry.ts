@@ -489,16 +489,15 @@ export const BEXAR_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
  * `_inbox/2026-07-27_RECIPE_PROOF_caldwell_road_recon_seed.json`). That pass
  * named Road_Centerlines (layer 6), Lockhart/Luling/Martindale zoning layers
  * (49/50/51), City_Limits (17), City_ETJ (18), and Road_Plan_2024 (45) — it
- * did NOT name a parcels-layer id. Layer 0 is used here per this
- * FeatureServer's standard ArcGIS convention (every other CONFIRMED county
- * in the 2026-08-04 recon that follows the "layer 0 = Parcels" convention
- * confirms it explicitly; Caldwell's own service was not re-probed for its
- * parcels layer id in this pass — verify layer 0 resolves to the parcel
- * attribute layer, not a different layer, before promoting this row out of
- * pre-flight-pending).
+ * did NOT name a parcels-layer id. VERIFIED LIVE 2026-08-04 (planner probe,
+ * after the Wave-1 cert failed all 20 samples with cadastral-ring-unresolved
+ * on the layer-0 guess): layer 0 is "Municipal Utility Districts"; the
+ * Parcels layer is LAYER 1 (fields incl. Prop_ID), and a roster prop_id
+ * query against layer 1 resolves. The layer-0 convention assumption does
+ * not hold on this service.
  */
-const CALDWELL_COUNTY_CADASTRAL_LAYER_0 =
-  "https://services.arcgis.com/rVxY74DxxIDrDbc0/arcgis/rest/services/Caldwell_CAD_Parcel_Map/FeatureServer/0";
+const CALDWELL_COUNTY_CADASTRAL_PARCELS_LAYER =
+  "https://services.arcgis.com/rVxY74DxxIDrDbc0/arcgis/rest/services/Caldwell_CAD_Parcel_Map/FeatureServer/1";
 
 export const CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
   {
@@ -508,7 +507,7 @@ export const CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRo
     status: "pre-flight-pending",
     zoningRegime: "unzoned",
     railPerParcel: {
-      featureServerLayerUrl: CALDWELL_COUNTY_CADASTRAL_LAYER_0,
+      featureServerLayerUrl: CALDWELL_COUNTY_CADASTRAL_PARCELS_LAYER,
       parcelFilter: { kind: "noFilter" },
       districtField: "",
       districtValueByPrefix: {},
@@ -521,7 +520,7 @@ export const CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRo
       vintageYyyymm: "202503",
       featureCount: 26155,
       propIdBadRate: 0.0074,
-      cadastralQueryUrl: CALDWELL_COUNTY_CADASTRAL_LAYER_0,
+      cadastralQueryUrl: CALDWELL_COUNTY_CADASTRAL_PARCELS_LAYER,
     },
     join: {
       joinKey: "prop_id",
