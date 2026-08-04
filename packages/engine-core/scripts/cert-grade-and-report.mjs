@@ -81,23 +81,60 @@ export function stripLeadingArgSeparator(argv) {
   return argv.length > 0 && argv[0] === "--" ? argv.slice(1) : argv;
 }
 
-function extractWrapperArgs(rawArgv) {
+/**
+ * Extracts this wrapper's own row-identity attribution from argv, alongside
+ * the unmodified passthrough array handed to block13-cert-grade.mjs.
+ *
+ * S4 addendum fix (2026-08-04): this used to only recognize
+ * `--preflight-row-id=X` (the `=`-joined form) — the space-separated form
+ * `--preflight-row-id X` fell into a no-op branch that never captured the
+ * next argv token as the value, leaving `preflightRowId` null even though
+ * BOTH tokens were still forwarded unchanged to block13-cert-grade.mjs
+ * (which DOES parse the space-separated form correctly, so the underlying
+ * grading ran against the right row). The wrapper's own certSummary.rowId
+ * then silently fell back to the "Bastrop" default and clobbered the
+ * previous city cert in county_gate_cert_state. Fixed by consuming the next
+ * token (mirrors block13-cert-grade.mjs's and warden-sweep.mjs's own arg
+ * parsing) for BOTH `--row-id` (new, explicit) and `--preflight-row-id`
+ * (existing pass-through flag).
+ *
+ * Identity precedence (per the addendum): explicit `--row-id` first, then
+ * `--preflight-row-id` (the flag every existing invocation already passes
+ * through), then the legacy "Bastrop" default ONLY when neither is given —
+ * so the original Bastrop-full-coverage invocation (which sets neither) is
+ * unaffected.
+ */
+export function extractWrapperArgs(rawArgv) {
   const argv = stripLeadingArgSeparator(rawArgv);
   const passthrough = [];
   let withQuarantine = false;
   let preflightRowId = null;
-  for (const a of argv) {
+  let explicitRowId = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
     if (a === "--with-quarantine") {
       withQuarantine = true;
       continue;
     }
-    if (a.startsWith("--preflight-row-id=")) preflightRowId = a.slice("--preflight-row-id=".length).trim();
-    else if (a === "--preflight-row-id") {
-      // value is the next argv element; still pass both through unchanged.
+    if (a.startsWith("--preflight-row-id=")) {
+      preflightRowId = a.slice("--preflight-row-id=".length).trim();
+    } else if (a === "--preflight-row-id") {
+      preflightRowId = String(argv[i + 1] || "").trim();
+      // value is the next argv element; still pass both through unchanged
+      // (do not consume/skip it — block13-cert-grade.mjs parses it itself).
+    } else if (a.startsWith("--row-id=")) {
+      explicitRowId = a.slice("--row-id=".length).trim();
+    } else if (a === "--row-id") {
+      explicitRowId = String(argv[i + 1] || "").trim();
+      // --row-id is THIS wrapper's own attribution-only flag (not a
+      // block13-cert-grade.mjs flag) — still forwarded unchanged below since
+      // an unrecognized flag on the target script is harmless passthrough,
+      // consistent with how every other wrapper flag here behaves.
     }
     passthrough.push(a);
   }
-  return { passthrough, withQuarantine, preflightRowId };
+  const rowId = explicitRowId || preflightRowId || "Bastrop";
+  return { passthrough, withQuarantine, preflightRowId, explicitRowId, rowId };
 }
 
 /**
@@ -205,7 +242,7 @@ async function postQuarantine(ledgerConfig, rowId) {
 }
 
 async function main() {
-  const { passthrough, withQuarantine, preflightRowId } = extractWrapperArgs(process.argv.slice(2));
+  const { passthrough, withQuarantine, rowId } = extractWrapperArgs(process.argv.slice(2));
 
   const result = await runTargetScript(passthrough);
   if (result.stdout) process.stdout.write(result.stdout);
@@ -230,7 +267,6 @@ async function main() {
     return;
   }
 
-  const rowId = preflightRowId || "Bastrop";
   const row = loadJurisdictionRegistryRowById(rowId);
   const fips = row?.fips ?? COUNTY_FIPS;
 

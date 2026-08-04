@@ -31,15 +31,10 @@
 import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 import { runOnboardPreflight } from "../src/registry/onboard-preflight.ts";
-import { loadRegistryDistrictCohort } from "../src/registry/parcel-cohort-loader.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
 import { gradeOneParcelInQueryMode } from "../src/registry/cert-grade-core.ts";
-import {
-  buildGeometryParityProbe,
-  buildServePathHealthProbe,
-  buildCostSampleProbe,
-} from "../src/registry/preflight-probes.ts";
+import { buildOnboardPreflightDeps } from "../src/registry/preflight-probes.ts";
 
 function parseArgs(argv) {
   const out = { fips: null };
@@ -67,19 +62,6 @@ const storageHandle = url ? createPgStorage({ databaseUrl: url, maxConnections: 
 const retrievalApiUrl = process.env.RETRIEVAL_API_URL?.trim() || null;
 const retrievalApiKey = process.env.RETRIEVAL_API_KEY?.trim() || null;
 
-/**
- * Deterministic ~5-parcel sample for a row's cohort: load the full
- * registry-keyed cohort (buildWhereClause via loadRegistryDistrictCohort,
- * same cohort source the roster loader uses) and take the first 5 by prop
- * id, sorted ascending as STRINGS (prop ids are not reliably numeric across
- * jurisdictions) so reruns compare byte-for-byte.
- */
-async function loadDeterministicSample(row, sampleSize = 5) {
-  const cohort = await loadRegistryDistrictCohort(row.fips, null);
-  const sortedIds = [...cohort.parcelNodeIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return sortedIds.slice(0, sampleSize);
-}
-
 /** Road-node context shared by the geometry-parity sample grade (mirrors block13-cert-grade.mjs's setup). */
 async function loadRoadsForFips(fips) {
   if (!sql) return [];
@@ -91,112 +73,29 @@ async function loadRoadsForFips(fips) {
   return roadRows.map((r) => roadAtomToWarmSource(r.body)).filter(Boolean);
 }
 
-/** Rail A / zoning source reachability — a plain HTTP HEAD/GET against the registry row's URL. */
-async function probeHttpReachable(targetUrl, label) {
-  if (!targetUrl) return { reachable: false, detail: `${label}: no URL on row` };
-  try {
-    const res = await fetch(targetUrl, { method: "GET", signal: AbortSignal.timeout(10_000) });
-    return { reachable: res.ok, detail: res.ok ? undefined : `${label} HTTP ${res.status}` };
-  } catch (err) {
-    return { reachable: false, detail: `${label}: ${err instanceof Error ? err.message : String(err)}` };
-  }
-}
-
-const deps = {
-  probeRailASource: async (row) => {
-    const layerUrl = row.railPerParcel?.featureServerLayerUrl;
-    if (!layerUrl) return { reachable: false, detail: "no railPerParcel featureServerLayerUrl on row" };
-    return probeHttpReachable(`${layerUrl.replace(/\/$/, "")}?f=json`, "Rail A featureServer");
-  },
-  probeZoningSource: async (row) => {
-    // The registry row does not yet carry a distinct zoning-source URL field
-    // (zoning is served off the same Rail A layer for euclidean-zoned rows
-    // today); probe the same layer as a reachability proxy.
-    const layerUrl = row.railPerParcel?.featureServerLayerUrl;
-    if (!layerUrl) return { reachable: false, detail: "no zoning source wired on row" };
-    return probeHttpReachable(`${layerUrl.replace(/\/$/, "")}?f=json`, "zoning source");
-  },
-  // NOTE: buildable-envelope atom bodies carry `parcelNodeId` (e.g.
-  // "48021:34145"), never a `countyFips` key — confirmed against
-  // emit-buildable-envelope.ts and every other county-scoped query in this
-  // repo (block13-cert-grade.mjs, depth-warm-*-batch.mjs, tally-*-depth.mjs
-  // all filter on `body->>'parcelNodeId' LIKE '<fips>:%'`). Filtering on a
-  // key that never exists on the row silently matches zero atoms — a 0/0
-  // "PASS" that looks like "measured, zero superseded" but is actually
-  // "measurement path broken" (caught live against Bastrop; see
-  // onboard-preflight.ts's MEASURE-EMPTY-COHORT decline, which is the
-  // backstop for this class of bug even after this fix).
-  probeSupersededCohort: sql
-    ? async (row) => {
-        const fipsPrefix = `${row.fips}:%`;
-        const [{ total }] = await sql`
-          SELECT count(*)::int AS total FROM atoms
-          WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' LIKE ${fipsPrefix}
-        `;
-        const [{ superseded }] = await sql`
-          SELECT count(*)::int AS superseded FROM atoms
-          WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' LIKE ${fipsPrefix}
-            AND body ? 'supersededVintage'
-        `;
-        return { supersededCount: superseded, totalCount: total };
-      }
-    : undefined,
-  probeMixedVintageResidue: sql
-    ? async (row) => {
-        const fipsPrefix = `${row.fips}:%`;
-        const [{ residue }] = await sql`
-          SELECT count(*)::int AS residue FROM atoms
-          WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' LIKE ${fipsPrefix}
-            AND body ? 'staleResidue'
-        `;
-        return { residueCount: residue, measured: true };
-      }
-    : undefined,
-  // Check 5 — geometry parity: needs DATABASE_URL (+ TXGIO/CORTEX_DATABASE_URL)
-  // to run the same grading machinery block13-cert-grade.mjs uses, on a
-  // deterministic ~5-parcel sample of the row's cohort.
-  probeGeometryParity:
-    sql && txSql && storageHandle
-      ? buildGeometryParityProbe({
-          sql,
-          txSql,
-          storage: storageHandle.storage,
-          descriptor: bastropDescriptor,
-          loadSample: loadDeterministicSample,
-          loadRoads: loadRoadsForFips,
-          gradeOneParcel: gradeOneParcelInQueryMode,
-        })
-      : undefined,
-  // Check 6 — serve-path health: needs RETRIEVAL_API_URL + RETRIEVAL_API_KEY
-  // for the deployed retrieval-api (GET /health/search, authed GET /search,
-  // authed GET /property-nodes/:id/atom-chain). Ledger-write probing is a
-  // named partial: the coverage ledger lives in map/cortex Neon, not engine.
-  probeServePathHealth:
-    retrievalApiUrl && retrievalApiKey
-      ? buildServePathHealthProbe({
-          baseUrl: retrievalApiUrl,
-          apiKey: retrievalApiKey,
-          loadSample: loadDeterministicSample,
-        })
-      : undefined,
-  // Check 7 — cost sample: piggybacks on the geometry-parity sample run,
-  // measuring wall-clock + external call count and extrapolating to the
-  // row's full cohort size against the $200 commitment-#3 gate. Shares the
-  // same creds as check 5 (no separate env needed).
-  probeCostSample:
-    sql && txSql && storageHandle
-      ? buildCostSampleProbe({
-          sql,
-          txSql,
-          storage: storageHandle.storage,
-          descriptor: bastropDescriptor,
-          loadSample: loadDeterministicSample,
-          loadRoads: loadRoadsForFips,
-          gradeOneParcel: gradeOneParcelInQueryMode,
-          loadCohortCount: async (row) => (await loadRegistryDistrictCohort(row.fips, null)).count,
-        })
-      : undefined,
-};
+// NOTE: buildable-envelope atom bodies carry `parcelNodeId` (e.g.
+// "48021:34145"), never a `countyFips` key — confirmed against
+// emit-buildable-envelope.ts and every other county-scoped query in this
+// repo (block13-cert-grade.mjs, depth-warm-*-batch.mjs, tally-*-depth.mjs
+// all filter on `body->>'parcelNodeId' LIKE '<fips>:%'`). Filtering on a
+// key that never exists on the row silently matches zero atoms — a 0/0
+// "PASS" that looks like "measured, zero superseded" but is actually
+// "measurement path broken" (caught live against Bastrop; see
+// onboard-preflight.ts's MEASURE-EMPTY-COHORT decline, which is the
+// backstop for this class of bug even after this fix). Preserved inside
+// buildOnboardPreflightDeps (S4) — the probe-wiring itself moved to
+// src/registry/preflight-probes.ts so block13-cert-grade.mjs's internal
+// preflight can reuse the SAME live wiring instead of an empty deps object.
+const deps = buildOnboardPreflightDeps({
+  sql: sql ?? undefined,
+  txSql: txSql ?? undefined,
+  storage: storageHandle?.storage,
+  descriptor: bastropDescriptor,
+  retrievalApiUrl,
+  retrievalApiKey,
+  gradeOneParcel: gradeOneParcelInQueryMode,
+  loadRoads: loadRoadsForFips,
+});
 
 try {
   const { report, ledgerEvents } = await runOnboardPreflight(args.fips, deps);

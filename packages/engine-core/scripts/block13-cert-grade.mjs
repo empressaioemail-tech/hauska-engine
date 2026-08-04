@@ -31,6 +31,7 @@ import {
   deriveScopeAnnotations,
 } from "../src/registry/onboard-preflight.ts";
 import { loadJurisdictionRegistryRowById } from "../src/registry/jurisdiction-registry.ts";
+import { buildOnboardPreflightDeps } from "../src/registry/preflight-probes.ts";
 // Script depends on src — never the reverse. gradeOneParcelInQueryMode and
 // gradeBlock13Parcel are the reusable per-parcel grading machinery; they
 // live in src/registry/cert-grade-core.ts precisely so other src/ modules
@@ -170,11 +171,40 @@ const answerKeyMode = args.answerKey === "descriptor" ? "descriptor" : "layer23"
 // existing Bastrop full-coverage invocation never sets --preflight-row-id,
 // so the report carries no scopeAnnotations key at all (byte-identical to
 // before this change).
+//
+// S4 fix: the internal preflight call used to pass an EMPTY deps object
+// ({}), so every probe-backed check (1/2/4/5/6/7/8) declined "not runnable:
+// <probe> not configured" regardless of whether the source/DB/retrieval-api
+// was actually reachable — spurious not-runnable scopeAnnotations (the
+// county 20/20 cert carries one such artifact). Now wires the SAME probe
+// builders the standalone onboard-preflight.mjs CLI wires
+// (buildOnboardPreflightDeps, src/registry/preflight-probes.ts), reusing sql
+// / txSql / storage already open in this script for the roster grade run.
+// Env-gated identically to the CLI: RETRIEVAL_API_URL / RETRIEVAL_API_KEY
+// absent (this script never required them) means check 6 still honestly
+// declines not-runnable, same as before — no behavior change without env.
 let scopeAnnotations;
 if (args.preflightRowId) {
   const rowForFips = loadJurisdictionRegistryRowById(args.preflightRowId);
   if (rowForFips) {
-    const { report: preflightReport } = await runOnboardPreflight(rowForFips.fips, {});
+    const preflightDeps = buildOnboardPreflightDeps({
+      sql,
+      txSql,
+      storage: storage.storage,
+      descriptor,
+      retrievalApiUrl: process.env.RETRIEVAL_API_URL?.trim() || null,
+      retrievalApiKey: process.env.RETRIEVAL_API_KEY?.trim() || null,
+      gradeOneParcel: gradeOneParcelInQueryMode,
+      loadRoads: async (fips) => {
+        const rows = await sql`
+          SELECT body FROM atoms WHERE entity_type = 'road-node'
+            AND body->>'countyFips' = ${fips}
+            AND coalesce(body->>'status', 'active') = 'active'
+        `;
+        return rows.map((r) => roadAtomToWarmSource(r.body)).filter(Boolean);
+      },
+    });
+    const { report: preflightReport } = await runOnboardPreflight(rowForFips.fips, preflightDeps);
     const rowReport = preflightReport.rows.find((r) => r.rowId === args.preflightRowId);
     const annotations = deriveScopeAnnotations(rowReport);
     if (annotations.length > 0) scopeAnnotations = annotations;

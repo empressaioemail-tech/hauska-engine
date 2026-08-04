@@ -24,11 +24,15 @@
  * decline/pass mapping is unit-testable with stubs, with no live DB/network
  * required for the tests themselves.
  */
+import { loadRegistryDistrictCohortByRow } from "./parcel-cohort-loader.js";
 import type { JurisdictionRegistryRow } from "./jurisdiction-registry.js";
 import type {
   SourceProbeResult,
   CostProbeResult,
   GeometryParityProbeResult,
+  SupersededCohortProbeResult,
+  MixedVintageProbeResult,
+  PreflightDeps,
 } from "./onboard-preflight.js";
 import type { CertGradeContext, ParcelGradeResult } from "./cert-grade-core.js";
 
@@ -372,4 +376,148 @@ export function buildCostSampleProbe(
         `$/1k-calls=${COST_MODEL_USD_PER_1K_EXTERNAL_CALLS} (ESTIMATE), extrapolated from sample only — not measured cohort cost`,
     };
   };
+}
+
+/**
+ * Plain HTTP GET reachability probe (mirrors onboard-preflight.mjs's inline
+ * `probeHttpReachable`) — shared so checks 1/2 build the same way from every
+ * caller (the CLI and, via `buildOnboardPreflightDeps` below, the cert-path
+ * preflight in block13-cert-grade.mjs).
+ */
+async function probeHttpReachableShared(
+  fetchImpl: typeof fetch,
+  targetUrl: string | null | undefined,
+  label: string,
+): Promise<SourceProbeResult> {
+  if (!targetUrl) return { reachable: false, detail: `${label}: no URL on row` };
+  try {
+    const res = await fetchImpl(targetUrl, { method: "GET", signal: AbortSignal.timeout(10_000) });
+    return { reachable: res.ok, detail: res.ok ? undefined : `${label} HTTP ${res.status}` };
+  } catch (err) {
+    return { reachable: false, detail: `${label}: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+export interface OnboardPreflightDepsInput {
+  /** Atoms-DB sql tag. Absent (no DATABASE_URL) means checks 4/5/7/8 stay not-runnable. */
+  readonly sql?: CertGradeContext["sql"];
+  /** TxGIO/cortex sql tag for the geometry-parity sample grade (checks 5/7). */
+  readonly txSql?: CertGradeContext["sql"];
+  readonly storage?: CertGradeContext["storage"];
+  readonly descriptor: unknown;
+  readonly retrievalApiUrl?: string | null;
+  readonly retrievalApiKey?: string | null;
+  /** Injectable fetch (tests stub this; defaults to global fetch). */
+  readonly fetchImpl?: typeof fetch;
+  readonly gradeOneParcel: GradeOneParcelFn;
+  readonly loadRoads: (fips: string) => Promise<unknown[]>;
+}
+
+/**
+ * Builds the SAME live PreflightDeps shape onboard-preflight.mjs constructs
+ * inline (probeRailASource / probeZoningSource / probeSupersededCohort /
+ * probeGeometryParity / probeServePathHealth / probeCostSample /
+ * probeMixedVintageResidue), so any caller running an internal preflight
+ * (the CLI, or block13-cert-grade.mjs's --preflight-row-id path) gets the
+ * same probe wiring instead of an ad hoc/empty deps object. Env-gated
+ * identically to the CLI: a probe that needs sql/txSql/storage or the
+ * retrieval-api URL+key is omitted (undefined) when those are not supplied,
+ * which makes its check honestly decline "not runnable: <missing env>" —
+ * same behavior as today when no env is configured, no new fabricated PASS.
+ *
+ * `loadDeterministicSample` here resolves by rowId
+ * (`loadRegistryDistrictCohortByRow`) rather than by fips
+ * (`loadRegistryDistrictCohort`) — the row-disambiguated loader added
+ * alongside this function — since every probe here already receives a
+ * specific `JurisdictionRegistryRow`, not just its fips.
+ */
+export function buildOnboardPreflightDeps(input: OnboardPreflightDepsInput): PreflightDeps {
+  const fetchImpl = input.fetchImpl ?? fetch;
+
+  async function loadDeterministicSample(
+    row: JurisdictionRegistryRow,
+    sampleSize = 5,
+  ): Promise<string[]> {
+    const cohort = await loadRegistryDistrictCohortByRow(row.rowId, null);
+    const sortedIds = [...cohort.parcelNodeIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    return sortedIds.slice(0, sampleSize);
+  }
+
+  const hasGradingCreds = Boolean(input.sql && input.txSql && input.storage);
+  const hasServePathCreds = Boolean(input.retrievalApiUrl && input.retrievalApiKey);
+
+  const deps: PreflightDeps = {
+    probeRailASource: async (row) => {
+      const layerUrl = row.railPerParcel?.featureServerLayerUrl;
+      if (!layerUrl) return { reachable: false, detail: "no railPerParcel featureServerLayerUrl on row" };
+      return probeHttpReachableShared(fetchImpl, `${layerUrl.replace(/\/$/, "")}?f=json`, "Rail A featureServer");
+    },
+    probeZoningSource: async (row) => {
+      const layerUrl = row.railPerParcel?.featureServerLayerUrl;
+      if (!layerUrl) return { reachable: false, detail: "no zoning source wired on row" };
+      return probeHttpReachableShared(fetchImpl, `${layerUrl.replace(/\/$/, "")}?f=json`, "zoning source");
+    },
+  };
+
+  if (input.sql) {
+    const sql = input.sql;
+    deps.probeSupersededCohort = async (row): Promise<SupersededCohortProbeResult> => {
+      const fipsPrefix = `${row.fips}:%`;
+      const totalRows = await sql`
+        SELECT count(*)::int AS total FROM atoms
+        WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' LIKE ${fipsPrefix}
+      `;
+      const supersededRows = await sql`
+        SELECT count(*)::int AS superseded FROM atoms
+        WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' LIKE ${fipsPrefix}
+          AND body ? 'supersededVintage'
+      `;
+      const total = (totalRows[0] as { total: number } | undefined)?.total ?? 0;
+      const superseded = (supersededRows[0] as { superseded: number } | undefined)?.superseded ?? 0;
+      return { supersededCount: superseded, totalCount: total };
+    };
+    deps.probeMixedVintageResidue = async (row): Promise<MixedVintageProbeResult> => {
+      const fipsPrefix = `${row.fips}:%`;
+      const residueRows = await sql`
+        SELECT count(*)::int AS residue FROM atoms
+        WHERE entity_type = 'buildable-envelope' AND body->>'parcelNodeId' LIKE ${fipsPrefix}
+          AND body ? 'staleResidue'
+      `;
+      const residue = (residueRows[0] as { residue: number } | undefined)?.residue ?? 0;
+      return { residueCount: residue, measured: true };
+    };
+  }
+
+  if (hasGradingCreds) {
+    deps.probeGeometryParity = buildGeometryParityProbe({
+      sql: input.sql!,
+      txSql: input.txSql!,
+      storage: input.storage!,
+      descriptor: input.descriptor,
+      loadSample: loadDeterministicSample,
+      loadRoads: input.loadRoads,
+      gradeOneParcel: input.gradeOneParcel,
+    });
+    deps.probeCostSample = buildCostSampleProbe({
+      sql: input.sql!,
+      txSql: input.txSql!,
+      storage: input.storage!,
+      descriptor: input.descriptor,
+      loadSample: loadDeterministicSample,
+      loadRoads: input.loadRoads,
+      gradeOneParcel: input.gradeOneParcel,
+      loadCohortCount: async (row) => (await loadRegistryDistrictCohortByRow(row.rowId, null)).count,
+    });
+  }
+
+  if (hasServePathCreds) {
+    deps.probeServePathHealth = buildServePathHealthProbe({
+      baseUrl: input.retrievalApiUrl!,
+      apiKey: input.retrievalApiKey!,
+      loadSample: loadDeterministicSample,
+      fetchImpl,
+    });
+  }
+
+  return deps;
 }

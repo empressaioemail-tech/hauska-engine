@@ -1,7 +1,11 @@
 /**
  * Registry-keyed warm cohort loader (Phase D / onboard(fips) core).
  */
-import { loadJurisdictionRegistryRow, type JurisdictionRegistryRow } from "./jurisdiction-registry.js";
+import {
+  loadJurisdictionRegistryRow,
+  loadJurisdictionRegistryRowById,
+  type JurisdictionRegistryRow,
+} from "./jurisdiction-registry.js";
 
 export interface RegistryDistrictCohort {
   countyFips: string;
@@ -58,15 +62,19 @@ export function buildWhereClause(
 }
 
 /**
- * Paginate ALL parcels for a jurisdiction district from the frozen registry Rail-A layer.
+ * Shared pagination core for a resolved row: both `loadRegistryDistrictCohort`
+ * (fips-keyed, resolves via the active-row heuristic) and
+ * `loadRegistryDistrictCohortByRow` (rowId-keyed, resolves an exact row) build
+ * their WHERE clause and cohort the same way once a specific
+ * `JurisdictionRegistryRow` is in hand — only the resolution step differs.
  */
-export async function loadRegistryDistrictCohort(
+async function paginateCohortForRow(
+  row: JurisdictionRegistryRow,
   countyFips: string,
-  districtPrefix: string | null = null,
-  options: { fetchImpl?: typeof fetch } = {},
+  districtPrefix: string | null,
+  options: { fetchImpl?: typeof fetch },
 ): Promise<RegistryDistrictCohort> {
-  const row = loadJurisdictionRegistryRow(countyFips);
-  if (!row?.railPerParcel) {
+  if (!row.railPerParcel) {
     throw new Error(
       `registry cohort: no railPerParcel row for FIPS ${countyFips} (honest-absence — not onboarded for factory warm)`,
     );
@@ -114,4 +122,59 @@ export async function loadRegistryDistrictCohort(
     source: `registry-railPerParcel:${row.countyName}`,
     registryVersion: row.provenance.registryVersion,
   };
+}
+
+/**
+ * Paginate ALL parcels for a jurisdiction district from the frozen registry Rail-A layer.
+ *
+ * Resolves the row by FIPS via `loadJurisdictionRegistryRow`, which returns
+ * the first "active" row for that fips — ambiguous when more than one row
+ * shares a fips (e.g. Bastrop city + Bastrop County unincorporated + Elgin,
+ * all 48021). Safe today because Bastrop city is the only "active" row on
+ * 48021. Callers that already hold a specific `JurisdictionRegistryRow` (or
+ * rowId) — e.g. onboard-preflight and warden-sweep, which resolve a row by
+ * rowId and then call this function with `row.fips` — should use
+ * `loadRegistryDistrictCohortByRow` instead once more than one row per fips
+ * is "active", to avoid silently grading the wrong row's cohort.
+ */
+export async function loadRegistryDistrictCohort(
+  countyFips: string,
+  districtPrefix: string | null = null,
+  options: { fetchImpl?: typeof fetch } = {},
+): Promise<RegistryDistrictCohort> {
+  const row = loadJurisdictionRegistryRow(countyFips);
+  if (!row?.railPerParcel) {
+    throw new Error(
+      `registry cohort: no railPerParcel row for FIPS ${countyFips} (honest-absence — not onboarded for factory warm)`,
+    );
+  }
+  return paginateCohortForRow(row, countyFips, districtPrefix, options);
+}
+
+/**
+ * Paginate ALL parcels for a jurisdiction district, resolving the row by its
+ * exact `rowId` rather than by fips — the disambiguated counterpart to
+ * `loadRegistryDistrictCohort` for fips that carry more than one registry row
+ * (e.g. 48021: "Bastrop", "Bastrop County (unincorporated)", "Elgin"). Reuses
+ * `buildWhereClause` unchanged. Honest-absence: throws a named error when the
+ * rowId is unknown or the row has no `railPerParcel` (never fabricates a
+ * cohort), matching `loadRegistryDistrictCohort`'s error contract.
+ */
+export async function loadRegistryDistrictCohortByRow(
+  rowId: string,
+  districtPrefix: string | null = null,
+  options: { fetchImpl?: typeof fetch } = {},
+): Promise<RegistryDistrictCohort> {
+  const row = loadJurisdictionRegistryRowById(rowId);
+  if (!row) {
+    throw new Error(
+      `registry cohort: unknown rowId ${rowId} (no such row in the frozen jurisdiction registry)`,
+    );
+  }
+  if (!row.railPerParcel) {
+    throw new Error(
+      `registry cohort: no railPerParcel row for rowId ${rowId} (FIPS ${row.fips}; honest-absence — not onboarded for factory warm)`,
+    );
+  }
+  return paginateCohortForRow(row, row.fips, districtPrefix, options);
 }

@@ -17,7 +17,12 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 
 // @ts-expect-error, .mjs has no type declarations; the exported function shapes are asserted at the call sites below.
-import { buildCertGradeIngestPayload, buildQuarantineIngestPayload, stripLeadingArgSeparator } from "../cert-grade-and-report.mjs";
+import {
+  buildCertGradeIngestPayload,
+  buildQuarantineIngestPayload,
+  stripLeadingArgSeparator,
+  extractWrapperArgs,
+} from "../cert-grade-and-report.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_SOURCE = readFileSync(join(HERE, "../cert-grade-and-report.mjs"), "utf8");
@@ -83,6 +88,59 @@ const FIXTURE_WITH_SCOPE_ANNOTATIONS = {
     { rail: "zoningSourceReachableOrUnzoned", declineReason: "source unreachable, needs adapter: zoning source not yet wired", defectClass: "ADAPTER-NEEDED" },
   ],
 };
+
+/**
+ * S4 addendum (2026-08-04) regression coverage: a live seeding run with
+ * `--preflight-row-id "Bastrop County (unincorporated)"` (space-separated
+ * argv, the form Nick hand-carries into agent windows) POSTed its 20/20 cert
+ * under certSummary.rowId "Bastrop" — clobbering the city's 7/7 in
+ * county_gate_cert_state — because extractWrapperArgs only recognized the
+ * `--preflight-row-id=X` (equals-joined) form; the space-separated form fell
+ * through to a no-op branch, leaving preflightRowId null and rowId falling
+ * back to the legacy "Bastrop" default even though BOTH argv tokens were
+ * still forwarded to (and correctly parsed by) block13-cert-grade.mjs.
+ */
+describe("cert-grade-and-report.mjs, extractWrapperArgs (S4 addendum — row-identity attribution)", () => {
+  it("captures --preflight-row-id in the space-separated form (the exact regression shape)", () => {
+    const { rowId, preflightRowId } = extractWrapperArgs([
+      "--preflight-row-id",
+      "Bastrop County (unincorporated)",
+      "--roster-from=query",
+    ]);
+    expect(preflightRowId).toBe("Bastrop County (unincorporated)");
+    expect(rowId).toBe("Bastrop County (unincorporated)");
+  });
+
+  it("captures --preflight-row-id in the equals-joined form (pre-existing, must keep working)", () => {
+    const { rowId } = extractWrapperArgs(["--preflight-row-id=Elgin"]);
+    expect(rowId).toBe("Elgin");
+  });
+
+  it("still forwards both argv tokens unchanged to the passthrough array (space-separated form)", () => {
+    const { passthrough } = extractWrapperArgs([
+      "--preflight-row-id",
+      "Bastrop County (unincorporated)",
+    ]);
+    expect(passthrough).toEqual(["--preflight-row-id", "Bastrop County (unincorporated)"]);
+  });
+
+  it("an explicit --row-id takes precedence over --preflight-row-id when both are given", () => {
+    const { rowId, explicitRowId, preflightRowId } = extractWrapperArgs([
+      "--preflight-row-id",
+      "Bastrop",
+      "--row-id",
+      "Elgin",
+    ]);
+    expect(explicitRowId).toBe("Elgin");
+    expect(preflightRowId).toBe("Bastrop");
+    expect(rowId).toBe("Elgin");
+  });
+
+  it("falls back to the legacy 'Bastrop' identity only when neither flag is given (existing full-coverage invocation, unaffected)", () => {
+    const { rowId } = extractWrapperArgs(["--roster-from=block13"]);
+    expect(rowId).toBe("Bastrop");
+  });
+});
 
 describe("cert-grade-and-report.mjs, buildCertGradeIngestPayload", () => {
   it("derives a certSummary carrying label, blockPass, and gradedAt from the captured report", () => {

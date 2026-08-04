@@ -83,6 +83,39 @@ export interface PerParcelCohortRail {
  */
 export type RegistryRowStatus = "active" | "pre-flight-pending";
 
+/**
+ * FLIP-BLOCKED (S4, 2026-08-04): BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW
+ * and ELGIN_REGISTRY_ROW cannot yet be promoted from "pre-flight-pending" to
+ * "active", even after clearing onboard-preflight, without first migrating
+ * every fips-keyed caller off the ambiguous `loadJurisdictionRegistryRow(fips)`
+ * / `loadRegistryDistrictCohort(fips, ...)` path. Both fips 48021 rows share
+ * their fips with BASTROP_REGISTRY_ROW; `loadJurisdictionRegistryRow` returns
+ * only the first "active" row for a fips (`rows.find(r => r.status ===
+ * "active") ?? rows[0]`), so a second "active" row on 48021 would silently
+ * resolve to the wrong row for any caller still keyed by fips alone.
+ *
+ * Audited callers (S4, engine main as of cbf1741) that would break on flip:
+ *   - onboard-preflight.mjs's `loadDeterministicSample(row, ...)` calls
+ *     `loadRegistryDistrictCohort(row.fips, null)` — discards the specific
+ *     `row` (Bastrop / county-unincorporated / Elgin) it was given and
+ *     re-resolves by fips only. Feeds checks 5 and 7 (geometry parity, cost
+ *     sample) for EVERY row on a multi-row fips.
+ *   - warden-sweep.mjs's `loadDeterministicSample(fips, ...)` (called with
+ *     `row.fips` after resolving `row` via `loadJurisdictionRegistryRowById`)
+ *     has the same defect.
+ * Both are fixable by switching to `loadRegistryDistrictCohortByRow(row.rowId,
+ * ...)` (added S4, parcel-cohort-loader.ts) — not yet done, since flipping
+ * the status is what would make the bug live (today only one row per fips is
+ * "active", so the ambiguity is dormant).
+ *
+ * Callers already rowId-keyed and unaffected: block13-cert-grade.mjs,
+ * cert-grade-and-report.mjs, warden-sweep.mjs's own row resolution (all use
+ * `loadJurisdictionRegistryRowById`, not the fips-keyed loader).
+ *
+ * Unblock path: migrate the two call sites above to
+ * `loadRegistryDistrictCohortByRow`, then flip these two rows' `status`.
+ */
+
 /** A frozen source-adapter row for one jurisdiction (FIPS-keyed; multiple rows can share a fips — e.g. a city and its county). */
 export interface JurisdictionRegistryRow {
   /**
