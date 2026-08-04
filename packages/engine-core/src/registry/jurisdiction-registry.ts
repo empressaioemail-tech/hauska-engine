@@ -358,9 +358,417 @@ export const ELGIN_REGISTRY_ROW: JurisdictionRegistryRow = {
   },
 };
 
+/**
+ * Central TX county fan (2026-08-04) — EIGHT unincorporated-county registry
+ * rows, pattern-matched to BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW: whole-
+ * county noFilter cohort, unzoned regime (honest zoning/setback decline is
+ * the doctrine PASS state, not a defect), status "pre-flight-pending".
+ *
+ * railC values (downloadUrl, vintageYyyymm, featureCount, propIdBadRate) are
+ * sourced verbatim from the live-probed TxGIO StratMap matrix
+ * (doc_repo `_land_records/txgio_stratmap_county_matrix_2026-08-02.json`,
+ * generated 2026-08-02). cadastralQueryUrl values are sourced from the
+ * planner cadastral recon (doc_repo `_inbox/2026-08-04_county_fan_cadastral_recon.md`)
+ * — read-only ArcGIS REST probes against each county's live CAD/GIS service,
+ * confirming service reachability, layer id, and prop-id field name.
+ *
+ * railPerParcel mirrors BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW's
+ * no-district shape for an unzoned regime: `parcelFilter: {kind: "noFilter"}`,
+ * and districtField/districtValueByPrefix are carried as empty placeholders
+ * (there is no district vocabulary to resolve for an unzoned county — the
+ * fields exist on the PerParcelCohortRail interface but are inert here,
+ * exactly as Bastrop County's row leaves districtField wired-but-unused for
+ * its noFilter cohort). featureServerLayerUrl reuses the row's own
+ * cadastralQueryUrl (the same live CAD parcel-attribute layer the grader
+ * queries at railC) — there is no separate zoning/setback record layer for
+ * an unzoned county, unlike Bastrop City's Parcels_One_Click zoning layer.
+ * Where cadastralQueryUrl is absent (Hays), railPerParcel is omitted entirely
+ * — the cert path must honest-fail-loud rather than default to a fabricated
+ * or borrowed source (see #242 cadastralQueryUrl fix; gradeUnzonedParcel /
+ * gradeOneParcelInQueryMode in cert-grade-core.ts already fail loud on a
+ * missing cadastralQueryUrl).
+ *
+ * EXCLUDED: Travis County (48453) is deliberately NOT added in this pass.
+ * Held per planner ruling 2026-08-04: Travis's prop_id bad-rate is 0.5147
+ * (>> the 0.25 HIGH_PROP_ID_BAD_RATE threshold; StratMap flags it
+ * HIGH_PROP_ID_BAD_RATE) — the default `joinKey: "prop_id"` is unsafe for
+ * Travis and it needs the `geo_id_or_address_crosswalk` JoinKey variant
+ * (already modeled on the JoinKey type specifically citing Travis) wired
+ * through the cohort loader before a Travis row can be authored safely.
+ * The cadastral recon separately flags an unresolved 2.16x count divergence
+ * between the county-run TCAD MapServer (386,682 live) and StratMap's
+ * 202508 vintage (834,936) for Travis — a second, independent reason not to
+ * freeze a Travis row from this recon alone. DO NOT add a Travis row here
+ * without first closing both the join-key gap and the count-divergence
+ * question; the next author should re-run recon rather than reuse these
+ * numbers as-is once the crosswalk is built.
+ */
+
+/** Bell County (48027) — BIS Consultants CAD-GIS vendor template; live count 169,398 vs StratMap 167,441 (ratio 1.012), CONFIRMED. */
+const BELL_COUNTY_CADASTRAL_LAYER_0 =
+  "https://services7.arcgis.com/EHW2HuuyZNO7DZct/arcgis/rest/services/BellCADWebService/FeatureServer/0";
+
+export const BELL_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "Bell County (unincorporated)",
+    fips: "48027",
+    countyName: "Bell",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    railPerParcel: {
+      featureServerLayerUrl: BELL_COUNTY_CADASTRAL_LAYER_0,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "prop_id",
+    },
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48027_lp.zip",
+      vintageYyyymm: "202503",
+      featureCount: 167441,
+      propIdBadRate: 0.0105,
+      cadastralQueryUrl: BELL_COUNTY_CADASTRAL_LAYER_0,
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-04",
+      registryVersion: "1.2.0",
+    },
+  };
+
+/** Bexar County (48029) — county-run maps.bexar.org (BCAD); live count 710,772 vs StratMap 709,541 (ratio 1.002), CONFIRMED. */
+const BEXAR_COUNTY_CADASTRAL_LAYER_0 =
+  "https://maps.bexar.org/arcgis/rest/services/Parcels/MapServer/0";
+
+export const BEXAR_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "Bexar County (unincorporated)",
+    fips: "48029",
+    countyName: "Bexar",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    railPerParcel: {
+      featureServerLayerUrl: BEXAR_COUNTY_CADASTRAL_LAYER_0,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "PropID",
+    },
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48029_lp.zip",
+      vintageYyyymm: "202507",
+      featureCount: 709541,
+      propIdBadRate: 0.0001,
+      cadastralQueryUrl: BEXAR_COUNTY_CADASTRAL_LAYER_0,
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-04",
+      registryVersion: "1.2.0",
+    },
+  };
+
+/**
+ * Caldwell County (48055) — Caldwell_CAD_Parcel_Map FeatureServer, the same
+ * hub already precedented by the 2026-07-27 RECIPE_PROOF county-lane pass
+ * (`_dispatches/2026-07-27_RECIPE_PROOF_caldwell_48055.md`,
+ * `_inbox/2026-07-27_RECIPE_PROOF_caldwell_road_recon_seed.json`). That pass
+ * named Road_Centerlines (layer 6), Lockhart/Luling/Martindale zoning layers
+ * (49/50/51), City_Limits (17), City_ETJ (18), and Road_Plan_2024 (45) — it
+ * did NOT name a parcels-layer id. Layer 0 is used here per this
+ * FeatureServer's standard ArcGIS convention (every other CONFIRMED county
+ * in the 2026-08-04 recon that follows the "layer 0 = Parcels" convention
+ * confirms it explicitly; Caldwell's own service was not re-probed for its
+ * parcels layer id in this pass — verify layer 0 resolves to the parcel
+ * attribute layer, not a different layer, before promoting this row out of
+ * pre-flight-pending).
+ */
+const CALDWELL_COUNTY_CADASTRAL_LAYER_0 =
+  "https://services.arcgis.com/rVxY74DxxIDrDbc0/arcgis/rest/services/Caldwell_CAD_Parcel_Map/FeatureServer/0";
+
+export const CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "Caldwell County (unincorporated)",
+    fips: "48055",
+    countyName: "Caldwell",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    railPerParcel: {
+      featureServerLayerUrl: CALDWELL_COUNTY_CADASTRAL_LAYER_0,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "prop_id",
+    },
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48055_lp.zip",
+      vintageYyyymm: "202503",
+      featureCount: 26155,
+      propIdBadRate: 0.0074,
+      cadastralQueryUrl: CALDWELL_COUNTY_CADASTRAL_LAYER_0,
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-04",
+      registryVersion: "1.2.0",
+    },
+  };
+
+/**
+ * Comal County (48091) — CONFIRMED WITH CAVEAT: the only discoverable layer
+ * (Comal_County_Parcels, id 40) is an explicit TNRIS/Harris Govern repackage
+ * acquired January 2021 — a stale snapshot, not a county-CAD-operated live
+ * service. Live count 92,549 is 11% BELOW StratMap's 103,537 (ratio 0.894),
+ * consistent with staleness rather than a fresher source. Recorded here
+ * per the recon's CONFIRMED-with-caveat verdict; the next author should
+ * weigh whether to hold Comal for a direct county GIS contact instead of
+ * treating this layer as authoritative-fresh.
+ */
+const COMAL_COUNTY_CADASTRAL_LAYER_40 =
+  "https://services6.arcgis.com/eNPJk90aMrXNOKF8/arcgis/rest/services/Comal_County_Parcels/FeatureServer/40";
+
+export const COMAL_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "Comal County (unincorporated)",
+    fips: "48091",
+    countyName: "Comal",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    railPerParcel: {
+      featureServerLayerUrl: COMAL_COUNTY_CADASTRAL_LAYER_40,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "PROP_ID",
+    },
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48091_lp.zip",
+      vintageYyyymm: "202503",
+      featureCount: 103537,
+      propIdBadRate: 0.0016,
+      // PROVENANCE CAVEAT (2026-08-04 recon): this layer is a stale 2021
+      // TNRIS/Harris Govern snapshot acquisition, NOT a county-CAD-live feed
+      // — live count (92,549) is 11% below the StratMap vintage above.
+      // Treat as CONFIRMED-schema / STALE-data, not authoritative-fresh.
+      cadastralQueryUrl: COMAL_COUNTY_CADASTRAL_LAYER_40,
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING", "CADASTRAL_LAYER_STALE_2021_SNAPSHOT"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-04",
+      registryVersion: "1.2.0",
+    },
+  };
+
+/** Guadalupe County (48187) — BIS Consultants CAD-GIS vendor template; live count 98,925 vs StratMap 95,571 (ratio 1.035), CONFIRMED. */
+const GUADALUPE_COUNTY_CADASTRAL_LAYER_0 =
+  "https://services9.arcgis.com/1l4hbpt78hjlsIcl/arcgis/rest/services/GuadalupeCADWebService/FeatureServer/0";
+
+export const GUADALUPE_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "Guadalupe County (unincorporated)",
+    fips: "48187",
+    countyName: "Guadalupe",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    railPerParcel: {
+      featureServerLayerUrl: GUADALUPE_COUNTY_CADASTRAL_LAYER_0,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "prop_id",
+    },
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48187_lp.zip",
+      vintageYyyymm: "202503",
+      featureCount: 95571,
+      propIdBadRate: 0.0042,
+      cadastralQueryUrl: GUADALUPE_COUNTY_CADASTRAL_LAYER_0,
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-04",
+      registryVersion: "1.2.0",
+    },
+  };
+
+/**
+ * Hays County (48209) — cadastralQueryUrl deliberately OMITTED. The
+ * 2026-08-04 recon found no live CAD-native ArcGIS REST service for Hays
+ * (searched hayscad.com, the Hays open-data hub, and the BIS Consultants
+ * vendor org — 0 results for `owner:bis_hayscad`). One weak candidate
+ * (a private engineering firm's static 2020 parcel snapshot,
+ * gis.urbaneng.com/.../HaysCountyParcels) was found and explicitly NOT
+ * recommended (thin/joined schema, not the CAD's authoritative roll).
+ * Per the #242 cadastralQueryUrl fix, an absent cadastralQueryUrl makes the
+ * per-parcel cert path fail LOUD rather than silently default to another
+ * county's endpoint — that loud-fail is the correct behavior for Hays until
+ * a live service is found. railPerParcel is omitted entirely for the same
+ * reason: there is no live layer to point it at.
+ * FOLLOW-UP: browse hayscad.com/data-downloads/ (bulk shapefile download,
+ * not a REST service, out of this recon's ArcGIS-REST-only remit) and the
+ * Hays open-data hub's full dataset catalog (title may not match the search
+ * terms tried) before concluding no live service exists at all.
+ */
+export const HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "Hays County (unincorporated)",
+    fips: "48209",
+    countyName: "Hays",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    // railPerParcel intentionally omitted — no live cadastral layer found
+    // (see class comment above); do not default to a borrowed layer.
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48209_lp.zip",
+      vintageYyyymm: "202503",
+      featureCount: 117427,
+      propIdBadRate: 0.0036,
+      // cadastralQueryUrl OMITTED — no live CAD-native ArcGIS REST service
+      // found (2026-08-04 recon). Absence forces the cert grader to
+      // fail loud (see #242) rather than silently default elsewhere.
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING", "CADASTRAL_QUERY_URL_NOT_FOUND"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-04",
+      registryVersion: "1.2.0",
+    },
+  };
+
+/** McLennan County (48309) — BIS Consultants CAD-GIS vendor template; live count 116,146 vs StratMap 115,362 (ratio 1.007), CONFIRMED. */
+const MCLENNAN_COUNTY_CADASTRAL_LAYER_0 =
+  "https://services8.arcgis.com/5e4b1SY8bogTc3pH/arcgis/rest/services/McLennanCADWebService/FeatureServer/0";
+
+export const MCLENNAN_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "McLennan County (unincorporated)",
+    fips: "48309",
+    countyName: "McLennan",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    railPerParcel: {
+      featureServerLayerUrl: MCLENNAN_COUNTY_CADASTRAL_LAYER_0,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "prop_id",
+    },
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48309_lp.zip",
+      vintageYyyymm: "202503",
+      featureCount: 115362,
+      propIdBadRate: 0.001,
+      cadastralQueryUrl: MCLENNAN_COUNTY_CADASTRAL_LAYER_0,
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-04",
+      registryVersion: "1.2.0",
+    },
+  };
+
+/** Williamson County (48491) — county-run gis.wilco.org (WCAD), updated daily; live count 289,494 vs StratMap 282,983 (ratio 1.023), CONFIRMED. */
+const WILLIAMSON_COUNTY_CADASTRAL_LAYER_0 =
+  "https://gis.wilco.org/arcgis/rest/services/public/county_wcad_parcels/MapServer/0";
+
+export const WILLIAMSON_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "Williamson County (unincorporated)",
+    fips: "48491",
+    countyName: "Williamson",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    railPerParcel: {
+      featureServerLayerUrl: WILLIAMSON_COUNTY_CADASTRAL_LAYER_0,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "PropertyID",
+    },
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48491_lp.zip",
+      vintageYyyymm: "202507",
+      featureCount: 282983,
+      propIdBadRate: 0.0004,
+      cadastralQueryUrl: WILLIAMSON_COUNTY_CADASTRAL_LAYER_0,
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-04",
+      registryVersion: "1.2.0",
+    },
+  };
+
 /** The frozen registry, keyed by rowId. Seeded with Bastrop; grows per onboarding. */
 const REGISTRY_BY_ROW_ID: ReadonlyMap<string, JurisdictionRegistryRow> = new Map(
-  [BASTROP_REGISTRY_ROW, BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW, ELGIN_REGISTRY_ROW].map(
+  [
+    BASTROP_REGISTRY_ROW,
+    BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    ELGIN_REGISTRY_ROW,
+    BELL_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    BEXAR_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    COMAL_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    GUADALUPE_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    MCLENNAN_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    WILLIAMSON_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+  ].map(
     (row) => [row.rowId, row],
   ),
 );
