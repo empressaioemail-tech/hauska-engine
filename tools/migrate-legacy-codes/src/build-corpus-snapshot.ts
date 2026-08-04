@@ -59,6 +59,12 @@ import {
   ELGIN_JURISDICTION,
 } from "./elgin-curated-queries.js";
 import {
+  buildSmithvilleCuratedQueries,
+  SMITHVILLE_EDITION_LABEL,
+  SMITHVILLE_JURISDICTION,
+} from "./smithville-curated-queries.js";
+import { runPathEcode360FileIngest } from "./path-ecode360-file-ingest.js";
+import {
   buildRoundRockCuratedQueries,
   ROUND_ROCK_CHAPTER_FILTER,
   ROUND_ROCK_CLIENT_ID,
@@ -544,6 +550,43 @@ const UNITS: ReadonlyArray<IngestUnit> = [
         accessPolicy: "platform-internal",
       });
       return buildElginCuratedQueries();
+    },
+  },
+  {
+    tenant: SMITHVILLE_JURISDICTION,
+    label: "Smithville Code of Ordinances (Path eCode360 File)",
+    // Best-effort: the pre-fetched, normalized eCode360 JSON artifact
+    // (4,366 blocks / 836 sections, live-crawled 2026-08-04 at the
+    // adapter's verified-safe 0.5 rps) lives outside this repo — it is
+    // NOT committed (1.3MB, single-jurisdiction working artifact, same
+    // posture as Path B's legacy Neon dependency below). CI therefore
+    // never has the artifact; this unit's `run()` throws when the env
+    // var is unset, which `runUnit()` catches and records as a skip
+    // (`ok: false`, 0 sections, "likely live-source drift"-shaped
+    // error), exactly mirroring the Grand County Path B unit's
+    // `LEGACY_DATABASE_URL` guard immediately below. The snapshot build
+    // degrades to the jurisdictions that did ingest rather than failing
+    // the whole build — this unit is skip-clean in CI, not a hard
+    // dependency.
+    async run(storage) {
+      const normalizedFilePath = process.env.SMITHVILLE_NORMALIZED_PATH ?? "";
+      if (!normalizedFilePath) {
+        throw new Error(
+          "SMITHVILLE_NORMALIZED_PATH not set — Path eCode360 File " +
+            "Smithville ingest skipped (pre-fetched artifact lives " +
+            "outside the repo; set this env var to a local path to run " +
+            "it)",
+        );
+      }
+      await runPathEcode360FileIngest({
+        storage,
+        jurisdictionTenant: SMITHVILLE_JURISDICTION,
+        jurisdictionName: "Smithville, TX",
+        editionLabel: SMITHVILLE_EDITION_LABEL,
+        normalizedFilePath,
+        accessPolicy: "platform-internal",
+      });
+      return buildSmithvilleCuratedQueries();
     },
   },
   {

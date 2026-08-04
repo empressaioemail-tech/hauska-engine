@@ -1,0 +1,460 @@
+{
+  "metadata": {
+    "jurisdictionTenant": "smithville-tx",
+    "jurisdictionName": "Smithville, TX Code of Ordinances (eCode360 SM6484)",
+    "editionLabel": "Smithville, TX Code of Ordinances (eCode360 SM6484)",
+    "publicationDate": "",
+    "sourceAdapter": "ecode360-html",
+    "sourceUrl": "https://ecode360.com/SM6484",
+    "fetchedAt": "2026-08-04T17:38:43.849Z",
+    "extra": {
+      "custId": "SM6484"
+    }
+  },
+  "blocks": [
+    {
+      "kind": "heading",
+      "depth": 1,
+      "text": "Table of Contents - Smithville, TX Code of Ordinances (eCode360 SM6484)",
+      "sourceAnchor": "https://ecode360.com/SM6484"
+    },
+    {
+      "kind": "heading",
+      "depth": 3,
+      "text": "Division 1: Generally",
+      "label": "Division 1",
+      "sourceAnchor": "https://ecode360.com/39654740#39654740"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.001: Form of government.",
+      "label": "§ 1.02.001",
+      "sourceAnchor": "https://ecode360.com/39654740#39654741"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Title 28, chapters 1–10, Revised Civil Statutes of the State of Texas 1925, and amendments thereto, are hereby adopted for the city, and the government of the city and its affairs are guided thereby."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Editor’s note–Pursuant to an election held January 19, 1991, the city council adopted Ordinance No. 9104-183 of April 8, 1991, establishing the city manager form of government with the conditions of employment to be provided by agreement with the city manager."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.002: Fiscal year.",
+      "label": "§ 1.02.002",
+      "sourceAnchor": "https://ecode360.com/39654740#39654742"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The fiscal year of the city is hereby designated as beginning with the first day of October each year and closing the last day of September next ensuing thereafter."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.003: Official newspaper.",
+      "label": "§ 1.02.003",
+      "sourceAnchor": "https://ecode360.com/39654740#39654743"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Designation of the official newspaper shall be made annually by resolution of the city council."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.004: Appropriation for advertising and promoting growth and development of city.",
+      "label": "§ 1.02.004",
+      "sourceAnchor": "https://ecode360.com/39654740#39654744"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The governing body of the city is authorized to appropriate from the general fund of the city an amount not exceeding five cents ($0.05) on one hundred dollars ($100.00) assessed valuation for the purpose of advertising and promoting the growth and development of the city in accordance with V.T.C.A., Local Government Code, section 371.021, pursuant to an election held June 17, 1958, at which the proposition was approved by a majority vote."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.005: Procedure for naming or renaming street.",
+      "label": "§ 1.02.005",
+      "sourceAnchor": "https://ecode360.com/39654740#39654745"
+    },
+    {
+      "kind": "paragraph",
+      "text": "It is hereby declared by the city council that a policy setting the procedure for the naming or renaming of a street within the city limits be set.",
+      "subsectionLabel": "1.02.005(a)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The requestor initiates the process with a letter to the city manager. The letter must state the reasons for the request. The city manager will then notify the city secretary of the request.",
+      "subsectionLabel": "1.02.005(b)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The city secretary shall draw up a form for the property owners’ signatures. The city secretary (or designee) shall provide a list of the property owners to the requestor. The requestor is required to get signatures from the property owners granting permission for the street name/rename change. The signatures must be those of the property owners who have property on the street in question. All the property owners’ (those for or against) signatures must be obtained before the request will go to the city council for consideration. Prior to the council taking action on the request, there shall be a public hearing, allowing time for property owners to voice their concerns, if any.",
+      "subsectionLabel": "1.02.005(c)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "There shall be an application fee as set by the city council and on file in the office of the city secretary.",
+      "subsectionLabel": "1.02.005(d)"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.006: Crime reward.",
+      "label": "§ 1.02.006",
+      "sourceAnchor": "https://ecode360.com/39654740#39654750"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The city hereby offers a reward up to ten thousand dollars ($10,000.00) for the arrest and conviction of any person found guilty of committing a felony within the corporate limits of the city. The city council shall be the sole and exclusive judge in determining eligibility for the reward."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.007: Credit card user fee.",
+      "label": "§ 1.02.007",
+      "sourceAnchor": "https://ecode360.com/39654740#39654751"
+    },
+    {
+      "kind": "paragraph",
+      "text": "A user fee shall be charged to each user making a payment with a credit card to pay any fee, fine, permit, utility bill and/or other funds due the city.",
+      "subsectionLabel": "1.02.007(a)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The fee is to be charged per use, and charged to the user’s card at the time of use.",
+      "subsectionLabel": "1.02.007(b)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Fees are set by resolution of the city council and are kept on file in the office of the city secretary.",
+      "subsectionLabel": "1.02.007(c)"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.008: City seal.",
+      "label": "§ 1.02.008",
+      "sourceAnchor": "https://ecode360.com/39654740#39654755"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The seal of the city shall be as follows:",
+      "subsectionLabel": "1.02.008(a)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The city secretary or designee, acting as the custodian of the official seal of the city, is authorized to use the city seal on any ordinance, resolution, honoraria, certificate, notarial jurat or acknowledgment, or other instruments necessary to authenticate official city documents or to indicate institutional sanction for official, legal and ceremonial purposes. The city seal shall only be used for the official business of the city.",
+      "subsectionLabel": "1.02.008(b)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The city seal may be altered according to a resolution of the city council.",
+      "subsectionLabel": "1.02.008(c)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The city secretary shall be the official custodian of the city seal, and any other city seals adopted by city council.",
+      "subsectionLabel": "1.02.008(d)"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.009: through § 1.02.040. (Reserved)",
+      "label": "§ 1.02.009",
+      "sourceAnchor": "https://ecode360.com/39654740#39654760"
+    },
+    {
+      "kind": "heading",
+      "depth": 3,
+      "text": "Division 2: Claims for Damages Against City",
+      "label": "Division 2",
+      "sourceAnchor": "https://ecode360.com/39654740#39654761"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.041: Notice required.",
+      "label": "§ 1.02.041",
+      "sourceAnchor": "https://ecode360.com/39654740#39654762"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The city shall never be liable for any claim for property damage or for personal injury, whether such personal injury results in death or not, unless the person damaged or injured, or someone in his behalf, or, in the event the injury results in death, the person or persons who may have a cause of action under the law by reason of such death or injury, shall, within sixty (60) days from the date the damage or injury was received, give notice in writing to the city manager or city council of the following facts:"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The date and time when the injury or damage occurred and the place where the injured person or property was at the time when the injury was received.",
+      "subsectionLabel": "1.02.041(1)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The nature of the damage or injury sustained.",
+      "subsectionLabel": "1.02.041(2)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The apparent extent of the damage or injury sustained.",
+      "subsectionLabel": "1.02.041(3)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "A specific and detailed statement of how and under what circumstances the damage or injury occurred.",
+      "subsectionLabel": "1.02.041(4)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The amount for which each claimant will settle.",
+      "subsectionLabel": "1.02.041(5)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The actual place of residence of each claimant by street, number, city, and state on the date the claim is presented.",
+      "subsectionLabel": "1.02.041(6)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "In the case of personal injury or death, the names and addresses of all persons who, according to the knowledge or information of the claimant, witnessed the happening of the injury or any part thereof and the names of the doctors, if any, to whose care the injured person is committed.",
+      "subsectionLabel": "1.02.041(7)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "In the case of property damage, the location of the damaged property at the time the claim was submitted along with the names and addresses of all persons who witnessed the happening of the damage or any part thereof.",
+      "subsectionLabel": "1.02.041(8)"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.042: Plaintiff to apply for relief from city prior to instituting suit.",
+      "label": "§ 1.02.042",
+      "sourceAnchor": "https://ecode360.com/39654740#39654771"
+    },
+    {
+      "kind": "paragraph",
+      "text": "No suit of any nature whatsoever shall be instituted or maintained against the city unless the plaintiff therein shall aver and prove that previous to the filing of the original petition the plaintiff applied to the city council for redress, satisfaction, compensation or relief, as the case may be, and that the same was by vote of the city council refused."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.043: Service of notices.",
+      "label": "§ 1.02.043",
+      "sourceAnchor": "https://ecode360.com/39654740#39654772"
+    },
+    {
+      "kind": "paragraph",
+      "text": "All notices required by this division shall be effectuated by serving them upon the city secretary at the following location: City Hall, 317 Main Street, Smithville, Texas, and all such notices shall be effective only when actually received in the office of the person named above."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.044: No authority to waive provisions.",
+      "label": "§ 1.02.044",
+      "sourceAnchor": "https://ecode360.com/39654740#39654773"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Neither the city manager, a city council member nor any other officer or employee of the city shall have the authority to waive any of the provisions of this division."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.045: Exceptions to notice requirement.",
+      "label": "§ 1.02.045",
+      "sourceAnchor": "https://ecode360.com/39654740#39654774"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The above written notice requirements shall be waived if the city has actual knowledge of death, injury or property damage likely to result in a claim against the city. The city shall not be deemed to have actual knowledge unless that knowledge is attributable to an appropriate city official whose job duties include the authority to investigate and/or settle claims against the city.",
+      "subsectionLabel": "1.02.045(a)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Notice requirements shall likewise be waived in cases in which the plaintiff can demonstrate good cause or civil rights violations.",
+      "subsectionLabel": "1.02.045(b)"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.02.046: Notice to be sworn.",
+      "label": "§ 1.02.046",
+      "sourceAnchor": "https://ecode360.com/39654740#39654777"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The written notice required under this division shall be sworn to by the person claiming the damage or injuries or by someone authorized by him to do so on his behalf. Failure to swear to the notice as required herein shall not render the notice fatally defective, but failure to so verify the notice may be considered by the city council as a factor relating to the truth of the allegations and to the weight to be given to the allegations contained therein."
+    },
+    {
+      "kind": "heading",
+      "depth": 4,
+      "text": "Part I: In General",
+      "label": "Part I",
+      "sourceAnchor": "https://ecode360.com/39654788#39654788"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.03.031: Day and time.",
+      "label": "§ 1.03.031",
+      "sourceAnchor": "https://ecode360.com/39654788#39654789"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Council members shall meet in the city hall on the second Monday of each month at 7:00 p.m. with the mayor and as often as deemed necessary to carry on their duties in accordance with state laws."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.03.032: through § 1.03.060. (Reserved)",
+      "label": "§ 1.03.032",
+      "sourceAnchor": "https://ecode360.com/39654788#39654790"
+    },
+    {
+      "kind": "heading",
+      "depth": 4,
+      "text": "Part II: Citizen Comments",
+      "label": "Part II",
+      "sourceAnchor": "https://ecode360.com/39654788#39654791"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.03.061: Definitions.",
+      "label": "§ 1.03.061",
+      "sourceAnchor": "https://ecode360.com/39654788#39654792"
+    },
+    {
+      "kind": "paragraph",
+      "text": "In this article, the following terms shall have that meaning ascribed to them below:"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.03.062: Applicability.",
+      "label": "§ 1.03.062",
+      "sourceAnchor": "https://ecode360.com/39654788#39654800"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The provisions in this article apply to all open meetings of a governmental body of the city. An applicant is not considered a member of the public under the terms of this article. An applicant may address the governmental body as requested by or allowed by the governmental body."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.03.063: Right of public comment.",
+      "label": "§ 1.03.063",
+      "sourceAnchor": "https://ecode360.com/39654788#39654801"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Each member of the public who desires to address a governmental body on an agenda item for an open meeting may address the governmental body regarding the agenda item subject to and in accordance with the provisions of this article."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.03.064: Time for public comments.",
+      "label": "§ 1.03.064",
+      "sourceAnchor": "https://ecode360.com/39654788#39654802"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Members of the public may only address an agenda item at the opening of the discussion of such agenda item. Nothing in this article shall prevent a member of the public from providing a responsive answer to a question asked by a member of the governmental body during the time that an agenda item is being discussed by the governmental body."
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.03.065: Speaker registration; presentation.",
+      "label": "§ 1.03.065",
+      "sourceAnchor": "https://ecode360.com/39654788#39654803"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Any member of the public that desires to speak on an agenda item must register with the city secretary, or designee thereof, prior to the start of the open meeting by providing a registration card on a form provided by the city containing the following information pertaining to the speaker:",
+      "subsectionLabel": "1.03.065(a)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Full name;",
+      "subsectionLabel": "1.03.065(a)(1)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Business or residential address;",
+      "subsectionLabel": "1.03.065(a)(2)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Preferred phone number for contact;",
+      "subsectionLabel": "1.03.065(a)(3)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Statement whether the speaker represents someone other than the speaker;",
+      "subsectionLabel": "1.03.065(a)(4)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Agenda item or topic;",
+      "subsectionLabel": "1.03.065(a)(5)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Brief statement of position, such as a summary of the communication or a statement for or against an agenda item.",
+      "subsectionLabel": "1.03.065(a)(6)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Any member of the public that does not register as required by this section prior to speaking on an agenda item shall so register at the request of the presiding officer of the governmental body.",
+      "subsectionLabel": "1.03.065(b)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "A speaker shall address the governmental body at a podium or other area designated by the governmental body.",
+      "subsectionLabel": "1.03.065(c)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Prior to addressing the governmental body, a speaker shall verbally state the member’s name and address.",
+      "subsectionLabel": "1.03.065(d)"
+    },
+    {
+      "kind": "heading",
+      "depth": 5,
+      "text": "§ 1.03.066: Time limits.",
+      "label": "§ 1.03.066",
+      "sourceAnchor": "https://ecode360.com/39654788#39654814"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Each speaker under this article may address the governmental body for only that period of time indicated below:",
+      "subsectionLabel": "1.03.066(a)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "If fewer than five speakers speak on an agenda item, then each speaker may speak on the agenda item for a period not to exceed 3 minutes.",
+      "subsectionLabel": "1.03.066(a)(1)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "If more than five, but not more than ten, speakers speak on an agenda item, then each speaker may speak on the agenda item for a period not to exceed 2 minutes.",
+      "subsectionLabel": "1.03.066(a)(2)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "If more than ten speakers speak on an agenda item, then each speaker may speak on the agenda item for a period not to exceed one minute.",
+      "subsectionLabel": "1.03.066(a)(3)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Except as set forth in this subsection, a speaker may not grant the speaker’s allotted time period to another speaker such that a single speaker speaks longer than the maximum time periods stated above. The presiding officer may authorize speakers to grant other speakers their allotted time if requested and no member of the governmental body objects. If a member of the governmental body objects to a request under this subsection, then the governmental body shall vote to approve or disapprove the request. Any speaker granting such member’s allotted time to another speaker under this subsection irrevocably forfeits such granting speaker’s right to address the governmental body under this article.",
+      "subsectionLabel": "1.03.066(b)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "The presiding officer of a governmental body may expand the time limits set forth above up to one additional time period if the presenter requests an extension and no member of the governmental body objects. If a member of the governmental body objects to a request for extension, then the governmental body shall vote to approve or disapprove the request for extension.",
+      "subsectionLabel": "1.03.066(c)"
+    }
+  ]
+}
