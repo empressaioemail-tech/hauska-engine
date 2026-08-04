@@ -183,14 +183,18 @@ describe("dedupeSectionBlocks() — belt-and-braces content-hash safety net", ()
     const raw = await adapter.fetch(fixtureReference);
     const normalized = await adapter.normalize(raw);
 
-    // Match on the trailing digit run only — the real fixture's label
-    // carries a U+00A0 between "§" and the number, so a literal
+    // Match on the digit run anywhere in the label — the real fixture's
+    // label carries a U+00A0 between "§" and the number, so a literal
     // "§ 1.02.0" prefix (regular space) never matches; the numeric
-    // suffix is byte-safe and sufficient to identify each section.
+    // pattern is byte-safe and sufficient to identify each section.
+    // `label` carries the full "§ N.NN.NNN: Title." string (2026-08-04
+    // OPS-9 S3 fix — previously bare-number, which silently dropped
+    // every section's title before atomization), so this can no longer
+    // assert the number is the label's trailing content.
     const headings = normalized.blocks.filter((b) => b.kind === "heading");
     const byLabel = new Map<string, number>();
     for (const h of headings) {
-      if (h.kind !== "heading" || !h.label || !/1\.02\.0\d\d$/.test(h.label)) continue;
+      if (h.kind !== "heading" || !h.label || !/1\.02\.0\d\d/.test(h.label)) continue;
       byLabel.set(h.label, (byLabel.get(h.label) ?? 0) + 1);
     }
     expect(byLabel.size).toBeGreaterThan(0);
@@ -227,13 +231,16 @@ describe("dedupeSectionBlocks() — belt-and-braces content-hash safety net", ()
     // division pages) have different labels and different content —
     // sanity check both independently survive as exactly one each,
     // proving the dedup keys on (label, content) not just label.
-    // (Matched on the numeric suffix, not a literal "§ " prefix — the
-    // real fixture label carries a U+00A0 between "§" and the number.)
+    // (Matched on the numeric substring, not a literal "§ " prefix or
+    // trailing-anchor — the real fixture label carries a U+00A0 between
+    // "§" and the number, and since the 2026-08-04 OPS-9 S3 fix `label`
+    // carries the full "§ N.NN.NNN: Title." string rather than a bare
+    // number, so the number is no longer the label's trailing content.)
     const s101001 = normalized.blocks.filter(
-      (b) => b.kind === "heading" && b.label && /1\.01\.001$/.test(b.label),
+      (b) => b.kind === "heading" && b.label && /1\.01\.001/.test(b.label),
     );
     const s102001 = normalized.blocks.filter(
-      (b) => b.kind === "heading" && b.label && /1\.02\.001$/.test(b.label),
+      (b) => b.kind === "heading" && b.label && /1\.02\.001/.test(b.label),
     );
     expect(s101001).toHaveLength(1);
     expect(s102001).toHaveLength(1);

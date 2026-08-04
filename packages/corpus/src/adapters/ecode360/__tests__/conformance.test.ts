@@ -224,6 +224,31 @@ describe("ECode360Adapter — content-specific", () => {
     const b = await adapter.normalize(raw);
     expect(a.blocks).toEqual(b.blocks);
   });
+
+  it("section heading `label` carries the title, not just the bare number (2026-08-04 OPS-9 S3 regression guard)", async () => {
+    // Diagnosed via the Smithville eval failure (top-3 retrieval 86.7%
+    // vs the 90% bar): `label` used to be truncated to the substring
+    // before the first colon ("§ 1.08.037"), dropping the title
+    // ("General regulations.") that `splitHeadingLabel()` (extractor.ts)
+    // needs when it prefers `label` over `text`. `label` must now carry
+    // the same title-bearing content as `text` for every section
+    // heading — this is what let the extractor recover the title for
+    // Smithville's already-captured artifact too (extractor.ts falls
+    // back to `text` only when `label`'s own parse yields an empty
+    // title, so `label` itself must stop being title-less at the
+    // source, not just be papered over downstream).
+    const adapter = buildAdapter();
+    const raw = await adapter.fetch(fixtureReference);
+    const normalized = await adapter.normalize(raw);
+    const sectionHeadings = normalized.blocks.filter(
+      (b) => b.kind === "heading" && b.label?.startsWith("§"),
+    );
+    expect(sectionHeadings.length).toBeGreaterThan(0);
+    for (const h of sectionHeadings) {
+      if (h.kind !== "heading") continue;
+      expect(h.label).toBe(h.text);
+    }
+  });
 });
 
 describe("ECode360Adapter — fail-loud on block (never silent-empty)", () => {
