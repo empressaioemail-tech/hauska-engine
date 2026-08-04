@@ -35,6 +35,11 @@ describe("buildSweepReport", () => {
     expect(report.findings).toHaveLength(1);
     expect(report.findings[0]!.severity).toBe("info");
     expect(report.findings[0]!.evidence.clean).toBe(true);
+    // The clean-sweep event must carry the dedicated "CLEAN" literal, never
+    // a real WardenDefectClass value — a ledger consumer grouping findings
+    // by defectClass must not count this as a phantom finding of an actual
+    // defect class (e.g. MIXED-VINTAGE-NEIGHBOR).
+    expect(report.findings[0]!.defectClass).toBe("CLEAN");
   });
 
   it("a run with a flag finding is not clean and does not synthesize a clean-sweep event", () => {

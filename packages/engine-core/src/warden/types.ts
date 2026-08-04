@@ -7,13 +7,21 @@
  * defectClass reuses the OPS-8 DefectClass string values
  * (registry/onboard-preflight.ts) where a Warden finding names the same
  * underlying gap an onboarding decline would have named (e.g.
- * SERVE-PATH-UNHEALTHY), plus one Warden-only addition —
- * "MIXED-VINTAGE-NEIGHBOR" — for the neighbor-consistency check's
- * patchy-absence/roster-drift finding shape, which has no OPS-8 preflight
- * analog (OPS-8 grades one row in isolation; the Warden's neighbor check
- * reasons over a whole cohort's adjacency). WardenDefectClass is a SEPARATE
- * union from onboard-preflight.ts's DefectClass — this file does not import
- * or modify that module's union.
+ * SERVE-PATH-UNHEALTHY), plus two Warden-only additions:
+ *   - "MIXED-VINTAGE-NEIGHBOR" — the neighbor-consistency check's
+ *     patchy-absence/roster-drift finding shape, which has no OPS-8
+ *     preflight analog (OPS-8 grades one row in isolation; the Warden's
+ *     neighbor check reasons over a whole cohort's adjacency).
+ *   - "CLEAN" — the literal used ONLY on the one severity:"info" event a
+ *     clean sweep emits (see ledger-write.ts buildCleanSweepEvent). This is
+ *     NOT a defect class in the grouping sense — it exists so a clean-sweep
+ *     event never gets counted as a phantom finding of a REAL defect class
+ *     (e.g. MIXED-VINTAGE-NEIGHBOR) by a ledger consumer grouping by
+ *     defectClass. Any consumer building a defect-class-grouped backlog
+ *     should filter out "CLEAN" (or filter on severity:"flag") before
+ *     grouping.
+ * WardenDefectClass is a SEPARATE union from onboard-preflight.ts's
+ * DefectClass — this file does not import or modify that module's union.
  */
 
 /** OPS-8 DefectClass string values, reused verbatim where a Warden finding names the same gap. */
@@ -29,11 +37,13 @@ export type OpsEightDefectClass =
 
 /**
  * Warden's own defect-class union: every OPS-8 DefectClass value, plus
- * "MIXED-VINTAGE-NEIGHBOR" (new — a Warden-only class for neighbor-cohort
- * roster drift / patchy-absence findings, distinct from OPS-8's row-level
- * "MIXED-VINTAGE" residue-scan class).
+ * "MIXED-VINTAGE-NEIGHBOR" (a Warden-only class for neighbor-cohort roster
+ * drift / patchy-absence findings, distinct from OPS-8's row-level
+ * "MIXED-VINTAGE" residue-scan class), plus "CLEAN" (the non-defect literal
+ * reserved for the one info event a clean sweep emits — never used on a
+ * severity:"flag" finding).
  */
-export type WardenDefectClass = OpsEightDefectClass | "MIXED-VINTAGE-NEIGHBOR";
+export type WardenDefectClass = OpsEightDefectClass | "MIXED-VINTAGE-NEIGHBOR" | "CLEAN";
 
 /** The four v1 Warden sweep checks (files-never-fixes: each check READS and reports, never writes). */
 export type WardenCheckId =

@@ -6,7 +6,11 @@
  * LEDGER_INGEST_KEY are configured. A clean sweep (zero flag findings) still
  * writes/POSTs exactly one severity:"info" event so "swept and clean" is
  * provable evidence, not merely the absence of output (mirrors
- * onboard-preflight's "never fake a PASS by omission" discipline).
+ * onboard-preflight's "never fake a PASS by omission" discipline). That
+ * clean-sweep event's defectClass is the literal "CLEAN" — never a real
+ * WardenDefectClass value — so a ledger consumer grouping findings by
+ * defectClass never counts it as a phantom finding of an actual defect
+ * class (e.g. MIXED-VINTAGE-NEIGHBOR).
  *
  * PINNED CONTRACT (per the reviewed OPS-9 S5 design — do not change without
  * a planner-reviewed dispatch):
@@ -51,11 +55,15 @@ export function buildCleanSweepEvent(params: {
     parcelNodeId: null,
     checkId: checksRun[0] ?? "neighborConsistency",
     // defectClass is a required field on WardenFindingEvent (the type is
-    // shared across flag and info severities); it carries no defect meaning
-    // on this clean-sweep info event — "MIXED-VINTAGE-NEIGHBOR" is a neutral
-    // placeholder here, disambiguated by severity:"info" and
-    // evidence.clean===true, never read as an asserted defect.
-    defectClass: "MIXED-VINTAGE-NEIGHBOR",
+    // shared across flag and info severities, and the S1 ingest table's
+    // defect_class column may be non-null), so this clean-sweep info event
+    // still needs a value here — but it must never be a REAL defect class
+    // (a prior placeholder used "MIXED-VINTAGE-NEIGHBOR", which a
+    // group-by-defectClass ledger consumer would silently count as a
+    // phantom finding of that class). "CLEAN" is a dedicated literal in
+    // WardenDefectClass reserved for exactly this event; it is never
+    // emitted on a severity:"flag" finding.
+    defectClass: "CLEAN",
     evidence: { clean: true, checksRun },
     severity: "info",
     artifactRef: `warden-sweep:${sweepId}:clean`,
