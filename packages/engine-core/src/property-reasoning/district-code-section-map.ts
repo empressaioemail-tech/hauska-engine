@@ -72,11 +72,76 @@ const BASTROP_TX_MAP: Readonly<Record<string, DistrictCodeSectionRefs>> =
     ]),
   );
 
-/** Jurisdiction key -> district code -> code-section refs. Seed: bastrop_tx only. */
+/**
+ * elgin_tx — Elgin Code of Ordinances (current supplement), edition
+ * `elgin_tx/elgin-code-of-ordinances-current-supplement` (entityId uses a
+ * SLASH between jurisdiction and edition slug — confirmed against the live
+ * corpus; this differs from bastrop_tx's BDC edition, which uses a DASH
+ * separator (`bastrop_tx-bdc-2026-adopted`). Verified present in
+ * services/retrieval-api/corpus/snapshot.json: 266 elgin_tx code-section
+ * atoms, DID-grep-verified 2026-08-03 onboarding pass).
+ *
+ * Structural difference from bastrop_tx: Elgin's Chapter 46 gives EACH
+ * district its OWN "Uses permitted" section (46-231, 46-263, 46-301, 46-332,
+ * 46-362, 46-390, 46-416, 46-440) rather than one shared permitted-use table
+ * (Bastrop's single 14-02-008) — so permittedUseTable is per-district here,
+ * not a single shared ref reused across all codes. districtRequirements
+ * points at each district's own "Area regulations" section (46-233, 46-265,
+ * 46-303, 46-333, 46-363, 46-391, 46-417, 46-441). District roster is the 8
+ * districts named in Sec. 46-203 (R-1..R-4, C-1..C-3, I) — the same roster
+ * carried on the ELGIN_REGISTRY_ROW railPerParcel.districtValueByPrefix keys
+ * (registry/jurisdiction-registry.ts), using the canonical "R-4" name (the
+ * GIS layer's "A" domain value is a registry-row-level Zone_Code mapping
+ * concern, not a code-section-citation concern — this map is keyed on the
+ * canonical district code).
+ */
+function elginCodeSectionRef(sectionNumber: string): AtomInputRef {
+  return codeSectionRef(
+    `elgin_tx/elgin-code-of-ordinances-current-supplement/${sectionNumber}`,
+  );
+}
+
+const ELGIN_TX_MAP: Readonly<Record<string, DistrictCodeSectionRefs>> = {
+  "R-1": {
+    districtRequirements: elginCodeSectionRef("46-233"),
+    permittedUseTable: elginCodeSectionRef("46-231"),
+  },
+  "R-2": {
+    districtRequirements: elginCodeSectionRef("46-265"),
+    permittedUseTable: elginCodeSectionRef("46-263"),
+  },
+  "R-3": {
+    districtRequirements: elginCodeSectionRef("46-303"),
+    permittedUseTable: elginCodeSectionRef("46-301"),
+  },
+  "R-4": {
+    districtRequirements: elginCodeSectionRef("46-333"),
+    permittedUseTable: elginCodeSectionRef("46-332"),
+  },
+  "C-1": {
+    districtRequirements: elginCodeSectionRef("46-363"),
+    permittedUseTable: elginCodeSectionRef("46-362"),
+  },
+  "C-2": {
+    districtRequirements: elginCodeSectionRef("46-391"),
+    permittedUseTable: elginCodeSectionRef("46-390"),
+  },
+  "C-3": {
+    districtRequirements: elginCodeSectionRef("46-417"),
+    permittedUseTable: elginCodeSectionRef("46-416"),
+  },
+  I: {
+    districtRequirements: elginCodeSectionRef("46-441"),
+    permittedUseTable: elginCodeSectionRef("46-440"),
+  },
+};
+
+/** Jurisdiction key -> district code -> code-section refs. Seed: bastrop_tx, elgin_tx. */
 const DISTRICT_CODE_SECTION_MAP: Readonly<
   Record<string, Readonly<Record<string, DistrictCodeSectionRefs>>>
 > = {
   bastrop_tx: BASTROP_TX_MAP,
+  elgin_tx: ELGIN_TX_MAP,
 };
 
 /**

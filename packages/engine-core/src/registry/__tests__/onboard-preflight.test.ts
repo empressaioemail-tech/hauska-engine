@@ -63,26 +63,32 @@ describe("onboard-preflight — no probes configured (CI default, no live creds)
   });
 });
 
-describe("onboard-preflight — missing adapter produces ADAPTER-NEEDED decline", () => {
-  it("Elgin (no railPerParcel, zoning source TODO) declines checks 1, 2, 3 with ADAPTER-NEEDED / PARCEL-LAYER-UNWIRED", async () => {
+describe("onboard-preflight — Elgin now carries a wired railPerParcel row (2026-08-03 onboarding)", () => {
+  it("Elgin (railPerParcel wired, ZONING_SOURCE_TODO removed) PASSes checks 1, 2, 3 with fully-configured probes", async () => {
     const { report, ledgerEvents } = await runOnboardPreflight("48021", ALL_PASS_DEPS);
     const elginRow = report.rows.find((r) => r.rowId === "Elgin")!;
     const byId = Object.fromEntries(elginRow.checks.map((c) => [c.id, c]));
 
-    expect(byId.railASourceReachable.outcome).toBe("DECLINE");
-    expect(byId.railASourceReachable.defectClass).toBe("ADAPTER-NEEDED");
-    expect(byId.railASourceReachable.reason).toMatch(/needs adapter/);
-
-    expect(byId.zoningSourceReachableOrUnzoned.outcome).toBe("DECLINE");
-    expect(byId.zoningSourceReachableOrUnzoned.defectClass).toBe("ADAPTER-NEEDED");
-    expect(byId.zoningSourceReachableOrUnzoned.reason).toMatch(/ZONING_SOURCE_TODO/);
-
-    expect(byId.parcelLayerWired.outcome).toBe("DECLINE");
-    expect(byId.parcelLayerWired.defectClass).toBe("PARCEL-LAYER-UNWIRED");
+    expect(byId.railASourceReachable.outcome).toBe("PASS");
+    expect(byId.zoningSourceReachableOrUnzoned.outcome).toBe("PASS");
+    expect(byId.parcelLayerWired.outcome).toBe("PASS");
 
     const elginEvents = ledgerEvents.filter((e) => e.rowId === "Elgin");
-    expect(elginEvents.some((e) => e.defectClass === "ADAPTER-NEEDED")).toBe(true);
-    expect(elginEvents.some((e) => e.defectClass === "PARCEL-LAYER-UNWIRED")).toBe(true);
+    expect(elginEvents.some((e) => e.defectClass === "ADAPTER-NEEDED")).toBe(false);
+    expect(elginEvents.some((e) => e.defectClass === "PARCEL-LAYER-UNWIRED")).toBe(false);
+  });
+
+  it("Elgin with no probes configured (CI default) declines checks 1 and 2 as not-runnable, but check 3 (mechanical) still PASSes", async () => {
+    const { report } = await runOnboardPreflight("48021", { now: FIXED_NOW });
+    const elginRow = report.rows.find((r) => r.rowId === "Elgin")!;
+    const byId = Object.fromEntries(elginRow.checks.map((c) => [c.id, c]));
+
+    expect(byId.railASourceReachable.outcome).toBe("DECLINE");
+    expect(byId.railASourceReachable.reason).toMatch(/^not runnable:/);
+    expect(byId.zoningSourceReachableOrUnzoned.outcome).toBe("DECLINE");
+    expect(byId.zoningSourceReachableOrUnzoned.reason).toMatch(/^not runnable:/);
+    // check 3 is mechanical (no probe needed) — PASSes now that railPerParcel is wired.
+    expect(byId.parcelLayerWired.outcome).toBe("PASS");
   });
 });
 
@@ -187,7 +193,7 @@ describe("onboard-preflight — superseded cohort threshold", () => {
     expect(check.reason).toMatch(/1\/500/);
   });
 
-  it("does NOT decline MEASURE-EMPTY-COHORT for a row with no wired parcel rail at all (Elgin — out of scope for this check, checks 1/3 already carry that decline)", async () => {
+  it("DECLINEs with MEASURE-EMPTY-COHORT for Elgin when totalCount is 0, now that railPerParcel is wired (same rule as Bastrop)", async () => {
     const deps: PreflightDeps = {
       ...ALL_PASS_DEPS,
       probeSupersededCohort: async () => ({ supersededCount: 0, totalCount: 0 }),
@@ -195,8 +201,8 @@ describe("onboard-preflight — superseded cohort threshold", () => {
     const { report } = await runOnboardPreflight("48021", deps);
     const elginRow = report.rows.find((r) => r.rowId === "Elgin")!;
     const check = elginRow.checks.find((c) => c.id === "supersededCohortMeasured")!;
-    expect(check.defectClass).not.toBe("MEASURE-EMPTY-COHORT");
-    expect(check.outcome).toBe("PASS");
+    expect(check.outcome).toBe("DECLINE");
+    expect(check.defectClass).toBe("MEASURE-EMPTY-COHORT");
   });
 });
 
@@ -280,8 +286,15 @@ describe("deriveScopeAnnotations — cert scope annotation derivation", () => {
     expect(deriveScopeAnnotations(undefined)).toEqual([]);
   });
 
-  it("names rail, declineReason, and defectClass for a declined core rail (Elgin — parcel layer + zoning source)", async () => {
+  it("is empty for Elgin under fully-configured probes now that railPerParcel is wired (checks 1/2/3 all PASS)", async () => {
     const { report } = await runOnboardPreflight("48021", ALL_PASS_DEPS);
+    const elginRow = report.rows.find((r) => r.rowId === "Elgin");
+    const annotations = deriveScopeAnnotations(elginRow);
+    expect(annotations).toEqual([]);
+  });
+
+  it("names rail, declineReason, and defectClass for Elgin's core-rail declines when no probes are configured (CI default)", async () => {
+    const { report } = await runOnboardPreflight("48021", { now: FIXED_NOW });
     const elginRow = report.rows.find((r) => r.rowId === "Elgin");
     const annotations = deriveScopeAnnotations(elginRow);
     expect(annotations.length).toBeGreaterThan(0);
@@ -291,11 +304,11 @@ describe("deriveScopeAnnotations — cert scope annotation derivation", () => {
       expect(a.defectClass).toBeTruthy();
     }
     const rails = annotations.map((a) => a.rail);
+    // Without configured probes, checks 1 and 2 decline "not runnable"
+    // (ADAPTER-NEEDED); check 3 is mechanical and PASSes (no annotation).
     expect(rails).toContain("railASourceReachable");
-    expect(rails).toContain("parcelLayerWired");
     expect(rails).toContain("zoningSourceReachableOrUnzoned");
-    const parcelAnnotation = annotations.find((a) => a.rail === "parcelLayerWired")!;
-    expect(parcelAnnotation.defectClass).toBe("PARCEL-LAYER-UNWIRED");
+    expect(rails).not.toContain("parcelLayerWired");
   });
 
   it("excludes non-core-rail declines (e.g. costGate, servePathHealth) even when they decline", async () => {

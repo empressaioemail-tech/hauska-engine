@@ -225,24 +225,55 @@ export const BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow
   };
 
 /**
- * Elgin (48021 area city) — city-filter variant, "pre-flight-pending".
- * Euclidean-zoned. Zoning source fields are explicitly left TODO — pre-flight
- * check 2/3 will catch what is missing; no source URL is invented here that
- * cannot be verified from existing repo config.
+ * Elgin (48021-area city, Bastrop-county side only) — city-filter variant,
+ * "pre-flight-pending". Euclidean-zoned. Rail A per-parcel zoning source is
+ * the Elgin_Zoning FeatureServer layer 0 (3,220-parcel Bastrop-county-side
+ * cohort, CITY_LIMIT = 'ELGIN'). SCOPE NOTE (2026-08-03 onboarding pass):
+ * Elgin also has a ~500-parcel Travis-county-side sliver (the SAME
+ * FeatureServer's layer 1, fips 48453) that is OUT of this pass — it is a
+ * named follow-on, not wired here. This row covers the Bastrop-county side
+ * only (fips 48021).
  *
- * TODO(onboard-fips): zoning source (Rail A per-parcel record layer + district
- * field + district value map) not yet wired for Elgin. railPerParcel is
- * intentionally absent until that source is verified and frozen — pre-flight
- * check 3 (parcel layer wired) will decline "parcel layer not wired" for this
- * row until then.
+ * District naming: the ordinance's own numbering (Chapter 46, Sec. 46-203)
+ * names the multifamily district "R-4 Multiple-Family Residential District"
+ * (canonical). The GIS layer's Zone_Code domain instead stamps that same
+ * district "A" (a legacy/historical code letter — confirmed by Sec. 46-391 /
+ * 46-417, which both read "the same as the requirements of the
+ * A-Multiple-Family Residential District" when describing the C-2/C-3
+ * dwelling-use carve-out). districtValueByPrefix below maps the canonical
+ * "R-4" prefix to the GIS layer's "A" domain value so cohort queries can key
+ * on the canonical name while the WHERE clause still targets the layer's
+ * actual stored value.
  */
+const ELGIN_ZONING_LAYER_0 =
+  "https://services3.arcgis.com/wdTkTU0MdZbNBEZy/arcgis/rest/services/Elgin_Zoning/FeatureServer/0";
+
 export const ELGIN_REGISTRY_ROW: JurisdictionRegistryRow = {
   rowId: "Elgin",
   fips: "48021",
   countyName: "Bastrop",
   status: "pre-flight-pending",
   zoningRegime: "euclidean-zoned",
-  // railPerParcel intentionally omitted — TODO(onboard-fips): source not yet verified.
+  railPerParcel: {
+    featureServerLayerUrl: ELGIN_ZONING_LAYER_0,
+    parcelFilter: { kind: "cityFilter", field: "CITY_LIMIT", value: "ELGIN" },
+    districtField: "Zone_Code",
+    // Canonical district name -> GIS layer Zone_Code domain value. Every
+    // other district's canonical name IS its Zone_Code value (identity); "A"
+    // is the sole GIS/ordinance-naming divergence (Sec. 46-203 vs. Sec.
+    // 46-391/46-417 "A-Multiple-Family Residential District").
+    districtValueByPrefix: {
+      "R-1": "R-1",
+      "R-2": "R-2",
+      "R-3": "R-3",
+      "R-4": "A",
+      "C-1": "C-1",
+      "C-2": "C-2",
+      "C-3": "C-3",
+      I: "I",
+    },
+    propIdField: "PROP_ID",
+  },
   railC: {
     geometrySource: "stratmap_bulk_zip",
     downloadUrl:
@@ -250,12 +281,26 @@ export const ELGIN_REGISTRY_ROW: JurisdictionRegistryRow = {
     vintageYyyymm: "202503",
     featureCount: 63357,
     propIdBadRate: 0.0022,
+    // NOTE: railC (Rail C geometry) is the Bastrop-side StratMap county zip,
+    // which covers Elgin's Bastrop-county-side parcels (fips 48021). This
+    // does NOT cover the ~500-parcel Travis-county-side sliver (fips 48453,
+    // FeatureServer layer 1) — that sliver is out of this onboarding pass
+    // and needs its own registry row against Travis County's StratMap zip
+    // when picked up.
   },
   join: {
     joinKey: "prop_id",
     ownerMatchRequired: true,
   },
-  flags: ["STALE", "PRE_FLIGHT_PENDING", "ZONING_SOURCE_TODO"],
+  // ZONING_SOURCE_TODO removed 2026-08-03: checkZoningSourceReachableOrUnzoned
+  // (onboard-preflight.ts check 2) reads this flag literally — its presence
+  // forces an unconditional ADAPTER-NEEDED decline regardless of whether a
+  // zoning source is wired. Elgin's Rail A per-parcel zoning source (layer 0
+  // above) is now wired in this row, so the flag would be dishonest (it would
+  // claim "not yet wired" about a source that IS wired). Check 2 now runs the
+  // normal probeZoningSource path like Bastrop, and check 3
+  // (parcelLayerWired) mechanically confirms the row's filter shape compiles.
+  flags: ["STALE", "PRE_FLIGHT_PENDING"],
   provenance: {
     sourcePage: "https://tnris.org/stratmap/land-parcels.html",
     frozenAt: "2026-08-03",

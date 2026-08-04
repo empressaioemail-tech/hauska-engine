@@ -24,6 +24,24 @@ describe("registry cohort rail (Phase D)", () => {
   it("un-onboarded county has no railPerParcel", () => {
     expect(loadJurisdictionRegistryRow("48129")).toBeNull();
   });
+
+  it("Elgin registry row carries railPerParcel cohort config (layer 0, Bastrop-county side only)", () => {
+    expect(ELGIN_REGISTRY_ROW.railPerParcel).toBeDefined();
+    const filter = ELGIN_REGISTRY_ROW.railPerParcel?.parcelFilter;
+    expect(filter?.kind).toBe("cityFilter");
+    if (filter?.kind === "cityFilter") {
+      expect(filter.field).toBe("CITY_LIMIT");
+      expect(filter.value).toBe("ELGIN");
+    }
+    expect(ELGIN_REGISTRY_ROW.railPerParcel?.featureServerLayerUrl).toContain("Elgin_Zoning/FeatureServer/0");
+    expect(ELGIN_REGISTRY_ROW.railPerParcel?.districtField).toBe("Zone_Code");
+    expect(ELGIN_REGISTRY_ROW.railPerParcel?.propIdField).toBe("PROP_ID");
+    // "A" is the sole GIS/ordinance divergence — every other district code
+    // maps to itself (identity), per Sec. 46-203 vs. Sec. 46-391/46-417.
+    expect(ELGIN_REGISTRY_ROW.railPerParcel?.districtValueByPrefix["R-4"]).toBe("A");
+    expect(ELGIN_REGISTRY_ROW.railPerParcel?.districtValueByPrefix["R-1"]).toBe("R-1");
+    expect(ELGIN_REGISTRY_ROW.railPerParcel?.districtValueByPrefix.I).toBe("I");
+  });
 });
 
 describe("loadRegistryDistrictCohort (mocked AGOL)", () => {
@@ -66,8 +84,19 @@ describe("ParcelCohortFilter discriminated union (onboard-fips foundation)", () 
     expect(where).toBe("ZoneTypeClass = 3");
   });
 
-  it("throws honest-absence when the row has no railPerParcel at all (Elgin, source TODO)", () => {
-    expect(() => buildWhereClause(ELGIN_REGISTRY_ROW, null)).toThrow(/honest-absence/);
+  it("Elgin (railPerParcel wired 2026-08-03) builds a CITY_LIMIT = 'ELGIN' clause", () => {
+    const where = buildWhereClause(ELGIN_REGISTRY_ROW, null);
+    expect(where).toBe("CITY_LIMIT = 'ELGIN'");
+  });
+
+  it("Elgin R-4 prefix resolves through the A-domain-value mapping (Zone_Code = 'A')", () => {
+    const where = buildWhereClause(ELGIN_REGISTRY_ROW, "R-4");
+    expect(where).toBe("CITY_LIMIT = 'ELGIN' AND Zone_Code = 'A'");
+  });
+
+  it("Elgin identity-mapped prefix (e.g. C-2) resolves to the same value as its canonical name", () => {
+    const where = buildWhereClause(ELGIN_REGISTRY_ROW, "C-2");
+    expect(where).toBe("CITY_LIMIT = 'ELGIN' AND Zone_Code = 'C-2'");
   });
 
   // loadRegistryDistrictCohort resolves by fips via loadJurisdictionRegistryRow,

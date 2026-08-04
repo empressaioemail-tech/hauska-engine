@@ -1,0 +1,96 @@
+{
+  "key": "elgin_tx",
+  "displayName": "Elgin, TX (Bastrop-county side, 48021)",
+  "jurisdictionTenant": "elgin_tx",
+  "parcelFips": "48021",
+  "defaultAccessPolicy": "platform-internal",
+  "sourceAdapter": "descriptor-fixture",
+  "sourceUrl": "https://library.municode.com/tx/elgin/codes/code_of_ordinances",
+  "note": "DRAFT fixture, 2026-08-03 onboarding pass. Elgin_Zoning FeatureServer layer 0 (Bastrop-county side, fips 48021) only — the ~500-parcel Travis-county-side sliver (layer 1, fips 48453) is a named follow-on, out of this pass. accessPolicy platform-internal per services/retrieval-api/corpus/snapshot.json jurisdiction-corpus entityId 'elgin_tx' (Elgin's Municode corpus is not public-free like Bastrop's BDC). setbackTable rows mirror packages/adapters/src/local/setbacks/elgin-development-code.json (the DRAFT flat setback table) — both require planner row-verification + operator ratification before serve; neither is wired into a live resolver yet.",
+  "assumedRowWidthFt": {
+    "highway": 100,
+    "major_collector": 60,
+    "minor_collector": 50,
+    "residential": 50,
+    "alley": 20,
+    "gravel": 30,
+    "unclassified": 40
+  },
+  "setbackTable": {
+    "rows": [
+      {
+        "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-233",
+        "match_basis": "exact",
+        "district_code": "R-1",
+        "front_ft": { "value": 25, "confidence": 0.9, "verification_state": "transcribed" },
+        "rear_ft": { "value": 10, "confidence": 0.9, "verification_state": "transcribed" },
+        "side_ft": { "value": 7.5, "confidence": 0.85, "verification_state": "transcribed" },
+        "side_corner_ft": { "value": 15, "confidence": 0.85, "verification_state": "transcribed" },
+        "max_height_ft": { "value": 35, "confidence": 0.95, "verification_state": "transcribed" },
+        "max_impervious_pct": { "value": 45, "confidence": 0.85, "verification_state": "transcribed" }
+      },
+      {
+        "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-265",
+        "match_basis": "exact",
+        "district_code": "R-2",
+        "front_ft": { "value": 25, "confidence": 0.9, "verification_state": "transcribed" },
+        "rear_ft": { "value": 10, "confidence": 0.9, "verification_state": "transcribed" },
+        "side_ft": { "value": 5, "confidence": 0.85, "verification_state": "transcribed" },
+        "side_corner_ft": { "value": 15, "confidence": 0.85, "verification_state": "transcribed" },
+        "max_height_ft": { "value": 35, "confidence": 0.95, "verification_state": "transcribed" },
+        "max_impervious_pct": { "value": 45, "confidence": 0.85, "verification_state": "transcribed" }
+      },
+      {
+        "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-303",
+        "match_basis": "exact",
+        "district_code": "R-3",
+        "front_ft": { "value": 15, "confidence": 0.9, "verification_state": "transcribed" },
+        "rear_ft": { "value": 10, "confidence": 0.9, "verification_state": "transcribed" },
+        "side_ft": { "value": 7.5, "confidence": 0.85, "verification_state": "transcribed" },
+        "side_corner_ft": { "value": 15, "confidence": 0.85, "verification_state": "transcribed" },
+        "max_height_ft": { "value": 35, "confidence": 0.95, "verification_state": "transcribed" },
+        "max_impervious_pct": { "value": 45, "confidence": 0.85, "verification_state": "transcribed" }
+      },
+      {
+        "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-333",
+        "match_basis": "exact",
+        "district_code": "R-4",
+        "front_ft": { "value": 25, "confidence": 0.9, "verification_state": "transcribed" },
+        "side_ft": { "value": 10, "confidence": 0.8, "verification_state": "transcribed", "not_specified": true },
+        "max_height_ft": { "value": 50, "confidence": 0.95, "verification_state": "transcribed" }
+      },
+      {
+        "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-363",
+        "match_basis": "exact",
+        "district_code": "C-1",
+        "front_ft": { "value": 25, "confidence": 0.9, "verification_state": "transcribed" },
+        "rear_ft": { "value": 10, "confidence": 0.7, "verification_state": "transcribed" },
+        "side_ft": { "value": 10, "confidence": 0.7, "verification_state": "transcribed" },
+        "side_corner_ft": { "value": 25, "confidence": 0.85, "verification_state": "transcribed" },
+        "max_height_ft": { "value": 50, "confidence": 0.95, "verification_state": "transcribed" }
+      },
+      {
+        "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-391",
+        "match_basis": "exact",
+        "district_code": "C-2",
+        "max_height_ft": { "value": 50, "confidence": 0.95, "verification_state": "transcribed" }
+      },
+      {
+        "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-417",
+        "match_basis": "exact",
+        "district_code": "C-3",
+        "front_ft": { "value": 25, "confidence": 0.9, "verification_state": "transcribed" },
+        "rear_ft": { "value": 10, "confidence": 0.7, "verification_state": "transcribed" },
+        "side_ft": { "value": 10, "confidence": 0.7, "verification_state": "transcribed" },
+        "side_corner_ft": { "value": 25, "confidence": 0.85, "verification_state": "transcribed" },
+        "max_height_ft": { "value": 50, "confidence": 0.95, "verification_state": "transcribed" }
+      },
+      {
+        "atom_did": "elgin_tx/elgin-code-of-ordinances-current-supplement/46-441",
+        "match_basis": "exact",
+        "district_code": "I",
+        "max_height_ft": { "value": 90, "confidence": 0.95, "verification_state": "transcribed" }
+      }
+    ]
+  }
+}
