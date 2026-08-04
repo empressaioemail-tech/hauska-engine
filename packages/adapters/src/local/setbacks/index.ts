@@ -11,6 +11,15 @@
  *   2. Append the import + entry to the SETBACK_TABLES record below.
  */
 
+// TODO(elgin-review): elgin-development-code.json is a DRAFT (authored
+// 2026-08-03 from corpus atoms; planner row-verification + operator
+// ratification required before serve — see the file's top-level "note").
+// This table has no review-status gate of its own (SetbackTable carries no
+// status field), so the draft is deliberately NOT wired into SETBACK_TABLES
+// below until reviewed — uncomment both the import and the SETBACK_TABLES
+// entry once ratified:
+//   import elginDevelopmentCode from "./elgin-development-code.json" with { type: "json" };
+//   "elgin-development-code": elginDevelopmentCode as SetbackTable,
 import grandCountyUt from "./grand-county-ut.json" with { type: "json" };
 import lemhiCountyId from "./lemhi-county-id.json" with { type: "json" };
 import bastropTx from "./bastrop-tx.json" with { type: "json" };
