@@ -55,6 +55,8 @@ import {
   isNoDeterminableFrontageSitus,
   R35_ORIENTATION_DECLINE,
 } from "../depth-warm/cert-equivalent-gates.js";
+import { resolveSetbackTableRow } from "../property-reasoning/emit-setback-rule.js";
+import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 
 export const CERT_GRADE_COUNTY_FIPS = "48021";
 export const CERT_GRADE_INSET_TOL_FT = 1.0;
@@ -157,6 +159,43 @@ export async function buildLayer23Key(
   };
 }
 
+/**
+ * Descriptor-backed answer key — same scalars warm/promote uses via
+ * resolveSetbackTableRow (Elgin and other descriptor-only jurisdictions).
+ */
+export function buildDescriptorSetbackKey(
+  descriptor: JurisdictionDescriptor,
+  stampedDistrict: string | null,
+): { ok: true; key: Layer23Key } | { ok: false; code: string; reason?: string } {
+  const raw = (stampedDistrict ?? "").trim();
+  if (!raw) {
+    return { ok: false, code: "no-district", reason: "missing stamped district on zoning-fact" };
+  }
+  const district = raw.split(/\s+/)[0]!;
+  const resolved = resolveSetbackTableRow(descriptor.setbackTable, district);
+  if ("kind" in resolved) {
+    return { ok: false, code: resolved.code, reason: resolved.reason };
+  }
+  const { setbacks } = resolved;
+  const C =
+    setbacks.sideCornerFt != null &&
+    setbacks.sideFt != null &&
+    setbacks.sideCornerFt !== setbacks.sideFt
+      ? setbacks.sideCornerFt
+      : null;
+  return {
+    ok: true,
+    key: {
+      district,
+      F: setbacks.frontFt,
+      S: setbacks.sideFt,
+      C,
+      R: setbacks.rearFt,
+      frontStreet: null,
+    },
+  };
+}
+
 /** Grading context shared across a roster run — the caller (script or probe) owns and closes these. */
 export interface CertGradeContext {
   readonly sql: Sql;
@@ -164,6 +203,8 @@ export interface CertGradeContext {
   readonly storage: PgStorage;
   readonly roads: unknown[];
   readonly descriptor: unknown;
+  /** When "descriptor", answer key comes from descriptor setback table; default layer-23 (Bastrop). */
+  readonly answerKeyMode?: "layer23" | "descriptor";
 }
 
 export interface ParcelGradeResult {
@@ -261,7 +302,10 @@ export async function gradeOneParcelInQueryMode(
   `;
   const stampedDistrict = zfRow?.body?.district ?? districtPrefix ?? null;
 
-  const keyBuilt = await buildLayer23Key(parcelNodeId, stampedDistrict, centroidLngLat, stampedDistrict);
+  const useDescriptorKey = ctx.answerKeyMode === "descriptor";
+  const keyBuilt = useDescriptorKey
+    ? buildDescriptorSetbackKey(ctx.descriptor as JurisdictionDescriptor, stampedDistrict)
+    : await buildLayer23Key(parcelNodeId, stampedDistrict, centroidLngLat, stampedDistrict);
   if (!keyBuilt.ok) {
     parcelResult.error = keyBuilt.code;
     parcelResult.reason = keyBuilt.reason;

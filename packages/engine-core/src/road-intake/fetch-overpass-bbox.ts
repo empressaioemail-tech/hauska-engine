@@ -55,6 +55,22 @@ export const LOCKHART_CITY_BBOX = {
   east: -97.62483,
 } as const;
 
+/**
+ * City of Elgin limits (Bastrop-county side, 48021) from AGOL Elgin_Zoning
+ * FeatureServer/0 extent query (same layer as ELGIN_REGISTRY_ROW):
+ *   https://services3.arcgis.com/wdTkTU0MdZbNBEZy/arcgis/rest/services/Elgin_Zoning/FeatureServer/0/query?where=CITY_LIMIT%3D%27ELGIN%27&returnExtentOnly=true&outSR=4326&f=json
+ * Fetched 2026-08-04 by planner via curl; verbatim extent:
+ *   xmin=-97.410938698399292 ymin=30.313790730771967
+ *   xmax=-97.355026917826052 ymax=30.369229436331114
+ * OSM cross-check timed out (server busy); primary source is AGOL zoning envelope
+ * (aligns with Lockhart CAD City_Limits precedent, not undocumented Bastrop hand-tune).
+ */
+export const ELGIN_CITY_BBOX = {
+  south: 30.313790730771967,
+  west: -97.410938698399292,
+  north: 30.369229436331114,
+  east: -97.355026917826052,
+} as const;
 
 export type BastropRoadIngestScope = "city" | "county" | "county-tiled";
 
@@ -521,6 +537,49 @@ export async function fetchCaldwellRoadsForIngest(
       scope,
     };
   }
+  const single = await fetchOverpassRoadsInBbox(bbox, fetchImpl);
+  return {
+    elements: single.elements,
+    elapsedMs: single.elapsedMs,
+    query: single.query,
+    bbox,
+    scope,
+  };
+}
+
+export type ElginRoadIngestScope = "elgin-city";
+
+/** Default Elgin city OSM ingest — ELGIN_CITY_BBOX from AGOL Elgin_Zoning extent. */
+export function resolveElginRoadIngestBbox(
+  env: NodeJS.ProcessEnv = process.env,
+): { bbox: OverpassBbox; scope: ElginRoadIngestScope | "custom" } {
+  const raw = env.ELGIN_ROAD_BBOX?.trim();
+  if (raw) {
+    const parts = raw.split(",").map((s) => Number(s.trim()));
+    if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
+      throw new Error(
+        "ELGIN_ROAD_BBOX must be south,west,north,east (four comma-separated numbers)",
+      );
+    }
+    return {
+      bbox: { south: parts[0]!, west: parts[1]!, north: parts[2]!, east: parts[3]! },
+      scope: "custom",
+    };
+  }
+  return { bbox: { ...ELGIN_CITY_BBOX }, scope: "elgin-city" };
+}
+
+export async function fetchElginRoadsForIngest(
+  env: NodeJS.ProcessEnv = process.env,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{
+  elements: ParsedOsmElement[];
+  elapsedMs: number;
+  query: string;
+  bbox: OverpassBbox;
+  scope: ElginRoadIngestScope | "custom";
+}> {
+  const { bbox, scope } = resolveElginRoadIngestBbox(env);
   const single = await fetchOverpassRoadsInBbox(bbox, fetchImpl);
   return {
     elements: single.elements,

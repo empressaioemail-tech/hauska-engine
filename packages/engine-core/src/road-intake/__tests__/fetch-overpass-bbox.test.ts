@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   BASTROP_CITY_BBOX,
   BASTROP_COUNTY_BBOX,
+  ELGIN_CITY_BBOX,
   fetchBastropRoadsForIngest,
   fetchOverpassRoadsInBbox,
   fetchOverpassRoadsTiled,
@@ -14,6 +15,22 @@ import {
   resolveBastropRoadIngestBbox,
   resolveBastropRoadIngestScope,
 } from "../fetch-overpass-bbox.js";
+
+describe("ELGIN_CITY_BBOX (AGOL Elgin_Zoning FeatureServer/0 extent, 2026-08-04)", () => {
+  it("has south < north and west < east", () => {
+    expect(ELGIN_CITY_BBOX.south).toBeLessThan(ELGIN_CITY_BBOX.north);
+    expect(ELGIN_CITY_BBOX.west).toBeLessThan(ELGIN_CITY_BBOX.east);
+  });
+
+  it("matches planner-derived AGOL extent verbatim", () => {
+    expect(ELGIN_CITY_BBOX).toEqual({
+      south: 30.313790730771967,
+      west: -97.410938698399292,
+      north: 30.369229436331114,
+      east: -97.355026917826052,
+    });
+  });
+});
 
 describe("fetchOverpassRoadsInBbox", () => {
   it("parses way elements from Overpass JSON", async () => {
