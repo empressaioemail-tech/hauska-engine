@@ -61,6 +61,15 @@ const COUNTY_NAMES = {
   "48309": "McLennan",
   "48453": "Travis",
   "48491": "Williamson",
+  "48113": "Dallas",
+  "48439": "Tarrant",
+  "48085": "Collin",
+  "48121": "Denton",
+  "48397": "Rockwall",
+  "48139": "Ellis",
+  "48251": "Johnson",
+  "48257": "Kaufman",
+  "48367": "Parker",
 };
 
 function parseArgs(argv) {
