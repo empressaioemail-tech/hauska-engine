@@ -440,14 +440,22 @@ export async function fetchBcadParcelRings(
 
   const body = (await response.json()) as {
     features?: Array<{
-      properties?: { prop_id?: number };
+      properties?: Record<string, unknown>;
       geometry?: { type?: string; coordinates?: number[][][] };
     }>;
   };
 
   const out: BcadParcelFetchResult[] = [];
   for (const feature of body.features ?? []) {
-    const propId = String(feature.properties?.prop_id ?? "");
+    // ArcGIS echoes the layer's actual field casing in the geojson properties
+    // ("prop_id" on BCAD/Guadalupe, "Prop_ID" on Caldwell CAD) even though the
+    // where/outFields clauses are case-insensitive — match the key
+    // case-insensitively or cased-field counties drop every ring.
+    const props = feature.properties ?? {};
+    const propIdKey = Object.keys(props).find(
+      (k) => k.toLowerCase() === "prop_id",
+    );
+    const propId = String((propIdKey ? props[propIdKey] : undefined) ?? "");
     const coords = feature.geometry?.coordinates?.[0];
     if (!propId || !Array.isArray(coords) || coords.length < 4) continue;
 
