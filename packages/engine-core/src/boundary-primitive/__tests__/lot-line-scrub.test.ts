@@ -16,6 +16,7 @@ import { buildParcelAdjacencyIndex } from "../adjacency-grid.js";
 import {
   isNearRectangularParcelRing,
   nearRectEnvelopeCheck,
+  fetchBcadParcelRings,
   scrubLotLineRing,
   scrubParcelCohortEntries,
   snapSharedLotLineVertices,
@@ -256,5 +257,42 @@ describe("snapSharedLotLineVertices", () => {
       v81.some(([lng2, lat2]) => Math.hypot(lng - lng2, lat - lat2) < 1e-7),
     );
     expect(shared.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("fetchBcadParcelRings prop_id field casing", () => {
+  const square = [
+    [-97.6, 29.9],
+    [-97.6, 29.901],
+    [-97.599, 29.901],
+    [-97.599, 29.9],
+    [-97.6, 29.9],
+  ];
+
+  function fakeFetchWithPropKey(propKey: string): typeof fetch {
+    return (async () =>
+      new Response(
+        JSON.stringify({
+          features: [
+            {
+              properties: { [propKey]: 22945 },
+              geometry: { type: "Polygon", coordinates: [square] },
+            },
+          ],
+        }),
+        { status: 200 },
+      )) as unknown as typeof fetch;
+  }
+
+  it("resolves rings when the layer echoes lowercase prop_id (BCAD/Guadalupe shape)", async () => {
+    const out = await fetchBcadParcelRings([22945], fakeFetchWithPropKey("prop_id"));
+    expect(out).toHaveLength(1);
+    expect(out[0]!.propId).toBe("22945");
+  });
+
+  it("resolves rings when the layer echoes cased Prop_ID (Caldwell CAD shape)", async () => {
+    const out = await fetchBcadParcelRings([22945], fakeFetchWithPropKey("Prop_ID"));
+    expect(out).toHaveLength(1);
+    expect(out[0]!.propId).toBe("22945");
   });
 });
