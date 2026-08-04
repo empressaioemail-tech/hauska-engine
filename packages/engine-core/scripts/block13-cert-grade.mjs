@@ -39,6 +39,7 @@ import { loadJurisdictionRegistryRowById } from "../src/registry/jurisdiction-re
 import {
   gradeOneParcelInQueryMode,
   gradeBlock13Parcel,
+  gradeUnzonedParcel,
   BLOCK13_ROSTER as BLOCK13,
 } from "../src/registry/cert-grade-core.ts";
 
@@ -54,6 +55,11 @@ function parseArgs(argv) {
     // full-coverage invocation never sets this, so scopeAnnotations stays
     // empty/absent and the report is byte-identical to before.
     preflightRowId: null,
+    // --grade-mode=unzoned routes every roster parcel through
+    // gradeUnzonedParcel instead of the query-mode/block13 graders. Default
+    // "" leaves every existing invocation (block13 + query + file rosters)
+    // byte-identical — this flag is additive and off by default.
+    gradeMode: "",
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -67,7 +73,8 @@ function parseArgs(argv) {
     else if (a === "--preflight-row-id") out.preflightRowId = String(argv[++i] || "").trim();
     else if (a.startsWith("--preflight-row-id=")) {
       out.preflightRowId = a.slice("--preflight-row-id=".length).trim();
-    }
+    } else if (a === "--grade-mode") out.gradeMode = String(argv[++i] || "").trim();
+    else if (a.startsWith("--grade-mode=")) out.gradeMode = a.slice("--grade-mode=".length).trim();
   }
   return out;
 }
@@ -147,9 +154,11 @@ if (args.preflightRowId) {
 const report = {
   when: new Date().toISOString(),
   cert:
-    rosterLoad.mode === "block13"
-      ? "BLOCK-13 CERT-RESTORE mechanical grade"
-      : `Bastrop dominant-district mechanical grade (${rosterLoad.districtPrefix ?? "file"})`,
+    args.gradeMode === "unzoned"
+      ? `Unzoned-county cert grade (${rosterLoad.source})`
+      : rosterLoad.mode === "block13"
+        ? "BLOCK-13 CERT-RESTORE mechanical grade"
+        : `Bastrop dominant-district mechanical grade (${rosterLoad.districtPrefix ?? "file"})`,
   rosterFrom: args.rosterFrom,
   rosterSource: rosterLoad.source,
   measurer: "R32 index-matched inward-normal (measurePerEdgeInsetForRings)",
@@ -159,13 +168,18 @@ const report = {
   parcels: {},
   score: { pass: 0, fail: 0, honestDecline: 0, staleResidue: 0, total: rosterLoad.parcelNodeIds.length },
   ...(scopeAnnotations ? { scopeAnnotations } : {}),
+  // Additive — only present when --grade-mode is passed, so the default
+  // invocation's report stays byte-identical to before this change.
+  ...(args.gradeMode ? { gradeMode: args.gradeMode } : {}),
 };
 
 try {
   for (const parcelNodeId of rosterLoad.parcelNodeIds) {
     let parcelResult;
 
-    if (rosterLoad.mode === "query") {
+    if (args.gradeMode === "unzoned") {
+      parcelResult = await gradeUnzonedParcel(parcelNodeId, { sql });
+    } else if (rosterLoad.mode === "query") {
       parcelResult = await gradeOneParcelInQueryMode(parcelNodeId, {
         sql,
         txSql,

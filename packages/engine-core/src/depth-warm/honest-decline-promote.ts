@@ -27,14 +27,25 @@ export interface HonestVerifyDeclineInput {
   extractedAt?: string;
 }
 
+/** Engine-extension fields carried on a persisted honest-decline envelope atom. */
+export type HonestVerifyDeclineAtom = BuildableEnvelopeAtomInstance & {
+  recipeVersion?: string;
+  warmVerifyDecline?: string;
+  warmVerifyDeclineCode?: string;
+};
+
 /**
- * Write a no-buildable-area envelope that supersedes stale promoted atoms.
- * Omits depthWarmPromotion so cert roster excludes it; carries recipeVersion.
+ * Build (without writing) a no-buildable-area envelope decline atom in the
+ * R27 persisted-decline shape. Pure — callers own the write. Extracted so
+ * both the depth-warm force-overwrite path (below) and other honest-decline
+ * producers (e.g. the unzoned-county cascade bake) mint the SAME shape —
+ * engine-extension fields warmVerifyDecline/warmVerifyDeclineCode on the
+ * envelope instance — so downstream serve/cert/roster reads treat every
+ * honest-decline uniformly regardless of which producer wrote it.
  */
-export async function promoteHonestVerifyDecline(
-  storage: StoragePort,
+export function buildHonestVerifyDeclineAtom(
   input: HonestVerifyDeclineInput,
-): Promise<{ buildableEnvelopeAtomDid: string } | null> {
+): HonestVerifyDeclineAtom {
   const extractedAt = input.extractedAt ?? new Date().toISOString();
   const version = 1;
   const entityId = propertyEntityId(input.parcelNodeId, "envelope", version);
@@ -43,11 +54,7 @@ export async function promoteHonestVerifyDecline(
     input.verifyReasons.slice(0, 3).join("; ") ||
     "Mechanical warm verify failed — honest decline.";
 
-  const instance: BuildableEnvelopeAtomInstance & {
-    recipeVersion?: string;
-    warmVerifyDecline?: string;
-    warmVerifyDeclineCode?: string;
-  } = {
+  const instance: HonestVerifyDeclineAtom = {
     entityType: "buildable-envelope",
     atomDid,
     entityId,
@@ -99,7 +106,18 @@ export async function promoteHonestVerifyDecline(
     warmVerifyDeclineCode: input.declineCode,
   };
   instance.contentHash = contentHashExcludingProvenance(instance);
+  return instance;
+}
 
+/**
+ * Write a no-buildable-area envelope that supersedes stale promoted atoms.
+ * Omits depthWarmPromotion so cert roster excludes it; carries recipeVersion.
+ */
+export async function promoteHonestVerifyDecline(
+  storage: StoragePort,
+  input: HonestVerifyDeclineInput,
+): Promise<{ buildableEnvelopeAtomDid: string } | null> {
+  const instance = buildHonestVerifyDeclineAtom(input);
   const result = await writePropertyAtomIfEnabled(storage, instance);
   if (!result) return null;
   return { buildableEnvelopeAtomDid: result.atomDid };
