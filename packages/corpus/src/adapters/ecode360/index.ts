@@ -485,18 +485,40 @@ export class ECode360Adapter implements CodeSourceAdapter {
       const guid = $el.attr("data-guid") ?? $el.attr("id") ?? "";
 
       // Section headings that open a numbered/labeled section carry a
-      // "§ 1.01.001: Title." full-title; the label is the part before
-      // the first colon. Division/article/part headings carry
-      // "Division 2: Claims for Damages Against City" in the same
+      // "§ 1.01.001: Title." full-title; Division/article/part headings
+      // carry "Division 2: Claims for Damages Against City" in the same
       // shape; ARTICLE-numbered parts use "ARTICLE 7.01: TITLE".
-      const colonIdx = fullTitle.indexOf(":");
-      const label = colonIdx === -1 ? undefined : fullTitle.slice(0, colonIdx).trim();
+      //
+      // `label` must carry the FULL heading string (number + title),
+      // not just the part before the colon. `NormalizedBlock.label`'s
+      // own doc comment example is "§ 5.04 Setbacks" — the whole
+      // heading — and `buildCodeTree()`'s `splitHeadingLabel(block.label
+      // ?? block.text)` (extractor.ts) prefers `label` over `text` when
+      // present. A bare-number `label` ("§ 1.08.037" with nothing after
+      // it) makes `splitHeadingLabel`'s "§ N.NN.NNN <title>" regex
+      // capture an EMPTY title group, silently dropping every section's
+      // title before it ever reaches atomization — exactly the failure
+      // mode `raw-pdf/normalize.ts` documents and deliberately avoids by
+      // never setting `label` for section headings. Diagnosed 2026-08-04
+      // (OPS-9 S3): this cost Smithville's eval its top-3 retrieval bar
+      // (86.7% vs 90% required) — two curated queries whose expected
+      // section's body text doesn't restate its own title lost to
+      // unrelated sections that happened to share more body-text token
+      // overlap, because the title words ("General regulations",
+      // "General requirements") were never in the indexed snippet at
+      // all. Emitting the full `fullTitle` string here is additive
+      // (still starts with "§ N.NN.NNN" / "Division N" / "ARTICLE N.NN",
+      // so the `startsWith("§")` / `startsWith("Division")` conformance
+      // assertions and `dedupeSectionBlocks()`'s label+content-hash key
+      // are unaffected) and restores the title to the atomized
+      // `code-section.title` field.
+      const label = fullTitle;
 
       blocks.push({
         kind: "heading",
         depth,
         text: fullTitle,
-        ...(label ? { label } : {}),
+        label,
         sourceAnchor: guid ? `${pageUrl}#${guid}` : pageUrl,
       });
 

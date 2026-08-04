@@ -175,21 +175,29 @@ describe("runPathEcode360FileIngest()", () => {
     }
   });
 
-  it("includes the known section 1.02.001 with its real body text carried through (title is empty — see note)", async () => {
-    // NOTE (pre-existing, cross-adapter gap — not introduced by this
-    // orchestrator): `buildCodeTree()`'s heading case calls
+  it("includes the known section 1.02.001 with its real body text AND title carried through (2026-08-04 OPS-9 S3 fix)", async () => {
+    // FIXED (was: title silently empty — see the eval failure this
+    // caused below). `buildCodeTree()`'s heading case calls
     // `splitHeadingLabel(block.label ?? block.text)`, preferring
-    // `block.label` when present. eCode360 headings always carry a
-    // `label` ("§ 1.02.001" — number only, no title text after it);
-    // the human-readable title ("Form of government.") lives only in
-    // `block.text` ("§ 1.02.001: Form of government."), which is never
-    // consulted once `label` is present. The result: every eCode360
-    // section atom's `title` field is empty. This is generic
-    // `packages/corpus/src/extraction/extractor.ts` behavior shared by
-    // every adapter, not something this file's schema or orchestrator
-    // controls — flagged here rather than silently asserted around,
-    // worth a follow-up extractor fix (fall back to parsing `text`'s
-    // colon-delimited remainder when `label` yields an empty title).
+    // `block.label` when present. eCode360 headings used to carry a
+    // `label` truncated to "§ 1.02.001" (number only, no title text
+    // after it); the human-readable title ("Form of government.") lived
+    // only in `block.text` ("§ 1.02.001: Form of government."), which
+    // was never consulted once `label` was present. Fixed two ways:
+    // (1) `ECode360Adapter.normalize()` now sets `label` to the full
+    // `data-full-title` string (matching `NormalizedBlock.label`'s own
+    // doc-comment contract, "e.g. § 5.04 Setbacks" — the whole heading,
+    // not just the locator), so future crawls carry the title in
+    // `label` directly; (2) `buildCodeTree()`'s `splitHeadingLabel` call
+    // now falls back to parsing `block.text` whenever `label`'s own
+    // parse yields an empty title, so already-captured artifacts
+    // (frozen before the adapter fix, like this fixture and the live
+    // Smithville normalized JSON) also recover the title. Diagnosed via
+    // the Smithville curated-query eval: two queries whose expected
+    // section's body text never restates its own boilerplate title
+    // ("General regulations." / "General requirements.") lost the
+    // top-3 retrieval bar (86.7% vs 90% required) because the title
+    // words were never in the indexed search snippet at all.
     const storage = new InMemoryStorage();
     const { atomization } = await runPathEcode360FileIngest({
       storage,
@@ -204,7 +212,7 @@ describe("runPathEcode360FileIngest()", () => {
       (s) => s.sectionNumber === "1.02.001",
     );
     expect(formOfGov).toBeDefined();
-    expect(formOfGov?.title).toBe("");
+    expect(formOfGov?.title).toBe("Form of government.");
     expect(formOfGov?.bodyText).toMatch(/Revised Civil Statutes/i);
     expect(formOfGov?.bodyText.length).toBeGreaterThan(0);
   });

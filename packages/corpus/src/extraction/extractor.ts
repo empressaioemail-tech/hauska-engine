@@ -56,8 +56,16 @@ const DEFAULT_SCHEMA: Record<
 
 /** Munge a heading label / text into (sectionNumber, title). */
 function splitHeadingLabel(text: string): { label: string; title: string } {
-  // Match leading "§ 5.04" or "Chapter 1" / "Article 1" / "5.04".
-  const symbolMatch = text.match(/^§\s*([\w.()-]+)\s*[—–-]?\s*(.*)$/);
+  // Match leading "§ 5.04" or "Chapter 1" / "Article 1" / "5.04". The
+  // separator between the number and the title varies by source family
+  // — Municode/PDF sources use an em/en-dash or hyphen ("§ 5.04 —
+  // Setbacks"), eCode360's `data-full-title` uses a bare colon
+  // ("§ 1.08.037: General regulations.", confirmed against the
+  // Smithville artifact 2026-08-04 / OPS-9 S3). Without `:` in this
+  // class the colon fell into the title capture instead of being
+  // consumed as the separator, leaving every eCode360 title prefixed
+  // with a stray ": ".
+  const symbolMatch = text.match(/^§\s*([\w.()-]+)\s*[—–\-:]?\s*(.*)$/);
   if (symbolMatch) {
     return { label: symbolMatch[1] ?? "", title: (symbolMatch[2] ?? "").trim() };
   }
@@ -66,7 +74,7 @@ function splitHeadingLabel(text: string): { label: string; title: string } {
   // section label. "Sec. 14.01.001 - Adopted." -> label "14.01.001",
   // title "Adopted."
   const abbrevMatch = text.match(
-    /^(Chapter|Ch\.?|Article|Art\.?|Division|Div\.?|Section|Sec\.?)\s+([\w.-]+)\s*[—–-]?\s*(.*)$/i,
+    /^(Chapter|Ch\.?|Article|Art\.?|Division|Div\.?|Section|Sec\.?)\s+([\w.-]+)\s*[—–\-:]?\s*(.*)$/i,
   );
   if (abbrevMatch) {
     return {
@@ -138,7 +146,22 @@ export function buildCodeTree(
     switch (block.kind) {
       case "heading": {
         const kind = schema[block.depth] ?? "section";
-        const { label, title } = splitHeadingLabel(block.label ?? block.text);
+        // Prefer `block.label` when it parses to a non-empty title;
+        // otherwise fall back to `block.text`. An adapter is allowed to
+        // set `label` to a bare locator with no title text (e.g. an
+        // eCode360 artifact captured before the 2026-08-04 OPS-9 S3 fix
+        // set `label` to just "§ 1.08.037" with the "General
+        // regulations." title dropped) — `splitHeadingLabel` on that
+        // bare label parses to an empty title even though `text` (e.g.
+        // "§ 1.08.037: General regulations.") carries it. This defends
+        // the extractor itself against that shape regardless of which
+        // adapter or artifact vintage produced it, since `text` is
+        // documented to always carry the fuller string.
+        const fromLabel = block.label ? splitHeadingLabel(block.label) : null;
+        const { label, title } =
+          fromLabel && fromLabel.title
+            ? fromLabel
+            : splitHeadingLabel(block.text);
         const baseAnchor = block.sourceAnchor;
         if (kind === "chapter") {
           pushAtDepth(
