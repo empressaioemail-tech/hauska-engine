@@ -89,7 +89,7 @@ const COUNTY_FIPS_TO_DISTRICT_MAP_KEY: Readonly<Record<string, string>> = {
 
 export function descriptorForCounty(
   parcelNodeId: string,
-  /** cityKey from tier-1 snapshot (e.g. elgin-tx, bastrop-city-tx) or situsCity fallback */
+  /** cityKey from tier-1 snapshot (e.g. elgin_tx, bastrop_city_tx) or situsCity fallback */
   cityHint: string | null | undefined,
   countyFips: string,
   setbackTable?: JurisdictionDescriptor["setbackTable"],
