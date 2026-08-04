@@ -1,10 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 
 import { BASTROP_REGISTRY_ROW } from "../jurisdiction-registry.js";
+import { runOnboardPreflight } from "../onboard-preflight.js";
 import {
   buildGeometryParityProbe,
   buildServePathHealthProbe,
   buildCostSampleProbe,
+  buildOnboardPreflightDeps,
   COST_MODEL_USD_PER_COMPUTE_HOUR,
   COST_MODEL_USD_PER_1K_EXTERNAL_CALLS,
   COST_SAMPLE_UNMEASURABLE_SENTINEL_USD,
@@ -310,3 +312,174 @@ describe("buildCostSampleProbe", () => {
     expect(result.detail).toMatch(/empty sample/);
   });
 });
+
+/**
+ * S4 — buildOnboardPreflightDeps. This is the shared factory both
+ * onboard-preflight.mjs (the standalone CLI) and block13-cert-grade.mjs's
+ * --preflight-row-id internal preflight now wire, so an internal preflight
+ * run gets the SAME live probes instead of an empty deps object (the bug:
+ * block13-cert-grade.mjs used to call runOnboardPreflight(fips, {}), so
+ * every probe-backed check spuriously declined "not runnable" regardless of
+ * whether the source was actually reachable). A fake AGOL fetch stub stands
+ * in for the live ArcGIS FeatureServer so loadRegistryDistrictCohortByRow
+ * (used internally for the deterministic sample + cohort count) resolves
+ * without live network.
+ */
+function fakeAgolFetch(propIds: string[] = ["1", "2", "3", "4", "5"]): typeof fetch {
+  return vi.fn(async (input: unknown) => {
+    const url = String(input);
+    // Probe reachability checks (Rail A / zoning) hit "...?f=json" with a
+    // plain GET and only need a 2xx; the cohort query hits ".../query".
+    if (url.includes("/query")) {
+      return new Response(
+        JSON.stringify({ features: propIds.map((id) => ({ attributes: { prop_id: id } })) }),
+        { status: 200 },
+      );
+    }
+    return new Response(JSON.stringify({}), { status: 200 });
+  }) as unknown as typeof fetch;
+}
+
+describe("buildOnboardPreflightDeps", () => {
+  it("wires probeRailASource / probeZoningSource unconditionally (no DB/retrieval creds needed)", async () => {
+    const deps = buildOnboardPreflightDeps({
+      descriptor: {},
+      gradeOneParcel: passGrader,
+      loadRoads: makeRoadsLoader(),
+      fetchImpl: fakeAgolFetch(),
+    });
+    expect(deps.probeRailASource).toBeDefined();
+    expect(deps.probeZoningSource).toBeDefined();
+    const railResult = await deps.probeRailASource!(ROW);
+    expect(railResult.reachable).toBe(true);
+  });
+
+  it("omits probeSupersededCohort / probeMixedVintageResidue when no sql is supplied (honest not-runnable, matches CLI's sql-only gate)", () => {
+    const deps = buildOnboardPreflightDeps({
+      descriptor: {},
+      gradeOneParcel: passGrader,
+      loadRoads: makeRoadsLoader(),
+      fetchImpl: fakeAgolFetch(),
+    });
+    expect(deps.probeSupersededCohort).toBeUndefined();
+    expect(deps.probeMixedVintageResidue).toBeUndefined();
+  });
+
+  it("wires probeSupersededCohort / probeMixedVintageResidue when sql is supplied", () => {
+    // Stub sql as a tagged-template function (sql`...`) returning the same
+    // row shape for every query used in these two probes.
+    const taggedSql = Object.assign(
+      (..._args: unknown[]) => Promise.resolve([{ total: 10, superseded: 1, residue: 0 }]),
+      {},
+    ) as unknown as CertSql;
+    const deps = buildOnboardPreflightDeps({
+      sql: taggedSql,
+      descriptor: {},
+      gradeOneParcel: passGrader,
+      loadRoads: makeRoadsLoader(),
+      fetchImpl: fakeAgolFetch(),
+    });
+    expect(deps.probeSupersededCohort).toBeDefined();
+    expect(deps.probeMixedVintageResidue).toBeDefined();
+  });
+
+  it("omits probeGeometryParity / probeCostSample when sql/txSql/storage are incomplete", () => {
+    const deps = buildOnboardPreflightDeps({
+      sql: {} as never,
+      // txSql and storage absent — grading creds incomplete.
+      descriptor: {},
+      gradeOneParcel: passGrader,
+      loadRoads: makeRoadsLoader(),
+      fetchImpl: fakeAgolFetch(),
+    });
+    expect(deps.probeGeometryParity).toBeUndefined();
+    expect(deps.probeCostSample).toBeUndefined();
+  });
+
+  it("omits probeServePathHealth when retrievalApiUrl/Key are absent", () => {
+    const deps = buildOnboardPreflightDeps({
+      descriptor: {},
+      gradeOneParcel: passGrader,
+      loadRoads: makeRoadsLoader(),
+      fetchImpl: fakeAgolFetch(),
+    });
+    expect(deps.probeServePathHealth).toBeUndefined();
+  });
+
+  it("wires probeServePathHealth when retrievalApiUrl/Key are both present", () => {
+    const deps = buildOnboardPreflightDeps({
+      descriptor: {},
+      gradeOneParcel: passGrader,
+      loadRoads: makeRoadsLoader(),
+      retrievalApiUrl: "https://retrieval.example.com",
+      retrievalApiKey: "test-key",
+      fetchImpl: fakeAgolFetch(),
+    });
+    expect(deps.probeServePathHealth).toBeDefined();
+  });
+
+  it(
+    "cert-path preflight parity: with stubbed probes injected via buildOnboardPreflightDeps, " +
+      "the cert-path preflight (runOnboardPreflight fed this deps object, mirroring " +
+      "block13-cert-grade.mjs's --preflight-row-id call) PASSes every probe-backed check " +
+      "exactly like the standalone onboard-preflight.mjs gate would with the same env present",
+    async () => {
+      const taggedSql = Object.assign(
+        (..._args: unknown[]) => Promise.resolve([{ total: 100, superseded: 1, residue: 0 }]),
+        {},
+      ) as unknown as CertSql;
+      const fetchImpl = vi
+        .fn()
+        // check 1 probeRailASource, check 2 probeZoningSource reachability GETs
+        .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+      const deps = buildOnboardPreflightDeps({
+        sql: taggedSql,
+        txSql: taggedSql,
+        storage: {} as never,
+        descriptor: {},
+        gradeOneParcel: passGrader,
+        loadRoads: makeRoadsLoader(),
+        retrievalApiUrl: "https://retrieval.example.com",
+        retrievalApiKey: "test-key",
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      });
+      // loadDeterministicSample / loadCohortCount inside the geometry-parity
+      // and cost-sample probes call loadRegistryDistrictCohortByRow, which
+      // does its own AGOL fetch — override fetchImpl behavior per-URL so
+      // both the reachability GETs and the cohort /query calls resolve.
+      fetchImpl.mockImplementation(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes("/query")) {
+          return new Response(
+            JSON.stringify({ features: [{ attributes: { prop_id: "1" } }] }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+      // buildServePathHealthProbe needs its own 3 sequential OK responses per
+      // call (health, search, atom-chain) on TOP of the AGOL stub above —
+      // stub loadSample indirectly by keeping the AGOL /query response
+      // non-empty (already done) so its internal sample load succeeds too.
+
+      const { report } = await runOnboardPreflight("48021", deps);
+      const bastropRow = report.rows.find((r) => r.rowId === "Bastrop")!;
+      const byId = Object.fromEntries(bastropRow.checks.map((c) => [c.id, c]));
+      expect(byId.railASourceReachable.outcome).toBe("PASS");
+      expect(byId.zoningSourceReachableOrUnzoned.outcome).toBe("PASS");
+      expect(byId.parcelLayerWired.outcome).toBe("PASS");
+      expect(byId.supersededCohortMeasured.outcome).toBe("PASS");
+      expect(byId.geometryParitySample.outcome).toBe("PASS");
+      expect(byId.servePathHealth.outcome).toBe("PASS");
+      expect(byId.costGate.outcome).toBe("PASS");
+      expect(byId.mixedVintageResidueScan.outcome).toBe("PASS");
+      expect(bastropRow.railPlan.declines).toHaveLength(0);
+    },
+    15_000, // runOnboardPreflight grades all 3 fips-48021 rows (Bastrop, county, Elgin)
+    // x 8 checks, several re-running the 5-parcel sample grade — legitimately
+    // slower than a pure-unit test; default 5s vitest timeout is too tight.
+  );
+});
+
+/** Minimal shape for the `sql` tagged-template stub used above. */
+type CertSql = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
