@@ -153,6 +153,51 @@ describe("onboard-preflight — superseded cohort threshold", () => {
     expect(check.outcome).toBe("DECLINE");
     expect(check.defectClass).toBe("SUPERSEDED-GT3PCT");
   });
+
+  // Addendum (caught live against prod fips 48021): a zero DENOMINATOR from
+  // the probe means the measurement query matched no parcels — "could not
+  // measure", not "measured zero". Faking a 0/0 PASS is a false-PASS shape
+  // that violates honest-absence discipline.
+  it("DECLINEs with MEASURE-EMPTY-COHORT when totalCount is 0 on a row with a wired parcel rail", async () => {
+    const deps: PreflightDeps = {
+      ...ALL_PASS_DEPS,
+      probeSupersededCohort: async () => ({ supersededCount: 0, totalCount: 0 }),
+    };
+    const { report } = await runOnboardPreflight("48021", deps);
+    // Bastrop (rowId "Bastrop") carries a wired railPerParcel in the fixture registry.
+    const check = report.rows
+      .find((r) => r.rowId === "Bastrop")!
+      .checks.find((c) => c.id === "supersededCohortMeasured")!;
+    expect(check.outcome).toBe("DECLINE");
+    expect(check.defectClass).toBe("MEASURE-EMPTY-COHORT");
+    expect(check.reason).toMatch(/empty cohort/);
+    expect(check.reason).toMatch(/measurement path broken, not zero superseded/);
+  });
+
+  it("PASSes with the reported fraction when totalCount is nonzero", async () => {
+    const deps: PreflightDeps = {
+      ...ALL_PASS_DEPS,
+      probeSupersededCohort: async () => ({ supersededCount: 1, totalCount: 500 }),
+    };
+    const { report } = await runOnboardPreflight("48021", deps);
+    const check = report.rows
+      .find((r) => r.rowId === "Bastrop")!
+      .checks.find((c) => c.id === "supersededCohortMeasured")!;
+    expect(check.outcome).toBe("PASS");
+    expect(check.reason).toMatch(/1\/500/);
+  });
+
+  it("does NOT decline MEASURE-EMPTY-COHORT for a row with no wired parcel rail at all (Elgin — out of scope for this check, checks 1/3 already carry that decline)", async () => {
+    const deps: PreflightDeps = {
+      ...ALL_PASS_DEPS,
+      probeSupersededCohort: async () => ({ supersededCount: 0, totalCount: 0 }),
+    };
+    const { report } = await runOnboardPreflight("48021", deps);
+    const elginRow = report.rows.find((r) => r.rowId === "Elgin")!;
+    const check = elginRow.checks.find((c) => c.id === "supersededCohortMeasured")!;
+    expect(check.defectClass).not.toBe("MEASURE-EMPTY-COHORT");
+    expect(check.outcome).toBe("PASS");
+  });
 });
 
 describe("onboard-preflight — cost gate (commitment #3)", () => {
