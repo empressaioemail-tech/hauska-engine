@@ -263,6 +263,126 @@ function isAlleyClassification(classification: RoadClassification): boolean {
   return classification === "alley";
 }
 
+/** Skip survey-noise / sliver edges when picking rear (80577 edge 0 class). */
+const MIN_REAR_CANDIDATE_EDGE_M = 3;
+
+function inwardNormalForEdge(proj: NonNullable<ReturnType<typeof projectRing>>, edgeIndex: number): XY {
+  const n = proj.points.length;
+  const a = proj.points[edgeIndex]!;
+  const b = proj.points[(edgeIndex + 1) % n]!;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-12) return { x: 0, y: 0 };
+  return { x: -dy / len, y: dx / len };
+}
+
+function edgeLengthM(proj: NonNullable<ReturnType<typeof projectRing>>, edgeIndex: number): number {
+  const n = proj.points.length;
+  const a = proj.points[edgeIndex]!;
+  const b = proj.points[(edgeIndex + 1) % n]!;
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+/**
+ * Flag-lot / irregular-lot shape: a short connector edge (< 25% of median length)
+ * between two longer edges, or a non-convex vertex turn. Used to promote a
+ * same-street body-backing edge from side → rear (Mesquite 80577/80578 class).
+ */
+export function detectFlagLotShape(proj: NonNullable<ReturnType<typeof projectRing>>): boolean {
+  const n = proj.points.length;
+  if (n < 5) return false;
+
+  const lengths = Array.from({ length: n }, (_, i) => edgeLengthM(proj, i));
+  const nonTiny = lengths.filter((len) => len >= MIN_REAR_CANDIDATE_EDGE_M).sort((a, b) => a - b);
+  if (nonTiny.length < 3) return false;
+  const median = nonTiny[Math.floor(nonTiny.length / 2)]!;
+  const hasNeck = lengths.some(
+    (len, i) =>
+      len >= MIN_REAR_CANDIDATE_EDGE_M &&
+      len <= median * 0.45 &&
+      (lengths[(i + n - 1) % n]! >= median * 0.75 || lengths[(i + 1) % n]! >= median * 0.75),
+  );
+  if (hasNeck) return true;
+
+  // Non-convex vertex — typical flag / L-lot jog.
+  let sign = 0;
+  for (let i = 0; i < n; i++) {
+    const a = proj.points[i]!;
+    const b = proj.points[(i + 1) % n]!;
+    const c = proj.points[(i + 2) % n]!;
+    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+    if (Math.abs(cross) < 1e-6) continue;
+    const s = cross > 0 ? 1 : -1;
+    if (sign === 0) sign = s;
+    else if (s !== sign) return true;
+  }
+  return false;
+}
+
+/**
+ * Rear = the edge whose inward normal best opposes the front edge's inward
+ * normal (dot ≈ −1). Replaces the retired farthest-midpoint heuristic that
+ * mislabeled elongated rectangles (80578 east-as-rear) and flag-lot jogs.
+ */
+function selectRearEdgeByNormalOpposition(
+  proj: NonNullable<ReturnType<typeof projectRing>>,
+  frontEdgeIndex: number,
+): number | null {
+  const n = proj.points.length;
+  const frontN = inwardNormalForEdge(proj, frontEdgeIndex);
+  let bestIndex: number | null = null;
+  let bestDot = Infinity;
+  for (let i = 0; i < n; i++) {
+    if (i === frontEdgeIndex) continue;
+    if (edgeLengthM(proj, i) < MIN_REAR_CANDIDATE_EDGE_M) continue;
+    const dot = inwardNormalForEdge(proj, i).x * frontN.x + inwardNormalForEdge(proj, i).y * frontN.y;
+    if (dot < bestDot) {
+      bestDot = dot;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+/**
+ * On flag lots, a body edge that backs the same main road as the front (parallel,
+ * same osmWayId, not the front neck) is REAR not SIDE — the backing-yard class
+ * Valerie reported on Mesquite St.
+ */
+function selectFlagLotSameStreetRearEdge(
+  hits: ReadonlyArray<EdgeRoadHit>,
+  frontHit: EdgeRoadHit,
+  proj: NonNullable<ReturnType<typeof projectRing>>,
+): number | null {
+  if (!detectFlagLotShape(proj)) return null;
+  const frontN = inwardNormalForEdge(proj, frontHit.edgeIndex);
+  let bestIndex: number | null = null;
+  let bestDepth = -1;
+  const frontMid = midpoint(
+    proj.points[frontHit.edgeIndex]!,
+    proj.points[(frontHit.edgeIndex + 1) % proj.points.length]!,
+  );
+  for (const hit of hits) {
+    if (hit.edgeIndex === frontHit.edgeIndex) continue;
+    if (hit.road.osmWayId !== frontHit.road.osmWayId) continue;
+    if (isAlleyClassification(hit.road.classification)) continue;
+    const edgeN = inwardNormalForEdge(proj, hit.edgeIndex);
+    const parallel = Math.abs(edgeN.x * frontN.x + edgeN.y * frontN.y) >= 0.85;
+    if (!parallel) continue;
+    const a = proj.points[hit.edgeIndex]!;
+    const b = proj.points[(hit.edgeIndex + 1) % proj.points.length]!;
+    const depth = Math.abs(
+      (midpoint(a, b).x - frontMid.x) * frontN.x + (midpoint(a, b).y - frontMid.y) * frontN.y,
+    );
+    if (depth > bestDepth) {
+      bestDepth = depth;
+      bestIndex = hit.edgeIndex;
+    }
+  }
+  return bestIndex;
+}
+
 function frontStreetPreference(classification: RoadClassification): number {
   if (classification === "residential") return 5;
   if (classification === "unclassified") return 4;
@@ -411,21 +531,16 @@ export function labelEdgesFromRoads(input: {
     rearHit =
       alleyHits.find((h) => h.edgeIndex !== frontHit?.edgeIndex) ?? alleyHits[0]!;
   } else if (frontHit && n >= 4) {
-    const frontMid = midpoint(
-      proj.points[frontHit.edgeIndex]!,
-      proj.points[(frontHit.edgeIndex + 1) % n]!,
-    );
-    let maxDist = -1;
-    for (const [edgeIndex] of bestByEdge) {
-      if (edgeIndex === frontHit.edgeIndex) continue;
-      const a = proj.points[edgeIndex]!;
-      const b = proj.points[(edgeIndex + 1) % n]!;
-      const mid = midpoint(a, b);
-      const d = Math.hypot(mid.x - frontMid.x, mid.y - frontMid.y);
-      if (d > maxDist) {
-        maxDist = d;
-        rearHit = { edgeIndex, distanceM: bestByEdge.get(edgeIndex)!.distanceM, road: bestByEdge.get(edgeIndex)!.road };
-      }
+    const flagSameStreetRear = selectFlagLotSameStreetRearEdge(hits, frontHit, proj);
+    const rearEdgeIndex =
+      flagSameStreetRear ?? selectRearEdgeByNormalOpposition(proj, frontHit.edgeIndex);
+    if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
+      const roadHit = bestByEdge.get(rearEdgeIndex);
+      rearHit = {
+        edgeIndex: rearEdgeIndex,
+        distanceM: roadHit?.distanceM ?? Infinity,
+        road: roadHit?.road ?? frontHit.road,
+      };
     }
   }
 
