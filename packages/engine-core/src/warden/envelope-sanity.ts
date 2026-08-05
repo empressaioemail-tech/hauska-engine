@@ -93,8 +93,9 @@ export function defaultAreaRatioBoundsForDistrict(district: string | null): Area
 
 /** Extract the first polygon exterior ring from a depth-warm geojson payload. */
 export function extractEnvelopeRingFromGeojson(geojson: unknown): Ring | null {
-  const coords = (geojson as { features?: Array<{ geometry?: { coordinates?: unknown } }> })
-    ?.features?.[0]?.geometry?.coordinates?.[0];
+  const coordinates = (geojson as { features?: Array<{ geometry?: { coordinates?: unknown } }> })
+    ?.features?.[0]?.geometry?.coordinates;
+  const coords = Array.isArray(coordinates) ? coordinates[0] : null;
   if (!Array.isArray(coords) || coords.length < 3) return null;
   const ring: Ring = [];
   for (const c of coords) {
