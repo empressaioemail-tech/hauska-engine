@@ -12,7 +12,7 @@
  *   DATABASE_URL=...hauska_mcp... \
  *   CORTEX_DATABASE_URL=...neondb... \
  *     pnpm --filter @hauska-engine/engine-core run bake-property-atom-county -- \
- *       --county=48055 [--limit=0] [--offset=0] [--batch=200] [--spike-pp=40]
+ *       --county=48055 [--limit=0] [--offset=0] [--batch=500] [--spike-pp=40]
  *
  * Acceptance: WDLL breadth items 2,3,7.
  *
@@ -37,7 +37,13 @@
  *
  *   PROPERTY_ATOM_PATH=1 DATABASE_URL=...hauska_mcp... \
  *     pnpm --filter @hauska-engine/engine-core run bake-property-atom-county -- \
- *       --county=48021 --cascade-absence-only [--batch=200]
+ *       --county=48021 --cascade-absence-only [--batch=500]
+ *       [--parcel-min=48309:0] [--parcel-max=48309:249999999]
+ *
+ * --parcel-min / --parcel-max (cascade-absence-only only): lexicographic
+ * bounds on body->>'parcelNodeId' for keyspace sharding — N concurrent
+ * scanners split one county; summary reports shardId + bounds; union of
+ * shard cascaded sets must equal a solo run (prove before mega-county apply).
  *
  * --reword-city-parcels mode (additive backfill; UPDATE-in-place, dry-run
  * default): finds EXISTING buildable-envelope rows carrying the old
@@ -119,13 +125,16 @@ function parseArgs(argv) {
     county: null,
     limit: 0,
     offset: 0,
-    batch: 200,
+    batch: 500,
     spikePp: 40,
     dryRun: false,
     cascadeAbsenceOnly: false,
     rewordCityParcels: false,
     apply: false,
     citySegments: null,
+    parcelMin: null,
+    parcelMax: null,
+    cascadeIdsOut: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -135,7 +144,7 @@ function parseArgs(argv) {
     else if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length));
     else if (a === "--offset") out.offset = Number(argv[++i] || 0);
     else if (a.startsWith("--offset=")) out.offset = Number(a.slice("--offset=".length));
-    else if (a === "--batch") out.batch = Number(argv[++i] || 200);
+    else if (a === "--batch") out.batch = Number(argv[++i] || 500);
     else if (a.startsWith("--batch=")) out.batch = Number(a.slice("--batch=".length));
     else if (a === "--spike-pp") out.spikePp = Number(argv[++i] || 40);
     else if (a.startsWith("--spike-pp="))
@@ -148,8 +157,41 @@ function parseArgs(argv) {
       out.citySegments = String(argv[++i] || "");
     else if (a.startsWith("--city-segments="))
       out.citySegments = a.slice("--city-segments=".length);
+    else if (a === "--parcel-min")
+      out.parcelMin = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--parcel-min="))
+      out.parcelMin = a.slice("--parcel-min=".length).trim() || null;
+    else if (a === "--parcel-max")
+      out.parcelMax = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--parcel-max="))
+      out.parcelMax = a.slice("--parcel-max=".length).trim() || null;
+    else if (a === "--cascade-ids-out")
+      out.cascadeIdsOut = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--cascade-ids-out="))
+      out.cascadeIdsOut = a.slice("--cascade-ids-out=".length).trim() || null;
   }
   return out;
+}
+
+/**
+ * Stable shard label for cascade keyspace bounds (summary + proof artifacts).
+ */
+function deriveShardId(parcelMin, parcelMax) {
+  if (!parcelMin && !parcelMax) return "full";
+  const lo = parcelMin ?? "";
+  const hi = parcelMax ?? "";
+  return `${lo}..${hi}`;
+}
+
+/**
+ * Optional lexicographic keyspace bounds for cascade-absence-only pagination.
+ * Returns a postgres.js SQL fragment to AND into the WHERE clause.
+ */
+function cascadeKeyspaceBoundsSql(sql, parcelMin, parcelMax) {
+  return sql`
+    ${parcelMin ? sql`AND body->>'parcelNodeId' >= ${parcelMin}` : sql``}
+    ${parcelMax ? sql`AND body->>'parcelNodeId' <= ${parcelMax}` : sql``}
+  `;
 }
 
 /**
@@ -519,16 +561,21 @@ async function runCascadeAbsenceOnly() {
   const county = args.county;
   const t0c = performance.now();
 
+  const shardId = deriveShardId(args.parcelMin, args.parcelMax);
   const summary = {
     event: "cascade-absence-only",
     county,
     name: COUNTY_NAMES[county],
     dryRun: args.dryRun,
+    shardId,
+    ...(args.parcelMin ? { parcelMin: args.parcelMin } : {}),
+    ...(args.parcelMax ? { parcelMax: args.parcelMax } : {}),
     scanned: 0,
     cascaded: 0,
     skippedExisting: 0,
     errors: 0,
   };
+  const cascadedParcelIds = [];
 
   console.log(
     JSON.stringify({
@@ -536,6 +583,9 @@ async function runCascadeAbsenceOnly() {
       county,
       name: COUNTY_NAMES[county],
       dryRun: args.dryRun,
+      shardId,
+      ...(args.parcelMin ? { parcelMin: args.parcelMin } : {}),
+      ...(args.parcelMax ? { parcelMax: args.parcelMax } : {}),
     }),
   );
 
@@ -586,6 +636,7 @@ async function runCascadeAbsenceOnly() {
         WHERE entity_type = 'zoning-fact'
           AND jurisdiction_tenant LIKE ${`breadth_${county}_%`}
           AND body->>'parcelNodeId' > ${lastParcelNodeId}
+          ${cascadeKeyspaceBoundsSql(sql, args.parcelMin, args.parcelMax)}
         ORDER BY body->>'parcelNodeId', updated_at DESC NULLS LAST
         LIMIT ${take}
       `;
@@ -626,6 +677,7 @@ async function runCascadeAbsenceOnly() {
             );
             atomBatch.push(decline);
             summary.cascaded += 1;
+            if (args.cascadeIdsOut) cascadedParcelIds.push(row.parcel_node_id);
             if (atomBatch.length >= args.batch) await flush();
           } catch (err) {
             summary.errors += 1;
@@ -663,6 +715,15 @@ async function runCascadeAbsenceOnly() {
 
     await flush();
     summary.wallMs = Math.round(performance.now() - t0c);
+    if (args.cascadeIdsOut) {
+      cascadedParcelIds.sort();
+      writeFileSync(
+        args.cascadeIdsOut,
+        JSON.stringify(cascadedParcelIds, null, 0),
+      );
+      summary.cascadeIdsOut = args.cascadeIdsOut;
+      summary.cascadeIdsCount = cascadedParcelIds.length;
+    }
     console.log(
       JSON.stringify({
         event: "cascade-absence-only.done",
