@@ -70,6 +70,7 @@ describe("files-never-fixes structural guard — src/warden/** imports no atom-w
     expect(basenames).toContain("serve-path-truth.ts");
     expect(basenames).toContain("cross-store-consistency.ts");
     expect(basenames).toContain("cert-freshness.ts");
+    expect(basenames).toContain("envelope-sanity.ts");
     expect(basenames).toContain("ledger-write.ts");
   });
 

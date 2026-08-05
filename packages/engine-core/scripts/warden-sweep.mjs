@@ -18,17 +18,18 @@
  * wrong connection — see the git history on this comment block):
  *   DATABASE_URL — the ATOMS Neon (zoning-fact / buildable-envelope /
  *     road-node atoms). Required for neighborConsistency, crossStoreConsistency,
- *     certFreshness (all read atoms; loadZoningByParcel/loadDbTruthForParcel/
- *     loadRoadsForFips all query this connection, never txgio_parcel).
+ *     certFreshness, envelopeSanity (all read atoms; loadZoningByParcel/
+ *     loadDbTruthForParcel/loadRoadsForFips all query this connection, never
+ *     txgio_parcel).
  *   TXGIO_DATABASE_URL (falls back to CORTEX_DATABASE_URL, then DATABASE_URL
  *     — see the honest-degrade note below) — the LDT DEPLOYMENT Neon carrying
  *     `txgio_parcel` (cadastral geometry + bbox). In prod this is the
  *     legacy-design-tools-prod DEPLOYMENT_DATABASE_URL secret, a DIFFERENT
  *     database from the atoms Neon. Required for neighborConsistency's
- *     adjacency load (loadParcelAdjacencyIndexFromNeon reads txgio_parcel)
- *     and for crossStoreConsistency/certFreshness's situs-address lookup
- *     inside cert-grade-core.ts (also txgio_parcel, via ctx.txSql — never
- *     ctx.sql). The DATABASE_URL fallback exists so a single-Neon local dev
+ *     adjacency load (loadParcelAdjacencyIndexFromNeon reads txgio_parcel),
+ *     envelopeSanity's parcel-ring load, and crossStoreConsistency/
+ *     certFreshness's situs-address lookup inside cert-grade-core.ts (also
+ *     txgio_parcel, via ctx.txSql — never ctx.sql). The DATABASE_URL fallback
  *     setup (one DB carrying both tables) still runs; it is NOT a safe prod
  *     default when the two stores are actually separate deployments, which
  *     is why prod must set TXGIO_DATABASE_URL explicitly.
@@ -61,13 +62,15 @@ import { loadParcelAdjacencyIndexFromNeon, getParcelEdgeNeighbors } from "../src
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
 
+import { exteriorRingFromGeoJson } from "../src/boundary-primitive/adjacency-grid.ts";
 import { classifyNeighborConsistency } from "../src/warden/neighbor-consistency.ts";
 import { runServePathTruthCheck } from "../src/warden/serve-path-truth.ts";
 import { runCrossStoreConsistencyCheck } from "../src/warden/cross-store-consistency.ts";
 import { runCertFreshnessCheck } from "../src/warden/cert-freshness.ts";
+import { classifyEnvelopeSanity } from "../src/warden/envelope-sanity.ts";
 import { buildSweepReport, writeFindingsToJsonArtifact, postFindingsToLedger } from "../src/warden/ledger-write.ts";
 
-const ALL_CHECK_IDS = ["neighborConsistency", "servePathTruth", "crossStoreConsistency", "certFreshness"];
+const ALL_CHECK_IDS = ["neighborConsistency", "servePathTruth", "crossStoreConsistency", "certFreshness", "envelopeSanity"];
 
 function parseArgs(argv) {
   const out = { rowId: null, checks: null, sample: 10, certArtifact: null, out: null };
@@ -295,6 +298,30 @@ async function loadEnvelopeDeclineCode(parcelNodeId) {
   return typeof code === "string" && code.trim().length > 0 ? code.trim() : null;
 }
 
+/** Latest buildable-envelope atom body for envelopeSanity — READ ONLY. */
+async function loadEnvelopeBody(parcelNodeId) {
+  if (!sql) return null;
+  const [env] = await sql`
+    SELECT body FROM atoms WHERE entity_type = 'buildable-envelope'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+  return env?.body ?? null;
+}
+
+/** txgio_parcel exterior ring for envelopeSanity — READ ONLY. */
+async function loadParcelRingFromTxgio(fips, propId) {
+  if (!txSql) return null;
+  const [row] = await txSql`
+    SELECT geometry FROM txgio_parcel
+    WHERE county_fips = ${fips}
+      AND regexp_replace(prop_id, '^0+', '') = regexp_replace(${propId}, '^0+', '')
+    ORDER BY ingested_at DESC NULLS LAST
+    LIMIT 1
+  `;
+  return row?.geometry ? exteriorRingFromGeoJson(row.geometry) : null;
+}
+
 /** Tolerant loader for a --cert-artifact JSON (block13-cert-grade.mjs output shape, or a Warden report). */
 async function loadPriorCertVerdict(path) {
   if (!path) return undefined;
@@ -431,6 +458,34 @@ async function main() {
       });
       findings.push(...certFreshnessFindings);
       console.log(`[warden-sweep] certFreshness: ${certFreshnessFindings.length} finding(s)`);
+    }
+  }
+
+  if (requestedChecks.includes("envelopeSanity")) {
+    checksRun.push("envelopeSanity");
+    if (!sql || !txSql) {
+      console.log("[warden-sweep] envelopeSanity: skipped, DATABASE_URL/TXGIO_DATABASE_URL not configured");
+    } else {
+      const zoningByParcel = await loadZoningByParcel(sample);
+      const envelopeSanityInputs = [];
+      for (const parcelNodeId of sample) {
+        const propId = parcelNodeId.split(":")[1] ?? "";
+        envelopeSanityInputs.push({
+          parcelNodeId,
+          district: zoningByParcel.get(parcelNodeId)?.district ?? null,
+          envelopeBody: await loadEnvelopeBody(parcelNodeId),
+          parcelRing: await loadParcelRingFromTxgio(row.fips, propId),
+        });
+      }
+      const envelopeSanityFindings = classifyEnvelopeSanity({
+        sweepId,
+        fips: row.fips,
+        rowId: row.rowId,
+        now,
+        parcels: envelopeSanityInputs,
+      });
+      findings.push(...envelopeSanityFindings);
+      console.log(`[warden-sweep] envelopeSanity: ${envelopeSanityFindings.length} finding(s)`);
     }
   }
 
