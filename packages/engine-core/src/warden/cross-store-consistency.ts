@@ -13,6 +13,10 @@
  */
 import { gradeOneParcelInQueryMode, gradeUnzonedParcel, type CertGradeContext, type ParcelGradeResult } from "../registry/cert-grade-core.js";
 import type { JurisdictionRegistryRow } from "../registry/jurisdiction-registry.js";
+import {
+  defectClassForFailedGrade,
+  isCrossStoreGradeConsistent,
+} from "./cascade-state-consistency.js";
 import type { WardenFindingEvent } from "./types.js";
 
 /** Minimal shape read from a prior cert artifact JSON — tolerant of the block13-cert-grade.mjs output shape. */
@@ -28,6 +32,8 @@ export interface CrossStoreConsistencyDeps {
   readonly row: JurisdictionRegistryRow;
   /** Optional — when absent, the diff-against-prior-verdict portion is skipped with a named note. */
   readonly priorVerdict?: PriorCertVerdict;
+  /** Reads the latest envelope warmVerifyDeclineCode for decline-aware consistency (Warden v1.1). */
+  readonly loadEnvelopeDeclineCode?: (parcelNodeId: string) => Promise<string | null>;
 }
 
 export async function runCrossStoreConsistencyCheck(params: {
@@ -87,6 +93,12 @@ export async function runCrossStoreConsistencyCheck(params: {
     }
 
     if (!result.pass) {
+      const observedDeclineCode = deps.loadEnvelopeDeclineCode
+        ? await deps.loadEnvelopeDeclineCode(parcelNodeId)
+        : null;
+      if (isCrossStoreGradeConsistent(result, observedDeclineCode)) {
+        continue;
+      }
       findings.push({
         ts: now().toISOString(),
         sweepId,
@@ -94,8 +106,8 @@ export async function runCrossStoreConsistencyCheck(params: {
         fips,
         parcelNodeId,
         checkId: "crossStoreConsistency",
-        defectClass: "GEOMETRY-DIVERGE",
-        evidence: { grade: result },
+        defectClass: defectClassForFailedGrade(result),
+        evidence: { grade: result, observedDeclineCode },
         severity: "flag",
         artifactRef,
       });

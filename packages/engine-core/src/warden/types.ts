@@ -12,6 +12,9 @@
  *     patchy-absence/roster-drift finding shape, which has no OPS-8
  *     preflight analog (OPS-8 grades one row in isolation; the Warden's
  *     neighbor check reasons over a whole cohort's adjacency).
+ *   - "CASCADE-STATE-MISMATCH" — crossStoreConsistency finding when the
+ *     re-grade exposes a missing or incoherent cascade/envelope decline
+ *     (not a geometry divergence).
  *   - "CLEAN" — the literal used ONLY on the one severity:"info" event a
  *     clean sweep emits (see ledger-write.ts buildCleanSweepEvent). This is
  *     NOT a defect class in the grouping sense — it exists so a clean-sweep
@@ -43,7 +46,11 @@ export type OpsEightDefectClass =
  * reserved for the one info event a clean sweep emits — never used on a
  * severity:"flag" finding).
  */
-export type WardenDefectClass = OpsEightDefectClass | "MIXED-VINTAGE-NEIGHBOR" | "CLEAN";
+export type WardenDefectClass =
+  | OpsEightDefectClass
+  | "MIXED-VINTAGE-NEIGHBOR"
+  | "CASCADE-STATE-MISMATCH"
+  | "CLEAN";
 
 /** The four v1 Warden sweep checks (files-never-fixes: each check READS and reports, never writes). */
 export type WardenCheckId =
