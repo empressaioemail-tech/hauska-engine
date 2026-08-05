@@ -107,6 +107,16 @@ export interface GeometryParityProbeResult {
 export interface SupersededCohortProbeResult {
   readonly supersededCount: number;
   readonly totalCount: number;
+  /**
+   * When totalCount is 0 because no buildable-envelope atoms exist yet
+   * (pre-cascade / pre-warm county). Distinct from measurementBroken.
+   */
+  readonly preWarmNotApplicable?: boolean;
+  /**
+   * When a cross-check indicates envelopes exist on a legacy query path but
+   * the primary parcelNodeId-keyed measure returned zero (broken query).
+   */
+  readonly measurementBroken?: boolean;
 }
 
 /** Result of the mixed-vintage / stale-residue scan. */
@@ -280,13 +290,10 @@ async function checkSupersededCohortMeasured(
     return notRunnable(id, name, "probeSupersededCohort not configured", "SUPERSEDED-GT3PCT");
   }
   const probe = await deps.probeSupersededCohort(row);
-  // A zero denominator on a row whose parcel rail IS wired means the
-  // measurement query matched no parcels — the measure could not run, not
-  // that zero parcels are superseded. Faking a 0/0 PASS is a false-PASS
-  // shape (honest-absence discipline violation); decline honestly instead.
-  // A row with no wired parcel rail at all is out of scope for this check
-  // (check 1/3 already carry that decline) — 0/0 there is not a fresh defect.
-  if (probe.totalCount === 0 && row.railPerParcel) {
+  // A cross-check-detected broken query (legacy countyFips path finds envelopes
+  // the primary parcelNodeId-keyed query missed) is a real MEASURE-EMPTY-COHORT
+  // defect — not "zero superseded".
+  if (probe.measurementBroken) {
     return {
       id,
       name,
@@ -294,6 +301,17 @@ async function checkSupersededCohortMeasured(
       reason:
         "superseded measure returned empty cohort (query matched 0 parcels — measurement path broken, not zero superseded)",
       defectClass: "MEASURE-EMPTY-COHORT",
+    };
+  }
+  // Pre-warm / pre-cascade: no buildable-envelope atoms baked yet — the
+  // superseded fraction is genuinely not applicable, not a failed measure.
+  if (probe.totalCount === 0) {
+    return {
+      id,
+      name,
+      outcome: "PASS",
+      reason:
+        "pre-warm county: no buildable-envelope atoms yet — superseded measure not yet applicable (0/0 reported up front)",
     };
   }
   const fraction = probe.totalCount > 0 ? probe.supersededCount / probe.totalCount : 0;

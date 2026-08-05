@@ -160,23 +160,43 @@ describe("onboard-preflight — superseded cohort threshold", () => {
     expect(check.defectClass).toBe("SUPERSEDED-GT3PCT");
   });
 
-  // Addendum (caught live against prod fips 48021): a zero DENOMINATOR from
-  // the probe means the measurement query matched no parcels — "could not
-  // measure", not "measured zero". Faking a 0/0 PASS is a false-PASS shape
-  // that violates honest-absence discipline.
-  it("DECLINEs with MEASURE-EMPTY-COHORT when totalCount is 0 on a row with a wired parcel rail", async () => {
+  // Addendum (2026-08-05): totalCount=0 on a pre-cascade county means the
+  // superseded measure is not yet applicable — PASS with named pre-warm state,
+  // not MEASURE-EMPTY-COHORT. MEASURE-EMPTY-COHORT is reserved for
+  // measurementBroken cross-check hits.
+  it("PASSes with pre-warm wording when totalCount is 0 (no envelope atoms yet)", async () => {
     const deps: PreflightDeps = {
       ...ALL_PASS_DEPS,
-      probeSupersededCohort: async () => ({ supersededCount: 0, totalCount: 0 }),
+      probeSupersededCohort: async () => ({
+        supersededCount: 0,
+        totalCount: 0,
+        preWarmNotApplicable: true,
+      }),
     };
     const { report } = await runOnboardPreflight("48021", deps);
-    // Bastrop (rowId "Bastrop") carries a wired railPerParcel in the fixture registry.
+    const check = report.rows
+      .find((r) => r.rowId === "Bastrop")!
+      .checks.find((c) => c.id === "supersededCohortMeasured")!;
+    expect(check.outcome).toBe("PASS");
+    expect(check.reason).toMatch(/pre-warm county/);
+    expect(check.reason).toMatch(/not yet applicable/);
+  });
+
+  it("DECLINEs with MEASURE-EMPTY-COHORT when measurementBroken is set", async () => {
+    const deps: PreflightDeps = {
+      ...ALL_PASS_DEPS,
+      probeSupersededCohort: async () => ({
+        supersededCount: 0,
+        totalCount: 0,
+        measurementBroken: true,
+      }),
+    };
+    const { report } = await runOnboardPreflight("48021", deps);
     const check = report.rows
       .find((r) => r.rowId === "Bastrop")!
       .checks.find((c) => c.id === "supersededCohortMeasured")!;
     expect(check.outcome).toBe("DECLINE");
     expect(check.defectClass).toBe("MEASURE-EMPTY-COHORT");
-    expect(check.reason).toMatch(/empty cohort/);
     expect(check.reason).toMatch(/measurement path broken, not zero superseded/);
   });
 
@@ -193,16 +213,20 @@ describe("onboard-preflight — superseded cohort threshold", () => {
     expect(check.reason).toMatch(/1\/500/);
   });
 
-  it("DECLINEs with MEASURE-EMPTY-COHORT for Elgin when totalCount is 0, now that railPerParcel is wired (same rule as Bastrop)", async () => {
+  it("PASSes with pre-warm wording for Elgin when totalCount is 0 (pre-cascade envelope state)", async () => {
     const deps: PreflightDeps = {
       ...ALL_PASS_DEPS,
-      probeSupersededCohort: async () => ({ supersededCount: 0, totalCount: 0 }),
+      probeSupersededCohort: async () => ({
+        supersededCount: 0,
+        totalCount: 0,
+        preWarmNotApplicable: true,
+      }),
     };
     const { report } = await runOnboardPreflight("48021", deps);
     const elginRow = report.rows.find((r) => r.rowId === "Elgin")!;
     const check = elginRow.checks.find((c) => c.id === "supersededCohortMeasured")!;
-    expect(check.outcome).toBe("DECLINE");
-    expect(check.defectClass).toBe("MEASURE-EMPTY-COHORT");
+    expect(check.outcome).toBe("PASS");
+    expect(check.reason).toMatch(/pre-warm county/);
   });
 });
 

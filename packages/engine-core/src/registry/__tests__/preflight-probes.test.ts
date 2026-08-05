@@ -7,7 +7,10 @@ import {
   buildServePathHealthProbe,
   buildCostSampleProbe,
   buildOnboardPreflightDeps,
-  COST_MODEL_USD_PER_COMPUTE_HOUR,
+  COST_MODEL_USD_PER_WALL_CLOCK_HOUR,
+  COST_MODEL_USD_PER_COMPUTE_UNIT_HOUR,
+  COST_MODEL_USD_PER_ATOM_WRITE,
+  COST_MODEL_DEFAULT_ATOM_WRITES_PER_PARCEL,
   COST_MODEL_USD_PER_1K_EXTERNAL_CALLS,
   COST_SAMPLE_UNMEASURABLE_SENTINEL_USD,
 } from "../preflight-probes.js";
@@ -262,17 +265,18 @@ describe("buildCostSampleProbe", () => {
     });
     const result = await probe(ROW);
     expect(result.detail).toMatch(/estimate: true/);
-    expect(result.detail).toContain(String(COST_MODEL_USD_PER_COMPUTE_HOUR));
-    expect(result.detail).toContain(String(COST_MODEL_USD_PER_1K_EXTERNAL_CALLS));
+    expect(result.detail).toContain(String(COST_MODEL_USD_PER_COMPUTE_UNIT_HOUR));
+    expect(result.detail).toContain(String(COST_MODEL_USD_PER_ATOM_WRITE));
+    expect(result.detail).toContain(String(COST_MODEL_DEFAULT_ATOM_WRITES_PER_PARCEL));
     expect(result.estimatedUsd).toBeLessThan(200);
     expect(result.estimatedUsd).toBeGreaterThan(0);
   });
 
   it("DECLINEs (estimate at/over the $200 gate) for a large cohort extrapolation", async () => {
-    let tick = 0;
+    let calls = 0;
     const now = () => {
-      tick += 60_000; // 60s per call — large wall-clock per parcel
-      return tick;
+      calls += 1;
+      return calls === 1 ? 0 : 200_000; // 200s wall-clock for the 5-parcel sample grade
     };
     const probe = buildCostSampleProbe({
       sql: {} as never,
@@ -287,6 +291,32 @@ describe("buildCostSampleProbe", () => {
     });
     const result = await probe(ROW);
     expect(result.estimatedUsd).toBeGreaterThanOrEqual(200);
+    expect(result.detail).toMatch(/estimate: true/);
+  });
+
+  it("PASSes Bell-scale extrapolation under $200 with calibrated bake-aligned constants (2026-08-05)", async () => {
+    // Live Bell 48027 re-gate evidence: 5-parcel sample, wall 1388ms, cohort 163519.
+    // Old model: $333 false-kill. Calibrated model should land ~$1 (honest PASS).
+    let calls = 0;
+    const now = () => {
+      calls += 1;
+      return calls === 1 ? 0 : 1388;
+    };
+    const probe = buildCostSampleProbe({
+      sql: {} as never,
+      txSql: {} as never,
+      storage: {} as never,
+      descriptor: {},
+      loadSample: makeSampleLoader(),
+      loadRoads: makeRoadsLoader(),
+      gradeOneParcel: passGrader,
+      loadCohortCount: async () => 163_519,
+      now,
+    });
+    const result = await probe(ROW);
+    expect(result.estimatedUsd).toBeLessThan(200);
+    expect(result.estimatedUsd).toBeGreaterThan(0.5);
+    expect(result.estimatedUsd).toBeLessThan(5);
     expect(result.detail).toMatch(/estimate: true/);
   });
 
