@@ -15,6 +15,9 @@
  *   - "CASCADE-STATE-MISMATCH" — crossStoreConsistency finding when the
  *     re-grade exposes a missing or incoherent cascade/envelope decline
  *     (not a geometry divergence).
+ *   - "ENVELOPE-SHAPE-ANOMALY" — envelopeSanity finding when a stored
+ *     buildable-envelope geojson fails containment, area-ratio regime bounds,
+ *     or inset-edge parallelism vs the txgio parcel ring.
  *   - "CLEAN" — the literal used ONLY on the one severity:"info" event a
  *     clean sweep emits (see ledger-write.ts buildCleanSweepEvent). This is
  *     NOT a defect class in the grouping sense — it exists so a clean-sweep
@@ -50,14 +53,16 @@ export type WardenDefectClass =
   | OpsEightDefectClass
   | "MIXED-VINTAGE-NEIGHBOR"
   | "CASCADE-STATE-MISMATCH"
+  | "ENVELOPE-SHAPE-ANOMALY"
   | "CLEAN";
 
-/** The four v1 Warden sweep checks (files-never-fixes: each check READS and reports, never writes). */
+/** Warden sweep checks (files-never-fixes: each check READS and reports, never writes). */
 export type WardenCheckId =
   | "neighborConsistency"
   | "servePathTruth"
   | "crossStoreConsistency"
-  | "certFreshness";
+  | "certFreshness"
+  | "envelopeSanity";
 
 export type WardenFindingSeverity = "info" | "flag";
 
