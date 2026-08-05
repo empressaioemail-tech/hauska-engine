@@ -127,10 +127,13 @@ describe("central TX county fan registry rows (2026-08-04)", () => {
     // in the class comment above, not enforced by a test.
   });
 
-  it("Hays County row has no cadastralQueryUrl and no railPerParcel (loud-fail, not a borrowed default)", () => {
-    expect(HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW.railC.cadastralQueryUrl).toBeUndefined();
-    expect(HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW.railPerParcel).toBeUndefined();
-    expect(HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW.flags).toContain(
+  it("Hays County row carries the live-verified county-owned cadastral layer (found 2026-08-05, supersedes the loud-fail absence pin)", () => {
+    const url =
+      "https://services5.arcgis.com/bVphnK8rPe5MHUSr/arcgis/rest/services/Hays_County_Parcels/FeatureServer/0";
+    expect(HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW.railC.cadastralQueryUrl).toBe(url);
+    expect(HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW.railPerParcel?.featureServerLayerUrl).toBe(url);
+    expect(HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW.railPerParcel?.propIdField).toBe("prop_id");
+    expect(HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW.flags).not.toContain(
       "CADASTRAL_QUERY_URL_NOT_FOUND",
     );
   });

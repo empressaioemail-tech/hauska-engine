@@ -626,23 +626,25 @@ export const GUADALUPE_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryR
   };
 
 /**
- * Hays County (48209) — cadastralQueryUrl deliberately OMITTED. The
- * 2026-08-04 recon found no live CAD-native ArcGIS REST service for Hays
- * (searched hayscad.com, the Hays open-data hub, and the BIS Consultants
- * vendor org — 0 results for `owner:bis_hayscad`). One weak candidate
- * (a private engineering firm's static 2020 parcel snapshot,
- * gis.urbaneng.com/.../HaysCountyParcels) was found and explicitly NOT
- * recommended (thin/joined schema, not the CAD's authoritative roll).
- * Per the #242 cadastralQueryUrl fix, an absent cadastralQueryUrl makes the
- * per-parcel cert path fail LOUD rather than silently default to another
- * county's endpoint — that loud-fail is the correct behavior for Hays until
- * a live service is found. railPerParcel is omitted entirely for the same
- * reason: there is no live layer to point it at.
- * FOLLOW-UP: browse hayscad.com/data-downloads/ (bulk shapefile download,
- * not a REST service, out of this recon's ArcGIS-REST-only remit) and the
- * Hays open-data hub's full dataset catalog (title may not match the search
- * terms tried) before concluding no live service exists at all.
+ * Hays County (48209) — cadastral service FOUND 2026-08-05 (supersedes the
+ * 2026-08-04 no-service recon note): the county's own ArcGIS Online org
+ * (owner HaysCountyGIS) hosts a live parcels layer. VERIFIED LIVE
+ * 2026-08-05 per the runbook four-point probe: service root layer 0 (only
+ * layer) is named `countygis.DBO.Parcels`, geometry Polygon,
+ * capabilities Query,Extract, serviceDescription "Hays County Parcels:
+ * last updated March 2026"; fields carry `prop_id`
+ * (esriFieldTypeInteger, lowercase) plus prop_id_text/geo_id and the full
+ * appraisal-roll schema (file_as_name, situs, values, deed vol/page);
+ * a real query (prop_id IN (15901), f=geojson, outSR=4326) returned
+ * exactly 1 Polygon feature — planner re-verified independently.
+ * REJECTED during the same recon: `EXTERNAL_hcad_parcels`
+ * (CTM.Publisher) — despite the name it is a raw CAD/MicroStation
+ * drawing-entity export (ENTITY/HANDLE/LAYER fields, no parcel ids);
+ * and the 2020-vintage urbaneng.com static snapshot (six years stale).
+ * Full recon evidence: doc_repo _inbox 2026-08-05 Hays recon artifact.
  */
+const HAYS_COUNTY_CADASTRAL_PARCELS_LAYER =
+  "https://services5.arcgis.com/bVphnK8rPe5MHUSr/arcgis/rest/services/Hays_County_Parcels/FeatureServer/0";
 export const HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
   {
     rowId: "Hays County (unincorporated)",
@@ -650,8 +652,13 @@ export const HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
     countyName: "Hays",
     status: "pre-flight-pending",
     zoningRegime: "unzoned",
-    // railPerParcel intentionally omitted — no live cadastral layer found
-    // (see class comment above); do not default to a borrowed layer.
+    railPerParcel: {
+      featureServerLayerUrl: HAYS_COUNTY_CADASTRAL_PARCELS_LAYER,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "prop_id",
+    },
     railC: {
       geometrySource: "stratmap_bulk_zip",
       downloadUrl:
@@ -659,15 +666,13 @@ export const HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
       vintageYyyymm: "202503",
       featureCount: 117427,
       propIdBadRate: 0.0036,
-      // cadastralQueryUrl OMITTED — no live CAD-native ArcGIS REST service
-      // found (2026-08-04 recon). Absence forces the cert grader to
-      // fail loud (see #242) rather than silently default elsewhere.
+      cadastralQueryUrl: HAYS_COUNTY_CADASTRAL_PARCELS_LAYER,
     },
     join: {
       joinKey: "prop_id",
       ownerMatchRequired: true,
     },
-    flags: ["STALE", "PRE_FLIGHT_PENDING", "CADASTRAL_QUERY_URL_NOT_FOUND"],
+    flags: ["STALE", "PRE_FLIGHT_PENDING"],
     provenance: {
       sourcePage: "https://tnris.org/stratmap/land-parcels.html",
       frozenAt: "2026-08-04",
