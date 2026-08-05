@@ -28,6 +28,7 @@ import type { AerialImageFetcher } from "./pdf/aerial.js";
 import { emitPdfSitePlan } from "./pdf/render.js";
 import { resolveAttachingRoadNodes } from "./resolve-attaching-roads.js";
 import { prepareBoundaryEdgesForExport } from "./prepare-boundary-edges-for-export.js";
+import { resolveSitusAddressForExport } from "./resolve-situs-for-export.js";
 import {
   composeSitePlanModel,
   type EnvelopeOutcomeInput,
@@ -388,12 +389,16 @@ export async function composeSitePlanModelForParcel(
     const warmRoads = attachingRoadAtoms
       .map((r) => roadAtomToWarmSource(r))
       .filter((r): r is WarmRoadSource => r !== null);
+    const situsAddress = await resolveSitusAddressForExport({
+      parcelNodeId: options.parcelNodeId,
+      descriptorAddress: options.descriptor?.address,
+    });
     const prepared = await prepareBoundaryEdgesForExport({
       parcelNodeId: options.parcelNodeId,
       storedEdges: boundaryEdgeAtoms,
       ringWgs84,
       roads: warmRoads,
-      situsAddress: options.descriptor?.address ?? null,
+      situsAddress,
       setback: setbackHonestAbsence ? null : (setbackAtom ?? null),
       notSpecified,
     });
