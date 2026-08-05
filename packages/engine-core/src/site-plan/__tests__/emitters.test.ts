@@ -109,6 +109,29 @@ function extractZValuesForLayer(dxf: string, layer: string): number[] {
   return zs;
 }
 
+/** TEXT insert XY for a layer (AcDbText 10/20), for non-overlap regression. */
+function extractTextInsertsForLayer(dxf: string, layer: string): Array<{ x: number; y: number }> {
+  const lines = dxf.split(/\r?\n/);
+  const points: Array<{ x: number; y: number }> = [];
+  let currentLayer: string | null = null;
+  let currentSubclass: string | null = null;
+  let pendingX: number | null = null;
+  for (let i = 0; i < lines.length - 1; i++) {
+    const code = lines[i]!.trim();
+    const value = lines[i + 1]!.trim();
+    if (code === "8") currentLayer = value;
+    if (code === "100") currentSubclass = value;
+    if (currentLayer !== layer || currentSubclass !== "AcDbText") continue;
+    if (code === "10") pendingX = Number(value);
+    if (code === "20" && pendingX !== null) {
+      const y = Number(value);
+      if (Number.isFinite(pendingX) && Number.isFinite(y)) points.push({ x: pendingX, y });
+      pendingX = null;
+    }
+  }
+  return points;
+}
+
 describe("site-plan DXF/IFC emitters", { timeout: 20_000 }, () => {
   it("builds a DXF worker request sourced entirely from the shared site model", () => {
     const model = buildModel();
@@ -175,6 +198,55 @@ describe("site-plan DXF/IFC emitters", { timeout: 20_000 }, () => {
       .split(/\r?\n/)
       .filter((line, i, all) => all[i - 1]?.trim() === "8" && line.trim() === "STREET");
     expect(streetEntityLines.length).toBe(0);
+  });
+
+  it("T2/#255: DIMENSION and SETBACK text anchors are normal-offset (not co-located on property midpoints)", () => {
+    // Regressing change: cdaae2b (PR #255) refreshed stale 15/0/0 → F/S/R on
+    // export. setback.segments share property-ring endpoints with
+    // propertySegments; pre-fix both label families used the raw midpoint so
+    // "FRONT 25 ft" stacked on "XX.X ft" (109 Higgins / 48021:31362).
+    const model = buildModel();
+    const mesh = buildTerrainMeshGeometry(dem, bbox);
+    const request = buildDxfSitePlanRequest(model, mesh) as Record<string, any>;
+    const textHeight = request.textHeight as number;
+    expect(model.propertySegments.length).toBe(model.setback.segments.length);
+    expect(model.setback.segments.every((s) => s.distanceFt > 0)).toBe(true);
+
+    for (let i = 0; i < model.propertySegments.length; i++) {
+      const dim = request.dimensions[i]!.midpoint as [number, number, number];
+      const set = request.setback.segments[i]!.midpoint as [number, number, number];
+      const rawMidX = (model.propertySegments[i]!.a.x + model.propertySegments[i]!.b.x) / 2;
+      const rawMidY = (model.propertySegments[i]!.a.y + model.propertySegments[i]!.b.y) / 2;
+      const dimFromRaw = Math.hypot(dim[0] - rawMidX, dim[1] - rawMidY);
+      const setFromRaw = Math.hypot(set[0] - rawMidX, set[1] - rawMidY);
+      const dimToSet = Math.hypot(dim[0] - set[0], dim[1] - set[1]);
+      expect(dimFromRaw, `DIMENSION edge ${i} must leave the property midpoint`).toBeGreaterThan(textHeight);
+      expect(setFromRaw, `SETBACK edge ${i} must leave the property midpoint`).toBeGreaterThan(textHeight * 0.5);
+      expect(dimToSet, `DIMENSION/SETBACK edge ${i} must not overlap`).toBeGreaterThan(textHeight);
+    }
+  });
+
+  it("T2/#255: emitted DXF TEXT inserts for DIMENSION vs SETBACK stay separated", async () => {
+    const model = buildModel();
+    const mesh = buildTerrainMeshGeometry(dem, bbox);
+    const request = buildDxfSitePlanRequest(model, mesh) as Record<string, any>;
+    const labeledSegMids = (request.setback.segments as Array<{ midpoint: number[]; label?: string }>)
+      .filter((seg) => !!seg.label?.trim())
+      .map((seg) => seg.midpoint);
+    const { bytes } = await emitDxfSitePlan(model, mesh);
+    const dxf = new TextDecoder().decode(bytes);
+    const dimPts = extractTextInsertsForLayer(dxf, "DIMENSION");
+    const setSegmentPts = extractTextInsertsForLayer(dxf, "SETBACK").filter((p) =>
+      labeledSegMids.some((mid) => Math.hypot(p.x - mid[0]!, p.y - mid[1]!) < 0.05),
+    );
+    expect(dimPts.length).toBe(model.propertySegments.length);
+    expect(setSegmentPts.length).toBe(labeledSegMids.length);
+    const minSep = (request.textHeight as number) * 1.2;
+    for (const d of dimPts) {
+      for (const s of setSegmentPts) {
+        expect(Math.hypot(d.x - s.x, d.y - s.y)).toBeGreaterThan(minSep);
+      }
+    }
   });
 
   it("draws STREET at the same grade Z as PROPERTY_LINE/SETBACK in DXF, and IFC honors the same grade (HOLD 2 regression)", async () => {
