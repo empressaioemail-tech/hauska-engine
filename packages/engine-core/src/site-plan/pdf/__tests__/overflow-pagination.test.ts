@@ -4,6 +4,7 @@ import { composeSitePlanModel, type SitePlanModel } from "../../site-model.js";
 import {
   countSitePlanSheets,
   emitPdfSitePlan,
+  SITE_PLAN_BRAND_KICKER,
   type EmitPdfSitePlanOptions,
   type PdfSitePlanResult,
 } from "../render.js";
@@ -193,12 +194,12 @@ describe("overflow-pagination gate (summary-sheet flow)", { timeout: 120_000 }, 
     // exact "SHEET k OF n" per sheet, k = 1..n: drawing, each summary sheet,
     // aerial last.
     const tight = tightText(decoded);
-    expect(tight).toContain(`SITE PLAN · SHEET 1 OF ${n}`);
+    expect(tight).toContain(`${SITE_PLAN_BRAND_KICKER} · SITE PLAN · SHEET 1 OF ${n}`);
     for (const sheet of result.summarySheets) {
       expect(sheet.printedNo).toBe(sheet.localPage); // standalone: startAt = 1
-      expect(tight).toContain(`SUMMARY · SHEET ${sheet.printedNo} OF ${n}`);
+      expect(tight).toContain(`${SITE_PLAN_BRAND_KICKER} · SUMMARY · SHEET ${sheet.printedNo} OF ${n}`);
     }
-    expect(tight).toContain(`AERIAL · SHEET ${n} OF ${n}`);
+    expect(tight).toContain(`${SITE_PLAN_BRAND_KICKER} · AERIAL · SHEET ${n} OF ${n}`);
     // No sheet still prints a stale total (e.g. the pre-pagination "OF 3").
     for (let k = 1; k <= n; k++) {
       expect(tight).not.toContain(`SHEET ${k} OF ${n - 1}`);

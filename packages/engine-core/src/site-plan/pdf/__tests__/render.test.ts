@@ -6,7 +6,7 @@ import { composeSitePlanModel } from "../../site-model.js";
 import { boundaryEdgesForRing } from "../../__tests__/boundary-edge-fixture.js";
 import { AERIAL_UNAVAILABLE_NOTE } from "../aerial.js";
 import { REASON } from "../format.js";
-import { emitPdfSitePlan, type EmitPdfSitePlanOptions } from "../render.js";
+import { emitPdfSitePlan, SITE_PLAN_BRAND_KICKER, type EmitPdfSitePlanOptions } from "../render.js";
 import { SITE_PLAN_HONESTY_LINE } from "../provenance.js";
 import { decodeAllContentStreams } from "./decode-pdf-text.js";
 
@@ -145,6 +145,9 @@ describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
     const model = buildModel();
     const { bytes, fontNote } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
+    // Smart Site brand kicker on the sheet eyebrow (REBRAND_UI brand skin).
+    expect(decoded).toContain(SITE_PLAN_BRAND_KICKER);
+    expect(decoded).toContain(`${SITE_PLAN_BRAND_KICKER} · SITE PLAN · SHEET 1 OF 3`);
     // Header: the address is the largest string on the sheet (uppercased).
     expect(decoded).toContain("1127 N PINE ST");
     // Sub-line carries city + parcel.
