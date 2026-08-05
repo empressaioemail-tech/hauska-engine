@@ -37,7 +37,7 @@ describe("runCrossStoreConsistencyCheck", () => {
     vi.restoreAllMocks();
   });
 
-  it("a hard-fail grade flags GEOMETRY-DIVERGE", async () => {
+  it("a hard-fail grade flags GEOMETRY-DIVERGE when no valid decline code", async () => {
     vi.spyOn(certGradeCore, "gradeOneParcelInQueryMode").mockResolvedValue({
       pass: false,
       gates: {},
@@ -49,7 +49,12 @@ describe("runCrossStoreConsistencyCheck", () => {
       fips: FIPS,
       rowId: ROW_ID,
       now: FIXED_NOW,
-      deps: { ctx: stubCtx, sample: [`${FIPS}:34073`], row: BASTROP_REGISTRY_ROW },
+      deps: {
+        ctx: stubCtx,
+        sample: [`${FIPS}:34073`],
+        row: BASTROP_REGISTRY_ROW,
+        loadEnvelopeDeclineCode: async () => null,
+      },
     });
     expect(findings.some((f) => f.severity === "flag" && f.defectClass === "GEOMETRY-DIVERGE")).toBe(true);
     vi.restoreAllMocks();

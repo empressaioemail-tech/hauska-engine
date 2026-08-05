@@ -56,7 +56,7 @@ import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/sto
 import { isStaleBastropCitySetbackRule } from "@hauska-engine/adapters";
 
 import { loadJurisdictionRegistryRowById } from "../src/registry/jurisdiction-registry.ts";
-import { loadRegistryDistrictCohort } from "../src/registry/parcel-cohort-loader.ts";
+import { loadRegistryDistrictCohortByRow } from "../src/registry/parcel-cohort-loader.ts";
 import { loadParcelAdjacencyIndexFromNeon, getParcelEdgeNeighbors } from "../src/boundary-primitive/index.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
@@ -122,11 +122,45 @@ const retrievalApiKey = process.env.RETRIEVAL_API_KEY?.trim() || null;
 const ledgerIngestUrl = process.env.LEDGER_INGEST_URL?.trim() || null;
 const ledgerIngestKey = process.env.LEDGER_INGEST_KEY?.trim() || null;
 
-/** Deterministic first-N-by-prop-id sample, sorted ascending as strings (mirrors onboard-preflight.mjs's sample convention). */
-async function loadDeterministicSample(fips, sampleSizeArg = sampleSize) {
-  const cohort = await loadRegistryDistrictCohort(fips, null);
-  const sortedIds = [...cohort.parcelNodeIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return { cohort, sample: sortedIds.slice(0, sampleSizeArg) };
+/** Deterministic rowId-keyed sample — mirrors preflight-probes.ts loadDeterministicSample (#247/#248). */
+async function loadDeterministicSample(registryRow, sampleSizeArg = sampleSize) {
+  const cohort = await loadRegistryDistrictCohortByRow(registryRow.rowId, null);
+  const DEGENERATE_SEGMENTS = new Set(["", "0", "null", "undefined", "NaN"]);
+  const sortedIds = [...new Set(cohort.parcelNodeIds)]
+    .filter((id) => {
+      const seg = (id.split(":")[1] ?? "").trim();
+      if (DEGENERATE_SEGMENTS.has(seg)) return false;
+      const n = Number(seg);
+      return !(Number.isFinite(n) && n <= 0);
+    })
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+  if (registryRow.zoningRegime !== "unzoned" || !sql) {
+    return { cohort, sample: sortedIds.slice(0, sampleSizeArg) };
+  }
+
+  const picked = [];
+  for (let i = 0; i < sortedIds.length && picked.length < sampleSizeArg; i += 200) {
+    const chunk = sortedIds.slice(i, i + 200);
+    const rows = await sql`
+      SELECT DISTINCT ON (body->>'parcelNodeId')
+        body->>'parcelNodeId' AS pid,
+        body->>'district' AS district
+      FROM atoms
+      WHERE entity_type = 'zoning-fact'
+        AND body->>'parcelNodeId' = ANY(${chunk})
+      ORDER BY body->>'parcelNodeId', updated_at DESC NULLS LAST
+    `;
+    const districted = new Set(
+      rows.filter((r) => r.district !== null).map((r) => r.pid),
+    );
+    for (const id of chunk) {
+      if (districted.has(id)) continue;
+      picked.push(id);
+      if (picked.length >= sampleSizeArg) break;
+    }
+  }
+  return { cohort, sample: picked };
 }
 
 async function loadRoadsForFips(fips) {
@@ -223,7 +257,9 @@ async function loadDbTruthForParcel(parcelNodeId) {
       AND body->>'parcelNodeId' = ${parcelNodeId}
     ORDER BY updated_at DESC NULLS LAST LIMIT 1
   `;
-  const hasZoningFact = !!zf && !zf.body?.absence;
+  const hasZoningFact = !!zf;
+  const districtFromFact =
+    zf?.body?.absence != null ? null : (zf?.body?.district ?? null);
 
   let setbackSourceStale = null;
   if (sr) {
@@ -240,11 +276,23 @@ async function loadDbTruthForParcel(parcelNodeId) {
 
   return {
     hasZoningFact,
-    district: hasZoningFact ? (zf.body?.district ?? null) : null,
+    district: hasZoningFact ? districtFromFact : null,
     hasBuildableEnvelope: !!env,
     setbackSourceStale,
     envelopeServeIndependentOfStaleSetback: env ? envelopeIndependentOfStaleSetback(env.body) : null,
   };
+}
+
+/** Latest envelope warmVerifyDeclineCode for crossStore decline-aware consistency (Warden v1.1). */
+async function loadEnvelopeDeclineCode(parcelNodeId) {
+  if (!sql) return null;
+  const [env] = await sql`
+    SELECT body FROM atoms WHERE entity_type = 'buildable-envelope'
+      AND body->>'parcelNodeId' = ${parcelNodeId}
+    ORDER BY updated_at DESC NULLS LAST LIMIT 1
+  `;
+  const code = env?.body?.warmVerifyDeclineCode;
+  return typeof code === "string" && code.trim().length > 0 ? code.trim() : null;
 }
 
 /** Tolerant loader for a --cert-artifact JSON (block13-cert-grade.mjs output shape, or a Warden report). */
@@ -262,7 +310,7 @@ async function loadPriorCertVerdict(path) {
   return {
     passByParcel,
     artifactPath: path,
-    artifactTs: json.ts ?? json.timestamp ?? json.generatedAt ?? null,
+    artifactTs: json.when ?? json.ts ?? json.timestamp ?? json.generatedAt ?? null,
   };
 }
 
@@ -270,7 +318,7 @@ async function main() {
   const findings = [];
   const checksRun = [];
 
-  const { cohort, sample } = await loadDeterministicSample(row.fips, sampleSize);
+  const { cohort, sample } = await loadDeterministicSample(row, sampleSize);
   console.log(`[warden-sweep] cohort size=${cohort.count} sample size=${sample.length}`);
 
   if (requestedChecks.includes("neighborConsistency")) {
@@ -355,6 +403,7 @@ async function main() {
           sample,
           row,
           priorVerdict,
+          loadEnvelopeDeclineCode,
         },
       });
       findings.push(...crossStoreFindings);

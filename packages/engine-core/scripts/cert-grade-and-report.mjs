@@ -34,12 +34,16 @@
  * All recognized block13-cert-grade.mjs flags (--roster-from, --district-prefix,
  * --roster-file, --preflight-row-id, --grade-mode, --answer-key, --descriptor,
  * --descriptor-file) are passed through unchanged. This wrapper's own flag
- * (--with-quarantine) is stripped before pass-through.
+ * (--with-quarantine) is stripped before pass-through. Wrapper-only flags:
+ * (--artifact-out) writes the captured cert JSON to a timestamped artifact
+ * file (defaults to cert-artifact-<rowId>-<iso>.json in cwd when omitted
+ * but ledger ingest runs — see main()).
  */
 import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { writeFile } from "node:fs/promises";
 
 import { loadJurisdictionRegistryRowById } from "../src/registry/jurisdiction-registry.ts";
 // bastrop-dominant-district-roster.mjs is imported LAZILY (inside
@@ -110,10 +114,19 @@ export function extractWrapperArgs(rawArgv) {
   let withQuarantine = false;
   let preflightRowId = null;
   let explicitRowId = null;
+  let artifactOut = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--with-quarantine") {
       withQuarantine = true;
+      continue;
+    }
+    if (a.startsWith("--artifact-out=")) {
+      artifactOut = a.slice("--artifact-out=".length).trim();
+      continue;
+    }
+    if (a === "--artifact-out") {
+      artifactOut = String(argv[++i] || "").trim();
       continue;
     }
     if (a.startsWith("--preflight-row-id=")) {
@@ -134,7 +147,7 @@ export function extractWrapperArgs(rawArgv) {
     passthrough.push(a);
   }
   const rowId = explicitRowId || preflightRowId || "Bastrop";
-  return { passthrough, withQuarantine, preflightRowId, explicitRowId, rowId };
+  return { passthrough, withQuarantine, preflightRowId, explicitRowId, rowId, artifactOut };
 }
 
 /**
@@ -242,7 +255,7 @@ async function postQuarantine(ledgerConfig, rowId) {
 }
 
 async function main() {
-  const { passthrough, withQuarantine, rowId } = extractWrapperArgs(process.argv.slice(2));
+  const { passthrough, withQuarantine, rowId, artifactOut } = extractWrapperArgs(process.argv.slice(2));
 
   const result = await runTargetScript(passthrough);
   if (result.stdout) process.stdout.write(result.stdout);
@@ -253,17 +266,28 @@ async function main() {
     return;
   }
 
-  const ledgerConfig = resolveLedgerIngestConfig();
-  if (!ledgerConfig) {
-    console.error("cert-grade-and-report: LEDGER_INGEST_URL/LEDGER_INGEST_KEY not set, print-only, no ingest POST.");
-    return;
-  }
-
   let captured;
   try {
     captured = JSON.parse(result.stdout);
   } catch (err) {
-    console.error(`cert-grade-and-report: could not parse block13-cert-grade.mjs stdout as JSON, skipping ingest POST: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`cert-grade-and-report: could not parse block13-cert-grade.mjs stdout as JSON: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const artifactPath =
+    artifactOut ||
+    `cert-artifact-${String(rowId).replace(/\s+/g, "_")}-${(captured.when ?? new Date().toISOString()).replace(/[:.]/g, "-")}.json`;
+  try {
+    await writeFile(artifactPath, `${JSON.stringify(captured, null, 2)}\n`, "utf8");
+    console.error(`cert-grade-and-report: artifact written: ${artifactPath}`);
+  } catch (err) {
+    console.error(`cert-grade-and-report: failed to write artifact ${artifactPath}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const ledgerConfig = resolveLedgerIngestConfig();
+  if (!ledgerConfig) {
+    console.error("cert-grade-and-report: LEDGER_INGEST_URL/LEDGER_INGEST_KEY not set, print-only, no ingest POST.");
     return;
   }
 
