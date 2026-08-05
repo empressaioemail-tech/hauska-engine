@@ -758,6 +758,92 @@ export const WILLIAMSON_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistry
     },
   };
 
+/** Kaufman County (48257) — BIS Consultants CAD-GIS vendor template; live count 99,605 vs StratMap 94,680 (ratio 1.052), CONFIRMED 2026-08-05. */
+const KAUFMAN_COUNTY_CADASTRAL_LAYER_0 =
+  "https://services9.arcgis.com/26s7bQ5Q51Gt4J2Q/arcgis/rest/services/KaufmanCADWebService/FeatureServer/0";
+
+export const KAUFMAN_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "Kaufman County (unincorporated)",
+    fips: "48257",
+    countyName: "Kaufman",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    railPerParcel: {
+      featureServerLayerUrl: KAUFMAN_COUNTY_CADASTRAL_LAYER_0,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "prop_id",
+    },
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48257_lp.zip",
+      vintageYyyymm: "202503",
+      featureCount: 94680,
+      propIdBadRate: 0.0027,
+      cadastralQueryUrl: KAUFMAN_COUNTY_CADASTRAL_LAYER_0,
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-05",
+      registryVersion: "1.2.0",
+    },
+  };
+
+/**
+ * Ellis County (48139) — Halff Prairielands vendor-hosted Ellis CAD layer
+ * (PrairielandsGMS_Parcels_Prod/0). VERIFIED LIVE 2026-08-05: layer 0 is
+ * "Ellis CAD Parcels" with integer field `pid` (NOT prop_id); roster prop_id
+ * query against layer 0 resolves. Live count 101,445 vs StratMap 98,803
+ * (ratio 1.027). The county-operated ECAD endpoint
+ * (ecgis.co.ellis.tx.us/.../MapServer/594, field PID) timed out on planner
+ * probe — not used until reachable; Halff is the confirmed working service.
+ */
+const ELLIS_COUNTY_CADASTRAL_LAYER_0 =
+  "https://gisservices.halff.com/ags/rest/services/Prairielands/PrairielandsGMS_Parcels_Prod/MapServer/0";
+
+export const ELLIS_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRow =
+  {
+    rowId: "Ellis County (unincorporated)",
+    fips: "48139",
+    countyName: "Ellis",
+    status: "pre-flight-pending",
+    zoningRegime: "unzoned",
+    railPerParcel: {
+      featureServerLayerUrl: ELLIS_COUNTY_CADASTRAL_LAYER_0,
+      parcelFilter: { kind: "noFilter" },
+      districtField: "",
+      districtValueByPrefix: {},
+      propIdField: "pid",
+    },
+    railC: {
+      geometrySource: "stratmap_bulk_zip",
+      downloadUrl:
+        "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48139_lp.zip",
+      vintageYyyymm: "202507",
+      featureCount: 98803,
+      propIdBadRate: 0.0,
+      cadastralQueryUrl: ELLIS_COUNTY_CADASTRAL_LAYER_0,
+    },
+    join: {
+      joinKey: "prop_id",
+      ownerMatchRequired: true,
+    },
+    flags: ["STALE", "PRE_FLIGHT_PENDING", "CADASTRAL_VENDOR_HALFF_NOT_ECAD"],
+    provenance: {
+      sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+      frozenAt: "2026-08-05",
+      registryVersion: "1.2.0",
+    },
+  };
+
 /** The frozen registry, keyed by rowId. Seeded with Bastrop; grows per onboarding. */
 const REGISTRY_BY_ROW_ID: ReadonlyMap<string, JurisdictionRegistryRow> = new Map(
   [
@@ -772,6 +858,8 @@ const REGISTRY_BY_ROW_ID: ReadonlyMap<string, JurisdictionRegistryRow> = new Map
     HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW,
     MCLENNAN_COUNTY_UNINCORPORATED_REGISTRY_ROW,
     WILLIAMSON_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    KAUFMAN_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+    ELLIS_COUNTY_UNINCORPORATED_REGISTRY_ROW,
   ].map(
     (row) => [row.rowId, row],
   ),

@@ -421,14 +421,15 @@ export async function fetchBcadParcelRings(
   propIds: ReadonlyArray<string | number>,
   fetchImpl: typeof fetch = fetch,
   queryUrl = BASTROP_BCAD_PARCELS_URL,
+  propIdField = "prop_id",
 ): Promise<BcadParcelFetchResult[]> {
   if (!propIds.length) return [];
   const idList = propIds.map((id) => Number(id)).filter(Number.isFinite);
   if (!idList.length) return [];
 
   const url = new URL(`${queryUrl.replace(/\/$/, "")}/query`);
-  url.searchParams.set("where", `prop_id IN (${idList.join(",")})`);
-  url.searchParams.set("outFields", "prop_id");
+  url.searchParams.set("where", `${propIdField} IN (${idList.join(",")})`);
+  url.searchParams.set("outFields", propIdField);
   url.searchParams.set("returnGeometry", "true");
   url.searchParams.set("f", "geojson");
   url.searchParams.set("outSR", "4326");
@@ -445,15 +446,16 @@ export async function fetchBcadParcelRings(
     }>;
   };
 
+  const propIdFieldLower = propIdField.toLowerCase();
   const out: BcadParcelFetchResult[] = [];
   for (const feature of body.features ?? []) {
     // ArcGIS echoes the layer's actual field casing in the geojson properties
-    // ("prop_id" on BCAD/Guadalupe, "Prop_ID" on Caldwell CAD) even though the
-    // where/outFields clauses are case-insensitive — match the key
-    // case-insensitively or cased-field counties drop every ring.
+    // ("prop_id" on BCAD/Guadalupe, "Prop_ID" on Caldwell CAD, "pid" on Ellis
+    // Halff) even though the where/outFields clauses are case-insensitive —
+    // match the key case-insensitively or cased-field counties drop every ring.
     const props = feature.properties ?? {};
     const propIdKey = Object.keys(props).find(
-      (k) => k.toLowerCase() === "prop_id",
+      (k) => k.toLowerCase() === propIdFieldLower,
     );
     const propId = String((propIdKey ? props[propIdKey] : undefined) ?? "");
     const coords = feature.geometry?.coordinates?.[0];
