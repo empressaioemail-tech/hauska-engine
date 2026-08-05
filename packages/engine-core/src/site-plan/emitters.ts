@@ -2,11 +2,13 @@ import { runDxfWorker, runIfcWorker } from "../parcel-terrain/emitters.js";
 import { TERRAIN_VERTICAL_DATUM } from "../parcel-terrain/elevation.js";
 import type { TerrainMeshGeometry } from "../parcel-terrain/mesh.js";
 import { buildTerrainSolidMass, type BuildTerrainSolidMassOptions } from "../parcel-terrain/solid-mass.js";
+import { outwardNormal, ringSignedAreaLocal } from "./pdf/annotation-placement.js";
 import type { LocalPoint } from "./ring-geometry.js";
 import { anyNotSpecified } from "./setback-display.js";
 import type { SitePlanModel } from "./site-model.js";
 
 const text = new TextEncoder();
+const METERS_PER_FOOT = 0.3048;
 
 function meshMinZ(positions: Float32Array): number {
   let minZ = Infinity;
@@ -21,14 +23,40 @@ function ring3(points: LocalPoint[], z: number): number[][] {
   return points.map((p) => [p.x, p.y, z]);
 }
 
+function edgeMidLocal(a: LocalPoint, b: LocalPoint): LocalPoint {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+/**
+ * SETBACK segment endpoints live on the property ring (same as DIMENSION).
+ * Without a normal offset, #255's F/S/R refresh stacked "FRONT 25 ft" on top
+ * of "XX.X ft" at the identical midpoint — the 109 Higgins DXF text jumble.
+ * Mirror the PDF sheet craft: DIMENSION outward, SETBACK inward into the band.
+ */
+function labelAnchor(
+  a: LocalPoint,
+  b: LocalPoint,
+  ringCcw: boolean,
+  side: "outward" | "inward",
+  offsetMeters: number,
+  gradeZ: number,
+): [number, number, number] {
+  const mid = edgeMidLocal(a, b);
+  const outward = outwardNormal(a, b, ringCcw);
+  const n = side === "outward" ? outward : { x: -outward.x, y: -outward.y };
+  return [mid.x + n.x * offsetMeters, mid.y + n.y * offsetMeters, gradeZ];
+}
+
 /**
  * Builds the DXF worker payload straight from the shared SitePlanModel — no
  * emitter derives its own geometry (WDLL item 2).
  */
 export function buildDxfSitePlanRequest(model: SitePlanModel, mesh: TerrainMeshGeometry): Record<string, unknown> {
   const gradeZ = meshMinZ(mesh.positions);
+  const textHeight = Math.max(0.2, Math.min(model.scaleBar.lengthMeters * 0.05, 1));
+  const ringCcw = ringSignedAreaLocal(model.ringLocal) > 0;
   const dimensions = model.propertySegments.map((segment) => ({
-    midpoint: [(segment.a.x + segment.b.x) / 2, (segment.a.y + segment.b.y) / 2, gradeZ],
+    midpoint: labelAnchor(segment.a, segment.b, ringCcw, "outward", textHeight * 1.5, gradeZ),
     lengthFeet: segment.lengthFeet,
     citation: model.citations.propertyLine,
   }));
@@ -46,8 +74,12 @@ export function buildDxfSitePlanRequest(model: SitePlanModel, mesh: TerrainMeshG
     } else {
       label = `${roleText} ${segment.distanceFt} ft`;
     }
+    // PDF §4: when the property-to-envelope gap is narrower than the label,
+    // place past the dash into the envelope; otherwise centre in the band.
+    const gapM = (notSpecified ? 0 : Math.max(0, segment.distanceFt)) * METERS_PER_FOOT;
+    const inwardM = gapM < textHeight * 1.6 ? gapM + textHeight * 1.4 : gapM / 2;
     return {
-      midpoint: [(segment.a.x + segment.b.x) / 2, (segment.a.y + segment.b.y) / 2, gradeZ],
+      midpoint: labelAnchor(segment.a, segment.b, ringCcw, "inward", inwardM, gradeZ),
       role: segment.role,
       distanceFt: segment.distanceFt,
       notSpecified,
@@ -60,7 +92,7 @@ export function buildDxfSitePlanRequest(model: SitePlanModel, mesh: TerrainMeshG
     kind: "site_plan",
     verticalDatum: TERRAIN_VERTICAL_DATUM,
     gradeZ,
-    textHeight: Math.max(0.2, Math.min(model.scaleBar.lengthMeters * 0.05, 1)),
+    textHeight,
     propertyLine: {
       points: ring3(model.ringLocal, gradeZ),
       citation: model.citations.propertyLine,

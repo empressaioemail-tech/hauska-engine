@@ -195,6 +195,18 @@ const LEADER_COLOR = TOKENS.neutral500;
  */
 export const TOTAL_SHEETS = 3;
 
+/**
+ * Smart Site brand kicker for site-plan sheet eyebrows (REBRAND_UI).
+ * Mirrors dossier.ts DOSSIER_KICKER: one spelling, everywhere. Brand skin
+ * only — does not change factual content or disclosures.
+ */
+export const SITE_PLAN_BRAND_KICKER = "SMART SITE";
+
+/** Sheet eyebrow: `SMART SITE · <ROLE> · SHEET N OF M`. */
+function sitePlanSheetEyebrow(role: string, sheetNo: number, total: number): string {
+  return `${SITE_PLAN_BRAND_KICKER} · ${role} · SHEET ${sheetNo} OF ${total}`;
+}
+
 /** Page-space axis-aligned extent of a drawn mark (PDF points). */
 export interface MarkBbox {
   minX: number;
@@ -2488,7 +2500,7 @@ function drawAerialPage(
     page,
     model,
     F,
-    `AERIAL · SHEET ${aerialLabel.no} OF ${aerialLabel.total}`,
+    sitePlanSheetEyebrow("AERIAL", aerialLabel.no, aerialLabel.total),
     [{ label: "IMAGERY", value: "ESRI" }, { label: "CAPTURED", chip: CHIP_UNAVAILABLE }, registerStat],
     null,
   );
@@ -2654,7 +2666,14 @@ export async function emitPdfSitePlan(
 
   // PAGE 1 — drawing.
   const page1 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  drawSheetHeader(page1, model, F, `SITE PLAN · SHEET ${drawingNo} OF ${total}`, page1HeaderStats(model), null);
+  drawSheetHeader(
+    page1,
+    model,
+    F,
+    sitePlanSheetEyebrow("SITE PLAN", drawingNo, total),
+    page1HeaderStats(model),
+    null,
+  );
   drawSitePlanDrawing(page1, layout, F, marks);
   drawPage1Footer(
     page1,
@@ -2675,7 +2694,7 @@ export async function emitPdfSitePlan(
     const localPage = 2 + j;
     const printedNo = numbering.startAt + 1 + j;
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    let cursor = drawSheetHeader(page, model, F, `SUMMARY · SHEET ${printedNo} OF ${total}`, null, [
+    let cursor = drawSheetHeader(page, model, F, sitePlanSheetEyebrow("SUMMARY", printedNo, total), null, [
       `SP-${model.parcelNodeId.replace(/:/g, "-")}`,
       model.parcelNodeId,
     ]);

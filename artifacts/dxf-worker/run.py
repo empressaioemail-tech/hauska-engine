@@ -187,6 +187,29 @@ def _tag(entity, citation) -> None:
     entity.set_xdata("HAUSKA", [(1000, str(citation)[:255])])
 
 
+def _nudge_clear_of(point, occupied, min_sep: float):
+    """Shift XY so SETBACK/DIMENSION insert points do not stack (T2 / #255)."""
+    x, y, z = float(point[0]), float(point[1]), float(point[2])
+    if min_sep <= 0:
+        return (x, y, z)
+    for _ in range(8):
+        collided = False
+        for ox, oy in occupied:
+            if ((x - ox) ** 2 + (y - oy) ** 2) ** 0.5 < min_sep:
+                # Nudge along the vector away from the collision; fall back to +Y.
+                dx, dy = x - ox, y - oy
+                norm = (dx * dx + dy * dy) ** 0.5
+                if norm < 1e-9:
+                    dx, dy, norm = 0.0, 1.0, 1.0
+                x += (dx / norm) * min_sep
+                y += (dy / norm) * min_sep
+                collided = True
+                break
+        if not collided:
+            break
+    return (x, y, z)
+
+
 def emit_site_plan(request: dict) -> dict:
     vertical_datum = _vertical_datum(request)
     doc = _new_doc(vertical_datum)
@@ -200,6 +223,11 @@ def emit_site_plan(request: dict) -> dict:
         return (float(p[0]), float(p[1]), float(p[2]) if z is None else float(z))
 
     grade_z = float(request.get("gradeZ", 0.0))
+    text_height = max(0.2, float(request.get("textHeight", 0.5)))
+    # Belt-and-suspenders vs emitters.ts normal offsets: refuse co-located
+    # DIMENSION/SETBACK inserts (pre-#255 path put both on the property mid).
+    text_min_sep = text_height * 1.25
+    placed_dim_xy: list[tuple[float, float]] = []
 
     property_line = request.get("propertyLine") or {}
     pl_points = property_line.get("points") or []
@@ -217,10 +245,11 @@ def emit_site_plan(request: dict) -> dict:
         mid = pt3(dim["midpoint"], grade_z)
         text = msp.add_text(
             "%.1f ft" % float(dim["lengthFeet"]),
-            dxfattribs={"layer": "DIMENSION", "height": max(0.2, float(request.get("textHeight", 0.5)))},
+            dxfattribs={"layer": "DIMENSION", "height": text_height},
         )
         text.set_placement(mid)
         _tag(text, dim.get("citation"))
+        placed_dim_xy.append((mid[0], mid[1]))
         entity_count += 1
 
     setback = request.get("setback") or {}
@@ -230,6 +259,7 @@ def emit_site_plan(request: dict) -> dict:
         entity = msp.add_polyline3d(pts, close=True, dxfattribs={"layer": "SETBACK"})
         _tag(entity, setback.get("citation"))
         entity_count += 1
+        placed_setback_xy: list[tuple[float, float]] = []
         for seg in setback.get("segments") or []:
             mid = pt3(seg["midpoint"], grade_z)
             # Prefer caller-supplied honest label (not_specified axes must not
@@ -245,27 +275,37 @@ def emit_site_plan(request: dict) -> dict:
                 )
             else:
                 label = "%s %.0f ft" % (str(seg.get("role", "setback")).upper(), float(seg["distanceFt"]))
-            text = msp.add_text(label, dxfattribs={"layer": "SETBACK", "height": max(0.2, float(request.get("textHeight", 0.5)))})
+            mid = _nudge_clear_of(mid, placed_dim_xy + placed_setback_xy, text_min_sep)
+            text = msp.add_text(label, dxfattribs={"layer": "SETBACK", "height": text_height})
             text.set_placement(mid)
             _tag(text, seg.get("citation"))
+            placed_setback_xy.append((mid[0], mid[1]))
             entity_count += 1
-        # Sheet legend when the composer carried an honest F/S/R display line
-        # (covers not_specified disclosure even if segment labels are sparse).
+        # Sheet legend below the property AABB — never on offset_points[0],
+        # which coincides with a SETBACK polyline vertex / edge label zone.
         display_line = str(setback.get("displayLine") or "").strip()
-        if display_line and offset_points:
-            origin = pt3(offset_points[0], grade_z)
+        if display_line and (pl_points or offset_points):
+            legend_src = pl_points if pl_points else offset_points
+            xs = [float(p[0]) for p in legend_src]
+            ys = [float(p[1]) for p in legend_src]
+            legend_at = (
+                min(xs),
+                min(ys) - text_height * 3.0,
+                grade_z,
+            )
+            legend_at = _nudge_clear_of(legend_at, placed_dim_xy + placed_setback_xy, text_min_sep)
             text = msp.add_text(
                 "SETBACKS: %s" % display_line,
-                dxfattribs={"layer": "SETBACK", "height": max(0.2, float(request.get("textHeight", 0.5)))},
+                dxfattribs={"layer": "SETBACK", "height": text_height},
             )
-            text.set_placement((origin[0], origin[1] - float(request.get("textHeight", 0.5)) * 2.0, origin[2]))
+            text.set_placement(legend_at)
             _tag(text, setback.get("citation"))
             entity_count += 1
     elif setback.get("degenerate"):
         origin = property_line.get("points") or [[0, 0, grade_z]]
         text = msp.add_text(
             "SETBACK: %s" % str(setback.get("degenerateReason") or "no honest buildable margin"),
-            dxfattribs={"layer": "SETBACK", "height": max(0.2, float(request.get("textHeight", 0.5)))},
+            dxfattribs={"layer": "SETBACK", "height": text_height},
         )
         text.set_placement(pt3(origin[0], grade_z))
         entity_count += 1
