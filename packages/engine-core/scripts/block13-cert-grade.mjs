@@ -250,11 +250,8 @@ try {
     if (args.gradeMode === "unzoned") {
       parcelResult = await gradeUnzonedParcel(parcelNodeId, {
         sql,
-        // Byte-identical default invocation: absent --preflight-row-id (or a
-        // row that doesn't resolve), cadastralQueryUrl stays undefined and
-        // gradeUnzonedParcel's resolveCadastralQueryUrl falls back to the
-        // legacy Bastrop default for 48021 parcels (see cert-grade-core.ts).
         cadastralQueryUrl: resolvedRegistryRow?.railC.cadastralQueryUrl,
+        cadastralPropIdField: resolvedRegistryRow?.railPerParcel?.propIdField,
       });
     } else if (rosterLoad.mode === "query") {
       parcelResult = await gradeOneParcelInQueryMode(parcelNodeId, {
@@ -266,6 +263,7 @@ try {
         districtPrefix: rosterLoad.districtPrefix ?? null,
         answerKeyMode,
         cadastralQueryUrl: resolvedRegistryRow?.railC.cadastralQueryUrl,
+        cadastralPropIdField: resolvedRegistryRow?.railPerParcel?.propIdField,
       });
     } else {
       parcelResult = await gradeBlock13Parcel(parcelNodeId, {

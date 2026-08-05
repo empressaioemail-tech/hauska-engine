@@ -217,6 +217,11 @@ export interface CertGradeContext {
    * defaulting.
    */
   readonly cadastralQueryUrl?: string | null;
+  /**
+   * Cadastral layer parcel-id field name (registry row railPerParcel.propIdField).
+   * Defaults to prop_id when absent (BCAD/Guadalupe/Kaufman shape).
+   */
+  readonly cadastralPropIdField?: string;
 }
 
 /**
@@ -270,6 +275,7 @@ export async function gradeOneParcelInQueryMode(
 ): Promise<ParcelGradeResult> {
   const { sql, txSql, storage, roads, descriptor, districtPrefix } = ctx;
   const propId = parcelNodeId.split(":")[1]!;
+  const propIdField = ctx.cadastralPropIdField ?? "prop_id";
   const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
   const cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
 
@@ -319,7 +325,7 @@ export async function gradeOneParcelInQueryMode(
 
   let ring: unknown = null;
   try {
-    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl);
+    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl, propIdField);
     const bcadRing = bcad[0]?.ring;
     ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
   } catch (err) {
@@ -386,10 +392,11 @@ export const UNZONED_CASCADE_DECLINE_CODE = "unzoned-no-district-basis";
  */
 export async function gradeUnzonedParcel(
   parcelNodeId: string,
-  ctx: Pick<CertGradeContext, "sql" | "cadastralQueryUrl">,
+  ctx: Pick<CertGradeContext, "sql" | "cadastralQueryUrl" | "cadastralPropIdField">,
 ): Promise<ParcelGradeResult> {
   const { sql } = ctx;
   const propId = parcelNodeId.split(":")[1]!;
+  const propIdField = ctx.cadastralPropIdField ?? "prop_id";
   const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
   let cadastralQueryUrl: string;
   try {
@@ -440,7 +447,7 @@ export async function gradeUnzonedParcel(
   }
 
   try {
-    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl);
+    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl, propIdField);
     const bcadRing = bcad[0]?.ring;
     const ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
     if (!ring) {
@@ -471,6 +478,7 @@ export async function gradeBlock13Parcel(
 ): Promise<ParcelGradeResult> {
   const { sql, txSql, storage, roads, descriptor } = ctx;
   const propId = parcelNodeId.split(":")[1]!;
+  const propIdField = ctx.cadastralPropIdField ?? "prop_id";
   const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
   const cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
 
@@ -492,7 +500,7 @@ export async function gradeBlock13Parcel(
 
   let ring: unknown = null;
   try {
-    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl);
+    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl, propIdField);
     const bcadRing = bcad[0]?.ring;
     ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
   } catch (err) {

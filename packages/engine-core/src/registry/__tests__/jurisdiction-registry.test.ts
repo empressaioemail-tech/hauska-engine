@@ -186,3 +186,17 @@ describe("central TX county fan registry rows (2026-08-04)", () => {
     );
   });
 });
+
+// DFW Phase 3 county fan (2026-08-05): shake-out counties Ellis + Kaufman first.
+describe("DFW county fan registry rows (2026-08-05)", () => {
+  it("loads Kaufman and Ellis unincorporated rows by rowId", () => {
+    const kaufman = loadJurisdictionRegistryRowById("Kaufman County (unincorporated)");
+    const ellis = loadJurisdictionRegistryRowById("Ellis County (unincorporated)");
+    expect(kaufman?.fips).toBe("48257");
+    expect(kaufman?.railC.cadastralQueryUrl).toContain("KaufmanCADWebService");
+    expect(kaufman?.railPerParcel?.propIdField).toBe("prop_id");
+    expect(ellis?.fips).toBe("48139");
+    expect(ellis?.railC.cadastralQueryUrl).toContain("PrairielandsGMS_Parcels_Prod");
+    expect(ellis?.railPerParcel?.propIdField).toBe("pid");
+  });
+});

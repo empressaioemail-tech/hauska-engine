@@ -295,4 +295,10 @@ describe("fetchBcadParcelRings prop_id field casing", () => {
     expect(out).toHaveLength(1);
     expect(out[0]!.propId).toBe("22945");
   });
+
+  it("resolves rings when the layer uses pid (Ellis Halff shape)", async () => {
+    const out = await fetchBcadParcelRings([22945], fakeFetchWithPropKey("pid"), "http://example/layer/0", "pid");
+    expect(out).toHaveLength(1);
+    expect(out[0]!.propId).toBe("22945");
+  });
 });

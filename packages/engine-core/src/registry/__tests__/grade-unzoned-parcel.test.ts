@@ -179,6 +179,7 @@ describe("gradeUnzonedParcel (--grade-mode=unzoned)", () => {
         ["UNZONED-TEST-1"],
         fetch,
         BASTROP_BCAD_PARCELS_URL,
+        "prop_id",
       );
     });
 
@@ -209,6 +210,7 @@ describe("gradeUnzonedParcel (--grade-mode=unzoned)", () => {
         ["UNZONED-TEST-2"],
         fetch,
         travisUrl,
+        "prop_id",
       );
     });
 
