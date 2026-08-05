@@ -266,14 +266,29 @@ export function buildServePathHealthProbe(
 }
 
 /**
- * Cost model parameters (commitment #3, < $200/jurisdiction). These are
- * ESTIMATE parameters, not measured unit economics — named as constants so
- * the assumption is visible and reviewable, never silently baked into a
- * number. The sample run's real wall-clock and real external-call count are
- * measured; only the $/unit conversion is an estimate.
+ * Cost model parameters (commitment #3, < $200/jurisdiction). Calibrated
+ * 2026-08-05 against measured wave-1 county bakes/cascades
+ * (bake-property-atom-county.mjs / depth-warm-*-batch.mjs heuristic:
+ * `hours × 0.25 CU × $0.16/CU-hr + atomWrites × $0.000002`). Tarrant
+ * 48439 full breadth (689,838 atoms) ≈ $1.41; Guadalupe 48187 ≈ $0.19;
+ * McLennan 48309 ≈ $0.23 — per-parcel marginal ≈ $2.0e-6. The prior
+ * $0.50/compute-hr + $2/1k-calls model false-killed Bell 48027 at $333
+ * (two orders of magnitude high on large counties). These remain ESTIMATE
+ * parameters — named so the assumption is visible; sample wall-clock is
+ * measured, $/unit conversion is estimated.
  */
-export const COST_MODEL_USD_PER_COMPUTE_HOUR = 0.5; // ESTIMATE: blended small-instance compute rate
-export const COST_MODEL_USD_PER_1K_EXTERNAL_CALLS = 2.0; // ESTIMATE: blended external HTTP+DB call cost
+export const COST_MODEL_COMPUTE_UNIT_FRACTION = 0.25; // ESTIMATE: Neon CU fraction (matches bake scripts)
+export const COST_MODEL_USD_PER_COMPUTE_UNIT_HOUR = 0.16; // ESTIMATE: Neon $/CU-hour (matches bake scripts)
+/** Effective wall-clock rate: COMPUTE_UNIT_FRACTION × USD_PER_COMPUTE_UNIT_HOUR = $0.04/hr. */
+export const COST_MODEL_USD_PER_WALL_CLOCK_HOUR =
+  COST_MODEL_COMPUTE_UNIT_FRACTION * COST_MODEL_USD_PER_COMPUTE_UNIT_HOUR;
+/** @deprecated Use COST_MODEL_USD_PER_WALL_CLOCK_HOUR — kept for export stability during migration. */
+export const COST_MODEL_USD_PER_COMPUTE_HOUR = COST_MODEL_USD_PER_WALL_CLOCK_HOUR;
+export const COST_MODEL_USD_PER_ATOM_WRITE = 0.000002; // ESTIMATE: Neon write heuristic (matches bake scripts)
+/** Default atom-write count per parcel for onboarding extrapolation (cascade emits zoning-fact + envelope). */
+export const COST_MODEL_DEFAULT_ATOM_WRITES_PER_PARCEL = 2;
+/** @deprecated Removed $2/1k-calls estimate — use COST_MODEL_USD_PER_ATOM_WRITE instead. */
+export const COST_MODEL_USD_PER_1K_EXTERNAL_CALLS = 0;
 
 export interface CostSampleDeps {
   readonly sql: CertGradeContext["sql"];
@@ -288,8 +303,12 @@ export interface CostSampleDeps {
   readonly sampleSize?: number;
   /** Clock override for tests (defaults to Date.now). */
   readonly now?: () => number;
-  /** Per-external-call counter override for tests (defaults to a fetch-count-derived value of 1 per parcel). */
-  readonly externalCallsPerParcel?: number;
+  /**
+   * Estimated atom writes per parcel for onboarding extrapolation (defaults
+   * to COST_MODEL_DEFAULT_ATOM_WRITES_PER_PARCEL — cascade zoning-fact +
+   * buildable-envelope per parcel).
+   */
+  readonly atomWritesPerParcel?: number;
 }
 
 /**
@@ -362,20 +381,24 @@ export function buildCostSampleProbe(
     const elapsedMs = Math.max(0, now() - startMs);
 
     const cohortCount = await deps.loadCohortCount(row);
-    const callsPerParcel = deps.externalCallsPerParcel ?? 1; // ESTIMATE: 1 BCAD fetch per parcel in the sampled path
+    const atomWritesPerParcel =
+      deps.atomWritesPerParcel ?? COST_MODEL_DEFAULT_ATOM_WRITES_PER_PARCEL;
     const wallClockHoursPerParcel = elapsedMs / sample.length / 1000 / 3600;
 
-    const computeUsdPerParcel = wallClockHoursPerParcel * COST_MODEL_USD_PER_COMPUTE_HOUR;
-    const callsUsdPerParcel = (callsPerParcel / 1000) * COST_MODEL_USD_PER_1K_EXTERNAL_CALLS;
-    const usdPerParcel = computeUsdPerParcel + callsUsdPerParcel;
+    const computeUsdPerParcel =
+      wallClockHoursPerParcel * COST_MODEL_USD_PER_WALL_CLOCK_HOUR;
+    const atomWriteUsdPerParcel = atomWritesPerParcel * COST_MODEL_USD_PER_ATOM_WRITE;
+    const usdPerParcel = computeUsdPerParcel + atomWriteUsdPerParcel;
     const estimatedUsd = usdPerParcel * cohortCount;
 
     return {
       estimatedUsd,
       detail:
         `estimate: true; sample=${sample.length} parcels, wall-clock=${elapsedMs}ms, ` +
-        `cohortCount=${cohortCount}, $/compute-hour=${COST_MODEL_USD_PER_COMPUTE_HOUR} (ESTIMATE), ` +
-        `$/1k-calls=${COST_MODEL_USD_PER_1K_EXTERNAL_CALLS} (ESTIMATE), extrapolated from sample only — not measured cohort cost`,
+        `cohortCount=${cohortCount}, compute-units=${COST_MODEL_COMPUTE_UNIT_FRACTION} (ESTIMATE), ` +
+        `$/compute-unit-hour=${COST_MODEL_USD_PER_COMPUTE_UNIT_HOUR} (ESTIMATE), ` +
+        `$/atom-write=${COST_MODEL_USD_PER_ATOM_WRITE} (ESTIMATE), ` +
+        `atom-writes-per-parcel=${atomWritesPerParcel} (ESTIMATE), extrapolated from sample only — not measured cohort cost`,
     };
   };
 }
@@ -528,6 +551,29 @@ export function buildOnboardPreflightDeps(input: OnboardPreflightDepsInput): Pre
       `;
       const total = (totalRows[0] as { total: number } | undefined)?.total ?? 0;
       const superseded = (supersededRows[0] as { superseded: number } | undefined)?.superseded ?? 0;
+      if (total === 0) {
+        // Cross-check the pre-#220 countyFips-keyed path: if legacy field
+        // matching finds envelopes the primary query missed, the measure is
+        // broken — not "zero superseded".
+        const legacyRows = await sql`
+          SELECT count(*)::int AS legacy FROM atoms
+          WHERE entity_type = 'buildable-envelope'
+            AND (body->>'countyFips' = ${row.fips} OR body->>'county_fips' = ${row.fips})
+        `;
+        const legacy = (legacyRows[0] as { legacy: number } | undefined)?.legacy ?? 0;
+        if (legacy > 0) {
+          return {
+            supersededCount: 0,
+            totalCount: 0,
+            measurementBroken: true,
+          };
+        }
+        return {
+          supersededCount: 0,
+          totalCount: 0,
+          preWarmNotApplicable: true,
+        };
+      }
       return { supersededCount: superseded, totalCount: total };
     };
     deps.probeMixedVintageResidue = async (row): Promise<MixedVintageProbeResult> => {
