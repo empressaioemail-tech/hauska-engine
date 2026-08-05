@@ -49,9 +49,23 @@
  * already) or a parcel that already carries no-district-on-record
  * (idempotent). Dry-run by default; pass --apply to persist.
  *
+ * REQUIRES --city-segments=<comma-separated segments> (2026-08-05,
+ * McDade-catch fix): a 2026-08-04 dry-run on 48021 showed the whole-county
+ * form is too blunt — 38,026 would-reword included McDade, an
+ * UNINCORPORATED community whose situs segment is not an incorporated city;
+ * rewording those would be factually wrong. --reword-city-parcels now
+ * REQUIRES an explicit allowlist of city segments (as extracted by
+ * jurisdictionTenantCitySegment, e.g. "smithville"); only parcels whose
+ * extracted citySegment exactly matches an allowlisted segment are
+ * reworded — all others are skipped and counted
+ * (skippedNotAllowlisted). Invoking --reword-city-parcels WITHOUT
+ * --city-segments fails loud (non-zero exit) before any query runs; the
+ * blunt whole-county form is unrunnable.
+ *
  *   PROPERTY_ATOM_PATH=1 DATABASE_URL=...hauska_mcp... \
  *     pnpm --filter @hauska-engine/engine-core run bake-property-atom-county -- \
- *       --county=48021 --reword-city-parcels [--apply] [--limit=N] [--batch=500]
+ *       --county=48021 --reword-city-parcels --city-segments=smithville \
+ *       [--apply] [--limit=N] [--batch=500]
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -111,6 +125,7 @@ function parseArgs(argv) {
     cascadeAbsenceOnly: false,
     rewordCityParcels: false,
     apply: false,
+    citySegments: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -129,8 +144,29 @@ function parseArgs(argv) {
     else if (a === "--cascade-absence-only") out.cascadeAbsenceOnly = true;
     else if (a === "--reword-city-parcels") out.rewordCityParcels = true;
     else if (a === "--apply") out.apply = true;
+    else if (a === "--city-segments")
+      out.citySegments = String(argv[++i] || "");
+    else if (a.startsWith("--city-segments="))
+      out.citySegments = a.slice("--city-segments=".length);
   }
   return out;
+}
+
+/**
+ * Parse a --city-segments value into a normalized, deduped Set of city
+ * segments (comma-separated; blank entries and surrounding whitespace
+ * dropped). Segments are compared as-is against jurisdictionTenantCitySegment
+ * output, which is already lowercased/underscored at bake time — callers
+ * should pass segments in that same shape (e.g. "smithville", "del_valle").
+ */
+function parseCitySegmentsAllowlist(raw) {
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
+  );
 }
 
 if (process.env.PROPERTY_ATOM_PATH !== "1") {
@@ -142,6 +178,18 @@ const args = parseArgs(process.argv.slice(2));
 if (!args.county || !COUNTY_NAMES[args.county]) {
   console.error(
     `FATAL: --county=FIPS required. Known: ${Object.keys(COUNTY_NAMES).join(",")}`,
+  );
+  process.exit(1);
+}
+
+const citySegmentsAllowlist = parseCitySegmentsAllowlist(args.citySegments);
+if (args.rewordCityParcels && citySegmentsAllowlist.size === 0) {
+  console.error(
+    "FATAL: --reword-city-parcels requires --city-segments=<comma-separated segments>. " +
+      "A 2026-08-04 dry-run on 48021 found the whole-county form too blunt — it would have " +
+      "reworded McDade, an unincorporated community, alongside genuine in-city parcels — so " +
+      "the un-scoped form is disabled; pass the exact jurisdictionTenantCitySegment values " +
+      "(e.g. --city-segments=smithville) to reword.",
   );
   process.exit(1);
 }
@@ -644,6 +692,17 @@ async function runCascadeAbsenceOnly() {
  * already carrying no-district-on-record). Never touches zoning-fact or
  * setback-rule atoms; never touches a parcel with no city signal (that
  * parcel's unzoned-no-district-basis wording is already correct).
+ *
+ * ALLOWLIST-SCOPED (2026-08-05, McDade-catch fix): the caller-supplied
+ * --city-segments allowlist (parsed into citySegmentsAllowlist at module
+ * scope; presence already enforced fail-loud before this function can be
+ * reached) further restricts candidates to rows whose extracted
+ * citySegment exactly matches an allowlisted segment. A candidate whose
+ * citySegment carries a real city signal but is NOT on the allowlist is
+ * counted in skippedNotAllowlisted and left untouched — this is what makes
+ * the whole-county sweep that caught McDade (an unincorporated community
+ * whose situs segment is not an incorporated city) impossible: only
+ * explicitly-named segments are ever reworded.
  */
 async function runRewordCityParcels() {
   const sql = handle.sql;
@@ -656,9 +715,11 @@ async function runRewordCityParcels() {
     county,
     name: COUNTY_NAMES[county],
     dryRun,
+    citySegmentsAllowlist: [...citySegmentsAllowlist].sort(),
     scanned: 0,
     reworded: 0,
     skippedNoCitySignal: 0,
+    skippedNotAllowlisted: 0,
     skippedAlreadyReworded: 0,
     errors: 0,
   };
@@ -669,6 +730,7 @@ async function runRewordCityParcels() {
       county,
       name: COUNTY_NAMES[county],
       dryRun,
+      citySegmentsAllowlist: summary.citySegmentsAllowlist,
     }),
   );
 
@@ -725,6 +787,10 @@ async function runRewordCityParcels() {
           );
           if (!citySegment) {
             summary.skippedNoCitySignal += 1;
+            continue;
+          }
+          if (!citySegmentsAllowlist.has(citySegment)) {
+            summary.skippedNotAllowlisted += 1;
             continue;
           }
           const body =
