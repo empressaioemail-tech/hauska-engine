@@ -9,6 +9,7 @@ import type {
   BoundaryEdgeAtomInstance,
   BuildableEnvelopeAtomInstance,
   ParcelTerrainModelAtomInstance,
+  RoadNodeAtomInstance,
   SetbackRuleAtomInstance,
   ZoningFactAtomInstance,
 } from "@hauska-engine/atoms";
@@ -20,10 +21,13 @@ import { buildTerrainMeshGeometry } from "../parcel-terrain/mesh.js";
 import { DEFAULT_SKIRT_DEPTH_FEET, type BuildTerrainSolidMassOptions } from "../parcel-terrain/solid-mass.js";
 import type { ParcelGeometryResolver, TerrainArtifactStore } from "../parcel-terrain/author.js";
 import { parseDemBytes, type ParsedDem } from "../site-topography/index.js";
+import { roadAtomToWarmSource } from "../road-intake/road-to-warm-source.js";
+import type { WarmRoadSource } from "../depth-warm/types.js";
 import { emitDxfSitePlan, emitIfcSitePlan } from "./emitters.js";
 import type { AerialImageFetcher } from "./pdf/aerial.js";
 import { emitPdfSitePlan } from "./pdf/render.js";
 import { resolveAttachingRoadNodes } from "./resolve-attaching-roads.js";
+import { prepareBoundaryEdgesForExport } from "./prepare-boundary-edges-for-export.js";
 import {
   composeSitePlanModel,
   type EnvelopeOutcomeInput,
@@ -349,14 +353,17 @@ export async function composeSitePlanModelForParcel(
       boundaryEdgeAtoms = [];
     }
   }
-  const boundaryEdges =
-    boundaryEdgeAtoms.length > 0 ? boundaryEdgesToGeometryInput(boundaryEdgeAtoms) : undefined;
 
   // Track B1: STREET from attaching road-nodes (centerline + ROW edges).
-  // Caller-supplied streetAnchors win; otherwise resolve from ledger.
+  // Caller-supplied streetAnchors win; otherwise resolve from ledger. This
+  // load also feeds the boundary-edge refresh below (R28 recompute / R30
+  // relabel need the SAME attaching roads the export uses for STREET, not a
+  // second lookup) whenever there is a stored primitive to refresh.
   let streetAnchors = options.streetAnchors;
+  let attachingRoadAtoms: ReadonlyArray<RoadNodeAtomInstance> = [];
+  const needStreetAnchors = (!streetAnchors || streetAnchors.length === 0);
   if (
-    (!streetAnchors || streetAnchors.length === 0) &&
+    (needStreetAnchors || boundaryEdgeAtoms.length > 0) &&
     options.resolveStreetFromRoadNodes !== false
   ) {
     const resolvedRoads = await resolveAttachingRoadNodes({
@@ -364,8 +371,38 @@ export async function composeSitePlanModelForParcel(
       ringWgs84,
       storage: options.storage,
     });
-    streetAnchors = resolvedRoads.streetAnchors;
+    attachingRoadAtoms = resolvedRoads.roads;
+    if (needStreetAnchors) {
+      streetAnchors = resolvedRoads.streetAnchors;
+    }
   }
+
+  // 2026-08-05 edge-role defect fix: mirror the cert-grade path's R28
+  // (ring-winding recompute) + R30 (fresh-road relabel) freshness gates, plus
+  // a stale per-edge setback-VALUE refresh, before mapping stored edges by
+  // edgeIndex. See `prepare-boundary-edges-for-export.ts` for the full
+  // rationale (2026-07-29 descriptor-fixture regression: stale 15/0/0 served
+  // instead of the card's F25/S5/R25).
+  let refreshedBoundaryEdgeAtoms: ReadonlyArray<BoundaryEdgeAtomInstance> = boundaryEdgeAtoms;
+  if (boundaryEdgeAtoms.length > 0) {
+    const warmRoads = attachingRoadAtoms
+      .map((r) => roadAtomToWarmSource(r))
+      .filter((r): r is WarmRoadSource => r !== null);
+    const prepared = await prepareBoundaryEdgesForExport({
+      parcelNodeId: options.parcelNodeId,
+      storedEdges: boundaryEdgeAtoms,
+      ringWgs84,
+      roads: warmRoads,
+      situsAddress: options.descriptor?.address ?? null,
+      setback: setbackHonestAbsence ? null : (setbackAtom ?? null),
+      notSpecified,
+    });
+    refreshedBoundaryEdgeAtoms = prepared.edges ?? [];
+  }
+  const boundaryEdges =
+    refreshedBoundaryEdgeAtoms.length > 0
+      ? boundaryEdgesToGeometryInput(refreshedBoundaryEdgeAtoms)
+      : undefined;
 
   const model = composeSitePlanModel({
     parcelNodeId: options.parcelNodeId,
