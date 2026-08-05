@@ -321,9 +321,40 @@ export function detectFlagLotShape(proj: NonNullable<ReturnType<typeof projectRi
 }
 
 /**
- * Rear = the edge whose inward normal best opposes the front edge's inward
- * normal (dot ≈ −1). Replaces the retired farthest-midpoint heuristic that
- * mislabeled elongated rectangles (80578 east-as-rear) and flag-lot jogs.
+ * Ordinary lots: rear = farthest road-adjacent edge from the front midpoint.
+ * Correct for rectangular / corner lots (34177 Pecan-front class) where rear
+ * is road-backed, not the geometric opposite edge.
+ */
+function selectRearEdgeByFarthestRoadAdjacent(
+  proj: NonNullable<ReturnType<typeof projectRing>>,
+  frontHit: EdgeRoadHit,
+  bestByEdge: ReadonlyMap<number, EdgeRoadHit>,
+): EdgeRoadHit | null {
+  const n = proj.points.length;
+  const frontMid = midpoint(
+    proj.points[frontHit.edgeIndex]!,
+    proj.points[(frontHit.edgeIndex + 1) % n]!,
+  );
+  let maxDist = -1;
+  let rearHit: EdgeRoadHit | null = null;
+  for (const [edgeIndex, hit] of bestByEdge) {
+    if (edgeIndex === frontHit.edgeIndex) continue;
+    const a = proj.points[edgeIndex]!;
+    const b = proj.points[(edgeIndex + 1) % n]!;
+    const mid = midpoint(a, b);
+    const d = Math.hypot(mid.x - frontMid.x, mid.y - frontMid.y);
+    if (d > maxDist) {
+      maxDist = d;
+      rearHit = hit;
+    }
+  }
+  return rearHit;
+}
+
+/**
+ * Flag-lot / Mesquite class: rear = the edge whose inward normal best opposes
+ * the front edge's inward normal (dot ≈ −1). Fixes elongated rectangles and
+ * flag-lot jogs where farthest-road-adjacent mislabels a long side as rear.
  */
 function selectRearEdgeByNormalOpposition(
   proj: NonNullable<ReturnType<typeof projectRing>>,
@@ -531,16 +562,59 @@ export function labelEdgesFromRoads(input: {
     rearHit =
       alleyHits.find((h) => h.edgeIndex !== frontHit?.edgeIndex) ?? alleyHits[0]!;
   } else if (frontHit && n >= 4) {
-    const flagSameStreetRear = selectFlagLotSameStreetRearEdge(hits, frontHit, proj);
-    const rearEdgeIndex =
-      flagSameStreetRear ?? selectRearEdgeByNormalOpposition(proj, frontHit.edgeIndex);
-    if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
-      const roadHit = bestByEdge.get(rearEdgeIndex);
-      rearHit = {
-        edgeIndex: rearEdgeIndex,
-        distanceM: roadHit?.distanceM ?? Infinity,
-        road: roadHit?.road ?? frontHit.road,
-      };
+    if (detectFlagLotShape(proj)) {
+      const flagSameStreetRear = selectFlagLotSameStreetRearEdge(hits, frontHit, proj);
+      const rearEdgeIndex =
+        flagSameStreetRear ?? selectRearEdgeByNormalOpposition(proj, frontHit.edgeIndex);
+      if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
+        const roadHit = bestByEdge.get(rearEdgeIndex);
+        rearHit = {
+          edgeIndex: rearEdgeIndex,
+          distanceM: roadHit?.distanceM ?? Infinity,
+          road: roadHit?.road ?? frontHit.road,
+        };
+      }
+    } else {
+      const nonFrontRoadHits = [...bestByEdge.values()].filter(
+        (h) => h.edgeIndex !== frontHit.edgeIndex,
+      );
+      if (nonFrontRoadHits.length === 1) {
+        // Corner lot: the sole non-front road-adjacent edge is rear (34177 class).
+        rearHit = nonFrontRoadHits[0]!;
+      } else if (nonFrontRoadHits.length > 1) {
+        const farthestHit = selectRearEdgeByFarthestRoadAdjacent(proj, frontHit, bestByEdge);
+        const frontN = inwardNormalForEdge(proj, frontHit.edgeIndex);
+        const farthestOpposesFront =
+          farthestHit != null &&
+          inwardNormalForEdge(proj, farthestHit.edgeIndex).x * frontN.x +
+            inwardNormalForEdge(proj, farthestHit.edgeIndex).y * frontN.y <
+            -0.5;
+        if (farthestHit && farthestOpposesFront) {
+          rearHit = farthestHit;
+        } else {
+          const rearEdgeIndex = selectRearEdgeByNormalOpposition(proj, frontHit.edgeIndex);
+          if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
+            const roadHit = bestByEdge.get(rearEdgeIndex);
+            rearHit = {
+              edgeIndex: rearEdgeIndex,
+              distanceM: roadHit?.distanceM ?? Infinity,
+              road: roadHit?.road ?? frontHit.road,
+            };
+          } else if (farthestHit) {
+            rearHit = farthestHit;
+          }
+        }
+      } else {
+        const rearEdgeIndex = selectRearEdgeByNormalOpposition(proj, frontHit.edgeIndex);
+        if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
+          const roadHit = bestByEdge.get(rearEdgeIndex);
+          rearHit = {
+            edgeIndex: rearEdgeIndex,
+            distanceM: roadHit?.distanceM ?? Infinity,
+            road: roadHit?.road ?? frontHit.road,
+          };
+        }
+      }
     }
   }
 
