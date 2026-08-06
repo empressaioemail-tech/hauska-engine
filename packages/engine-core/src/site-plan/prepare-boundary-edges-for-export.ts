@@ -161,9 +161,12 @@ export async function prepareBoundaryEdgesForExport(
   }
 
   const ringVerts = openRing(input.ringWgs84).length;
+  const depthWarmPromotedEdges =
+    edges.length > 0 &&
+    edges.every((e) => e.sourceAdapter === "depth-warm-verify-promote");
   if (edges.length > ringVerts) {
     edges = edges.filter((e) => e.edgeIndex < ringVerts);
-  } else if (edges.length < ringVerts) {
+  } else if (edges.length < ringVerts && !depthWarmPromotedEdges) {
     return {
       edges: null,
       recomputedForRingWinding: false,
@@ -177,8 +180,9 @@ export async function prepareBoundaryEdgesForExport(
 
   // R28 — recompute primitive when stored normals disagree with the ring
   // (winding/vintage mismatch would otherwise land roles on the wrong edge).
+  // Skip for depth-warm-promoted edges — warm tessellation is authoritative.
   let recomputedForRingWinding = false;
-  if (edges.length === ringVerts) {
+  if (!depthWarmPromotedEdges && edges.length === ringVerts) {
     const agree = primitiveNormalsAgreeWithRing(edges, input.ringWgs84);
     if (!agree.ok) {
       const rebuilt = recomputeBoundaryEdgesForRing({
@@ -202,22 +206,25 @@ export async function prepareBoundaryEdgesForExport(
   }
 
   // R30 — re-derive role/facingRoad from FRESH road labeling; never reuse a
-  // stale stored role. Decline (no roads / no adjacency / unresolved front)
-  // leaves the roles as-is (best-available, unchanged).
+  // stale stored role. Skip when edges were persisted at depth-warm promote
+  // (Option A — warm labels are serve truth). Decline (no roads / no adjacency /
+  // unresolved front) leaves the roles as-is (best-available, unchanged).
   let relabeledFromRoads = false;
-  const labelResult = labelEdgesFromRoads({
-    parcelRing: input.ringWgs84,
-    roads,
-    situsAddress: input.situsAddress,
-  });
-  if (labelResult.ok) {
-    edges = relabelBoundaryEdgesFromRoadLabels({
-      storedEdges: edges,
-      edgeLabels: labelResult.edgeLabels,
+  if (!depthWarmPromotedEdges) {
+    const labelResult = labelEdgesFromRoads({
+      parcelRing: input.ringWgs84,
       roads,
-      countyFips: edges[0]!.countyFips,
+      situsAddress: input.situsAddress,
     });
-    relabeledFromRoads = true;
+    if (labelResult.ok) {
+      edges = relabelBoundaryEdgesFromRoadLabels({
+        storedEdges: edges,
+        edgeLabels: labelResult.edgeLabels,
+        roads,
+        countyFips: edges[0]!.countyFips,
+      });
+      relabeledFromRoads = true;
+    }
   }
 
   // Setback VALUE refresh: stored per-edge setback feet can be stale (baked

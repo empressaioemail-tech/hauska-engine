@@ -15,7 +15,10 @@ import { emitBuildableEnvelope } from "../property-reasoning/emit-buildable-enve
 import { emitSetbackRule, resolveSetbackTableRow } from "../property-reasoning/emit-setback-rule.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { writePropertyAtomIfEnabled } from "../property-reasoning/write-property-atom.js";
-import { persistBoundaryEdges } from "../boundary-primitive/persist.js";
+import {
+  persistBoundaryEdges,
+  retireStaleBoundaryEdgesAfterPromote,
+} from "../boundary-primitive/persist.js";
 import { emitBoundaryEdgesFromWarmCandidate } from "./emit-boundary-edges-from-warm.js";
 import type { PromotedDepthWarmBundle, WarmCandidate } from "./types.js";
 import {
@@ -193,6 +196,14 @@ export async function promoteDepthWarmToStorage(
       force: true,
     });
     boundaryEdgeAtomDids.push(...edgeWrites.map((w) => w.atomDid));
+    const promotedIndices = new Set(emitted.boundaryEdges.map((e) => e.edgeIndex));
+    const retireWrites = await retireStaleBoundaryEdgesAfterPromote(
+      storage,
+      input.candidate.parcelNodeId,
+      promotedIndices,
+      promotedAt,
+    );
+    boundaryEdgeAtomDids.push(...retireWrites.map((w) => w.atomDid));
   }
 
   for (const atom of emitted.propertyAtoms) {
