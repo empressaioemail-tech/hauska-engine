@@ -301,4 +301,45 @@ describe("fetchBcadParcelRings prop_id field casing", () => {
     expect(out).toHaveLength(1);
     expect(out[0]!.propId).toBe("22945");
   });
+
+  it("uses quoted string IN when prop ids are non-numeric (Williamson PARCELID R* shape)", async () => {
+    let capturedWhere = "";
+    const fakeFetch: typeof fetch = (async (input) => {
+      const u = new URL(String(input));
+      capturedWhere = u.searchParams.get("where") ?? "";
+      return new Response(
+        JSON.stringify({
+          features: [
+            {
+              properties: { PARCELID: "R12345" },
+              geometry: { type: "Polygon", coordinates: [square] },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+
+    const out = await fetchBcadParcelRings(
+      ["R12345", "R67890"],
+      fakeFetch,
+      "http://example/layer/0",
+      "PARCELID",
+    );
+    expect(capturedWhere).toBe("PARCELID IN ('R12345','R67890')");
+    expect(out).toHaveLength(1);
+    expect(out[0]!.propId).toBe("R12345");
+  });
+
+  it("uses numeric IN when all prop ids are numeric (unchanged path)", async () => {
+    let capturedWhere = "";
+    const fakeFetch: typeof fetch = (async (input) => {
+      const u = new URL(String(input));
+      capturedWhere = u.searchParams.get("where") ?? "";
+      return new Response(JSON.stringify({ features: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await fetchBcadParcelRings([22945, 22946], fakeFetch, "http://example/layer/0", "PropertyID");
+    expect(capturedWhere).toBe("PropertyID IN (22945,22946)");
+  });
 });
