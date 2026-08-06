@@ -3,6 +3,7 @@
  */
 
 import type {
+  BoundaryEdgeAtomInstance,
   BuildableEnvelopeAtomInstance,
   PropertyAtomInstance,
   SetbackRuleAtomInstance,
@@ -68,13 +69,18 @@ export interface PromoteDepthWarmInput {
   extractedAt?: string;
 }
 
+export interface DepthWarmPromotionEmit {
+  boundaryEdges: BoundaryEdgeAtomInstance[];
+  propertyAtoms: PropertyAtomInstance[];
+}
+
 /**
- * Emit depth-warm verified atoms (setback-rule + buildable-envelope).
+ * Emit depth-warm verified atoms (boundary-edge + setback-rule + buildable-envelope).
  * Does not write — use promoteDepthWarmToStorage for persistence.
  */
 export function emitDepthWarmPromotion(
   input: PromoteDepthWarmInput,
-): PropertyAtomInstance[] {
+): DepthWarmPromotionEmit {
   const { candidate, descriptor, zoningFactAtomDid } = input;
   const extractedAt = input.extractedAt ?? new Date().toISOString();
   const agg = aggregateSetbacks(candidate);
@@ -166,26 +172,30 @@ export function emitDepthWarmPromotion(
     extractedAt,
   });
 
-  return [...boundaryEdges, setbackAtom, envAtom];
+  return {
+    boundaryEdges,
+    propertyAtoms: [setbackAtom, envAtom],
+  };
 }
 
 export async function promoteDepthWarmToStorage(
   storage: StoragePort,
   input: PromoteDepthWarmInput,
 ): Promise<PromotedDepthWarmBundle> {
-  const atoms = emitDepthWarmPromotion(input);
+  const emitted = emitDepthWarmPromotion(input);
   const promotedAt = input.extractedAt ?? new Date().toISOString();
   let setbackRuleAtomDid = "";
   let buildableEnvelopeAtomDid = "";
   const boundaryEdgeAtomDids: string[] = [];
 
-  const boundaryEdges = atoms.filter((a) => a.entityType === "property-boundary-edge");
-  if (boundaryEdges.length > 0) {
-    const edgeWrites = await persistBoundaryEdges(storage, boundaryEdges, { force: true });
+  if (emitted.boundaryEdges.length > 0) {
+    const edgeWrites = await persistBoundaryEdges(storage, emitted.boundaryEdges, {
+      force: true,
+    });
     boundaryEdgeAtomDids.push(...edgeWrites.map((w) => w.atomDid));
   }
 
-  for (const atom of atoms.filter((a) => a.entityType !== "property-boundary-edge")) {
+  for (const atom of emitted.propertyAtoms) {
     const result = await writePropertyAtomIfEnabled(storage, atom);
     if (!result) {
       throw new Error("promote: PROPERTY_ATOM_PATH not enabled or write skipped");

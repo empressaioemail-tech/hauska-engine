@@ -226,12 +226,11 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
     }
 
     expect(result.atoms).not.toBeNull();
-    const boundaryCount = result.atoms!.filter((a) => a.entityType === "property-boundary-edge").length;
-    expect(boundaryCount).toBeGreaterThan(0);
-    expect(result.atoms!.filter((a) => a.entityType === "setback-rule")).toHaveLength(1);
-    expect(result.atoms!.filter((a) => a.entityType === "buildable-envelope")).toHaveLength(1);
+    expect(result.atoms!.boundaryEdges.length).toBeGreaterThan(0);
+    expect(result.atoms!.propertyAtoms.filter((a) => a.entityType === "setback-rule")).toHaveLength(1);
+    expect(result.atoms!.propertyAtoms.filter((a) => a.entityType === "buildable-envelope")).toHaveLength(1);
 
-    const envelope = result.atoms!.find((a) => a.entityType === "buildable-envelope");
+    const envelope = result.atoms!.propertyAtoms.find((a) => a.entityType === "buildable-envelope");
     expect(envelope).toBeDefined();
     expect(envelope!.outcome?.kind).toBe("buildable");
     expect(envelope!.sourceCitation).toBe(DEPTH_WARM_SOURCE_CITATION);
@@ -242,7 +241,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
       (envelope as { geojson?: { features: unknown[] } }).geojson?.features?.length,
     ).toBe(1);
 
-    const setback = result.atoms!.find((a) => a.entityType === "setback-rule");
+    const setback = result.atoms!.propertyAtoms.find((a) => a.entityType === "setback-rule");
     expect(setback).toBeDefined();
     expect(setback!.front).toBe(30);
   });
@@ -327,12 +326,12 @@ describe("emitDepthWarmPromotion read-path marker", () => {
       roads: [SPRING_ROAD],
       edgeLabels: edgeLabels714SpringHonest(),
     });
-    const atoms = emitDepthWarmPromotion({
+    const emitted = emitDepthWarmPromotion({
       candidate,
       descriptor,
       zoningFactAtomDid: `did:hauska:zoning-fact:${PARCEL_ID}`,
     });
-    const env = atoms.find((a) => a.entityType === "buildable-envelope");
+    const env = emitted.propertyAtoms.find((a) => a.entityType === "buildable-envelope");
     expect(env?.sourceCitation).toContain("depth-warm-verified");
   });
 });
@@ -349,12 +348,12 @@ describe("emitDepthWarmPromotion boundary-edge persist (WS1 Option A)", () => {
       edgeLabels,
     });
 
-    const atoms = emitDepthWarmPromotion({
+    const emitted = emitDepthWarmPromotion({
       candidate,
       descriptor,
       zoningFactAtomDid: `did:hauska:zoning-fact:${PARCEL_ID}`,
     });
-    const boundaryEdges = atoms.filter((a) => a.entityType === "property-boundary-edge");
+    const boundaryEdges = emitted.boundaryEdges;
     expect(boundaryEdges.length).toBe(candidate.parcelRing.length - 1);
 
     for (const warmEdge of candidate.edges) {
