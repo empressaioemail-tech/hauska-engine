@@ -152,7 +152,16 @@ describe("site-plan DXF/IFC emitters", { timeout: 20_000 }, () => {
 
     expect(dxf).toContain("$ACADVER");
     expect(dxf).toContain("AC1015");
-    for (const layer of ["PROPERTY_LINE", "DIMENSION", "SETBACK", "CONTOUR", "ELEVATION_LABEL", "STREET", "NORTH"]) {
+    for (const layer of [
+      "PROPERTY_LINE",
+      "BUILDABLE",
+      "DIMENSION",
+      "SETBACK",
+      "CONTOUR",
+      "ELEVATION_LABEL",
+      "STREET",
+      "NORTH",
+    ]) {
       expect(dxf).toContain(layer);
     }
     expect(dxf).toContain("NAVD88");
@@ -200,11 +209,13 @@ describe("site-plan DXF/IFC emitters", { timeout: 20_000 }, () => {
     expect(streetEntityLines.length).toBe(0);
   });
 
-  it("T2/#255: DIMENSION and SETBACK text anchors are normal-offset (not co-located on property midpoints)", () => {
+  it("T2/#255+#257: DIMENSION and SETBACK text anchors are normal-offset (not co-located on property midpoints)", () => {
     // Regressing change: cdaae2b (PR #255) refreshed stale 15/0/0 → F/S/R on
     // export. setback.segments share property-ring endpoints with
     // propertySegments; pre-fix both label families used the raw midpoint so
     // "FRONT 25 ft" stacked on "XX.X ft" (109 Higgins / 48021:31362).
+    // #257 extended text separation; this asserts the request geometry (not
+    // only that layer names appear as strings in the DXF).
     const model = buildModel();
     const mesh = buildTerrainMeshGeometry(dem, bbox);
     const request = buildDxfSitePlanRequest(model, mesh) as Record<string, any>;
@@ -226,7 +237,7 @@ describe("site-plan DXF/IFC emitters", { timeout: 20_000 }, () => {
     }
   });
 
-  it("T2/#255: emitted DXF TEXT inserts for DIMENSION vs SETBACK stay separated", async () => {
+  it("T2/#255+#257: emitted DXF TEXT inserts for DIMENSION vs SETBACK stay separated; BUILDABLE holds the ring", async () => {
     const model = buildModel();
     const mesh = buildTerrainMeshGeometry(dem, bbox);
     const request = buildDxfSitePlanRequest(model, mesh) as Record<string, any>;
@@ -247,9 +258,35 @@ describe("site-plan DXF/IFC emitters", { timeout: 20_000 }, () => {
         expect(Math.hypot(d.x - s.x, d.y - s.y)).toBeGreaterThan(minSep);
       }
     }
+    // Geometry parse: offset ring is BUILDABLE polyline, not SETBACK (T2 WS1).
+    const setbackPolylineHits = dxf
+      .split(/\r?\n/)
+      .filter((line, i, all) => {
+        if (all[i - 1]?.trim() !== "8" || line.trim() !== "SETBACK") return false;
+        // Look backward for nearest entity type 0/POLYLINE before this layer tag.
+        for (let j = i - 2; j >= 0; j--) {
+          if (all[j]?.trim() === "0") {
+            return all[j + 1]?.trim() === "POLYLINE";
+          }
+        }
+        return false;
+      });
+    const buildablePolylineHits = dxf
+      .split(/\r?\n/)
+      .filter((line, i, all) => {
+        if (all[i - 1]?.trim() !== "8" || line.trim() !== "BUILDABLE") return false;
+        for (let j = i - 2; j >= 0; j--) {
+          if (all[j]?.trim() === "0") {
+            return all[j + 1]?.trim() === "POLYLINE";
+          }
+        }
+        return false;
+      });
+    expect(setbackPolylineHits.length).toBe(0);
+    expect(buildablePolylineHits.length).toBe(1);
   });
 
-  it("draws STREET at the same grade Z as PROPERTY_LINE/SETBACK in DXF, and IFC honors the same grade (HOLD 2 regression)", async () => {
+  it("draws STREET at the same grade Z as PROPERTY_LINE/BUILDABLE in DXF, and IFC honors the same grade (HOLD 2 regression)", async () => {
     const model = buildModelWithStreet();
     expect(model.streets.honestAbsence).toBe(false);
     const mesh = buildTerrainMeshGeometry(dem, bbox);
@@ -259,13 +296,18 @@ describe("site-plan DXF/IFC emitters", { timeout: 20_000 }, () => {
     const { bytes } = await emitDxfSitePlan(model, mesh);
     const dxf = new TextDecoder().decode(bytes);
     const propertyLineZs = extractZValuesForLayer(dxf, "PROPERTY_LINE");
+    const buildableZs = extractZValuesForLayer(dxf, "BUILDABLE");
     const streetZs = extractZValuesForLayer(dxf, "STREET");
     expect(propertyLineZs.length).toBeGreaterThan(0);
+    expect(buildableZs.length).toBeGreaterThan(0);
     expect(streetZs.length).toBeGreaterThan(0);
     for (const z of streetZs) {
       expect(z).toBeCloseTo(expectedGradeZ, 3);
     }
     for (const z of propertyLineZs) {
+      expect(z).toBeCloseTo(expectedGradeZ, 3);
+    }
+    for (const z of buildableZs) {
       expect(z).toBeCloseTo(expectedGradeZ, 3);
     }
 

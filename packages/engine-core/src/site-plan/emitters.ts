@@ -110,6 +110,7 @@ export function buildDxfSitePlanRequest(model: SitePlanModel, mesh: TerrainMeshG
     contours: model.contours.map((polyline) => ({
       elevation: polyline.elevation,
       points: polyline.points,
+      ...(polyline.closed !== undefined ? { closed: polyline.closed } : {}),
       citation: model.citations.contour,
     })),
     elevationLabels: model.elevationLabels.map((label) => ({
@@ -159,7 +160,16 @@ export async function emitDxfSitePlan(
   if (!result.dxfText.includes("NAVD88")) {
     throw new Error("DXF site-plan missing NAVD88 vertical-datum declaration");
   }
-  for (const layer of ["PROPERTY_LINE", "DIMENSION", "SETBACK", "CONTOUR", "ELEVATION_LABEL", "STREET", "NORTH"]) {
+  for (const layer of [
+    "PROPERTY_LINE",
+    "BUILDABLE",
+    "DIMENSION",
+    "SETBACK",
+    "CONTOUR",
+    "ELEVATION_LABEL",
+    "STREET",
+    "NORTH",
+  ]) {
     if (!result.dxfText.includes(layer)) {
       throw new Error(`DXF site-plan missing required layer ${layer}`);
     }
@@ -177,7 +187,7 @@ export interface IfcSitePlanResult {
   spatialValidation?: Record<string, unknown>;
   /** Diagnostic only: the grade Z the worker actually used for STREET
    * annotations this run. Must equal the same `gradeZ` passed to the DXF
-   * worker and baked into PROPERTY_LINE/SETBACK — see HOLD 2. */
+   * worker and baked into PROPERTY_LINE/BUILDABLE — see HOLD 2. */
   streetGradeZ?: number;
 }
 
@@ -205,7 +215,7 @@ export async function emitIfcSitePlan(
     verticalDatum: TERRAIN_VERTICAL_DATUM,
     provenance: { sourceCitation, hasHoles: mesh.hasHoles },
     solidMass: { skirtDepthMeters: solid.skirtDepthMeters, bottomZ: solid.bottomZ, minZ: solid.minZ },
-    // Same grade Z the DXF worker gets and PROPERTY_LINE/SETBACK are already
+    // Same grade Z the DXF worker gets and PROPERTY_LINE/BUILDABLE are already
     // baked to (via ring3 above) — STREET anchors arrive as 2D [x,y] pairs
     // and need the worker to add a Z; it must be this one, not a 0.0
     // default, or the shared-model same-source rule breaks for IFC STREET.
@@ -220,6 +230,7 @@ export async function emitIfcSitePlan(
     contours: model.contours.map((polyline) => ({
       elevation: polyline.elevation,
       points: polyline.points,
+      ...(polyline.closed !== undefined ? { closed: polyline.closed } : {}),
       citation: model.citations.contour,
     })),
     street: model.streets.honestAbsence
