@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { insetPerEdge, openRing, projectRing } from "../../depth-warm/geometry.js";
 import {
   isConvexPlanarRing,
+  pointInOrOnPolygon,
   ringHasSelfTouch,
   ringSelfIntersects,
 } from "../../geometry/polygon-inset.js";
@@ -67,7 +68,7 @@ describe("F3 lot-line geometry scrub (34073 + 34081)", () => {
   });
 
   it("34073 scrubbed from corrupt → near-rect parcel with ≤6-vertex clean envelope", () => {
-    const scrubbed = scrubLotLineRing(PARCEL_34073_CORRUPT_TXGIO);
+    const scrubbed = scrubLotLineRing(PARCEL_34073_CORRUPT_TXGIO, { aggressive: true });
     expect(openRing(scrubbed).length).toBeLessThanOrEqual(5);
     expect(isNearRectangularParcelRing(scrubbed)).toBe(true);
 
@@ -84,7 +85,7 @@ describe("F3 lot-line geometry scrub (34073 + 34081)", () => {
   });
 
   it("34073 authoritative BCAD ring: scrub + SF-1 → clean near-rect envelope", () => {
-    const scrubbed = scrubLotLineRing(PARCEL_34073_BCAD);
+    const scrubbed = scrubLotLineRing(PARCEL_34073_BCAD, { aggressive: true });
     expect(isNearRectangularParcelRing(scrubbed)).toBe(true);
 
     const inset = insetPerEdge(scrubbed, sf1InsetFeet34073(scrubbed));
@@ -165,7 +166,7 @@ const PARCEL_34121_BCAD_IRREGULAR: typeof PARCEL_34073_BCAD = [
 
 describe("R29 irregular-lot near-rect relaxation (48021:34121)", () => {
   it("notched hexagon lot is NOT classified near-rectangular (reflex vertex)", () => {
-    const scrubbed = scrubLotLineRing(PARCEL_34121_BCAD_IRREGULAR);
+    const scrubbed = scrubLotLineRing(PARCEL_34121_BCAD_IRREGULAR, { aggressive: true });
     // Scrub collapses the 8-vertex capture to a 6-gon L-shape.
     expect(openRing(scrubbed).length).toBe(6);
     // One reflex corner ⇒ irregular, not near-rect.
@@ -177,7 +178,7 @@ describe("R29 irregular-lot near-rect relaxation (48021:34121)", () => {
   });
 
   it("its non-convex GC 20/5/20 inset is geometrically VALID (verify passes without the R5 gate)", () => {
-    const scrubbed = scrubLotLineRing(PARCEL_34121_BCAD_IRREGULAR);
+    const scrubbed = scrubLotLineRing(PARCEL_34121_BCAD_IRREGULAR, { aggressive: true });
     const n = openRing(scrubbed).length;
     // GC roles: front/rear = 20, sides = 5. Roles positioned to match the ring
     // topology (index 3 front-facing edge, index 4 rear) — the exact per-edge
@@ -207,7 +208,7 @@ describe("R29 irregular-lot near-rect relaxation (48021:34121)", () => {
 
   it("R5 corruption gate STILL rejects a non-convex inset on a genuinely near-rect (convex) lot", () => {
     // 34073 BCAD is a clean convex rectangle → still classified near-rect.
-    const nearRect = scrubLotLineRing(PARCEL_34073_BCAD);
+    const nearRect = scrubLotLineRing(PARCEL_34073_BCAD, { aggressive: true });
     expect(isNearRectangularParcelRing(nearRect)).toBe(true);
 
     // Inject a deliberately-notched (non-convex) inset inside the parcel.
@@ -341,5 +342,160 @@ describe("fetchBcadParcelRings prop_id field casing", () => {
 
     await fetchBcadParcelRings([22945, 22946], fakeFetch, "http://example/layer/0", "PropertyID");
     expect(capturedWhere).toBe("PropertyID IN (22945,22946)");
+  });
+});
+
+/**
+ * D2 ring-truncation regression (2026-08-06 differential audit, WS1 operator
+ * QA fail on 48021:31308). Root cause: the DEFAULT scrub previously ran
+ * `removeNearlyStraightVertices` (turn-angle heuristic, no length floor),
+ * which collapsed a genuine ~0.89deg shallow-angle corner bounding a real
+ * ~2.8m edge — turning a true 5-vertex ring into 4 and leaking the served
+ * inset ~7ft onto the neighbor to the east (2 of 4 inset vertices land
+ * outside the true parcel ring). `removeCollinearVertices` (the exact,
+ * scale-correct cross-product test already in the default pipeline) does
+ * NOT drop this vertex (|cross| ~0.94 vs tol 0.05) — it is not actually
+ * collinear in the sense that matters. The fix: `removeNearlyStraightVertices`
+ * now only runs under `aggressive: true`, opt-in for known-corrupt sources.
+ */
+describe("D2 ring-truncation regression (48021:31308, Jones/Higgins)", () => {
+  const PARCEL_31308_RAW: typeof PARCEL_34073_BCAD = [
+    [-97.32653742899998, 30.10664583500005],
+    [-97.32676392099995, 30.106643674000054],
+    [-97.32681061299996, 30.106956840000066],
+    [-97.32655329199997, 30.106996621000064],
+    [-97.32650865799997, 30.106645721000064],
+    [-97.32653742899998, 30.10664583500005],
+  ];
+
+  it("default (strict) scrub preserves the true 5-vertex ring — no truncation to 4", () => {
+    const scrubbed = scrubLotLineRing(PARCEL_31308_RAW);
+    expect(openRing(scrubbed).length).toBe(5);
+  });
+
+  it("aggressive scrub (opt-in) still collapses it — documents the tradeoff explicitly", () => {
+    const scrubbed = scrubLotLineRing(PARCEL_31308_RAW, { aggressive: true });
+    expect(openRing(scrubbed).length).toBe(4);
+  });
+
+  it("a 4-edge inset built against the WRONG (truncated) 4-vertex ring leaks outside the true 5-vertex parcel", () => {
+    // Historical bug reproduction: the served inset ring recorded by the
+    // operator QA probe, checked against the TRUE (untruncated) parcel ring.
+    const leakedInsetRing: typeof PARCEL_34073_BCAD = [
+      [-97.32670451746095, 30.10689620685521],
+      [-97.32666827953699, 30.106653154522785],
+      [-97.32648543333013, 30.10665435421853],
+      [-97.32653771000867, 30.10692199386753],
+      [-97.32670451746095, 30.10689620685521],
+    ];
+    const parcelProj = projectRing(PARCEL_31308_RAW)!;
+    let outsideCount = 0;
+    for (const [lng, lat] of openRing(leakedInsetRing)) {
+      const p = {
+        x: (lng - parcelProj.originLng) * parcelProj.mPerDegLng,
+        y: (lat - parcelProj.originLat) * parcelProj.mPerDegLat,
+      };
+      if (!pointInOrOnPolygon(p, parcelProj.points, 0.12)) outsideCount++;
+    }
+    expect(outsideCount).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Fix 1 required unit fixtures (dispatch 2026-08-06): 4-vertex rectangle,
+ * 6-vertex collinear-split, 7-vertex non-rectangular, and a corner lot.
+ * Each asserts the DEFAULT (strict) scrub preserves genuine corners and the
+ * resulting envelope stays CONTAINED in the parcel ring.
+ */
+describe("Fix 1 ring-fidelity fixtures", () => {
+  function assertEnvelopeContained(parcelRing: typeof PARCEL_34073_BCAD, insetRing: typeof PARCEL_34073_BCAD) {
+    const parcelProj = projectRing(parcelRing)!;
+    for (const [lng, lat] of openRing(insetRing)) {
+      const p = {
+        x: (lng - parcelProj.originLng) * parcelProj.mPerDegLng,
+        y: (lat - parcelProj.originLat) * parcelProj.mPerDegLat,
+      };
+      expect(pointInOrOnPolygon(p, parcelProj.points, 0.12)).toBe(true);
+    }
+  }
+
+  it("4-vertex rectangle: scrub is a no-op, envelope stays contained", () => {
+    const rect: typeof PARCEL_34073_BCAD = [
+      [-97.6, 29.9],
+      [-97.6, 29.901],
+      [-97.599, 29.901],
+      [-97.599, 29.9],
+      [-97.6, 29.9],
+    ];
+    const scrubbed = scrubLotLineRing(rect);
+    expect(openRing(scrubbed).length).toBe(4);
+    const n = openRing(scrubbed).length;
+    const inset = insetPerEdge(scrubbed, Array.from({ length: n }, () => 10));
+    expect(inset.empty, inset.emptyReason).toBe(false);
+    assertEnvelopeContained(scrubbed, inset.ring!);
+  });
+
+  it("6-vertex collinear-split rectangle: default scrub removes exact-collinear midpoints, envelope stays contained", () => {
+    // A true rectangle with two exact-collinear points inserted mid-edge
+    // (genuine digitization split, zero perpendicular deviation) — the
+    // properly-scaled removeCollinearVertices pass (always-on) should drop
+    // these two, independent of the aggressive/turn-angle pass.
+    const splitRect: typeof PARCEL_34073_BCAD = [
+      [-97.6, 29.9],
+      [-97.6, 29.9005],
+      [-97.6, 29.901],
+      [-97.599, 29.901],
+      [-97.599, 29.9005],
+      [-97.599, 29.9],
+      [-97.6, 29.9],
+    ];
+    const scrubbed = scrubLotLineRing(splitRect);
+    expect(openRing(scrubbed).length).toBe(4);
+    const n = openRing(scrubbed).length;
+    const inset = insetPerEdge(scrubbed, Array.from({ length: n }, () => 10));
+    expect(inset.empty, inset.emptyReason).toBe(false);
+    assertEnvelopeContained(scrubbed, inset.ring!);
+  });
+
+  it("7-vertex non-rectangular lot: default scrub preserves all real corners, envelope stays contained", () => {
+    // Irregular 7-gon (no genuinely collinear or sub-survey-noise vertices).
+    const irregular7: typeof PARCEL_34073_BCAD = [
+      [-97.6, 29.9],
+      [-97.5996, 29.9002],
+      [-97.5993, 29.9008],
+      [-97.5995, 29.9015],
+      [-97.6, 29.9018],
+      [-97.6005, 29.9012],
+      [-97.6004, 29.9004],
+      [-97.6, 29.9],
+    ];
+    const scrubbed = scrubLotLineRing(irregular7);
+    expect(openRing(scrubbed).length).toBe(7);
+    const n = openRing(scrubbed).length;
+    const inset = insetPerEdge(scrubbed, Array.from({ length: n }, () => 5));
+    expect(inset.empty, inset.emptyReason).toBe(false);
+    assertEnvelopeContained(scrubbed, inset.ring!);
+  });
+
+  it("corner lot (48021:31371-shaped, front+sideCorner roles): default scrub preserves the true ring, envelope stays contained", () => {
+    // Raw 7-vertex corner-lot ring per D2 audit (31371 raw edge count 7).
+    const cornerLot: typeof PARCEL_34073_BCAD = [
+      [-97.3268, 30.1066],
+      [-97.3266, 30.1064],
+      [-97.3263, 30.1064],
+      [-97.3261, 30.1066],
+      [-97.3261, 30.107],
+      [-97.3265, 30.1072],
+      [-97.3268, 30.107],
+      [-97.3268, 30.1066],
+    ];
+    const scrubbed = scrubLotLineRing(cornerLot);
+    // No genuinely collinear or sub-survey-length vertex in this fixture —
+    // the strict default must not truncate a real 7-corner lot.
+    expect(openRing(scrubbed).length).toBe(7);
+    const insetFeet = [15, 25, 5, 5, 25, 15, 5];
+    const inset = insetPerEdge(scrubbed, insetFeet);
+    expect(inset.empty, inset.emptyReason).toBe(false);
+    assertEnvelopeContained(scrubbed, inset.ring!);
   });
 });
