@@ -20,6 +20,12 @@ export interface DxfWorkerResult {
 export interface ContourPolyline2d {
   elevation: number;
   points: Array<[number, number]>;
+  /**
+   * Explicit closed-ring flag for the DXF worker. When omitted, the worker
+   * auto-detects from first≈last XY. Bastrop Contour1Ft2017 paths are open
+   * LineStrings (`closed: false`); DEM-derived d3-contour rings are closed.
+   */
+  closed?: boolean;
 }
 
 function dxfWorkerPath(): string {
@@ -92,7 +98,7 @@ export function collectContourPolylines(
           (lng - bbox.westLng) * metersPerLng,
           (lat - bbox.southLat) * 111_320,
         ]);
-        polylines.push({ elevation, points });
+        polylines.push({ elevation, points, closed: true });
       }
     }
   }
@@ -118,8 +124,9 @@ export async function emitDxf3dFace(geometry: TerrainMeshGeometry): Promise<Uint
 
 
 /**
- * Contour DXF via ezdxf R2000 writer. Never emits 3DFACE. Contours are closed
- * 3D POLYLINE + VERTEX (Z on each vertex), not LWPOLYLINE.
+ * Contour DXF via ezdxf R2000 writer. Never emits 3DFACE. Contours are
+ * 3D POLYLINE + VERTEX (Z on each vertex), not LWPOLYLINE. Open paths stay
+ * open (close=False); closed rings seal via close=True / first≈last.
  */
 export async function emitDxfContours(
   dem: ParsedDem,

@@ -40,6 +40,28 @@ def _ensure_layer(doc, name: str, color: int = 3) -> None:
         doc.layers.add(name, color=color)
 
 
+def _polyline_should_close(pts, explicit_closed=None, tol: float = 1e-6) -> bool:
+    """Open ArcGIS contour LineStrings must not be sealed (close=True draws
+    chord spikes across the sheet). Closed DEM rings / property envelopes do.
+
+    Prefer an explicit `closed` flag on the request; otherwise auto-detect
+    first≈last in XY (Z is constant on a contour and is ignored).
+    """
+    if explicit_closed is not None:
+        return bool(explicit_closed)
+    if len(pts) < 3:
+        return False
+    return abs(pts[0][0] - pts[-1][0]) <= tol and abs(pts[0][1] - pts[-1][1]) <= tol
+
+
+def _prepare_polyline_pts(pts, close: bool):
+    """Drop a duplicate closing vertex when sealing; leave open paths intact."""
+    out = list(pts)
+    if close and len(out) > 2 and out[0][0] == out[-1][0] and out[0][1] == out[-1][1]:
+        out = out[:-1]
+    return out
+
+
 def _vertical_datum(request: dict) -> dict:
     vd = request.get("verticalDatum") or {}
     out = dict(DEFAULT_VERTICAL_DATUM)
@@ -128,12 +150,14 @@ def emit_contours(request: dict) -> dict:
         if len(points_2d) < 2:
             continue
         pts = [(float(p[0]), float(p[1]), elevation) for p in points_2d]
-        # Drop duplicate closing vertex; ezdxf close=True seals the ring.
-        if len(pts) > 2 and pts[0][0] == pts[-1][0] and pts[0][1] == pts[-1][1]:
-            pts = pts[:-1]
+        # One POLYLINE entity per path — never concatenate across breaks.
+        # Bastrop Contour1Ft2017 paths are open LineStrings; closing them
+        # draws chord spikes (109 Higgins / T2 WS1). DEM rings stay closed.
+        close = _polyline_should_close(pts, poly.get("closed"))
+        pts = _prepare_polyline_pts(pts, close)
         if len(pts) < 2:
             continue
-        msp.add_polyline3d(pts, close=True, dxfattribs={"layer": layer})
+        msp.add_polyline3d(pts, close=close, dxfattribs={"layer": layer})
         entity_count += 1
     return _finalize(doc, entity_count, "contours", vertical_datum)
 
@@ -166,14 +190,17 @@ def emit_3dface(request: dict) -> dict:
     return _finalize(doc, entity_count, "3dface", vertical_datum)
 
 
+# Distinct ACI colors so CAD layer freeze/isolate is readable (T2 WS1).
+# BUILDABLE = setback offset ring geometry; SETBACK = labels / legend text.
 SITE_PLAN_LAYERS = [
-    ("PROPERTY_LINE", 7),
-    ("DIMENSION", 2),
-    ("SETBACK", 1),
-    ("CONTOUR", 3),
-    ("ELEVATION_LABEL", 3),
-    ("STREET", 6),
-    ("NORTH", 5),
+    ("PROPERTY_LINE", 7),   # white — parcel boundary
+    ("BUILDABLE", 4),       # cyan — buildable envelope ring
+    ("SETBACK", 1),         # red — setback role labels + legend
+    ("DIMENSION", 2),       # yellow — edge length text
+    ("CONTOUR", 3),         # green — terrain contours
+    ("ELEVATION_LABEL", 8), # dark grey — contour elevation text
+    ("STREET", 6),          # magenta — street centerline / ROW
+    ("NORTH", 5),           # blue — north arrow + scale
 ]
 
 
@@ -256,7 +283,8 @@ def emit_site_plan(request: dict) -> dict:
     offset_points = setback.get("offsetPoints")
     if offset_points and len(offset_points) >= 3:
         pts = [pt3(p, grade_z) for p in offset_points]
-        entity = msp.add_polyline3d(pts, close=True, dxfattribs={"layer": "SETBACK"})
+        # Geometry on BUILDABLE; SETBACK layer is text-only (T2 WS1 layer split).
+        entity = msp.add_polyline3d(pts, close=True, dxfattribs={"layer": "BUILDABLE"})
         _tag(entity, setback.get("citation"))
         entity_count += 1
         placed_setback_xy: list[tuple[float, float]] = []
@@ -282,7 +310,7 @@ def emit_site_plan(request: dict) -> dict:
             placed_setback_xy.append((mid[0], mid[1]))
             entity_count += 1
         # Sheet legend below the property AABB — never on offset_points[0],
-        # which coincides with a SETBACK polyline vertex / edge label zone.
+        # which coincides with a BUILDABLE polyline vertex / edge label zone.
         display_line = str(setback.get("displayLine") or "").strip()
         if display_line and (pl_points or offset_points):
             legend_src = pl_points if pl_points else offset_points
@@ -316,11 +344,13 @@ def emit_site_plan(request: dict) -> dict:
             continue
         elevation = float(contour["elevation"])
         pts = [(float(p[0]), float(p[1]), elevation) for p in points_2d]
-        if len(pts) > 2 and pts[0][:2] == pts[-1][:2]:
-            pts = pts[:-1]
+        # One POLYLINE per contour path; open vs closed auto-detected (or
+        # explicit `closed`). Never concatenate paths into one entity.
+        close = _polyline_should_close(pts, contour.get("closed"))
+        pts = _prepare_polyline_pts(pts, close)
         if len(pts) < 2:
             continue
-        entity = msp.add_polyline3d(pts, close=True, dxfattribs={"layer": "CONTOUR"})
+        entity = msp.add_polyline3d(pts, close=close, dxfattribs={"layer": "CONTOUR"})
         _tag(entity, contour.get("citation"))
         entity_count += 1
 

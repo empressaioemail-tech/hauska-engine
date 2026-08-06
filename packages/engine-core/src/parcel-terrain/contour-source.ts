@@ -115,6 +115,8 @@ export async function resolveContourSource(
   // and site-model use, so DXF and PDF contours register with the parcel ring.
   const polylines: ContourPolyline2d[] = county.polylines.map((line) => ({
     elevation: line.elevationMeters,
+    // ArcGIS Contour1Ft2017 paths are open LineStrings — never seal in DXF.
+    closed: false,
     points: line.points.map(([lng, lat]) => {
       const { x, y } = projectWgs84ToLocalEnu(lng, lat, opts.bbox);
       return [x, y] as [number, number];
