@@ -12,7 +12,15 @@
  *   DATABASE_URL=...hauska_mcp... \
  *   CORTEX_DATABASE_URL=...neondb... \
  *     pnpm --filter @hauska-engine/engine-core run bake-property-atom-county -- \
- *       --county=48055 [--limit=0] [--offset=0] [--batch=500] [--spike-pp=40]
+ *       --county=48055 [--limit=0] [--offset=0] [--batch=500] [--spike-pp=40] \
+ *       [--prop-ids-file=<path>]
+ *
+ * `--prop-ids-file=<path>` (scoped mode): restricts zoning-fact / setback-rule /
+ * buildable-envelope emit to exactly the prop ids listed in the file — one per
+ * line, either a raw CAD prop id ("31131") or a full parcelNodeId ("48021:31131";
+ * the county-fips prefix is stripped; --county still governs place_key prefix).
+ * WITHOUT this flag the CLI is the whole-county cortex snapshot scan; this flag
+ * only ever narrows. Summary reports listSize / matched / notFoundInTier1.
  *
  * Acceptance: WDLL breadth items 2,3,7.
  *
@@ -74,7 +82,7 @@
  *       [--apply] [--limit=N] [--batch=500]
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
@@ -135,6 +143,7 @@ function parseArgs(argv) {
     parcelMin: null,
     parcelMax: null,
     cascadeIdsOut: null,
+    propIdsFile: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -169,8 +178,68 @@ function parseArgs(argv) {
       out.cascadeIdsOut = String(argv[++i] || "").trim() || null;
     else if (a.startsWith("--cascade-ids-out="))
       out.cascadeIdsOut = a.slice("--cascade-ids-out=".length).trim() || null;
+    else if (a === "--prop-ids-file")
+      out.propIdsFile = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--prop-ids-file="))
+      out.propIdsFile = a.slice("--prop-ids-file=".length).trim() || null;
   }
   return out;
+}
+
+/**
+ * Normalize a raw CAD prop id (leading zeros stripped from all-digit ids).
+ */
+function normalizePropId(propId) {
+  const t = String(propId ?? "").trim();
+  if (!/^\d+$/.test(t)) return t;
+  return t.replace(/^0+(?=\d)/, "");
+}
+
+/**
+ * Parse a `--prop-ids-file`: one id per line, blank lines and `#`-prefixed
+ * comment lines ignored. Each line may be a raw prop id or a full
+ * parcelNodeId ("48021:31131") — county prefix stripped.
+ */
+function parsePropIdsFile(raw) {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith("#"));
+  if (lines.length === 0) {
+    throw new Error("--prop-ids-file is empty (no usable lines)");
+  }
+  const ids = new Set();
+  for (const line of lines) {
+    const afterColon = line.includes(":") ? line.split(":").pop() : line;
+    const trimmed = String(afterColon ?? "").trim();
+    if (!trimmed) {
+      throw new Error(`--prop-ids-file: unparseable line "${line}"`);
+    }
+    if (!/^\d+$/.test(trimmed)) {
+      throw new Error(
+        `--prop-ids-file: line "${line}" is not a positive integer prop id`,
+      );
+    }
+    ids.add(normalizePropId(trimmed));
+  }
+  return ids;
+}
+
+/**
+ * Build cortex place_key values for a scoped roster.
+ */
+function placeKeysForPropIds(countyFips, propIds) {
+  return [...propIds].map((id) => `node:${countyFips}:${id}`);
+}
+
+/** Split place_key list into fixed-size chunks for batched cortex reads. */
+function chunkPlaceKeyList(keys, size) {
+  if (size <= 0) throw new Error("chunk size must be positive");
+  const chunks = [];
+  for (let i = 0; i < keys.length; i += size) {
+    chunks.push(keys.slice(i, i + size));
+  }
+  return chunks;
 }
 
 /**
@@ -236,6 +305,23 @@ if (args.rewordCityParcels && citySegmentsAllowlist.size === 0) {
   process.exit(1);
 }
 
+/** Scoped roster (--prop-ids-file); undefined on whole-county runs. */
+let scopedPropIds = null;
+if (args.propIdsFile) {
+  if (args.cascadeAbsenceOnly || args.rewordCityParcels) {
+    console.error(
+      "FATAL: --prop-ids-file is incompatible with --cascade-absence-only / --reword-city-parcels.",
+    );
+    process.exit(1);
+  }
+  try {
+    scopedPropIds = parsePropIdsFile(readFileSync(args.propIdsFile, "utf8"));
+  } catch (err) {
+    console.error(`FATAL: --prop-ids-file: ${err?.message || err}`);
+    process.exit(1);
+  }
+}
+
 const substrateUrl = resolveSubstrateDatabaseUrl();
 const cortexUrl = process.env.CORTEX_DATABASE_URL?.trim();
 if (!substrateUrl) {
@@ -271,8 +357,13 @@ if (args.rewordCityParcels) {
 
 const t0 = performance.now();
 const prefix = `node:${args.county}:`;
+const scopedPlaceKeys = scopedPropIds
+  ? placeKeysForPropIds(args.county, scopedPropIds)
+  : null;
 
-const countRows = await cortexSql`
+const countRows = scopedPlaceKeys
+  ? [{ n: scopedPlaceKeys.length }]
+  : await cortexSql`
   select count(*)::int as n
   from place_layer_snapshots
   where adapter_key = 'node-facets:tier1'
@@ -293,6 +384,13 @@ const ledger = {
     limit: args.limit === 0 ? null : args.limit,
     explicitCap: args.limit > 0,
     dryRun: args.dryRun,
+    ...(scopedPropIds
+      ? {
+          scoped: true,
+          propIdsFile: args.propIdsFile,
+          listSize: scopedPropIds.size,
+        }
+      : {}),
   },
   totals: {
     parcelsSeen: 0,
@@ -309,6 +407,13 @@ const ledger = {
     note: "zoningAbsence / parcelsSeen — spike monitor vs baseline window",
   },
   spikeFlags: [],
+  scoped: scopedPropIds
+    ? {
+        listSize: scopedPropIds.size,
+        matched: 0,
+        notFoundInTier1: [],
+      }
+    : undefined,
   compute: {
     units: 0,
     wallMs: 0,
@@ -382,14 +487,112 @@ console.log(
     offset: args.offset,
     limit: args.limit || "all",
     dryRun: args.dryRun,
+    ...(scopedPropIds
+      ? {
+          scoped: true,
+          propIdsFile: args.propIdsFile,
+          listSize: scopedPropIds.size,
+        }
+      : {}),
   }),
 );
 
 const pageSize = Math.max(50, Math.min(args.batch, 500));
 let fetched = 0;
 let dbOffset = args.offset;
+const foundPlaceKeys = new Set();
+
+async function processBreadthRows(rows) {
+  for (const row of rows) {
+    const placeKey = String(row.place_key || "");
+    const parcelNodeId = placeKey.startsWith("node:")
+      ? placeKey.slice("node:".length)
+      : placeKey;
+    ledger.totals.parcelsSeen += 1;
+    fetched += 1;
+
+    try {
+      const emitted = emitFromTier1Snapshot(
+        parcelNodeId,
+        row.payload_json ?? {},
+        args.county,
+      );
+      observeAbsence(emitted.zoningAbsence);
+      if (emitted.zoningPresent) ledger.totals.zoningPresent += 1;
+      if (emitted.zoningAbsence) ledger.totals.zoningAbsence += 1;
+      if (emitted.setbackPresent) ledger.totals.setbackPresent += 1;
+      if (emitted.envelopePresent) ledger.totals.envelopePresent += 1;
+
+      for (const atom of emitted.atoms) {
+        atomBatch.push(atom);
+      }
+      if (emitted.atoms.length > 0) ledger.totals.parcelsEmitted += 1;
+      if (atomBatch.length >= args.batch) await flushAtomBatch();
+    } catch (err) {
+      ledger.totals.emitErrors += 1;
+      console.error(
+        JSON.stringify({
+          event: "breadth.emit-error",
+          parcelNodeId,
+          error: String(err?.message || err),
+        }),
+      );
+    }
+
+    if (ledger.totals.parcelsSeen % 2000 === 0) {
+      await flushAtomBatch();
+      ledger.honestAbsenceRate.zoning =
+        ledger.totals.parcelsSeen > 0
+          ? ledger.totals.zoningAbsence / ledger.totals.parcelsSeen
+          : null;
+      ledger.compute.wallMs = Math.round(performance.now() - t0);
+      flushLedger();
+      console.log(
+        JSON.stringify({
+          event: "breadth.progress",
+          county: args.county,
+          parcelsSeen: ledger.totals.parcelsSeen,
+          atomsWritten: ledger.totals.atomsWritten,
+          zoningAbsenceRate: ledger.honestAbsenceRate.zoning,
+          wallMs: ledger.compute.wallMs,
+        }),
+      );
+    }
+  }
+}
 
 try {
+  if (scopedPlaceKeys) {
+    for (const chunk of chunkPlaceKeyList(scopedPlaceKeys, pageSize)) {
+      if (args.limit > 0 && fetched >= args.limit) break;
+      const take =
+        args.limit > 0 ? Math.min(chunk.length, args.limit - fetched) : chunk.length;
+      const keys = chunk.slice(0, take);
+
+      const rows = await cortexSql`
+        select place_key, payload_json
+        from place_layer_snapshots
+        where adapter_key = 'node-facets:tier1'
+          and place_key = ANY(${keys})
+        order by place_key
+      `;
+      ledger.compute.units += 1;
+
+      for (const row of rows) {
+        foundPlaceKeys.add(String(row.place_key || ""));
+      }
+
+      await processBreadthRows(rows);
+      if (args.limit > 0 && fetched >= args.limit) break;
+    }
+
+    if (ledger.scoped) {
+      ledger.scoped.matched = foundPlaceKeys.size;
+      ledger.scoped.notFoundInTier1 = [...scopedPropIds].filter(
+        (id) => !foundPlaceKeys.has(`node:${args.county}:${id}`),
+      );
+    }
+  } else {
   while (true) {
     if (args.limit > 0 && fetched >= args.limit) break;
 
@@ -409,65 +612,11 @@ try {
 
     if (rows.length === 0) break;
 
-    for (const row of rows) {
-      const placeKey = String(row.place_key || "");
-      const parcelNodeId = placeKey.startsWith("node:")
-        ? placeKey.slice("node:".length)
-        : placeKey;
-      ledger.totals.parcelsSeen += 1;
-      fetched += 1;
-
-      try {
-        const emitted = emitFromTier1Snapshot(
-          parcelNodeId,
-          row.payload_json ?? {},
-          args.county,
-        );
-        observeAbsence(emitted.zoningAbsence);
-        if (emitted.zoningPresent) ledger.totals.zoningPresent += 1;
-        if (emitted.zoningAbsence) ledger.totals.zoningAbsence += 1;
-        if (emitted.setbackPresent) ledger.totals.setbackPresent += 1;
-        if (emitted.envelopePresent) ledger.totals.envelopePresent += 1;
-
-        for (const atom of emitted.atoms) {
-          atomBatch.push(atom);
-        }
-        if (emitted.atoms.length > 0) ledger.totals.parcelsEmitted += 1;
-        if (atomBatch.length >= args.batch) await flushAtomBatch();
-      } catch (err) {
-        ledger.totals.emitErrors += 1;
-        console.error(
-          JSON.stringify({
-            event: "breadth.emit-error",
-            parcelNodeId,
-            error: String(err?.message || err),
-          }),
-        );
-      }
-
-      if (ledger.totals.parcelsSeen % 2000 === 0) {
-        await flushAtomBatch();
-        ledger.honestAbsenceRate.zoning =
-          ledger.totals.parcelsSeen > 0
-            ? ledger.totals.zoningAbsence / ledger.totals.parcelsSeen
-            : null;
-        ledger.compute.wallMs = Math.round(performance.now() - t0);
-        flushLedger();
-        console.log(
-          JSON.stringify({
-            event: "breadth.progress",
-            county: args.county,
-            parcelsSeen: ledger.totals.parcelsSeen,
-            atomsWritten: ledger.totals.atomsWritten,
-            zoningAbsenceRate: ledger.honestAbsenceRate.zoning,
-            wallMs: ledger.compute.wallMs,
-          }),
-        );
-      }
-    }
+    await processBreadthRows(rows);
 
     dbOffset += rows.length;
     if (rows.length < take) break;
+  }
   }
 
   await flushAtomBatch();
@@ -519,6 +668,7 @@ try {
       bakedPct: ledger.bakedPct,
       compute: ledger.compute,
       spikeFlags: ledger.spikeFlags,
+      ...(ledger.scoped ? { scoped: ledger.scoped } : {}),
     }),
   );
 
