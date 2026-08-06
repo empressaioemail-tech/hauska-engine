@@ -182,7 +182,7 @@ describe("central TX county fan registry rows (2026-08-04)", () => {
       "https://gis.wilco.org/arcgis/rest/services/public/county_wcad_parcels/MapServer/0",
     );
     expect(WILLIAMSON_COUNTY_UNINCORPORATED_REGISTRY_ROW.railPerParcel?.propIdField).toBe(
-      "PropertyID",
+      "PARCELID",
     );
   });
 });

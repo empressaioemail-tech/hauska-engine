@@ -424,11 +424,17 @@ export async function fetchBcadParcelRings(
   propIdField = "prop_id",
 ): Promise<BcadParcelFetchResult[]> {
   if (!propIds.length) return [];
-  const idList = propIds.map((id) => Number(id)).filter(Number.isFinite);
-  if (!idList.length) return [];
+  const idStrings = propIds.map((id) => String(id).trim()).filter(Boolean);
+  if (!idStrings.length) return [];
+  const allNumeric = idStrings.every(
+    (id) => /^-?\d+(\.\d+)?$/.test(id) && Number.isFinite(Number(id)),
+  );
+  const whereClause = allNumeric
+    ? `${propIdField} IN (${idStrings.map((id) => Number(id)).join(",")})`
+    : `${propIdField} IN (${idStrings.map((id) => `'${id.replace(/'/g, "''")}'`).join(",")})`;
 
   const url = new URL(`${queryUrl.replace(/\/$/, "")}/query`);
-  url.searchParams.set("where", `${propIdField} IN (${idList.join(",")})`);
+  url.searchParams.set("where", whereClause);
   url.searchParams.set("outFields", propIdField);
   url.searchParams.set("returnGeometry", "true");
   url.searchParams.set("f", "geojson");

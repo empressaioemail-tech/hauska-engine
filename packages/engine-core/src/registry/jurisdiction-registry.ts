@@ -735,7 +735,7 @@ export const WILLIAMSON_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistry
       parcelFilter: { kind: "noFilter" },
       districtField: "",
       districtValueByPrefix: {},
-      propIdField: "PropertyID",
+      propIdField: "PARCELID",
     },
     railC: {
       geometrySource: "stratmap_bulk_zip",
