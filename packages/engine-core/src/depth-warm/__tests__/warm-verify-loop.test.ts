@@ -226,9 +226,11 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
     }
 
     expect(result.atoms).not.toBeNull();
-    expect(result.atoms!.length).toBe(2);
+    expect(result.atoms!.boundaryEdges.length).toBeGreaterThan(0);
+    expect(result.atoms!.propertyAtoms.filter((a) => a.entityType === "setback-rule")).toHaveLength(1);
+    expect(result.atoms!.propertyAtoms.filter((a) => a.entityType === "buildable-envelope")).toHaveLength(1);
 
-    const envelope = result.atoms!.find((a) => a.entityType === "buildable-envelope");
+    const envelope = result.atoms!.propertyAtoms.find((a) => a.entityType === "buildable-envelope");
     expect(envelope).toBeDefined();
     expect(envelope!.outcome?.kind).toBe("buildable");
     expect(envelope!.sourceCitation).toBe(DEPTH_WARM_SOURCE_CITATION);
@@ -239,7 +241,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
       (envelope as { geojson?: { features: unknown[] } }).geojson?.features?.length,
     ).toBe(1);
 
-    const setback = result.atoms!.find((a) => a.entityType === "setback-rule");
+    const setback = result.atoms!.propertyAtoms.find((a) => a.entityType === "setback-rule");
     expect(setback).toBeDefined();
     expect(setback!.front).toBe(30);
   });
@@ -324,12 +326,44 @@ describe("emitDepthWarmPromotion read-path marker", () => {
       roads: [SPRING_ROAD],
       edgeLabels: edgeLabels714SpringHonest(),
     });
-    const atoms = emitDepthWarmPromotion({
+    const emitted = emitDepthWarmPromotion({
       candidate,
       descriptor,
       zoningFactAtomDid: `did:hauska:zoning-fact:${PARCEL_ID}`,
     });
-    const env = atoms.find((a) => a.entityType === "buildable-envelope");
+    const env = emitted.propertyAtoms.find((a) => a.entityType === "buildable-envelope");
     expect(env?.sourceCitation).toContain("depth-warm-verified");
+  });
+});
+
+describe("emitDepthWarmPromotion boundary-edge persist (WS1 Option A)", () => {
+  it("writes boundary-edge atoms whose roles match warm verify labels (conclusion-string gate)", () => {
+    const edgeLabels = edgeLabels714SpringHonest();
+    const candidate = computeWarmCandidate({
+      parcelNodeId: PARCEL_ID,
+      district: "SF-1",
+      parcelRing: PARCEL_714_SPRING_33512,
+      descriptor,
+      roads: [SPRING_ROAD],
+      edgeLabels,
+    });
+
+    const emitted = emitDepthWarmPromotion({
+      candidate,
+      descriptor,
+      zoningFactAtomDid: `did:hauska:zoning-fact:${PARCEL_ID}`,
+    });
+    const boundaryEdges = emitted.boundaryEdges;
+    expect(boundaryEdges.length).toBe(candidate.parcelRing.length - 1);
+
+    for (const warmEdge of candidate.edges) {
+      const atom = boundaryEdges.find((b) => b.edgeIndex === warmEdge.index);
+      expect(atom?.role).toBe(warmEdge.label);
+    }
+
+    expect(boundaryEdges.every((e) => e.sourceAdapter === "depth-warm-verify-promote")).toBe(true);
+    expect(boundaryEdges.every((e) => e.sourceCitation.includes(DEPTH_WARM_PROMOTION_MARKER))).toBe(
+      true,
+    );
   });
 });

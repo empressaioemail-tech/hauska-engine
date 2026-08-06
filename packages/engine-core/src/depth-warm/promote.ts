@@ -3,6 +3,7 @@
  */
 
 import type {
+  BoundaryEdgeAtomInstance,
   BuildableEnvelopeAtomInstance,
   PropertyAtomInstance,
   SetbackRuleAtomInstance,
@@ -14,6 +15,8 @@ import { emitBuildableEnvelope } from "../property-reasoning/emit-buildable-enve
 import { emitSetbackRule, resolveSetbackTableRow } from "../property-reasoning/emit-setback-rule.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { writePropertyAtomIfEnabled } from "../property-reasoning/write-property-atom.js";
+import { persistBoundaryEdges } from "../boundary-primitive/persist.js";
+import { emitBoundaryEdgesFromWarmCandidate } from "./emit-boundary-edges-from-warm.js";
 import type { PromotedDepthWarmBundle, WarmCandidate } from "./types.js";
 import {
   DEPTH_WARM_PROMOTION_MARKER,
@@ -66,13 +69,18 @@ export interface PromoteDepthWarmInput {
   extractedAt?: string;
 }
 
+export interface DepthWarmPromotionEmit {
+  boundaryEdges: BoundaryEdgeAtomInstance[];
+  propertyAtoms: PropertyAtomInstance[];
+}
+
 /**
- * Emit depth-warm verified atoms (setback-rule + buildable-envelope).
+ * Emit depth-warm verified atoms (boundary-edge + setback-rule + buildable-envelope).
  * Does not write — use promoteDepthWarmToStorage for persistence.
  */
 export function emitDepthWarmPromotion(
   input: PromoteDepthWarmInput,
-): PropertyAtomInstance[] {
+): DepthWarmPromotionEmit {
   const { candidate, descriptor, zoningFactAtomDid } = input;
   const extractedAt = input.extractedAt ?? new Date().toISOString();
   const agg = aggregateSetbacks(candidate);
@@ -158,19 +166,36 @@ export function emitDepthWarmPromotion(
   envAtom.depthWarmVerifiedAt = extractedAt;
   envAtom.recipeVersion = RECIPE_VERSION;
 
-  return [setbackAtom, envAtom];
+  const boundaryEdges = emitBoundaryEdgesFromWarmCandidate({
+    candidate,
+    descriptor,
+    extractedAt,
+  });
+
+  return {
+    boundaryEdges,
+    propertyAtoms: [setbackAtom, envAtom],
+  };
 }
 
 export async function promoteDepthWarmToStorage(
   storage: StoragePort,
   input: PromoteDepthWarmInput,
 ): Promise<PromotedDepthWarmBundle> {
-  const atoms = emitDepthWarmPromotion(input);
+  const emitted = emitDepthWarmPromotion(input);
   const promotedAt = input.extractedAt ?? new Date().toISOString();
   let setbackRuleAtomDid = "";
   let buildableEnvelopeAtomDid = "";
+  const boundaryEdgeAtomDids: string[] = [];
 
-  for (const atom of atoms) {
+  if (emitted.boundaryEdges.length > 0) {
+    const edgeWrites = await persistBoundaryEdges(storage, emitted.boundaryEdges, {
+      force: true,
+    });
+    boundaryEdgeAtomDids.push(...edgeWrites.map((w) => w.atomDid));
+  }
+
+  for (const atom of emitted.propertyAtoms) {
     const result = await writePropertyAtomIfEnabled(storage, atom);
     if (!result) {
       throw new Error("promote: PROPERTY_ATOM_PATH not enabled or write skipped");
@@ -185,6 +210,7 @@ export async function promoteDepthWarmToStorage(
     parcelNodeId: input.candidate.parcelNodeId,
     setbackRuleAtomDid,
     buildableEnvelopeAtomDid,
+    boundaryEdgeAtomDids,
     promotedAt,
   };
 }

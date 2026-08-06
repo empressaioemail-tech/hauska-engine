@@ -79,6 +79,8 @@ export interface PromotedDepthWarmBundle {
   parcelNodeId: string;
   setbackRuleAtomDid: string;
   buildableEnvelopeAtomDid: string;
+  /** property-boundary-edge atom DIDs written at promote (WS1 Option A). */
+  boundaryEdgeAtomDids: string[];
   promotedAt: string;
 }
 

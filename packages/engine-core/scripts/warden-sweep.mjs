@@ -68,9 +68,10 @@ import { runServePathTruthCheck } from "../src/warden/serve-path-truth.ts";
 import { runCrossStoreConsistencyCheck } from "../src/warden/cross-store-consistency.ts";
 import { runCertFreshnessCheck } from "../src/warden/cert-freshness.ts";
 import { classifyEnvelopeSanity } from "../src/warden/envelope-sanity.ts";
+import { classifyServeTruthEdgeLabels } from "../src/warden/serve-truth-edge-labels.ts";
 import { buildSweepReport, writeFindingsToJsonArtifact, postFindingsToLedger } from "../src/warden/ledger-write.ts";
 
-const ALL_CHECK_IDS = ["neighborConsistency", "servePathTruth", "crossStoreConsistency", "certFreshness", "envelopeSanity"];
+const ALL_CHECK_IDS = ["neighborConsistency", "servePathTruth", "crossStoreConsistency", "certFreshness", "envelopeSanity", "serveTruthEdgeLabels"];
 
 function parseArgs(argv) {
   const out = { rowId: null, checks: null, sample: 10, certArtifact: null, out: null };
@@ -486,6 +487,54 @@ async function main() {
       });
       findings.push(...envelopeSanityFindings);
       console.log(`[warden-sweep] envelopeSanity: ${envelopeSanityFindings.length} finding(s)`);
+    }
+  }
+
+  if (requestedChecks.includes("serveTruthEdgeLabels")) {
+    checksRun.push("serveTruthEdgeLabels");
+    if (!sql || !txSql) {
+      console.log("[warden-sweep] serveTruthEdgeLabels: skipped, DATABASE_URL/TXGIO_DATABASE_URL not configured");
+    } else {
+      const roads = await loadRoadsForFips(row.fips);
+      const serveTruthInputs = [];
+      for (const parcelNodeId of sample) {
+        const propId = parcelNodeId.split(":")[1] ?? "";
+        const edgeRows = await sql`
+          SELECT body FROM atoms WHERE entity_type = 'property-boundary-edge'
+            AND body->>'parcelNodeId' = ${parcelNodeId}
+            AND COALESCE(body->>'status', 'active') = 'active'
+          ORDER BY (body->>'edgeIndex')::int
+        `;
+        const [sr] = await sql`
+          SELECT body FROM atoms WHERE entity_type = 'setback-rule'
+            AND body->>'parcelNodeId' = ${parcelNodeId}
+          ORDER BY updated_at DESC NULLS LAST LIMIT 1
+        `;
+        const [situsRow] = await txSql`
+          SELECT situs_addr FROM txgio_parcel
+          WHERE county_fips = ${row.fips}
+            AND regexp_replace(prop_id, '^0+', '') = regexp_replace(${propId}, '^0+', '')
+          LIMIT 1
+        `;
+        serveTruthInputs.push({
+          parcelNodeId,
+          parcelRing: await loadParcelRingFromTxgio(row.fips, propId),
+          situsAddress: situsRow?.situs_addr ?? null,
+          storedEdges: edgeRows.map((r) => r.body),
+          setbackRule: sr?.body ?? null,
+          envelopeBody: await loadEnvelopeBody(parcelNodeId),
+          roads,
+        });
+      }
+      const serveTruthFindings = await classifyServeTruthEdgeLabels({
+        sweepId,
+        fips: row.fips,
+        rowId: row.rowId,
+        now,
+        parcels: serveTruthInputs,
+      });
+      findings.push(...serveTruthFindings);
+      console.log(`[warden-sweep] serveTruthEdgeLabels: ${serveTruthFindings.length} finding(s)`);
     }
   }
 
