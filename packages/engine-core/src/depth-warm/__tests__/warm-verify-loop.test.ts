@@ -191,7 +191,7 @@ describe("depth-warm good warm promotes (WDLL 6 / WDLL 8)", () => {
     // geometry: scrubbing collapses the collinear west run 6→4 vertices, yielding
     // a convex envelope that passes. Labels reflect the 4-edge topology:
     // south=front (Spring St), north=rear, east/west=side.
-    const scrubbedRing = scrubLotLineRing(PARCEL_714_SPRING_33512);
+    const scrubbedRing = scrubLotLineRing(PARCEL_714_SPRING_33512, { aggressive: true });
     const scrubbedLabels = [
       { index: 0, label: "side" as const },
       { index: 1, label: "rear" as const },

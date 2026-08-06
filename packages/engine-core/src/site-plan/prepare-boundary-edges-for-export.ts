@@ -49,6 +49,10 @@ import {
   recomputeBoundaryEdgesForRing,
 } from "../boundary-primitive/recompute-for-ring.js";
 import { relabelBoundaryEdgesFromRoadLabels } from "../boundary-primitive/relabel-from-roads.js";
+import {
+  MixedGenerationBoundaryPrimitiveError,
+  selectLiveGeneration,
+} from "../boundary-primitive/read.js";
 import type { NotSpecifiedAxes } from "./setback-display.js";
 
 export interface PrepareBoundaryEdgesForExportInput {
@@ -69,7 +73,8 @@ export interface PrepareBoundaryEdgesForExportInput {
 export type PrepareBoundaryEdgesDeclineReason =
   | "no-stored-boundary-edges"
   | "boundary-edge-count-below-ring-vertex-count"
-  | "boundary-primitive-normals-disagree-after-recompute";
+  | "boundary-primitive-normals-disagree-after-recompute"
+  | "mixed-generation-boundary-edges";
 
 export interface PrepareBoundaryEdgesForExportResult {
   /** Refreshed boundary edges, ready for `boundaryEdgesToGeometryInput`. Null
@@ -147,10 +152,7 @@ function resolvedSetbackForRole(
 export async function prepareBoundaryEdgesForExport(
   input: PrepareBoundaryEdgesForExportInput,
 ): Promise<PrepareBoundaryEdgesForExportResult> {
-  let edges: BoundaryEdgeAtomInstance[] | null =
-    input.storedEdges.length > 0 ? [...input.storedEdges].sort((a, b) => a.edgeIndex - b.edgeIndex) : null;
-
-  if (!edges?.length) {
+  if (!input.storedEdges.length) {
     return {
       edges: null,
       recomputedForRingWinding: false,
@@ -159,6 +161,31 @@ export async function prepareBoundaryEdgesForExport(
       reason: "no-stored-boundary-edges",
     };
   }
+
+  // FIX 2 (D2 audit): refuse to serve a blended edge set when the caller's
+  // storedEdges span more than one generation (versionStamp). The primary
+  // defense is retireStaleBoundaryEdgesAfterPromote at write time (persist.ts);
+  // this is the read-side fail-closed backstop so export never silently
+  // composes roles/insets from two different promote runs.
+  let liveGeneration: ReadonlyArray<BoundaryEdgeAtomInstance>;
+  try {
+    liveGeneration = selectLiveGeneration(input.storedEdges);
+  } catch (err) {
+    if (err instanceof MixedGenerationBoundaryPrimitiveError) {
+      return {
+        edges: null,
+        recomputedForRingWinding: false,
+        relabeledFromRoads: false,
+        setbackValuesRefreshed: false,
+        reason: "mixed-generation-boundary-edges",
+      };
+    }
+    throw err;
+  }
+
+  let edges: BoundaryEdgeAtomInstance[] | null = [...liveGeneration].sort(
+    (a, b) => a.edgeIndex - b.edgeIndex,
+  );
 
   const ringVerts = openRing(input.ringWgs84).length;
   if (edges.length > ringVerts) {

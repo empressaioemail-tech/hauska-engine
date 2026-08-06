@@ -32,6 +32,26 @@ export interface LotLineScrubOptions {
   collinearTolM?: number;
   /** Shared lot-line vertex snap tolerance (metres). */
   snapTolM?: number;
+  /**
+   * Opt in to the turn-angle-based `removeNearlyStraightVertices` pass
+   * (D2 audit finding, 2026-08-06). That pass drops a vertex whenever the
+   * TURN ANGLE at it is small (<12 degrees by default), with no floor on the
+   * absolute length of its bounding edges — so it can and does collapse a
+   * genuine, shallow-angle property corner (e.g. 48021:31308: raw 5-vertex
+   * ring, vertex at turn=0.89deg bounding a real ~2.8m edge) exactly the way
+   * it is meant to collapse a sub-survey digitization jog (e.g. the
+   * PARCEL_34073_CORRUPT_TXGIO fixture, where noise vertices sit on edges of
+   * similar or greater length). Turn angle alone cannot tell the two apart —
+   * neither can any single edge-length or perpendicular-deviation threshold
+   * tested against both cases (see 2026-08-06 differential audit). Default
+   * OFF: the default scrub keeps only `removeCollinearVertices` (an exact,
+   * properly-scaled cross-product test — genuinely zero-width collinearity)
+   * and `removeShortEdgeVertices` (an absolute sub-survey-length test), both
+   * of which correctly preserve 31308's true corner. Set true only for
+   * call sites that already accept the fixture's lossy corrupt-ring cleanup
+   * as intended behavior (cert-grade near-rect classification fallback).
+   */
+  aggressive?: boolean;
 }
 
 export interface NearRectEnvelopeCheck {
@@ -45,6 +65,7 @@ const DEFAULT_SCRUB: Required<LotLineScrubOptions> = {
   minEdgeM: SURVEY_NOISE_THRESHOLD_M,
   collinearTolM: 0.05,
   snapTolM: 0.45,
+  aggressive: false,
 };
 
 function closeRing(open: Array<[number, number]>): Ring {
@@ -209,7 +230,18 @@ function sharedLotLineVertexKeys(
   return shared;
 }
 
-/** Scrub one parcel ring: dedupe, drop collinear + sub-survey vertices. */
+/**
+ * Scrub one parcel ring: dedupe, drop collinear + sub-survey vertices.
+ *
+ * Default (aggressive: false) preserves full vertex fidelity of the input
+ * ring's real corners — only `removeCollinearVertices` (exact, scale-correct
+ * cross-product collinearity) and `removeShortEdgeVertices` (absolute
+ * sub-survey edge-length noise, SURVEY_NOISE_THRESHOLD_M) run. Pass
+ * `aggressive: true` to additionally run `removeNearlyStraightVertices`
+ * (turn-angle heuristic) for known-corrupt source rings where digitization
+ * noise is expressed as small-angle jogs on edges too long to be caught by
+ * the length-based pass alone (see LotLineScrubOptions.aggressive doc).
+ */
 export function scrubLotLineRing(
   ring: Ring,
   options?: LotLineScrubOptions & { protectedVertexKeys?: ReadonlySet<string> },
@@ -227,11 +259,11 @@ export function scrubLotLineRing(
 
   let pts = frame.points.map((p) => ({ x: p.x, y: p.y }));
   pts = removeCollinearVertices(pts, opts.collinearTolM);
-  pts = removeNearlyStraightVertices(pts, 12, protectedIdx);
+  if (opts.aggressive) pts = removeNearlyStraightVertices(pts, 12, protectedIdx);
   pts = removeShortEdgeVertices(pts, opts.minEdgeM, protectedIdx);
-  pts = removeNearlyStraightVertices(pts, 12, protectedIdx);
+  if (opts.aggressive) pts = removeNearlyStraightVertices(pts, 12, protectedIdx);
   pts = removeCollinearVertices(pts, opts.collinearTolM);
-  pts = removeNearlyStraightVertices(pts, 8, protectedIdx);
+  if (opts.aggressive) pts = removeNearlyStraightVertices(pts, 8, protectedIdx);
   pts = removeShortEdgeVertices(pts, opts.minEdgeM, protectedIdx);
 
   if (pts.length < 3 || ringSelfIntersects(pts)) return ring;
