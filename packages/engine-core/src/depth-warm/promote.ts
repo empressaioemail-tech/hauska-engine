@@ -14,6 +14,8 @@ import { emitBuildableEnvelope } from "../property-reasoning/emit-buildable-enve
 import { emitSetbackRule, resolveSetbackTableRow } from "../property-reasoning/emit-setback-rule.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { writePropertyAtomIfEnabled } from "../property-reasoning/write-property-atom.js";
+import { persistBoundaryEdges } from "../boundary-primitive/persist.js";
+import { emitBoundaryEdgesFromWarmCandidate } from "./emit-boundary-edges-from-warm.js";
 import type { PromotedDepthWarmBundle, WarmCandidate } from "./types.js";
 import {
   DEPTH_WARM_PROMOTION_MARKER,
@@ -158,7 +160,13 @@ export function emitDepthWarmPromotion(
   envAtom.depthWarmVerifiedAt = extractedAt;
   envAtom.recipeVersion = RECIPE_VERSION;
 
-  return [setbackAtom, envAtom];
+  const boundaryEdges = emitBoundaryEdgesFromWarmCandidate({
+    candidate,
+    descriptor,
+    extractedAt,
+  });
+
+  return [...boundaryEdges, setbackAtom, envAtom];
 }
 
 export async function promoteDepthWarmToStorage(
@@ -169,8 +177,15 @@ export async function promoteDepthWarmToStorage(
   const promotedAt = input.extractedAt ?? new Date().toISOString();
   let setbackRuleAtomDid = "";
   let buildableEnvelopeAtomDid = "";
+  const boundaryEdgeAtomDids: string[] = [];
 
-  for (const atom of atoms) {
+  const boundaryEdges = atoms.filter((a) => a.entityType === "property-boundary-edge");
+  if (boundaryEdges.length > 0) {
+    const edgeWrites = await persistBoundaryEdges(storage, boundaryEdges, { force: true });
+    boundaryEdgeAtomDids.push(...edgeWrites.map((w) => w.atomDid));
+  }
+
+  for (const atom of atoms.filter((a) => a.entityType !== "property-boundary-edge")) {
     const result = await writePropertyAtomIfEnabled(storage, atom);
     if (!result) {
       throw new Error("promote: PROPERTY_ATOM_PATH not enabled or write skipped");
@@ -185,6 +200,7 @@ export async function promoteDepthWarmToStorage(
     parcelNodeId: input.candidate.parcelNodeId,
     setbackRuleAtomDid,
     buildableEnvelopeAtomDid,
+    boundaryEdgeAtomDids,
     promotedAt,
   };
 }
