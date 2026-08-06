@@ -15,7 +15,10 @@ import { emitBuildableEnvelope } from "../property-reasoning/emit-buildable-enve
 import { emitSetbackRule, resolveSetbackTableRow } from "../property-reasoning/emit-setback-rule.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { writePropertyAtomIfEnabled } from "../property-reasoning/write-property-atom.js";
-import { persistBoundaryEdges } from "../boundary-primitive/persist.js";
+import {
+  persistBoundaryEdges,
+  retireStaleBoundaryEdgesAfterPromote,
+} from "../boundary-primitive/persist.js";
 import { emitBoundaryEdgesFromWarmCandidate } from "./emit-boundary-edges-from-warm.js";
 import type { PromotedDepthWarmBundle, WarmCandidate } from "./types.js";
 import {
@@ -193,6 +196,24 @@ export async function promoteDepthWarmToStorage(
       force: true,
     });
     boundaryEdgeAtomDids.push(...edgeWrites.map((w) => w.atomDid));
+
+    // FIX 2 (D2 audit): retire every OTHER generation's boundary-edge atoms
+    // for this parcel so exactly one coherent generation is left active.
+    // versionStamp is shared across every edge emitted in this batch
+    // (emit-boundary-edges-from-warm.ts), so a prior generation with a
+    // different versionStamp — even one that happens to share edgeIndex
+    // values or total count with the new generation — is retired, never
+    // left coexisting as "active".
+    const currentVersionStamp = emitted.boundaryEdges[0]!.versionStamp;
+    if (currentVersionStamp) {
+      const retireWrites = await retireStaleBoundaryEdgesAfterPromote(
+        storage,
+        input.candidate.parcelNodeId,
+        currentVersionStamp,
+        promotedAt,
+      );
+      boundaryEdgeAtomDids.push(...retireWrites.map((w) => w.atomDid));
+    }
   }
 
   for (const atom of emitted.propertyAtoms) {

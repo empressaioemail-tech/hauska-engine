@@ -83,6 +83,10 @@ export function emitBoundaryEdgesFromWarmCandidate(input: {
   const edgeByIndex = new Map(candidate.edges.map((e) => [e.index, e]));
   const asserted = widthedFromMatchBasis("prefix");
   const accessPolicy = descriptor.defaultAccessPolicy ?? "public-free";
+  // One versionStamp per promote batch — shared by every edge atom emitted
+  // in this call, so persist.ts can retire every OTHER generation's edges
+  // by versionStamp mismatch regardless of edgeIndex (FIX 2, D2 audit).
+  const versionStamp = `${candidate.parcelNodeId}:property-boundary-edge:${extractedAt}`;
 
   const atoms: BoundaryEdgeAtomInstance[] = [];
   for (const edgeInterior of interiorFacts.edges) {
@@ -135,6 +139,7 @@ export function emitBoundaryEdgesFromWarmCandidate(input: {
       fetchedAt: extractedAt,
       sourceAdapter: "depth-warm-verify-promote",
       sourceUrl: "https://hauska.dev/internal/depth-warm/promote",
+      versionStamp,
       contentHash: "",
       readContract: buildPropertyReadContract({
         asserted,
