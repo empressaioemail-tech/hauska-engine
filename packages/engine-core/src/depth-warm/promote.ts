@@ -26,6 +26,33 @@ import {
   DEPTH_WARM_SOURCE_CITATION,
   RECIPE_VERSION,
 } from "./types.js";
+import { checkEnvelopeGroundTruth } from "../geometry/envelope-ground-truth.js";
+
+/**
+ * FIX 3 (2026-08-06 differential audit + process-retro R2 candidate a/d/e):
+ * thrown when a candidate fails the SHARED ground-truth predicate at the
+ * moment of durable write. This is deliberately a SEPARATE, INDEPENDENT
+ * check from mechanical verify (verify-mechanical.ts) — the process-retro's
+ * central finding is that role/label-parity checks (serveTruthEdgeLabels)
+ * and mechanical verify both passed on 48021:31308 while the actual
+ * geometry leaked outside the parcel; no check in the promote path actually
+ * asserted containment before this fix. promoteDepthWarmToStorage refuses
+ * to write when this check fails — never persists a candidate the shared
+ * predicate rejects, regardless of what verify already decided.
+ */
+export class EnvelopeGroundTruthPromoteDeclineError extends Error {
+  readonly parcelNodeId: string;
+  readonly failureReason: string | null;
+
+  constructor(parcelNodeId: string, failureReason: string | null, detail: string) {
+    super(
+      `promote: envelope ground-truth predicate failed for ${parcelNodeId} (${failureReason ?? "unknown"}): ${detail}`,
+    );
+    this.name = "EnvelopeGroundTruthPromoteDeclineError";
+    this.parcelNodeId = parcelNodeId;
+    this.failureReason = failureReason;
+  }
+}
 
 function aggregateSetbacks(candidate: WarmCandidate): {
   front: number;
@@ -187,6 +214,30 @@ export async function promoteDepthWarmToStorage(
 ): Promise<PromotedDepthWarmBundle> {
   const emitted = emitDepthWarmPromotion(input);
   const promotedAt = input.extractedAt ?? new Date().toISOString();
+
+  // FIX 3 — fail-closed ground-truth gate, independent of mechanical verify.
+  // Runs only when the candidate actually has an inset ring to grade; an
+  // empty/no-buildable-area candidate has no envelope to check and is
+  // handled by the honest-decline path elsewhere, not this promote call.
+  if (input.candidate.insetRing) {
+    const edgeRoles = new Map(input.candidate.edges.map((e) => [e.index, e.label]));
+    const groundTruth = checkEnvelopeGroundTruth({
+      parcelRing: input.candidate.parcelRing,
+      envelopeRing: input.candidate.insetRing,
+      descriptor: input.descriptor,
+      district: input.candidate.district,
+      roads: input.candidate.roads,
+      edgeRoles,
+    });
+    if (!groundTruth.pass) {
+      throw new EnvelopeGroundTruthPromoteDeclineError(
+        input.candidate.parcelNodeId,
+        groundTruth.failureReason,
+        JSON.stringify({ p1: groundTruth.p1, p2Fails: groundTruth.p2.edges.filter((e) => !e.pass), p3: groundTruth.p3 }),
+      );
+    }
+  }
+
   let setbackRuleAtomDid = "";
   let buildableEnvelopeAtomDid = "";
   const boundaryEdgeAtomDids: string[] = [];

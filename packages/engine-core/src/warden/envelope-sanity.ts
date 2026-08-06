@@ -4,7 +4,13 @@
  * Per-parcel geometry sanity over the stored buildable-envelope geojson vs
  * the txgio_parcel cadastral ring. Flags when:
  *
- *   (a) an envelope polygon is not contained in the parcel ring,
+ *   (a) an envelope polygon is not contained in the parcel ring — FIX 3
+ *       (2026-08-06): this containment check now delegates to the shared
+ *       envelope-ground-truth module's P1 (the SAME predicate wired at
+ *       promote and exported for the smoke suite), rather than a locally
+ *       re-derived check. Process-retro R3's acceptance-instrument-
+ *       independence rule requires the predicate live in ONE place so a fix
+ *       to it propagates everywhere automatically,
  *   (b) envelope area / parcel area ratio is outside the district-regime
  *       bounds (SF-1 typical 0.30–0.95; degenerate slivers <0.05; full-lot
  *       mis-inset ≥0.995),
@@ -23,12 +29,12 @@ import {
   type Ring,
 } from "../depth-warm/geometry.js";
 import {
-  pointInOrOnPolygon,
   ringHasSelfTouch,
   ringSelfIntersects,
   signedArea,
   type PlanarPoint,
 } from "../geometry/polygon-inset.js";
+import { checkEnvelopeContainment } from "../geometry/envelope-ground-truth.js";
 import type { WardenFindingEvent } from "./types.js";
 
 export type EnvelopeSanityAnomalyKind =
@@ -221,14 +227,14 @@ export function classifyEnvelopeSanityForParcel(
     envelopeVertexCount: envelopeProj.length,
   };
 
+  // FIX 3 — containment delegates to the shared envelope-ground-truth
+  // predicate (checkEnvelopeContainment), the SAME P1 implementation wired
+  // at promote and exported for the smoke suite. Never re-derive locally.
   const containmentTol = options?.containmentToleranceM ?? DEFAULT_CONTAINMENT_TOL_M;
-  let outsideVertexCount = 0;
-  for (const p of envelopeProj) {
-    if (!pointInOrOnPolygon(p, parcelProj.points, containmentTol)) outsideVertexCount++;
-  }
-  if (outsideVertexCount > 0) {
+  const containment = checkEnvelopeContainment(input.parcelRing, envelopeRing, containmentTol);
+  if (containment && !containment.pass) {
     anomalies.push("envelope-outside-parcel");
-    evidence.outsideVertexCount = outsideVertexCount;
+    evidence.outsideVertexCount = containment.outsideVertexCount;
   }
 
   if (ringSelfIntersects(envelopeProj)) {
