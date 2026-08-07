@@ -59,6 +59,7 @@
   },
   "48021:31317": {
     "district": "SF-1",
+    "situsAddress": "108 JONES , BASTROP, TX 78602",
     "coordinates": [
       [
         -97.32629852599996,
@@ -92,6 +93,7 @@
   },
   "48021:31326": {
     "district": "SF-1",
+    "situsAddress": "106 JONES , BASTROP, TX 78602",
     "coordinates": [
       [
         -97.32605961899998,
@@ -200,6 +202,7 @@
   },
   "48021:31362": {
     "district": "SF-1",
+    "situsAddress": "109 HIGGINS ST , BASTROP, TX 78602",
     "coordinates": [
       [
         -97.32654462699998,
@@ -307,6 +310,7 @@
   },
   "48021:31389": {
     "district": "SF-1",
+    "situsAddress": "103 HIGGINS ST , BASTROP, TX 78602",
     "coordinates": [
       [
         -97.32580018499999,

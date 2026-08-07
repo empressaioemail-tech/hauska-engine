@@ -144,9 +144,16 @@ describe("S2-U3 offset consumes boundary primitive", () => {
     expect(Math.round(candidate.buildableAreaSqFt ?? 0)).toBeGreaterThanOrEqual(7300);
   });
 
-  it("U3.2 offset reads primitive — uses stored normals, not default insetRingMeters", () => {
+  it("U3.2 offset reads primitive — uses stored normals via the joined clipper input, not default insetRingMeters", () => {
+    // 2026-08-07 (joined-structure invariant, master planner ruling): the
+    // stored-normals path now routes through buildInsetClipperInput ->
+    // insetRingMetersFromClipperInput, which calls insetRingMetersWithNormals
+    // as a same-module internal call — invisible to a spy on the exported
+    // binding (a standard ESM spy limitation, not a behavior change). Spy on
+    // insetRingMetersFromClipperInput instead to observe the same "stored
+    // normals, not derived normals" assertion this test exists to make.
     const spyDefault = vi.spyOn(polygonInset, "insetRingMeters");
-    const spyStored = vi.spyOn(polygonInset, "insetRingMetersWithNormals");
+    const spyStored = vi.spyOn(polygonInset, "insetRingMetersFromClipperInput");
 
     const atoms = boundaryAtoms28286();
     computeWarmCandidate({

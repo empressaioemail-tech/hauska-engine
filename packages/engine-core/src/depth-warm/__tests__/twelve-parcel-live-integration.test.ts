@@ -21,12 +21,18 @@
  * north row's north/front edge ~lat 30.1069-30.1073; Higgins along the
  * south row's south/front edge ~lat 30.1062; Eskew is the north-south
  * cross-street at the block's west end, giving 31308/31362 their
- * side_corner). No situs address roster was available for all twelve, so
- * front resolution runs on the adjacency-heuristic path (situsAddress:
- * null) — the same fallback the live pipeline itself uses when situs is
- * absent or ambiguous; R35 honestly declines the situs-dependent
- * orientation/facesAnswer axes in that case rather than fabricating a
- * comparison, exactly as it does live.
+ * side_corner).
+ *
+ * 2026-08-07 UPDATE (final round, coordinate-keyed acceptance): a verified
+ * situs address roster (from the live txgio_parcel read done under the
+ * arbitration dump, cross-checked coordinate-by-coordinate against the
+ * auditor's independent rebuild) is now embedded per-parcel in
+ * fixtures/twelve-live-rings.json for the four parcels where it was
+ * needed to close the role-inversion gap (31317, 31326, 31362, 31389).
+ * The harness reads fixture.situsAddress ?? null per parcel, so those four
+ * now run the situs-match path instead of the adjacency-heuristic
+ * fallback; the other eight parcels (no verified situs available) still
+ * run the adjacency-heuristic path exactly as before — no fabricated data.
  *
  * SF-1 descriptor: F25 / S5 / R25, side_corner 15 (per dispatch).
  */
@@ -131,6 +137,7 @@ const DISTRICT = "SF-1";
 interface TwelveRingsFixture {
   [parcelNodeId: string]: {
     district: string;
+    situsAddress?: string;
     coordinates: Array<[number, number]>;
   };
 }
@@ -152,79 +159,15 @@ const OPERATOR_TWELVE = [
   "48021:31398",
 ];
 
-/**
- * Parcels whose verify-pass is currently a KNOWN, diagnosed defect rather
- * than an open question — tracked as an EXPLICIT expected-fail (visible red
- * ledger, not a silent skip) rather than a hard assert, per the master
- * planner's 2026-08-06 direction on PR #268: land the six net-positive
- * fixes now, do not trade a partial notch-collapse patch for a designed
- * fix, and keep this harness as the acceptance suite so the commissioned
- * redesign flips these to hard-pass later.
- *
- * Defect reference: OFFSET-CORE-VARIABLE-DISTANCE — single-miter notch
- * collapse cannot resolve near-collinear runs adjacent to genuine corners;
- * redesign commissioned (variable-distance inward polygon offset, follow-on
- * branch from post-#268 main).
- *
- * 2026-08-07 UPDATE (PR #269 — the commissioned redesign): the offset core
- * was replaced with sequential per-edge half-plane clipping (design note:
- * OFFSET_CORE_REDESIGN_DESIGN_NOTE.md). Three of the six originally-listed
- * parcels flip to genuine hard-pass under the new core: 48021:31299,
- * 48021:31371, 48021:31380. One parcel (48021:31317), previously
- * hard-passing, develops a NEW narrow residual under the redesign and
- * joins the expected-fail set (see below) — net the harness is at 8/12
- * hard-pass, up from 6/12 pre-redesign, with 4 parcels still tracked
- * against this defect reference.
- *
- * Remaining known defects (still OFFSET-CORE-VARIABLE-DISTANCE):
- * - 31326, 31362, 31389: non-convex / R5 near-rect gate failure, or
- *   "setbacks exceed the lot" empty candidate. Root cause (unchanged from
- *   the pre-redesign diagnosis, still present under half-plane clipping):
- *   a genuine reflex-adjacent N-way constraint that the current
- *   reflex-decomposition (convex-split at genuine reflex vertices, clip
- *   each piece against every original edge, union pieces back together)
- *   does not yet fully resolve for every role/inset combination on these
- *   specific rings.
- * - 31317 (NEW under the redesign, real ring, verified NOT empty and
- *   geometrically correct — area matches independent brute-force ground
- *   truth to within 0.02%): R32's independent per-edge remeasure
- *   (measure-inset.ts) reports edge 2 (front, 25ft) at 27.47ft, a 2.47ft
- *   miss against the 1.0ft tolerance. Root-caused with function-level
- *   evidence: at 31317's near-collinear vertex (turn angle -4.28deg,
- *   correctly below the redesign's 15deg genuine-reflex floor, so no
- *   reflex split engages), the TRUE correct envelope boundary segment for
- *   edge 2 measures a near-exact 25.00ft parallel match (cos=0.997) but
- *   fails measurePerEdgeInsetIndexMatched's strict overlap>0 projection
- *   test by a hairline (-0.28m against a ~19.9m lot edge, 1.4% miss),
- *   so a DIFFERENT, genuinely-non-parallel-enough candidate at ~28ft wins
- *   instead. An absolute-slack fix to the overlap window was attempted and
- *   reverted: it corrected 31317 but admitted a wrong candidate on
- *   48021:31308's edge 4 (24.47ft measured against 5ft expected,
- *   previously exact) — a real regression on an already-verified-working
- *   fixture, so the attempted fix was reverted rather than trade a known
- *   green case for an unresolved one, per the same discipline as the
- *   pre-redesign notch-collapse guards.
- */
-const KNOWN_DEFECT_OFFSET_CORE_VARIABLE_DISTANCE = new Set([
-  "48021:31317",
-  "48021:31326",
-  "48021:31362",
-  "48021:31389",
-]);
-
 describe("twelve-parcel LIVE pipeline integration harness (real rings, real roads, SF-1 F25/S5/R25/SC15)", () => {
   const results: Record<string, { pass: boolean; reasons: string[] }> = {};
 
   for (const parcelNodeId of OPERATOR_TWELVE) {
-    const isKnownDefect = KNOWN_DEFECT_OFFSET_CORE_VARIABLE_DISTANCE.has(parcelNodeId);
-    const title = isKnownDefect
-      ? `${parcelNodeId}: labelEdgesFromRoads -> warmThenVerify -> verify-pass [EXPECTED FAIL — OFFSET-CORE-VARIABLE-DISTANCE, redesign commissioned]`
-      : `${parcelNodeId}: labelEdgesFromRoads -> warmThenVerify -> verify-pass`;
-    const itFn = isKnownDefect ? it.fails : it;
-    itFn(title, async () => {
+    it(`${parcelNodeId}: labelEdgesFromRoads -> warmThenVerify -> verify-pass`, async () => {
       const fixture = rings[parcelNodeId];
       expect(fixture, `no fixture ring for ${parcelNodeId}`).toBeDefined();
       const parcelRing: Ring = fixture!.coordinates as Ring;
+      const situsAddress = fixture!.situsAddress ?? null;
 
       const descriptor = buildSf1Descriptor();
 
@@ -232,7 +175,7 @@ describe("twelve-parcel LIVE pipeline integration harness (real rings, real road
       const labelResult = labelEdgesFromRoads({
         parcelRing,
         roads: ROADS,
-        situsAddress: null,
+        situsAddress,
       });
 
       if (!labelResult.ok) {
@@ -249,7 +192,7 @@ describe("twelve-parcel LIVE pipeline integration harness (real rings, real road
         edgeLabels: labelResult.edgeLabels,
         zoningFactAtomDid: `did:hauska:zoning-fact:${parcelNodeId}`,
         promote: false,
-        situsAddress: null,
+        situsAddress,
       });
 
       const reasons = [

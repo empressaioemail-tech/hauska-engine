@@ -17,8 +17,9 @@
  */
 
 import {
+  buildInsetClipperInput,
   insetRingMeters,
-  insetRingMetersWithNormals,
+  insetRingMetersFromClipperInput,
   isInsetDegenerate,
   perEdgeOffsetPlausible,
   pointInOrOnPolygon,
@@ -328,10 +329,18 @@ export function insetPerEdgeFromPrimitive(
   const insetMeters = insetFeetPerEdge.map((ft) =>
     feetToMeters(Math.max(0, ft)),
   );
-  const insetXY = insetRingMetersWithNormals(
+  // Joined-structure invariant (2026-08-07, master planner ruling — cheap
+  // insurance against the parallel-array desync class of defect, see
+  // buildInsetClipperInput's doc comment): validates ring/inset/normal
+  // counts agree before they ever reach the clipper, rather than trusting
+  // three separately-built arrays stay in lockstep by convention.
+  const clipperInput = buildInsetClipperInput(
     proj.points,
     insetMeters,
     inwardNormals,
+  );
+  const insetXY = insetRingMetersFromClipperInput(
+    clipperInput,
   );
   if (!insetXY) {
     return {

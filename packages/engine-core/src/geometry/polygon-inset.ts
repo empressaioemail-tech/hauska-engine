@@ -13,6 +13,95 @@ export interface PlanarPoint {
   y: number;
 }
 
+/**
+ * One clipper-input edge record: a ring vertex plus the inset distance and
+ * inward normal that apply to the edge STARTING at that vertex — all three
+ * fields for one physical edge, together, so they can never be indexed
+ * against different enumerations.
+ *
+ * 2026-08-07 (master planner ruling, cheap-insurance invariant): three
+ * separate error-species this week (a strip-union/notch-collapse defect
+ * fixed in the OFFSET-CORE-VARIABLE-DISTANCE redesign; an R32
+ * ownership-arbitration defect fixed the same day; and a genuine
+ * arbitration-tooling bug in a diagnostic script — see the
+ * OFFSET_CORE_REDESIGN_DESIGN_NOTE.md history and this file's
+ * insetRingMetersWithNormals doc comment) all traced back to the SAME root
+ * shape: a ring/role/distance triple threaded through the pipeline as
+ * separate parallel arrays or separately-transformed indices, which
+ * silently desynchronize when any one array is built, filtered, or
+ * reordered independently of the others. `buildInsetClipperInput` is the
+ * single place that assembles this joined structure FROM parallel
+ * per-edge inputs (every current caller still starts from a `WarmEdgeInfo`
+ * array or a stored-boundary-primitive edge list, both naturally
+ * index-keyed), so the join happens ONCE, at one call site each, with a
+ * runtime-checked invariant — not implicitly, per call to the clipper.
+ */
+export interface InsetClipperEdge {
+  /** Ring vertex this edge starts at (edge i runs vertex[i] -> vertex[(i+1) % n]). */
+  vertex: PlanarPoint;
+  /** This edge's own inset distance, metres. */
+  insetMeters: number;
+  /** This edge's own inward normal (need not be pre-normalized; insetRingMetersWithNormals normalizes it). */
+  inwardNormal: PlanarPoint;
+}
+
+/**
+ * Build and validate a joined clipper-input structure from parallel
+ * per-edge arrays. Fails loudly (throws) rather than silently returning a
+ * degenerate/empty result on a length mismatch — the FAIL-CLOSED posture
+ * a parallel-array bug would otherwise hide as an ordinary "setbacks
+ * exceed the lot" honest-empty result, indistinguishable from a real
+ * degenerate lot without this check.
+ */
+export function buildInsetClipperInput(
+  ring: PlanarPoint[],
+  insetMetersPerEdge: number[],
+  inwardNormalsPerEdge: PlanarPoint[],
+): InsetClipperEdge[] {
+  const n = ring.length;
+  if (insetMetersPerEdge.length !== n || inwardNormalsPerEdge.length !== n) {
+    throw new Error(
+      `buildInsetClipperInput: joined-structure invariant violated — ring has ${n} vertices but ` +
+        `insetMetersPerEdge has ${insetMetersPerEdge.length} and inwardNormalsPerEdge has ` +
+        `${inwardNormalsPerEdge.length}. All three must derive from the SAME ring enumeration; a ` +
+        `length mismatch here means two of the three were built or filtered independently and have ` +
+        `silently desynchronized (the exact defect class this invariant exists to make unrepresentable).`,
+    );
+  }
+  return ring.map((vertex, i) => ({
+    vertex,
+    insetMeters: insetMetersPerEdge[i]!,
+    inwardNormal: inwardNormalsPerEdge[i]!,
+  }));
+}
+
+/** Split a joined clipper-input structure back into the parallel arrays insetRingMetersWithNormals consumes. */
+function splitInsetClipperInput(
+  edges: InsetClipperEdge[],
+): { ring: PlanarPoint[]; insetMetersPerEdge: number[]; inwardNormalsPerEdge: PlanarPoint[] } {
+  return {
+    ring: edges.map((e) => e.vertex),
+    insetMetersPerEdge: edges.map((e) => e.insetMeters),
+    inwardNormalsPerEdge: edges.map((e) => e.inwardNormal),
+  };
+}
+
+/**
+ * Variable-distance inset from a JOINED clipper-input structure — the
+ * invariant-checked entry point new call sites should prefer over the
+ * three-parallel-array insetRingMetersWithNormals. Existing call sites
+ * (depth-warm/geometry.ts, site-plan/ring-geometry.ts) keep using their
+ * own parallel-array construction for now (their arrays are built by a
+ * single index-keyed loop each, already the safer pattern), but route
+ * through buildInsetClipperInput's validation by calling this wrapper.
+ */
+export function insetRingMetersFromClipperInput(
+  edges: InsetClipperEdge[],
+): { points: PlanarPoint[]; miterPoints: PlanarPoint[] } | null {
+  const { ring, insetMetersPerEdge, inwardNormalsPerEdge } = splitInsetClipperInput(edges);
+  return insetRingMetersWithNormals(ring, insetMetersPerEdge, inwardNormalsPerEdge);
+}
+
 /** Signed area of an open ring. Positive => CCW. */
 export function signedArea(points: PlanarPoint[]): number {
   let a = 0;
