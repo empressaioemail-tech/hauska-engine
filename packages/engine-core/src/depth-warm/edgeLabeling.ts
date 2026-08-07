@@ -396,6 +396,24 @@ function selectRearEdgeByNormalOpposition(
  * On flag lots, a body edge that backs the same main road as the front (parallel,
  * same osmWayId, not the front neck) is REAR not SIDE — the backing-yard class
  * Valerie reported on Mesquite St.
+ *
+ * 2026-08-07 (master planner scoped reopen, 48021:31317 double-frontage
+ * corner) — TWO tightenings, both verified against 31317's real ring
+ * (a shallow-bend double-segment Jones Street frontage, not a true
+ * right-angle corner): the OLD `Math.abs(dot) >= 0.85` parallel test
+ * accepted a same-street edge whose inward normal points the SAME
+ * direction as front's (dot ~= +0.997, a frontage continuation) as
+ * readily as one pointing the OPPOSITE direction (dot ~= -1, a genuine
+ * backing edge on the far side) — only the opposite-facing case is
+ * geometrically a "rear." And the OLD "farthest wins" depth comparison had
+ * no floor: with only ONE same-street candidate at all (31317's edge 1,
+ * immediately ADJACENT to front, sharing a vertex — a corner-clip
+ * continuation of the same frontage, not a body edge on the far side of
+ * the parcel), it trivially "won" the farthest-depth comparison by
+ * default and was misclassified rear. Both fixes are additive
+ * requirements (a candidate must still pass depth-plausibility once these
+ * apply) — the Mesquite St backing-yard case (a genuinely opposing,
+ * non-adjacent body edge) is unaffected by either.
  */
 function selectFlagLotSameStreetRearEdge(
   hits: ReadonlyArray<EdgeRoadHit>,
@@ -403,6 +421,7 @@ function selectFlagLotSameStreetRearEdge(
   proj: NonNullable<ReturnType<typeof projectRing>>,
 ): number | null {
   if (!detectFlagLotShape(proj)) return null;
+  const n = proj.points.length;
   const frontN = inwardNormalForEdge(proj, frontHit.edgeIndex);
   let bestIndex: number | null = null;
   let bestDepth = -1;
@@ -414,9 +433,21 @@ function selectFlagLotSameStreetRearEdge(
     if (hit.edgeIndex === frontHit.edgeIndex) continue;
     if (hit.road.osmWayId !== frontHit.road.osmWayId) continue;
     if (isAlleyClassification(hit.road.classification)) continue;
+    // A genuine backing/rear edge on a flag lot faces AWAY from the front
+    // (opposing inward normal); a same-direction normal means this edge is
+    // a continuation of the SAME frontage (a shallow-bend jog), never rear.
     const edgeN = inwardNormalForEdge(proj, hit.edgeIndex);
-    const parallel = Math.abs(edgeN.x * frontN.x + edgeN.y * frontN.y) >= 0.85;
-    if (!parallel) continue;
+    const dot = edgeN.x * frontN.x + edgeN.y * frontN.y;
+    const opposing = dot <= -0.85;
+    if (!opposing) continue;
+    // A genuine backing edge is NOT immediately adjacent to (does not
+    // share a vertex with) the front edge — a shared-vertex same-street
+    // neighbor is a corner-clip continuation of the frontage, not a body
+    // edge on the far side of the parcel.
+    const sharesVertexWithFront =
+      hit.edgeIndex === (frontHit.edgeIndex + n - 1) % n ||
+      hit.edgeIndex === (frontHit.edgeIndex + 1) % n;
+    if (sharesVertexWithFront) continue;
     const a = proj.points[hit.edgeIndex]!;
     const b = proj.points[(hit.edgeIndex + 1) % proj.points.length]!;
     const depth = Math.abs(
@@ -639,9 +670,27 @@ export function labelEdgesFromRoads(input: {
       const nonFrontRoadHits = [...bestByEdge.values()].filter(
         (h) => h.edgeIndex !== frontHit.edgeIndex,
       );
-      if (nonFrontRoadHits.length === 1) {
-        // Corner lot: the sole non-front road-adjacent edge is rear (34177 class).
+      if (
+        nonFrontRoadHits.length === 1 &&
+        nonFrontRoadHits[0]!.road.osmWayId !== frontHit.road.osmWayId
+      ) {
+        // Corner lot: the sole non-front road-adjacent edge faces a
+        // DIFFERENT street — rear (34177 class).
         rearHit = nonFrontRoadHits[0]!;
+      } else if (
+        nonFrontRoadHits.length === 1 &&
+        nonFrontRoadHits[0]!.road.osmWayId === frontHit.road.osmWayId
+      ) {
+        // 2026-08-07 (master planner scoped reopen, 48021:31317) — the sole
+        // non-front road-adjacent edge faces the SAME street as front: this
+        // is a same-street corner/clipped-corner segment (a parcel boundary
+        // jog along one continuous ROW, e.g. 48021:31317's raw edge 1,
+        // 16.22ft, 24.09ft from Jones Street — essentially tied with the
+        // 23.87ft front edge, and sharing a vertex with it), never a rear.
+        // Leaving rearHit unset here lets the side_corner same-street-clip
+        // check below (bestEligibleNonAlleyByEdge + shares-vertex-with-front)
+        // correctly label it, instead of this heuristic wrongly claiming it
+        // as rear first.
       } else if (nonFrontRoadHits.length > 1) {
         const farthestHit = selectRearEdgeByFarthestRoadAdjacent(proj, frontHit, bestByEdge);
         const frontN = inwardNormalForEdge(proj, frontHit.edgeIndex);
@@ -725,6 +774,61 @@ export function labelEdgesFromRoads(input: {
         osmSurfaceTag: hit.road.surface,
         roadProvenanceKind: hit.road.provenanceKind ?? "osm-fallback",
         osmWayId: hit.road.osmWayId,
+      });
+      continue;
+    }
+    // 2026-08-07 (master planner scoped reopen, 48021:31317 double-frontage
+    // corner) — SAME-STREET corner clip: a genuine corner/clipped-corner
+    // lot can have TWO edges both abutting the SAME street (not two
+    // different streets), when the parcel boundary jogs along a single
+    // continuous ROW (verified ground-truth: 48021:31317's raw edge 1,
+    // 16.22ft long, sits 24.09ft from Jones Street — essentially tied with
+    // the 23.87ft front edge 2, and shares a vertex with it). The check
+    // above only recognizes a corner formed by two DIFFERENT streets
+    // (hit.road.osmWayId !== frontHit.road.osmWayId); it never fires here
+    // because both edges face the SAME way id, so this edge fell through
+    // to a plain "side" (5ft) default — the wrong setback for a genuinely
+    // street-facing corner segment, and the root cause of the served
+    // envelope's diagonal skew. Scoped narrowly to avoid mislabeling an
+    // ordinary long side run that happens to be near the same street at
+    // long range: this edge must (a) be front-eligible-road-adjacent to
+    // the EXACT SAME way as frontHit (not merely bestByEdge-adjacent to
+    // some road), and (b) share a vertex with the front edge (genuinely
+    // the front's own immediate neighbor, not a distant edge elsewhere on
+    // the parcel).
+    // Distance parity with front — the actual discriminator between a
+    // genuine corner-clip continuation (this edge's own distance to the
+    // shared street is essentially TIED with front's own distance, e.g.
+    // 31317: 24.09ft vs front's 23.87ft) and an ordinary adjacent side run
+    // that merely falls within the loose 25m proximity threshold at its
+    // far end while running much farther from the street on average
+    // (verified regression case: 48021:31371/31380's ~85-97ft side runs,
+    // whose OWN edge-to-street distance is nowhere near front's ~74-76ft —
+    // sharesVertexWithFront alone is true for BOTH of a front edge's two
+    // neighbors on every parcel, so it cannot discriminate by itself).
+    const eligibleHit = bestEligibleNonAlleyByEdge.get(i);
+    const sharesVertexWithFront =
+      frontHit != null && (i === (frontHit.edgeIndex + n - 1) % n || i === (frontHit.edgeIndex + 1) % n);
+    const CORNER_CLIP_DISTANCE_PARITY_M = 3; // ~10ft — comfortably above GPS/digitization noise, well below the 31371/31380 far-run gap (tens of feet)
+    const distanceParityWithFront =
+      eligibleHit != null &&
+      frontHit != null &&
+      Math.abs(eligibleHit.distanceM - frontHit.distanceM) <= CORNER_CLIP_DISTANCE_PARITY_M;
+    if (
+      eligibleHit &&
+      frontHit &&
+      eligibleHit.road.osmWayId === frontHit.road.osmWayId &&
+      sharesVertexWithFront &&
+      distanceParityWithFront
+    ) {
+      edgeLabels.push({
+        index: i,
+        label: "side_corner",
+        roadClass: eligibleHit.road.classification,
+        osmHighwayTag: eligibleHit.road.osmHighwayTag,
+        osmSurfaceTag: eligibleHit.road.surface,
+        roadProvenanceKind: eligibleHit.road.provenanceKind ?? "osm-fallback",
+        osmWayId: eligibleHit.road.osmWayId,
       });
       continue;
     }
