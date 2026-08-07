@@ -54,6 +54,44 @@ export class EnvelopeGroundTruthPromoteDeclineError extends Error {
   }
 }
 
+/**
+ * WRITE-THEN-VERIFY (2026-08-07, master planner ruling, third instance of
+ * "gate against an internal representation instead of ground truth"):
+ * thrown when the ground-truth predicate, re-run against the atom AS ACTUALLY
+ * READ BACK from storage post-persist (the exact serve representation — what
+ * getPropertyAtomChain and PE actually return), disagrees with the pre-write
+ * gate above. The pre-write gate checks the in-memory candidate; a pass
+ * there does not prove the SERIALIZED, STORED bytes will read back
+ * correctly (a serializer bug, a wrong-field write, or any transform
+ * between the checked object and the persisted row would slip through the
+ * pre-write gate undetected). This is the closing half of the law: every
+ * gate in the promote path must run on the serialized read-back, not only
+ * the in-memory object. On mismatch, the just-written buildable-envelope
+ * atom is immediately retired (status: "retired") rather than left serving
+ * a ring the predicate rejects — fail-closed, never a silent bad-serve.
+ */
+export class EnvelopeWriteThenVerifyMismatchError extends Error {
+  readonly parcelNodeId: string;
+  readonly buildableEnvelopeAtomDid: string;
+  readonly failureReason: string | null;
+
+  constructor(
+    parcelNodeId: string,
+    buildableEnvelopeAtomDid: string,
+    failureReason: string | null,
+    detail: string,
+  ) {
+    super(
+      `promote: write-then-verify mismatch for ${parcelNodeId} (${buildableEnvelopeAtomDid}) — ` +
+        `stored geojson failed the ground-truth predicate (${failureReason ?? "unknown"}), retired: ${detail}`,
+    );
+    this.name = "EnvelopeWriteThenVerifyMismatchError";
+    this.parcelNodeId = parcelNodeId;
+    this.buildableEnvelopeAtomDid = buildableEnvelopeAtomDid;
+    this.failureReason = failureReason;
+  }
+}
+
 function aggregateSetbacks(candidate: WarmCandidate): {
   front: number;
   side: number;
@@ -219,15 +257,35 @@ export async function promoteDepthWarmToStorage(
   // Runs only when the candidate actually has an inset ring to grade; an
   // empty/no-buildable-area candidate has no envelope to check and is
   // handled by the honest-decline path elsewhere, not this promote call.
+  //
+  // GROUND-TRUTH FRAME LAW (2026-08-07, master planner ruling): truth is
+  // measured against candidate.rawParcelRing (the source-of-truth ring,
+  // before any lot-line scrub) — NEVER candidate.parcelRing, which may be a
+  // scrubbed/cleaned ring that silently dropped a real boundary edge (root
+  // cause, verified on 48021:31299: the scrubbed ring differs from the raw
+  // txgio/BCAD ring by one real 2.428m/7.97ft edge; the served envelope
+  // graded PERFECTLY against its own scrubbed ring — 5/25/15/25ft exact —
+  // while measuring 0.41/27.6/20.6/23.3ft against the true parcel ring).
+  // edgeRoles is deliberately OMITTED here: input.candidate.edges[].index is
+  // keyed in the SCRUBBED ring's frame, which may have a different edge
+  // count/order than rawParcelRing — passing it would silently misalign
+  // role-to-edge correspondence across two different rings (the exact
+  // "index transform across frames" defect class this engagement's binding
+  // rule forbids). checkEnvelopeGroundTruth falls back to a FRESH
+  // labelEdgesFromRoads call on rawParcelRing itself when edgeRoles is
+  // omitted, which is frame-consistent by construction.
   if (input.candidate.insetRing) {
-    const edgeRoles = new Map(input.candidate.edges.map((e) => [e.index, e.label]));
+    const groundTruthParcelRing = input.candidate.rawParcelRing ?? input.candidate.parcelRing;
     const groundTruth = checkEnvelopeGroundTruth({
-      parcelRing: input.candidate.parcelRing,
+      parcelRing: groundTruthParcelRing,
       envelopeRing: input.candidate.insetRing,
       descriptor: input.descriptor,
       district: input.candidate.district,
       roads: input.candidate.roads,
-      edgeRoles,
+      // miterPointsWgs84 coordinates are absolute WGS84 points, not indexed
+      // into either ring's frame — safe to pass alongside rawParcelRing
+      // even though the miter run itself offset candidate.parcelRing.
+      miterPointsWgs84: input.candidate.miterPointsWgs84,
     });
     if (!groundTruth.pass) {
       throw new EnvelopeGroundTruthPromoteDeclineError(
@@ -275,6 +333,59 @@ export async function promoteDepthWarmToStorage(
     if (atom.entityType === "setback-rule") setbackRuleAtomDid = result.atomDid;
     if (atom.entityType === "buildable-envelope") {
       buildableEnvelopeAtomDid = result.atomDid;
+    }
+  }
+
+  // WRITE-THEN-VERIFY (2026-08-07, master planner ruling): read the
+  // buildable-envelope atom BACK from storage — the exact bytes any serve
+  // path (getPropertyAtomChain, cert-grade, PE) would read — and re-run the
+  // ground-truth predicate against THAT geojson ring, against
+  // rawParcelRing. Only runs when the pre-write gate above actually ran
+  // (input.candidate.insetRing present) and a buildable-envelope atom was
+  // actually written this call.
+  if (input.candidate.insetRing && buildableEnvelopeAtomDid) {
+    const readBack = (await storage.getAtomByDid(buildableEnvelopeAtomDid)) as
+      | (PropertyAtomInstance & { geojson?: { features?: Array<{ geometry?: { coordinates?: unknown[][] } }> } })
+      | null;
+    const storedRing = readBack?.geojson?.features?.[0]?.geometry?.coordinates?.[0] as
+      | WarmCandidate["insetRing"]
+      | undefined;
+    if (!readBack || !storedRing?.length) {
+      throw new EnvelopeWriteThenVerifyMismatchError(
+        input.candidate.parcelNodeId,
+        buildableEnvelopeAtomDid,
+        "read-back-missing",
+        "read-back returned no atom or no geojson ring for the atomDid just written",
+      );
+    } else {
+      const groundTruthParcelRing = input.candidate.rawParcelRing ?? input.candidate.parcelRing;
+      const readBackGroundTruth = checkEnvelopeGroundTruth({
+        parcelRing: groundTruthParcelRing,
+        envelopeRing: storedRing,
+        descriptor: input.descriptor,
+        district: input.candidate.district,
+        roads: input.candidate.roads,
+        miterPointsWgs84: input.candidate.miterPointsWgs84,
+      });
+      if (!readBackGroundTruth.pass) {
+        // Fail-closed: retire the atom just written rather than leave a
+        // predicate-rejected ring active and servable.
+        const retired = {
+          ...readBack,
+          status: "retired" as const,
+        };
+        await writePropertyAtomIfEnabled(storage, retired);
+        throw new EnvelopeWriteThenVerifyMismatchError(
+          input.candidate.parcelNodeId,
+          buildableEnvelopeAtomDid,
+          readBackGroundTruth.failureReason,
+          JSON.stringify({
+            p1: readBackGroundTruth.p1,
+            p2Fails: readBackGroundTruth.p2.edges.filter((e) => !e.pass),
+            p3: readBackGroundTruth.p3,
+          }),
+        );
+      }
     }
   }
 

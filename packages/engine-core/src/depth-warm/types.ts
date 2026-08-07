@@ -65,6 +65,29 @@ export interface WarmCandidate {
    * gate's OWN geometryCorrectnessGate call).
    */
   miterPointsWgs84?: Ring;
+  /**
+   * GROUND-TRUTH FRAME LAW (2026-08-07, master planner ruling — third
+   * instance of "gate against an internal representation instead of ground
+   * truth"): the RAW parcel ring, exactly as read from the source-of-truth
+   * store (txgio_parcel / BCAD), BEFORE any lot-line scrub. `parcelRing`
+   * above may be a scrubbed/cleaned ring (fed to the inset computation so a
+   * genuine digitization artifact doesn't corrupt an inward normal) — but
+   * the ground-truth predicate (checkEnvelopeGroundTruth: P1 containment,
+   * P2 inset distance, P3 front-on-street) and any write-then-verify
+   * read-back MUST evaluate the served envelope against THIS ring, never
+   * the scrubbed one. Verified root cause: 48021:31299's served envelope
+   * (correct relative to its own scrubbed 4-edge ring: 5/25/15/25ft, exact)
+   * measures 0.41/27.6/20.6/23.3ft against the RAW 5-edge ring — the
+   * scrubbed ring silently dropped a real 2.428m (7.97ft) boundary edge,
+   * and every downstream gate that checked "is the envelope right"
+   * answered only "is it right relative to the ring the engine itself
+   * built," never "is it right relative to the parcel." Optional only for
+   * back-compat with callers that never scrub (rawParcelRing === parcelRing
+   * in that case, e.g. the twelve-parcel harness's direct fixture rings) —
+   * REQUIRED for any caller whose parcelRing may differ from source, i.e.
+   * every live promote path.
+   */
+  rawParcelRing?: Ring;
 }
 
 export interface MechanicalGateResult {
