@@ -54,10 +54,6 @@ import { pointInOrOnPolygon } from "./polygon-inset.js";
 import type { WarmEdgeRole, WarmRoadSource } from "../depth-warm/types.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { edgeMidpointNearKnownMiterPoint } from "../depth-warm/cert-equivalent-gates.js";
-import {
-  perpDistanceToChord,
-  SHAPE_PRESERVATION_EPSILON_M,
-} from "../boundary-primitive/lot-line-scrub.js";
 
 export type EnvelopeGroundTruthFailureReason =
   | "invalid-parcel-ring"
@@ -196,37 +192,37 @@ export function checkEnvelopeContainment(
  * parcel edge (measurePerEdgeInsetForRings, index-matched by parallel
  * offset + overlap — never by stored label) must match the district
  * setback for that edge's role.
+ *
+ * 2026-08-07 PREDICATE-TIGHTENING (master planner ruling — the predicate
+ * passed a cross-frame mismatch, meaning its escape valves were wide
+ * enough to absorb wholesale frame drift, which defeats the gate). Now
+ * that construction is guaranteed same-frame (parcelRingWorking is always
+ * scrubbed from the SAME ring rawParcelRing points at — see
+ * depth-warm-bastrop-batch.mjs), an edge with no R32 correspondence at
+ * all is a genuine anomaly, not routine cross-frame noise, and must be
+ * treated that way:
+ *
+ *   - satisfiedByMoreRestrictiveNeighbor (R32's own ownership-arbitration
+ *     finding — real engine evidence, not inferred here) remains an honest
+ *     non-comparable category, UNCAPPED (it reflects a genuine, verified
+ *     geometric relationship between two SPECIFIC lot edges, not an
+ *     open-ended escape).
+ *   - The ONLY other honest non-comparable category is a real,
+ *     ENGINE-THREADED miter point (edgeMidpointNearKnownMiterPoint) —
+ *     explicit evidence the offset run's own notch-collapse folded this
+ *     edge into a corner join. The geometric "this vertex looks
+ *     collinear" inference (formerly edgeNearOwnNeighborChord) is REMOVED
+ *     as a P2 justification: it was reachable by construction-side ring
+ *     drift alone and could mask a genuine frame mismatch, exactly the
+ *     defect this tightening closes. A scrub-side collinear removal is
+ *     now enforced upstream, at construction (lot-line-scrub.ts's
+ *     shape-preservation bound) — P2 no longer needs, and must not carry,
+ *     a second, weaker excuse for the same fact.
+ *   - Miter-justified non-comparable edges are capped at ONE per parcel.
+ *     A second (or more) miter-absorbed edge on the same parcel is no
+ *     longer an honest single notch collapse — it is evidence the
+ *     candidate itself is malformed, and P2 hard-fails.
  */
-/**
- * True when EITHER endpoint of edge `edgeIndex` sits within the
- * shape-preservation epsilon of the chord connecting ITS OWN neighbors —
- * the identical geometric fact removeCollinearVertices (lot-line-scrub.ts)
- * uses to decide a vertex is safe to drop. Ground-Truth Frame Law measures
- * against the RAW ring, which may still carry a vertex the (correctly,
- * legitimately) scrubbed working ring dropped — the raw edge bounded by
- * that vertex then has zero R32 candidates by construction (it never
- * produced a distinct offset boundary segment, because the ring the offset
- * actually ran on never had it). This is honestly non-comparable for the
- * SAME reason scrub was allowed to drop that vertex, not a real setback
- * miss. Checks both endpoints since either one could be the near-collinear
- * vertex that made this specific edge short/spurious.
- */
-function edgeNearOwnNeighborChord(parcelRing: Ring, edgeIndex: number): boolean {
-  const proj = projectRing(parcelRing);
-  if (!proj) return false;
-  const n = proj.points.length;
-  if (n < 3) return false;
-  const i = edgeIndex % n;
-  const j = (edgeIndex + 1) % n;
-  const checkVertex = (v: number): boolean => {
-    const a = proj.points[(v + n - 1) % n]!;
-    const b = proj.points[v]!;
-    const c = proj.points[(v + 1) % n]!;
-    return perpDistanceToChord(b, a, c) <= SHAPE_PRESERVATION_EPSILON_M;
-  };
-  return checkVertex(i) || checkVertex(j);
-}
-
 function checkInsetDistances(
   parcelRing: Ring,
   envelopeRing: Ring,
@@ -250,43 +246,64 @@ function checkInsetDistances(
   }
 
   const flatFallback = buildFlatSetbackFallback(descriptor, district);
-  const edges: EnvelopeGroundTruthP2EdgeResult[] = measured.map((m: MeasuredEdgeInset) => {
+
+  // First pass: compute role/expected/measured and the two DISTINCT honest
+  // categories per edge, without yet applying the miter cap.
+  interface Draft {
+    edgeIndex: number;
+    role: WarmEdgeRole | null;
+    expectedFt: number | null;
+    measuredFt: number | null;
+    satisfiedByMoreRestrictiveNeighbor: boolean;
+    miterAbsorbed: boolean;
+    noDeterminable: boolean;
+  }
+  const drafts: Draft[] = measured.map((m: MeasuredEdgeInset) => {
     const role = roleByIndex!.get(m.edgeIndex) ?? null;
     const expectedFt = role
       ? resolveInsetFeetForEdge(descriptor, district, { label: role }, flatFallback)
       : null;
     const measuredFt = m.insetFeet;
-    // 2026-08-07 OFFSET-CORE-VARIABLE-DISTANCE redesign (ruling 2): honor
-    // measure-inset.ts's structural correspondence result — a
-    // satisfiedByMoreRestrictiveNeighbor edge is honestly non-comparable
-    // (satisfied by containment via a more restrictive adjacent edge), the
-    // SAME category as "no determinable role," never compared against
-    // expectedFt. Also honor a genuine notch-collapse absence (matched:false,
-    // no candidate found at all) when the edge midpoint sits near an ACTUAL
-    // miter point this run produced — the same check verifyR32PerEdgeInset
-    // already applies (cert-equivalent-gates.ts), now shared here so P2
-    // does not false-fail a real short edge folded into a corner join
-    // during offset (48021:31308 edge 4, a genuine 9.09ft corner jog).
-    const honestlyAbsorbed =
+    const miterAbsorbed =
       !m.matched &&
       !m.satisfiedByMoreRestrictiveNeighbor &&
-      (edgeMidpointNearKnownMiterPoint(parcelRing, m.edgeIndex, miterPointsWgs84) ||
-        edgeNearOwnNeighborChord(parcelRing, m.edgeIndex));
-    const pass =
-      role == null ||
-      expectedFt == null ||
-      measuredFt == null ||
-      m.satisfiedByMoreRestrictiveNeighbor ||
-      honestlyAbsorbed
-        ? true // no determinable role, or honestly non-comparable — not a P2 failure
-        : Math.abs(measuredFt - expectedFt) <= toleranceFt;
+      edgeMidpointNearKnownMiterPoint(parcelRing, m.edgeIndex, miterPointsWgs84);
     return {
       edgeIndex: m.edgeIndex,
       role,
-      measuredFt,
       expectedFt,
+      measuredFt,
+      satisfiedByMoreRestrictiveNeighbor: m.satisfiedByMoreRestrictiveNeighbor === true,
+      miterAbsorbed,
+      noDeterminable: role == null || expectedFt == null || measuredFt == null,
+    };
+  });
+
+  // Cap: at most ONE miter-absorbed edge counts as honestly non-comparable
+  // per parcel. Beyond the first (in edgeIndex order, deterministic), any
+  // further miter-absorbed edge is treated as a genuine P2 mismatch —
+  // multiple absorbed edges on one parcel is no longer a single honest
+  // notch collapse.
+  let miterCapUsed = false;
+  const edges: EnvelopeGroundTruthP2EdgeResult[] = drafts.map((d) => {
+    let honestlyNonComparable = d.noDeterminable || d.satisfiedByMoreRestrictiveNeighbor;
+    if (!honestlyNonComparable && d.miterAbsorbed) {
+      if (!miterCapUsed) {
+        honestlyNonComparable = true;
+        miterCapUsed = true;
+      }
+      // else: cap already spent — falls through, graded as a real mismatch.
+    }
+    const pass = honestlyNonComparable
+      ? true
+      : Math.abs((d.measuredFt as number) - (d.expectedFt as number)) <= toleranceFt;
+    return {
+      edgeIndex: d.edgeIndex,
+      role: d.role,
+      measuredFt: d.measuredFt,
+      expectedFt: d.expectedFt,
       pass,
-      satisfiedByMoreRestrictiveNeighbor: m.satisfiedByMoreRestrictiveNeighbor,
+      satisfiedByMoreRestrictiveNeighbor: d.satisfiedByMoreRestrictiveNeighbor,
     };
   });
 

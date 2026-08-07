@@ -681,31 +681,45 @@ for (const row of parcelRows) {
     }
   }
 
+  // CONSTRUCT FROM THE TRUTH FRAME (2026-08-07, master planner ruling —
+  // fixes the actual defect the Serve-Consistency Principle amendment
+  // (PR #273) left in place: rawParcelRing was correctly pinned to txgio,
+  // but parcelRingWorking — the ring the OFFSET/ENVELOPE was actually built
+  // from — was still being swapped to scrubLotLineRing(BCAD ring) on
+  // --force-repromote or a boundary-edge-count mismatch. That is exactly
+  // the re-apply path this session's fixes are verified through, so the
+  // served envelope kept reading BCAD-frame numbers even though
+  // rawParcelRing (verification only) correctly pointed at txgio. BCAD now
+  // exits the envelope-construction path ENTIRELY — a live BCAD fetch may
+  // still run (for the PARCEL-RING-SOURCE-DIVERGENCE report only, never to
+  // build parcelRingWorking), and any re-scrub uses rawParcelRing (txgio,
+  // already fetched above) as its source. One frame — txgio — from source
+  // to store, no exceptions.
   let parcelRingWorking = parcelRing;
   let ringSwapped = false;
   if (args.forceRepromote && propId) {
     try {
       const bcad = await fetchBcadParcelRings([propId]);
-      if (bcad[0]?.ring) {
-        recordParcelRingSourceDivergence(bcad[0].ring);
-        parcelRingWorking = scrubLotLineRing(bcad[0].ring);
-        ringSwapped = true;
-      }
+      if (bcad[0]?.ring) recordParcelRingSourceDivergence(bcad[0].ring);
     } catch {
-      /* fall back */
+      /* divergence report is best-effort; construction never depends on it */
+    }
+    if (rawParcelRing) {
+      parcelRingWorking = scrubLotLineRing(rawParcelRing);
+      ringSwapped = true;
     }
   } else if (boundaryEdges?.length) {
     const ringVerts = openRing(parcelRingWorking).length;
     if (boundaryEdges.length !== ringVerts) {
       try {
         const bcad = await fetchBcadParcelRings([propId]);
-        if (bcad[0]?.ring) {
-          recordParcelRingSourceDivergence(bcad[0].ring);
-          parcelRingWorking = scrubLotLineRing(bcad[0].ring);
-          ringSwapped = true;
-        }
+        if (bcad[0]?.ring) recordParcelRingSourceDivergence(bcad[0].ring);
       } catch {
-        /* fall back */
+        /* divergence report is best-effort; construction never depends on it */
+      }
+      if (rawParcelRing) {
+        parcelRingWorking = scrubLotLineRing(rawParcelRing);
+        ringSwapped = true;
       }
     }
   }
