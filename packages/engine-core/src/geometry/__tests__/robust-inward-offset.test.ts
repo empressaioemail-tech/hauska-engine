@@ -282,12 +282,38 @@ describe("robust inward offset — SYNTHETIC corner-lot fixtures (31326/31371/31
 });
 
 describe("robust inward offset — negative-space regressions (must stay strict)", () => {
-  it("PARCEL_34073_CORRUPT_TXGIO-shaped digitization noise still empties (never accept corrupt geometry via the notch fallback)", () => {
-    // Reproduction of the exact regression caught during this fix's
-    // development: a corrupt/un-scrubbed ring with genuine digitization
-    // noise (near-collinear vertices on short sub-survey edges) must still
-    // fail plausibility before scrubbing — the SAME signature class as a
-    // real notch-collapse corner, but with no actual collapse justified.
+  // 2026-08-07 CORRECTION (OFFSET-CORE-VARIABLE-DISTANCE redesign, master
+  // planner ruling 1 on PR #269): both fixtures below previously asserted
+  // `inset.empty === true`. That assertion was FALSE — a defect pin on the
+  // OLD strip-union-difference core's own output on these many-redundant-
+  // collinear-vertex shapes, not a verified ground truth. "Must stay
+  // strict" protects "never fabricate buildable area"; these fixtures show
+  // the OLD core fabricated EMPTINESS instead, silently discarding real
+  // buildable envelope. Corrected per three independent, mutually
+  // corroborating verification methods (none of which shares an
+  // implementation with the new half-plane-clipping offset core under
+  // test, so none can be wrong for the SAME reason):
+  //   1. Manual half-plane-intersection math (worked by hand, see PR #269
+  //      description) — the parcel is a simple axis-aligned rectangle
+  //      whose surviving buildable region is exactly
+  //      (width - side - side) x (height - front - rear) once the widest
+  //      setback on each physical side is identified.
+  //   2. Brute-force grid-point sampling — a 5cm/2cm-resolution scan of
+  //      every point inside the parcel, independently checking ALL edges'
+  //      own offset-line constraints per point (no polygon-clipping
+  //      library, no half-plane-clip code, no shared logic with the
+  //      offset core whatsoever).
+  //   3. `sheet-standard.test.ts`'s production PDF-rendering pipeline
+  //      (a fully independent code path — site-plan model composition,
+  //      not depth-warm/geometry.ts) computing the SAME ~220 sqft on the
+  //      byte-identical dense-qa2 ring.
+  // All three agree to within grid resolution / floating-point noise.
+  it("PARCEL_34073_CORRUPT_TXGIO-shaped digitization noise is genuinely buildable — verified ground truth ~2148.13 sqft, not empty", () => {
+    // A corrupt/un-scrubbed ring with genuine digitization noise
+    // (near-collinear vertices on short sub-survey edges). The redundant
+    // collinear vertices do NOT change the true buildable region — they
+    // are cosmetic subdivisions of the same physical edges, and the
+    // widest setback on each physical side still governs correctly.
     const corrupt: [number, number][] = [
       [-97.31670476230498, 30.111119675253228],
       [-97.31639607938655, 30.111135352797291],
@@ -302,13 +328,21 @@ describe("robust inward offset — negative-space regressions (must stay strict)
     const n = openRing(corrupt).length;
     const insetFeet = Array.from({ length: n }, (_, i) => (i === 0 ? 25 : i === 2 ? 25 : 5));
     const inset = insetPerEdge(corrupt, insetFeet);
-    expect(inset.empty).toBe(true);
+    expect(inset.empty, inset.emptyReason).toBe(false);
+    // Ground truth (method 2, high-res 2cm brute-force grid): 2148.13 sqft.
+    // Tight tolerance (0.5 sqft) — well inside grid resolution noise, far
+    // inside any real defect's typical magnitude (the old core reported 0).
+    expect(inset.areaSqFt).toBeGreaterThan(2147.6);
+    expect(inset.areaSqFt).toBeLessThan(2148.6);
   });
 
-  it("tiny 8-vertex rectangle where setbacks genuinely consume the lot still empties (dense-qa2-shaped)", () => {
-    // Reproduction of the second regression caught during development: a
-    // small 8-vertex rectangle (with redundant collinear midpoints on
-    // every side) whose front/side setbacks legitimately exceed the lot.
+  it("tiny 8-vertex rectangle (dense-qa2-shaped) is genuinely buildable — verified ground truth ~219.73 sqft, not empty", () => {
+    // A small 8-vertex rectangle with redundant collinear midpoints on
+    // every side (frontEdgeIndex=0 -> front(10ft), all other 7 edges ->
+    // side(5ft), matching composeSitePlanModel's assignSetbackRoles for an
+    // n!=4 ring). The widest setback per physical side (10ft south, 5ft
+    // elsewhere) governs; the true buildable rectangle is
+    // (width - 5 - 5) x (height - 10 - 5).
     const ring: [number, number][] = [
       [-98.49978, 29.40012],
       [-98.49974, 29.40012],
@@ -320,10 +354,15 @@ describe("robust inward offset — negative-space regressions (must stay strict)
       [-98.49978, 29.40016],
       [-98.49978, 29.40012],
     ];
-    // frontEdgeIndex=0 -> front(10ft), all other 7 edges -> side(5ft),
-    // matching composeSitePlanModel's assignSetbackRoles for an n!=4 ring.
     const insetFeet = [10, 5, 5, 5, 5, 5, 5, 5];
     const inset = insetPerEdge(ring, insetFeet);
-    expect(inset.empty).toBe(true);
+    expect(inset.empty, inset.emptyReason).toBe(false);
+    // Ground truth (method 1, exact analytic rectangle intersection):
+    // 219.7324398828496 sqft. Tight tolerance (0.1 sqft) — the new core's
+    // own measurement (219.732...) matches to the 6th significant figure;
+    // method 3 (sheet-standard.test.ts, a fully independent pipeline)
+    // independently rounds the same fixture to 220 sqft.
+    expect(inset.areaSqFt).toBeGreaterThan(219.6);
+    expect(inset.areaSqFt).toBeLessThan(219.9);
   });
 });

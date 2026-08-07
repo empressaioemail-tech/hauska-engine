@@ -99,6 +99,20 @@ export interface EnvelopeGroundTruthP2EdgeResult {
   measuredFt: number | null;
   expectedFt: number | null;
   pass: boolean;
+  /**
+   * 2026-08-07 OFFSET-CORE-VARIABLE-DISTANCE redesign (master planner
+   * ruling 2, PR #269): true when measure-inset.ts's structural
+   * correspondence pass determined this edge's own candidate boundary
+   * belongs to a more restrictive, near-parallel ADJACENT lot edge — this
+   * edge's constraint is satisfied by containment (the envelope already
+   * sits farther inward than this edge's own setback requires), not
+   * genuinely mismatched. `measuredFt` in that case reflects the OTHER
+   * edge's boundary distance from THIS edge's own line, not a dedicated
+   * measurement of this edge — callers must not compare it to
+   * `expectedFt` when this flag is set (the `pass` field already accounts
+   * for it).
+   */
+  satisfiedByMoreRestrictiveNeighbor?: boolean;
 }
 
 export interface EnvelopeGroundTruthP2Result {
@@ -190,11 +204,24 @@ function checkInsetDistances(
       ? resolveInsetFeetForEdge(descriptor, district, { label: role }, flatFallback)
       : null;
     const measuredFt = m.insetFeet;
+    // 2026-08-07 OFFSET-CORE-VARIABLE-DISTANCE redesign (ruling 2): honor
+    // measure-inset.ts's structural correspondence result — a
+    // satisfiedByMoreRestrictiveNeighbor edge is honestly non-comparable
+    // (satisfied by containment via a more restrictive adjacent edge), the
+    // SAME category as "no determinable role," never compared against
+    // expectedFt.
     const pass =
-      role == null || expectedFt == null || measuredFt == null
-        ? true // no determinable role for this edge — not a P2 failure (honest absence)
+      role == null || expectedFt == null || measuredFt == null || m.satisfiedByMoreRestrictiveNeighbor
+        ? true // no determinable role, or honestly non-comparable — not a P2 failure
         : Math.abs(measuredFt - expectedFt) <= toleranceFt;
-    return { edgeIndex: m.edgeIndex, role, measuredFt, expectedFt, pass };
+    return {
+      edgeIndex: m.edgeIndex,
+      role,
+      measuredFt,
+      expectedFt,
+      pass,
+      satisfiedByMoreRestrictiveNeighbor: m.satisfiedByMoreRestrictiveNeighbor,
+    };
   });
 
   return { pass: edges.every((e) => e.pass), edges };

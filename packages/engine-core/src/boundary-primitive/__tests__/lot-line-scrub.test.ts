@@ -61,10 +61,27 @@ function sf1InsetFeet34073(ring: typeof PARCEL_34073_BCAD): number[] {
 }
 
 describe("F3 lot-line geometry scrub (34073 + 34081)", () => {
-  it("34073 corrupt txgio ring fails SF-1 inset before scrub", () => {
+  // 2026-08-07 CORRECTION (OFFSET-CORE-VARIABLE-DISTANCE redesign, PR #269,
+  // master planner ruling 1): this test previously asserted
+  // `r.empty === true` on the corrupt (pre-scrub) ring. That assertion was
+  // FALSE — a defect pin on the OLD strip-union-difference core, the SAME
+  // fixture and SAME insetFeet array ([25,5,25,5,5,5,5,5], F25/S5/R25 per
+  // PARCEL_34073_SF1_LAYER23) already corrected in
+  // geometry/__tests__/robust-inward-offset.test.ts's negative-space
+  // regression suite. Ground truth verified there via three independent
+  // methods (manual half-plane math, clipping-free brute-force grid
+  // sampling, and sheet-standard.test.ts's independent PDF pipeline on a
+  // sibling fixture): the true buildable area is ~2148.13 sqft, not empty.
+  // The corrupt ring's redundant collinear vertices are cosmetic
+  // subdivisions of the same physical edges and do not change the true
+  // buildable region — scrubbing is still valuable for producing a clean,
+  // minimal-vertex envelope (see the next test), but "the corrupt ring
+  // fails to inset at all" was never true.
+  it("34073 corrupt txgio ring insets successfully even before scrub — verified ground truth ~2148.13 sqft, not empty", () => {
     const r = insetPerEdge(PARCEL_34073_CORRUPT_TXGIO, sf1InsetFeet34073(PARCEL_34073_CORRUPT_TXGIO));
-    expect(r.empty).toBe(true);
-    expect(r.emptyReason).toMatch(/setbacks exceed|correctness gate|null/i);
+    expect(r.empty, r.emptyReason).toBe(false);
+    expect(r.areaSqFt).toBeGreaterThan(2147.6);
+    expect(r.areaSqFt).toBeLessThan(2148.6);
   });
 
   it("34073 scrubbed from corrupt → near-rect parcel with ≤6-vertex clean envelope", () => {
@@ -192,9 +209,21 @@ describe("R29 irregular-lot near-rect relaxation (48021:34121)", () => {
 
     const insetProj = projectRing(inset.ring!);
     expect(insetProj).not.toBeNull();
-    // Legitimately non-convex envelope on a legitimately non-convex lot ...
-    expect(isConvexPlanarRing(insetProj!.points)).toBe(false);
-    // ... but VALID: no self-intersection, no self-touch, positive area.
+    // 2026-08-07 CORRECTION (OFFSET-CORE-VARIABLE-DISTANCE redesign, PR
+    // #269, master planner ruling 1): this previously asserted the inset
+    // MUST stay non-convex, on the unverified assumption that a non-convex
+    // parcel always produces a non-convex envelope. That assumption is
+    // false in general — verified independently (brute-force grid
+    // sampling, no offset-core code involved) on this exact fixture and
+    // setback assignment: the 20ft setbacks on the two edges bounding the
+    // reflex notch are large enough to fully consume the concave region,
+    // so the TRUE buildable envelope here is convex (area 3142.90 sqft by
+    // brute force vs 3142.93 sqft from insetPerEdge — matching to the 4th
+    // significant figure). The load-bearing assertion this test exists
+    // for — VALID geometry (no self-intersection, no self-touch, positive
+    // bounded area) without requiring the R5 near-rect convexity gate — is
+    // unaffected by convexity either way, so it stays exactly as strict.
+    // ... VALID: no self-intersection, no self-touch, positive area.
     expect(ringSelfIntersects(insetProj!.points)).toBe(false);
     expect(ringHasSelfTouch(insetProj!.points)).toBe(false);
     expect(inset.areaSqFt).toBeGreaterThan(0);

@@ -166,36 +166,49 @@ const OPERATOR_TWELVE = [
  * redesign commissioned (variable-distance inward polygon offset, follow-on
  * branch from post-#268 main).
  *
- * Root cause (function-level evidence, see PR #268 description):
- * collapseNearCollinearOffsetNotches collapses a short offset-space run to
- * the analytic miter of its two bounding strip edges. On 48021:31362's real
- * ring this collapse spans a genuine ~89-degree ORIGINAL parcel corner
- * (verified: nearest original vertex turn angle +88.77deg), not
- * offset-math noise (compare the working 31308 fixture's 0.89deg
- * near-collinear vertex) — a genuine N-way constraint a 2-edge analytic
- * miter cannot resolve without cutting across unrelated real geometry
- * elsewhere in the ring. Two guards (near-parallel bounding-edge angle;
- * real-corner turn-angle scan) were built and independently verified to
- * fix 31362 in isolation, but each regressed 31308 elsewhere in this
- * harness's broader role/inset matrix — reverted rather than trade a known
- * green case for an unresolved one.
+ * 2026-08-07 UPDATE (PR #269 — the commissioned redesign): the offset core
+ * was replaced with sequential per-edge half-plane clipping (design note:
+ * OFFSET_CORE_REDESIGN_DESIGN_NOTE.md). Three of the six originally-listed
+ * parcels flip to genuine hard-pass under the new core: 48021:31299,
+ * 48021:31371, 48021:31380. One parcel (48021:31317), previously
+ * hard-passing, develops a NEW narrow residual under the redesign and
+ * joins the expected-fail set (see below) — net the harness is at 8/12
+ * hard-pass, up from 6/12 pre-redesign, with 4 parcels still tracked
+ * against this defect reference.
  *
- * - 31326, 31371, 31380, 31389: non-convex / R5 near-rect gate failure —
- *   the collapse this ring needs is rejected or produces a fold.
- * - 31299, 31362, 31371, 31380: "setbacks exceed the lot" empty candidate —
- *   the collapse that should preserve real area instead discards it;
- *   isInsetDegenerate correctly rejects the resulting ring rather than
- *   promote an unverified envelope (perEdgeOffsetPlausible fails on the far
- *   side of the discarded area, not at the collapse site itself).
- * (31371 and 31380 each fail BOTH ways depending on role/inset ordering —
- * listed once below, tracked under the same defect.)
+ * Remaining known defects (still OFFSET-CORE-VARIABLE-DISTANCE):
+ * - 31326, 31362, 31389: non-convex / R5 near-rect gate failure, or
+ *   "setbacks exceed the lot" empty candidate. Root cause (unchanged from
+ *   the pre-redesign diagnosis, still present under half-plane clipping):
+ *   a genuine reflex-adjacent N-way constraint that the current
+ *   reflex-decomposition (convex-split at genuine reflex vertices, clip
+ *   each piece against every original edge, union pieces back together)
+ *   does not yet fully resolve for every role/inset combination on these
+ *   specific rings.
+ * - 31317 (NEW under the redesign, real ring, verified NOT empty and
+ *   geometrically correct — area matches independent brute-force ground
+ *   truth to within 0.02%): R32's independent per-edge remeasure
+ *   (measure-inset.ts) reports edge 2 (front, 25ft) at 27.47ft, a 2.47ft
+ *   miss against the 1.0ft tolerance. Root-caused with function-level
+ *   evidence: at 31317's near-collinear vertex (turn angle -4.28deg,
+ *   correctly below the redesign's 15deg genuine-reflex floor, so no
+ *   reflex split engages), the TRUE correct envelope boundary segment for
+ *   edge 2 measures a near-exact 25.00ft parallel match (cos=0.997) but
+ *   fails measurePerEdgeInsetIndexMatched's strict overlap>0 projection
+ *   test by a hairline (-0.28m against a ~19.9m lot edge, 1.4% miss),
+ *   so a DIFFERENT, genuinely-non-parallel-enough candidate at ~28ft wins
+ *   instead. An absolute-slack fix to the overlap window was attempted and
+ *   reverted: it corrected 31317 but admitted a wrong candidate on
+ *   48021:31308's edge 4 (24.47ft measured against 5ft expected,
+ *   previously exact) — a real regression on an already-verified-working
+ *   fixture, so the attempted fix was reverted rather than trade a known
+ *   green case for an unresolved one, per the same discipline as the
+ *   pre-redesign notch-collapse guards.
  */
 const KNOWN_DEFECT_OFFSET_CORE_VARIABLE_DISTANCE = new Set([
-  "48021:31299",
+  "48021:31317",
   "48021:31326",
   "48021:31362",
-  "48021:31371",
-  "48021:31380",
   "48021:31389",
 ]);
 
