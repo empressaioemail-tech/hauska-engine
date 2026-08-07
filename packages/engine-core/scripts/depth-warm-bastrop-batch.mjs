@@ -37,7 +37,7 @@ import {
   assertParcelCurrencyInBcad,
   ringCentroidLngLat,
 } from "../src/boundary-primitive/index.ts";
-import { openRing } from "../src/depth-warm/geometry.ts";
+import { openRing, projectRing } from "../src/depth-warm/geometry.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
@@ -90,6 +90,64 @@ async function districtHasPerParcelSetbackRow(parcelNodeId, district, centroidLn
     centroidLngLat,
   );
   return built.ok;
+}
+
+const FEET_PER_METER = 3.280839895;
+/**
+ * PARCEL-RING-SOURCE-DIVERGENCE tolerance (2026-08-07, Serve-Consistency
+ * Principle ruling): BCAD (live CAD service) and txgio_parcel (StratMap-
+ * derived, the geometry the product renders as the lot line) are
+ * independently digitized sources that can drift by several feet on a
+ * given parcel. txgio is the truth frame for everything the user sees;
+ * BCAD's live ring is a parcel-currency cross-check only. When the two
+ * disagree by more than this tolerance, the divergence is reported (never
+ * silently absorbed) as a named observation — these parcels are R15
+ * parcel-currency candidates, not an engine defect.
+ */
+const PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT = 2;
+
+/**
+ * Max perpendicular deviation between two rings, sampled at every vertex
+ * of BOTH rings against the nearest edge of the OTHER ring (a practical
+ * two-sided Hausdorff-style bound, cheap to compute for parcel-scale
+ * rings). Returns feet.
+ */
+function maxRingDeviationFt(ringA, ringB) {
+  const projA = projectRing(ringA);
+  if (!projA) return null;
+  const toLocal = (ring) =>
+    openRing(ring).map(([lng, lat]) => ({
+      x: (lng - projA.originLng) * projA.mPerDegLng,
+      y: (lat - projA.originLat) * projA.mPerDegLat,
+    }));
+  const a = toLocal(ringA);
+  const b = toLocal(ringB);
+  if (a.length < 2 || b.length < 2) return null;
+
+  const distPointToSegment = (p, s0, s1) => {
+    const abx = s1.x - s0.x;
+    const aby = s1.y - s0.y;
+    const apx = p.x - s0.x;
+    const apy = p.y - s0.y;
+    const ab2 = abx * abx + aby * aby;
+    if (ab2 < 1e-12) return Math.hypot(apx, apy);
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / ab2));
+    return Math.hypot(p.x - (s0.x + t * abx), p.y - (s0.y + t * aby));
+  };
+  const oneSidedMax = (from, to) => {
+    let max = 0;
+    for (const p of from) {
+      let nearest = Infinity;
+      for (let i = 0; i < to.length; i++) {
+        const d = distPointToSegment(p, to[i], to[(i + 1) % to.length]);
+        if (d < nearest) nearest = d;
+      }
+      if (nearest > max) max = nearest;
+    }
+    return max;
+  };
+  const maxM = Math.max(oneSidedMax(a, b), oneSidedMax(b, a));
+  return maxM * FEET_PER_METER;
 }
 
 function isPlaceTypeDistrict(district, codes) {
@@ -408,6 +466,13 @@ const stats = {
   honestDeclines: 0,
   atomWrites: 0,
   wallMsPerParcel: [],
+  /**
+   * PARCEL-RING-SOURCE-DIVERGENCE observations (Serve-Consistency Principle,
+   * 2026-08-07) — report-only, never gates promote. Parcels here are R15
+   * parcel-currency candidates: BCAD's live ring and txgio's served ring
+   * disagree by more than PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT.
+   */
+  parcelRingSourceDivergences: [],
 };
 
 const sampleOutcomes = [];
@@ -546,15 +611,25 @@ for (const row of parcelRows) {
   }
 
   const geom = await geomResolver.resolve(parcelNodeId);
-  // GROUND-TRUTH FRAME LAW (2026-08-07): capture the RAW ring, exactly as
-  // read from the source-of-truth store, BEFORE any scrub — this is what
-  // gets threaded through as rawParcelRing for the ground-truth predicate.
-  // geom.ring (TxgioDatabaseParcelGeometryResolver) is unscrubbed by
-  // construction (exteriorRingFromGeoJson, no cleanup pass); currencyResult
-  // .ring (fetchBcadParcelRings) is likewise raw — only the FALLBACK branch
-  // used to scrub inline, which this fix removes so both branches leave
-  // rawParcelRing pointing at genuinely unscrubbed source geometry.
-  let rawParcelRing =
+  // SERVE-CONSISTENCY PRINCIPLE (2026-08-07, master planner ruling — amends
+  // the Ground-Truth Frame Law): one ring per parcel governs everything the
+  // user sees. The PRODUCT displays txgio_parcel geometry as the lot line
+  // (the same geometry geomResolver.resolve loads here) — that is the truth
+  // frame, not BCAD's live CAD ring. BCAD and txgio are independently
+  // digitized sources (CAD-vs-StratMap) that can drift by several feet on a
+  // given parcel (verified: 48021:31299, ~4.6ft) — grading the served
+  // envelope against BCAD when the product renders txgio produces a
+  // "correct vs the wrong reference" defect, not a geometry defect. So:
+  // rawParcelRing is pinned to geom.ring (txgio) ONCE here and MUST NOT be
+  // reassigned by any later BCAD re-fetch (the ringSwapped branches below
+  // legitimately swap the WORKING/scrub-feeding ring to BCAD when boundary-
+  // edge counts disagree, but that is a currency/geometry-source decision
+  // for the inset computation only — it must never redefine the truth
+  // frame the ground-truth predicate and write-then-verify measure
+  // against). BCAD is demoted to its proper role: a parcel-currency
+  // cross-check instrument (see the PARCEL-RING-SOURCE-DIVERGENCE
+  // observation below).
+  const rawParcelRing =
     geom?.ring && geom.ring.length >= 3
       ? geom.ring
       : currencyResult?.ok
@@ -586,13 +661,33 @@ for (const row of parcelRows) {
     }
   }
 
+  // PARCEL-RING-SOURCE-DIVERGENCE check (Serve-Consistency Principle): every
+  // time BCAD geometry is fetched for this parcel (as a currency/working-
+  // ring source below), compare it against rawParcelRing (txgio — the
+  // truth frame) and record a report-only observation when they disagree
+  // beyond tolerance. This NEVER changes rawParcelRing itself — BCAD stays
+  // demoted to a currency cross-check, never the truth frame.
+  function recordParcelRingSourceDivergence(bcadRing) {
+    if (!rawParcelRing || !bcadRing) return;
+    const deviationFt = maxRingDeviationFt(rawParcelRing, bcadRing);
+    if (deviationFt != null && deviationFt > PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT) {
+      stats.parcelRingSourceDivergences.push({
+        parcelNodeId,
+        event: "PARCEL-RING-SOURCE-DIVERGENCE",
+        deviationFt: Number(deviationFt.toFixed(2)),
+        toleranceFt: PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT,
+        note: "BCAD (live CAD) vs txgio_parcel (served truth frame) ring geometry disagree beyond tolerance — R15 parcel-currency candidate, not an engine defect.",
+      });
+    }
+  }
+
   let parcelRingWorking = parcelRing;
   let ringSwapped = false;
   if (args.forceRepromote && propId) {
     try {
       const bcad = await fetchBcadParcelRings([propId]);
       if (bcad[0]?.ring) {
-        rawParcelRing = bcad[0].ring;
+        recordParcelRingSourceDivergence(bcad[0].ring);
         parcelRingWorking = scrubLotLineRing(bcad[0].ring);
         ringSwapped = true;
       }
@@ -605,7 +700,7 @@ for (const row of parcelRows) {
       try {
         const bcad = await fetchBcadParcelRings([propId]);
         if (bcad[0]?.ring) {
-          rawParcelRing = bcad[0].ring;
+          recordParcelRingSourceDivergence(bcad[0].ring);
           parcelRingWorking = scrubLotLineRing(bcad[0].ring);
           ringSwapped = true;
         }
@@ -822,6 +917,10 @@ const costJson = {
     declines: stats.declines,
     failureBuckets: stats.failureBuckets,
   },
+  // Serve-Consistency Principle (2026-08-07) — report-only, never gates
+  // promote. Empty array when no parcel this run needed a BCAD re-fetch, or
+  // every re-fetched BCAD ring agreed with txgio within tolerance.
+  parcelRingSourceDivergences: stats.parcelRingSourceDivergences,
   cost: {
     wallMsTotal,
     msPerParcel,
