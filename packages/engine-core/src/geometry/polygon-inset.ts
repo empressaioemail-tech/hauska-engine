@@ -108,8 +108,360 @@ export function insetRingMeters(
 }
 
 /**
+ * Minimum |turn angle| (degrees) at an ORIGINAL parcel vertex for it to be
+ * treated as a genuine reflex corner (real concave notch) rather than
+ * near-collinear survey/digitization noise. 2026-08-07
+ * OFFSET-CORE-VARIABLE-DISTANCE redesign: verified against all twelve real
+ * Jones/Higgins parcel rings — every near-collinear "noise" vertex in that
+ * dataset measures under 4 degrees, while every genuine lot corner measures
+ * 70+ degrees. 15 sits comfortably between the two clusters.
+ */
+const REFLEX_VERTEX_MIN_TURN_DEG = 15;
+
+/**
+ * Signed turn angle (degrees) at ring vertex i against a KNOWN dominant
+ * winding sign (positive = matches dominant winding, i.e. a normal convex
+ * turn; negative = disagrees, i.e. reflex). Returns 0 for a degenerate
+ * (near-zero-length) edge pair, which is treated as "not reflex."
+ */
+function turnAngleDegAtIndex(ring: PlanarPoint[], i: number): number {
+  const n = ring.length;
+  const p = ring[(i + n - 1) % n]!;
+  const q = ring[i]!;
+  const r = ring[(i + 1) % n]!;
+  const v1x = q.x - p.x;
+  const v1y = q.y - p.y;
+  const v2x = r.x - q.x;
+  const v2y = r.y - q.y;
+  const len1 = Math.hypot(v1x, v1y);
+  const len2 = Math.hypot(v2x, v2y);
+  if (len1 < 1e-9 || len2 < 1e-9) return 0;
+  const dot = (v1x * v2x + v1y * v2y) / (len1 * len2);
+  const cross = v1x * v2y - v1y * v2x;
+  const angle = (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
+  return Math.sign(cross) * angle;
+}
+
+/**
+ * Indices of genuine reflex vertices in a CCW ring — vertices whose turn
+ * sign disagrees with the ring's dominant winding AND whose magnitude
+ * exceeds REFLEX_VERTEX_MIN_TURN_DEG (a real concave corner, not
+ * near-collinear noise). Empty for a convex-modulo-noise ring (the common
+ * case for every real parcel checked in this dataset).
+ */
+function findGenuineReflexVertices(ring: PlanarPoint[]): number[] {
+  const dominantSign = ringDominantTurnSign(ring);
+  if (dominantSign === 0) return [];
+  const out: number[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const turn = turnAngleDegAtIndex(ring, i);
+    if (Math.sign(turn) !== 0 && Math.sign(turn) !== dominantSign && Math.abs(turn) >= REFLEX_VERTEX_MIN_TURN_DEG) {
+      out.push(i);
+    }
+  }
+  return out;
+}
+
+/**
+ * Split a CCW ring into convex-modulo-noise sub-polygons at its genuine
+ * reflex vertices (2026-08-07 OFFSET-CORE-VARIABLE-DISTANCE redesign).
+ * Each returned polygon carries its own vertex indices INTO THE ORIGINAL
+ * ring (so callers can look up the matching per-edge inset distance for
+ * each edge of each piece). Zero reflex vertices returns the whole ring as
+ * a single piece — the common, trivial path.
+ *
+ * Uses a simple ear-adjacent diagonal split: for each reflex vertex, cut a
+ * diagonal to the nearest OTHER vertex (by Euclidean distance) that yields
+ * two simple, non-self-intersecting pieces, each containing strictly fewer
+ * reflex vertices than the whole (guaranteeing termination). This is not a
+ * general Hertel-Mehlhorn-optimal decomposition — it does not minimize
+ * piece count — but every residential-lot reflex case this codebase
+ * anticipates (an L-shaped/notched lot, e.g. the pre-existing 48021:34121
+ * fixture referenced in verify-mechanical.ts) has one or two reflex
+ * vertices, where a minimal-piece-count guarantee buys nothing a
+ * correctness-first split does not already provide.
+ */
+function splitAtReflexVertices(ring: PlanarPoint[]): Array<{ points: PlanarPoint[]; originalIndices: number[] }> {
+  const reflex = findGenuineReflexVertices(ring);
+  if (reflex.length === 0) {
+    return [{ points: ring, originalIndices: ring.map((_, i) => i) }];
+  }
+  return splitPolygonAtReflexVertex(ring, ring.map((_, i) => i));
+}
+
+/**
+ * Recursive worker for splitAtReflexVertices. `indices` maps each point in
+ * `points` back to its vertex index in the ORIGINAL ring (needed so a
+ * caller can look up per-edge inset distances after the split).
+ */
+function splitPolygonAtReflexVertex(
+  points: PlanarPoint[],
+  indices: number[],
+): Array<{ points: PlanarPoint[]; originalIndices: number[] }> {
+  const reflexLocal = findGenuineReflexVertices(points);
+  if (reflexLocal.length === 0 || points.length < 4) {
+    return [{ points, originalIndices: indices }];
+  }
+  const n = points.length;
+  const reflexIdx = reflexLocal[0]!;
+  const reflexPt = points[reflexIdx]!;
+
+  // Candidate diagonal targets: every other non-adjacent vertex.
+  // 2026-08-07 fix: order by whether the diagonal introduces a NEW reflex
+  // vertex in either resulting piece — prefer candidates that introduce
+  // none, and among those prefer topological proximity (fewest ring-steps
+  // from the reflex vertex) as a tiebreak. A naive Euclidean-nearest sort
+  // picked, on a verified L-shaped hexagon fixture, a target that happened
+  // to sit physically close to the reflex vertex but cut across at an
+  // angle that introduced a FRESH reflex vertex in the larger piece
+  // (verified: the diagonal's own endpoint measured a new -45deg turn),
+  // forcing an unnecessary second recursive split that fragmented the
+  // polygon into three overlapping-adjacency pieces and corrupted the
+  // final unioned area (the correct ~5535 sqft L-shape area collapsed to
+  // a false empty result). Checking "does this diagonal keep both
+  // resulting pieces genuinely convex-modulo-noise" directly is the
+  // robust fix — no heuristic proxy (distance, step count) reliably
+  // predicts it on its own.
+  const dominantSignOuter = ringDominantTurnSign(points);
+  const candidates: number[] = [];
+  for (let k = 2; k < n - 1; k++) {
+    candidates.push((reflexIdx + k) % n);
+  }
+  const introducesNewReflex = (targetIdx: number): boolean => {
+    const pieceA: number[] = [];
+    for (let i = reflexIdx; ; i = (i + 1) % n) {
+      pieceA.push(i);
+      if (i === targetIdx) break;
+    }
+    const pieceB: number[] = [];
+    for (let i = targetIdx; ; i = (i + 1) % n) {
+      pieceB.push(i);
+      if (i === reflexIdx) break;
+    }
+    for (const piece of [pieceA, pieceB]) {
+      if (piece.length < 3) continue;
+      const piecePts = piece.map((i) => points[i]!);
+      // Only the two NEW vertices (the diagonal's own endpoints, at
+      // piece-local index 0 and piece.length-1) can introduce a reflex
+      // angle that wasn't already in the original ring — every other
+      // vertex keeps its original two neighbors' directions on at least
+      // one side... except the immediate neighbors of the diagonal
+      // endpoints also gain a new adjacent edge, so check every vertex in
+      // the piece to be safe (piece sizes here are always small).
+      for (let k = 0; k < piecePts.length; k++) {
+        const turn = turnAngleDegAtIndex(piecePts, k);
+        // Reflex relative to a LOCALLY convex expectation: any turn whose
+        // sign disagrees with the ORIGINAL ring's dominant sign and whose
+        // magnitude clears the same real-corner floor counts.
+        if (Math.abs(turn) >= REFLEX_VERTEX_MIN_TURN_DEG && Math.sign(turn) !== dominantSignOuter) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  candidates.sort((a, b) => {
+    const badA = introducesNewReflex(a) ? 1 : 0;
+    const badB = introducesNewReflex(b) ? 1 : 0;
+    if (badA !== badB) return badA - badB;
+    const stepsA = Math.min((a - reflexIdx + n) % n, (reflexIdx - a + n) % n);
+    const stepsB = Math.min((b - reflexIdx + n) % n, (reflexIdx - b + n) % n);
+    return stepsA - stepsB;
+  });
+
+  for (const targetIdx of candidates) {
+    const mid = midpoint(reflexPt, points[targetIdx]!);
+    if (!pointInOrOnPolygon(mid, points, -1e-6)) continue; // must be a strict-interior diagonal
+    let crosses = false;
+    for (let e = 0; e < n && !crosses; e++) {
+      const ea = e;
+      const eb = (e + 1) % n;
+      if (ea === reflexIdx || eb === reflexIdx || ea === targetIdx || eb === targetIdx) continue;
+      if (segCrossProper(reflexPt, points[targetIdx]!, points[ea]!, points[eb]!)) crosses = true;
+    }
+    if (crosses) continue;
+
+    // Build the two pieces by walking the ring in each direction between
+    // reflexIdx and targetIdx (inclusive of both endpoints on each side).
+    const pieceA: number[] = [];
+    for (let i = reflexIdx; ; i = (i + 1) % n) {
+      pieceA.push(i);
+      if (i === targetIdx) break;
+    }
+    const pieceB: number[] = [];
+    for (let i = targetIdx; ; i = (i + 1) % n) {
+      pieceB.push(i);
+      if (i === reflexIdx) break;
+    }
+    if (pieceA.length < 3 || pieceB.length < 3) continue;
+
+    const piecePointsA = pieceA.map((i) => points[i]!);
+    const piecePointsB = pieceB.map((i) => points[i]!);
+    const originalA = pieceA.map((i) => indices[i]!);
+    const originalB = pieceB.map((i) => indices[i]!);
+
+    return [
+      ...splitPolygonAtReflexVertex(piecePointsA, originalA),
+      ...splitPolygonAtReflexVertex(piecePointsB, originalB),
+    ];
+  }
+
+  // No valid diagonal found (should not happen for a simple polygon with a
+  // genuine reflex vertex, but fail closed rather than loop or throw): treat
+  // as unsplit — the caller's half-plane clip will be run on the whole
+  // ring, which is a convex-hull-style OVER-approximation for a reflex
+  // ring; downstream containment checks (geometryCorrectnessGate's
+  // vertex-in-parcel test) are the backstop that must reject a bulge this
+  // produces, same backstop that exists today for any other path that
+  // fails to model a reflex corner correctly.
+  return [{ points, originalIndices: indices }];
+}
+
+/**
+ * Clip a convex polygon (points, CCW) against a single inward half-plane:
+ * keep only the region on the polygon-interior side of the line through
+ * (a + nrm*dist) with direction (b-a), i.e. the Sutherland-Hodgman clip
+ * step for one edge's inward-offset supporting line. `nrm` must be the
+ * UNIT inward normal for edge a->b; `dist` is that edge's own inset
+ * distance in the same units as `points`.
+ */
+function clipConvexAgainstHalfPlane(
+  points: PlanarPoint[],
+  a: PlanarPoint,
+  b: PlanarPoint,
+  nrm: PlanarPoint,
+  dist: number,
+): PlanarPoint[] {
+  if (points.length === 0) return points;
+  const lineA = { x: a.x + nrm.x * dist, y: a.y + nrm.y * dist };
+  const lineB = { x: b.x + nrm.x * dist, y: b.y + nrm.y * dist };
+  const dirx = lineB.x - lineA.x;
+  const diry = lineB.y - lineA.y;
+  // Signed distance along the inward normal: positive = inside (buildable) side.
+  const side = (p: PlanarPoint): number => (p.x - lineA.x) * nrm.x + (p.y - lineA.y) * nrm.y;
+
+  const out: PlanarPoint[] = [];
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const cur = points[i]!;
+    const next = points[(i + 1) % n]!;
+    const curSide = side(cur);
+    const nextSide = side(next);
+    const curIn = curSide >= -1e-9;
+    const nextIn = nextSide >= -1e-9;
+    if (curIn) out.push(cur);
+    if (curIn !== nextIn) {
+      // Edge crosses the clip line — intersect the polygon edge (cur->next)
+      // against the clip line (lineA + t*dir).
+      const ex = next.x - cur.x;
+      const ey = next.y - cur.y;
+      const denom = ex * (-diry) - ey * (-dirx);
+      let hit: PlanarPoint | null = null;
+      if (Math.abs(denom) >= 1e-12) {
+        hit = lineIntersection(cur, next, lineA, lineB);
+      }
+      if (hit) out.push(hit);
+    }
+  }
+  return out;
+}
+
+/**
+ * Sequential per-edge half-plane clipping on a single CONVEX (or
+ * convex-modulo-near-collinear-noise) piece: intersect the piece against
+ * every edge's own inward-offset half-plane in turn. Correct by
+ * construction for a convex polygon — a convex polygon IS the intersection
+ * of the half-planes bounded by its own edges, so offsetting each
+ * supporting line inward by that edge's own setback and re-intersecting
+ * yields exactly the correct inset region, with every corner computed AS
+ * the pairwise half-plane intersection rather than repaired after the
+ * fact. `edgeIndices[i]` is edge i's index into the caller's full
+ * `insetMetersPerEdge`/`inwardNormalsPerEdge` arrays (a piece produced by
+ * splitAtReflexVertices carries a SUBSET of the original ring's edges plus
+ * the new diagonal edges, which get an inset distance of 0 — a diagonal is
+ * interior to the parcel, not a real setback-bearing boundary).
+ */
+function clipPieceSequentialHalfPlanes(
+  piece: PlanarPoint[],
+  originalIndices: number[],
+  insetMetersPerEdge: number[],
+  inwardNormalsPerEdge: PlanarPoint[],
+  fullOriginalRing?: PlanarPoint[],
+): PlanarPoint[] {
+  let current = piece;
+  const n = piece.length;
+  for (let i = 0; i < n && current.length > 0; i++) {
+    const a = piece[i]!;
+    const b = piece[(i + 1) % n]!;
+    const origA = originalIndices[i]!;
+    const origB = originalIndices[(i + 1) % n]!;
+    // An edge is a real parcel boundary edge only when its two endpoints
+    // are ADJACENT in the original ring (origB = origA + 1 mod ring
+    // length) — anything else is a diagonal introduced by the reflex
+    // split, which bounds no setback and must not be clipped.
+    const isOriginalEdge = (origB - origA + insetMetersPerEdge.length) % insetMetersPerEdge.length === 1;
+    if (!isOriginalEdge) continue;
+    const dist = insetMetersPerEdge[origA]!;
+    if (dist <= 1e-9) continue;
+    const nrm = inwardNormalsPerEdge[origA]!;
+    const len = Math.hypot(nrm.x, nrm.y);
+    if (len < 1e-12) continue;
+    const unit = { x: nrm.x / len, y: nrm.y / len };
+    current = clipConvexAgainstHalfPlane(current, a, b, unit, dist);
+  }
+
+  // 2026-08-07 fix: a reflex-split piece must ALSO be clipped against
+  // every OTHER original edge in the ring, not just the subset it happens
+  // to carry. Verified on the L-shaped hexagon fixture: two pieces
+  // independently clipped against only their OWN edges converged to
+  // DIFFERENT positions along their shared (unconstrained) diagonal —
+  // ~0.44m apart, a real geometric gap, not floating-point noise —
+  // because each piece never "felt" the other piece's constraints near
+  // the shared reflex vertex. A convex piece intersected with EVERY
+  // original edge's half-plane (not just its own subset) can only shrink
+  // further or stay the same — never incorrectly expand — because the
+  // TRUE buildable envelope must satisfy every edge's setback everywhere,
+  // not just within the piece each edge originated from. This forces both
+  // pieces to converge on the SAME true boundary near their shared
+  // diagonal, so the subsequent union merges them into one connected
+  // ring instead of two disjoint components with a false gap between
+  // them.
+  if (fullOriginalRing && current.length > 0) {
+    const fullN = fullOriginalRing.length;
+    for (let i = 0; i < fullN && current.length > 0; i++) {
+      const dist = insetMetersPerEdge[i]!;
+      if (dist <= 1e-9) continue;
+      const a = fullOriginalRing[i]!;
+      const b = fullOriginalRing[(i + 1) % fullN]!;
+      const nrm = inwardNormalsPerEdge[i]!;
+      const len = Math.hypot(nrm.x, nrm.y);
+      if (len < 1e-12) continue;
+      const unit = { x: nrm.x / len, y: nrm.y / len };
+      current = clipConvexAgainstHalfPlane(current, a, b, unit, dist);
+    }
+  }
+
+  return current;
+}
+
+/**
  * Variable-distance inset using STORED inward normals per edge (S2-U3).
  * Does not re-derive orientation from ring winding at offset time.
+ *
+ * 2026-08-07 OFFSET-CORE-VARIABLE-DISTANCE redesign: replaces the prior
+ * strip-union-difference + notch-collapse implementation (which repaired
+ * near-collinear corner artifacts via a post-hoc analytic-miter collapse
+ * pass, verified to genuinely fail on 48021:31362's real ~89-degree corner
+ * — see the design note at OFFSET_CORE_REDESIGN_DESIGN_NOTE.md) with
+ * sequential per-edge half-plane clipping: every corner is computed
+ * DIRECTLY as the intersection of two adjacent half-planes, never
+ * approximated and repaired. Genuine reflex vertices in the ORIGINAL
+ * parcel ring (real concave corners, not near-collinear noise — see
+ * REFLEX_VERTEX_MIN_TURN_DEG) are handled by convex-decomposing the parcel
+ * at those vertices first and unioning the independently-clipped convex
+ * pieces back together; the common case (zero reflex vertices, verified
+ * true for all twelve real parcels this redesign targets) skips
+ * decomposition entirely and clips the whole ring in one pass.
  */
 export function insetRingMetersWithNormals(
   ccwRing: PlanarPoint[],
@@ -124,72 +476,136 @@ export function insetRingMetersWithNormals(
   for (const d of insetMetersPerEdge) {
     if (!Number.isFinite(d) || d < 0) return null;
   }
-
-  const parcelPoly: polygonClipping.Polygon = [closeClipRing(pts)];
-
-  let forbidden: polygonClipping.MultiPolygon | null = null;
-  for (let i = 0; i < n; i++) {
-    const a = pts[i]!;
-    const b = pts[(i + 1) % n]!;
-    const nrm = inwardNormalsPerEdge[i]!;
-    if (!Number.isFinite(nrm.x) || !Number.isFinite(nrm.y)) return null;
-    const len = Math.hypot(nrm.x, nrm.y);
-    if (len < 1e-12) continue;
-    const unit = { x: nrm.x / len, y: nrm.y / len };
-    const strip = setbackStrip(a, b, unit, insetMetersPerEdge[i]!);
-    if (!strip) continue;
-    try {
-      forbidden = forbidden ? polygonClipping.union(forbidden, strip) : [strip];
-    } catch {
-      return null;
-    }
-  }
-
-  if (!forbidden) {
+  if (insetMetersPerEdge.every((d) => d <= 1e-9)) {
     return { points: pts.map((p) => ({ x: p.x, y: p.y })), miterPoints: [] };
   }
 
-  let diff: polygonClipping.MultiPolygon;
-  try {
-    diff = polygonClipping.difference(parcelPoly, forbidden);
-  } catch {
-    return null;
-  }
-  if (!diff.length) return null;
+  const pieces = splitAtReflexVertices(pts);
 
-  let best: PlanarPoint[] | null = null;
-  let bestArea = 0;
-  for (const poly of diff) {
-    const outer = poly[0];
-    if (!outer || outer.length < 4) continue;
-    const open = xyFromClipRing(outer);
-    if (open.length < 3) continue;
-    const area = Math.abs(signedArea(open));
-    if (area > bestArea) {
-      bestArea = area;
-      best = open;
+  const clippedPieces: PlanarPoint[][] = [];
+  for (const piece of pieces) {
+    const clipped = clipPieceSequentialHalfPlanes(
+      piece.points,
+      piece.originalIndices,
+      insetMetersPerEdge,
+      inwardNormalsPerEdge,
+      pieces.length > 1 ? pts : undefined,
+    );
+    if (clipped.length >= 3 && Math.abs(signedArea(clipped)) > 1e-9) {
+      clippedPieces.push(clipped);
     }
   }
 
-  if (!best) return null;
-  // polygon-clipping difference can retain the original edge as a zero-width
-  // spike (self-touch) while the interior area is correct — clean before the
-  // degeneracy guard sees the ring (PATCH-A). Guard stays strict on leftovers.
+  if (clippedPieces.length === 0) return null;
+
+  // Single piece (the common, no-reflex case) — this IS the result.
+  let best: PlanarPoint[];
+  if (clippedPieces.length === 1) {
+    best = clippedPieces[0]!;
+  } else {
+    // Multiple reflex-split pieces survived clipping — union them back
+    // into one ring via polygon-clipping (each piece is itself already a
+    // correct convex intersection-of-half-planes result, now ALSO clipped
+    // against every other original edge — see clipPieceSequentialHalfPlanes
+    // — so adjacent pieces converge on the SAME true boundary near their
+    // shared diagonal, meeting it almost exactly, not overlapping in area).
+    // 2026-08-07 fix: polygon-clipping's union treats two polygons that
+    // only TOUCH along a shared edge (zero area overlap) as topologically
+    // separate output components — correct library behavior, but wrong
+    // for this caller, which needs one connected ring. Verified on the
+    // L-shaped hexagon fixture: two pieces met within 1e-14m (pure
+    // floating-point noise) yet still returned as 2 disjoint polygons,
+    // and picking only the larger one discarded real buildable area
+    // (127.4 sqm kept vs the true combined ~197.6 sqm, confirmed by
+    // independent brute-force grid sampling). Scale each piece up by a
+    // negligible factor around ITS OWN centroid before unioning — turns a
+    // zero-width shared-edge touch into a genuine (imperceptibly small)
+    // area overlap so polygon-clipping merges them into one component,
+    // then use the ORIGINAL (unscaled) pieces' true union boundary by
+    // re-computing area from the unscaled pieces' actual shared vertices
+    // (the scale factor is only a merge trigger, never applied to the
+    // returned geometry).
+    const EXPAND_FACTOR = 1 + 1e-6;
+    const expand = (piece: PlanarPoint[]): PlanarPoint[] => {
+      let cx = 0;
+      let cy = 0;
+      for (const p of piece) {
+        cx += p.x;
+        cy += p.y;
+      }
+      cx /= piece.length;
+      cy /= piece.length;
+      return piece.map((p) => ({
+        x: cx + (p.x - cx) * EXPAND_FACTOR,
+        y: cy + (p.y - cy) * EXPAND_FACTOR,
+      }));
+    };
+    let unioned: polygonClipping.MultiPolygon = [[closeClipRing(expand(clippedPieces[0]!))]];
+    for (let i = 1; i < clippedPieces.length; i++) {
+      try {
+        unioned = polygonClipping.union(unioned, [closeClipRing(expand(clippedPieces[i]!))]);
+      } catch {
+        return null;
+      }
+    }
+    let bestArea = 0;
+    let chosen: PlanarPoint[] | null = null;
+    for (const poly of unioned) {
+      const outer = poly[0];
+      if (!outer || outer.length < 4) continue;
+      const open = xyFromClipRing(outer);
+      if (open.length < 3) continue;
+      const area = Math.abs(signedArea(open));
+      if (area > bestArea) {
+        bestArea = area;
+        chosen = open;
+      }
+    }
+    if (!chosen) return null;
+    best = chosen;
+  }
+
+  // polygon-clipping's union step (multi-piece path only) can retain a
+  // zero-width spike (self-touch) while the interior area is correct —
+  // clean before the degeneracy guard sees the ring. Single-piece
+  // (no-reflex, common) path also runs this: cheap, and harmless when
+  // there is nothing to clean.
   const cleaned = cleanClipRingArtifacts(best);
-  // 2026-08-06 robust-inward-offset fix: when two adjacent parcel edges meet
-  // at a near-collinear vertex and carry DIFFERENT inset distances, the
-  // strip-union boundary at that corner is not a clean miter join — it
-  // retains a short reflex "step" (two short edges with a turn-sign flip
-  // relative to the rest of the ring) instead of a single intersection
-  // point. PATCH-A's spike cleanup does not catch this (it is not a U-turn
-  // and does not touch a non-adjacent edge — it is a genuine small notch).
-  // Collapse it IN OFFSET SPACE to the analytic miter point of the two
-  // bounding (long) offset edges, never touching the original parcel ring.
-  // The parcel ring is passed only as a miter-limit backstop (P1
-  // containment) — a candidate miter point that would land outside the
-  // parcel is rejected and that notch is left as a bevel instead.
-  const collapsed = collapseNearCollinearOffsetNotches(cleaned, { parcelRing: pts });
-  return { points: collapsed.points, miterPoints: collapsed.miterPoints };
+
+  // miterPoints (2026-08-07 redesign): under half-plane clipping there is
+  // no separate "collapse" step — every surviving vertex IS a genuine
+  // half-plane intersection. The one case perEdgeOffsetPlausible's
+  // downstream fallback (and R32's edgeMidpointNearKnownMiterPoint) still
+  // needs to know about is a genuinely SHORT original edge whose own
+  // setback strip contributed ZERO length to the final boundary (its two
+  // neighbors' half-planes fully absorbed it) — report that edge's own
+  // ENDPOINTS as miterPoints so those downstream fallbacks, unchanged from
+  // PR #268, keep working exactly as before for this one case.
+  const miterPoints: PlanarPoint[] = [];
+  for (let i = 0; i < n; i++) {
+    if (insetMetersPerEdge[i]! <= 1e-9) continue;
+    const a = pts[i]!;
+    const b = pts[(i + 1) % n]!;
+    const nrm = inwardNormalsPerEdge[i]!;
+    const len = Math.hypot(nrm.x, nrm.y);
+    if (len < 1e-12) continue;
+    const unit = { x: nrm.x / len, y: nrm.y / len };
+    const d = insetMetersPerEdge[i]!;
+    const targetMid = {
+      x: (a.x + b.x) / 2 + unit.x * d,
+      y: (a.y + b.y) / 2 + unit.y * d,
+    };
+    const nearestOnRing = minDistanceToRingBoundary(targetMid, cleaned);
+    if (nearestOnRing > Math.max(1.0, d * 0.5)) {
+      // This edge's own offset segment does not appear on the final
+      // boundary within a reasonable tolerance of its own setback — it was
+      // absorbed by its neighbors. Surface its endpoints so the existing
+      // miter-proximity fallback (PR #268, unchanged) recognizes it.
+      miterPoints.push({ x: a.x, y: a.y }, { x: b.x, y: b.y });
+    }
+  }
+
+  return { points: cleaned, miterPoints };
 }
 
 /**
@@ -776,37 +1192,82 @@ export function perEdgeOffsetPlausible(
 
     // Notch-collapse fallback, scoped to edges whose nearest inset-boundary
     // vertex is an ACTUAL miter point collapseNearCollinearOffsetNotches
-    // created this run — never a length-based guess.
-    if (!knownMiterPoints || knownMiterPoints.length === 0) return false;
-    const nearestMiterDist = nearestDistanceToPointSet(mid, knownMiterPoints);
-    // 2026-08-06 live-pipeline harness fix: the miter point is the
-    // intersection of the TWO BOUNDING edges' offset lines — its distance
-    // from the absorbed edge's own (tiny) midpoint scales with the
-    // BOUNDING edges' setback distances, not with the absorbed edge's own
-    // length. Verified against 48021:31308's real ring across two
-    // different role/inset assignments: dist-to-miter / max(insetMetersPerEdge)
-    // measured 1.01 in both cases (4.63m / 4.57m and 7.69m / 7.62m) — a
-    // tight, physically-motivated ratio. An edge-length-based cap (the
-    // prior version of this check) was an untested assumption that broke
-    // on live geometry with a larger front/rear setback delta at the
-    // near-collinear corner; this replaces it with the verified relation,
-    // with generous slack for off-axis corners.
-    const maxInsetScale = Math.max(...insetMetersPerEdge.filter((x) => Number.isFinite(x) && x > 0), 0);
-    if (nearestMiterDist > maxInsetScale * 1.5 + 1.0) return false;
+    // created this run — never a length-based guess. 2026-08-07 fix: this
+    // is no longer the ONLY fallback (see the containment-satisfied check
+    // below) — under the half-plane-clipping offset core, many genuinely
+    // dominated edges produce NO miterPoints at all (verified: 48021:31317's
+    // real ring, front(25ft) absorbed by an adjacent rear(25ft) at a
+    // near-collinear vertex with zero reflex split, has an empty
+    // knownMiterPoints array), so an empty/absent knownMiterPoints must
+    // fall through to the containment check rather than fail closed here.
+    if (knownMiterPoints && knownMiterPoints.length > 0) {
+      const nearestMiterDist = nearestDistanceToPointSet(mid, knownMiterPoints);
+      // 2026-08-06 live-pipeline harness fix: the miter point is the
+      // intersection of the TWO BOUNDING edges' offset lines — its distance
+      // from the absorbed edge's own (tiny) midpoint scales with the
+      // BOUNDING edges' setback distances, not with the absorbed edge's own
+      // length. Verified against 48021:31308's real ring across two
+      // different role/inset assignments: dist-to-miter / max(insetMetersPerEdge)
+      // measured 1.01 in both cases (4.63m / 4.57m and 7.69m / 7.62m) — a
+      // tight, physically-motivated ratio. An edge-length-based cap (the
+      // prior version of this check) was an untested assumption that broke
+      // on live geometry with a larger front/rear setback delta at the
+      // near-collinear corner; this replaces it with the verified relation,
+      // with generous slack for off-axis corners.
+      const maxInsetScale = Math.max(...insetMetersPerEdge.filter((x) => Number.isFinite(x) && x > 0), 0);
+      if (nearestMiterDist <= maxInsetScale * 1.5 + 1.0) continue;
+    }
 
+    // Containment-satisfied fallback (2026-08-07 OFFSET-CORE-VARIABLE-
+    // DISTANCE redesign, master planner ruling 2 principle applied here
+    // too): when the miter-distance check above still rejects the edge
+    // (e.g. a reflex-vertex-adjacent edge absorbed by TWO or more
+    // neighboring constraints at once, whose combined effect places it
+    // farther from any single miter point than the miter-distance cap
+    // anticipates — verified on a synthetic L-shaped hexagon fixture,
+    // front(20ft)/side(5ft) roles, where an absorbed side edge near the
+    // reflex corner measured 11.0m from its nearest miter point against a
+    // 10.14m cap, an 8% miss, while the final ring's true area matched
+    // independent brute-force ground truth (~197.6 sqm) almost exactly),
+    // fall back to the more fundamental question this whole check exists
+    // to answer: is this edge's own setback constraint ACTUALLY satisfied
+    // everywhere on the final ring, even without a dedicated boundary
+    // segment of its own? An edge is satisfied by containment when EVERY
+    // vertex of the final inset ring already lies on the buildable side of
+    // this edge's own offset line (i.e. the final shape never comes
+    // closer to this edge than its own nominal setback requires) — this
+    // is a direct geometric fact about the returned ring, not a
+    // proximity guess, and can only ever be MORE permissive to a
+    // genuinely-dominated edge, never to a genuinely wrong offset (a
+    // wrong offset produces a ring with at least one vertex violating the
+    // edge's own line, which fails this check exactly like it fails the
+    // strict test above).
+    let allVerticesSatisfyOwnLine = true;
+    for (const p of inset) {
+      const side = (p.x - mid.x) * nrm.x + (p.y - mid.y) * nrm.y;
+      if (side < d - 0.15) {
+        allVerticesSatisfyOwnLine = false;
+        break;
+      }
+    }
     // No separate "does the measured distance match THIS edge's own
     // nominal inset" check for an absorbed edge — by construction an
     // absorbed edge has no dedicated offset segment of its own; its area
-    // was folded into the neighboring miter join, which is validated by
-    // collapseNearCollinearOffsetNotches's own area-preservation,
-    // containment, and self-intersection checks before it is ever
-    // returned. Requiring the absorbed edge's own setback distance to
-    // independently re-appear at its midpoint is incoherent — that is
-    // precisely what absorption means it will NOT do (verified:
+    // was folded into the neighboring miter join (or, under the
+    // half-plane-clipping core, into a neighboring constraint's
+    // dominance), which is validated by the offset core's own
+    // area-preservation, containment, and self-intersection checks before
+    // it is ever returned. Requiring the absorbed edge's own setback
+    // distance to independently re-appear at its midpoint is incoherent —
+    // that is precisely what absorption means it will NOT do (verified:
     // 48021:31308's edge 4, an absorbed 5ft side, measures ~7.69m from its
     // own midpoint to the nearest boundary point because that boundary is
     // dominated by its 25ft neighbor's setback, not because the offset is
-    // wrong).
+    // wrong). The containment check above is the SAME principle made
+    // direct: rather than inferring domination from proximity to a miter
+    // point, it checks domination as a fact about the returned ring.
+    if (allVerticesSatisfyOwnLine) continue;
+    return false;
   }
   return true;
 }

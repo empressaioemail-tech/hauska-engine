@@ -271,6 +271,21 @@ export function verifyR32PerEdgeInset(input: R32VerifyInput): {
       continue;
     }
 
+    // 2026-08-07 OFFSET-CORE-VARIABLE-DISTANCE redesign (master planner
+    // ruling 2, PR #269): measure-inset.ts's structural correspondence fix
+    // reports satisfiedByMoreRestrictiveNeighbor: true when this edge's
+    // own candidate boundary segment is actually owned by a more
+    // restrictive, near-parallel ADJACENT lot edge — the envelope already
+    // sits farther inward here than this edge's own setback requires
+    // (satisfied by containment), not a genuine R32 mismatch. This is
+    // independent of, and does not touch, the miter-point fallback above
+    // (which covers the different case of a genuinely absorbed/collapsed
+    // edge) — both are honest non-comparable outcomes, never a blanket
+    // relaxation for an edge whose envelope truly fails to reach it.
+    if (measured && !measured.matched && measured.satisfiedByMoreRestrictiveNeighbor) {
+      continue;
+    }
+
     if (expected == null || r32 == null || Math.abs(r32 - expected) > tol) {
       reasons.push(
         `edge ${i}: R32 ${r32 ?? "null"}ft != expected ${expected ?? "?"}ft for role ${role}`,

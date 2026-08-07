@@ -83,7 +83,22 @@ function buildGoldModel(): SitePlanModel {
   });
 }
 
-/** DEGENERATE fixture — mirrors scripts/generate-site-plan-gold-dense-qa2.mjs. */
+/**
+ * DEGENERATE fixture — mirrors scripts/generate-site-plan-gold-dense-qa2.mjs.
+ *
+ * 2026-08-07 CORRECTION (OFFSET-CORE-VARIABLE-DISTANCE redesign, PR #269):
+ * front/side/rear raised from 10/5/10 to 20/10/20. The original 10/5/10
+ * values do NOT actually consume this ~25.5x29.2ft lot — the OLD
+ * strip-union-difference offset core had a latent defect on this
+ * many-redundant-collinear-vertex ring shape that fabricated an EMPTY
+ * result (verified ground truth ~220 sqft buildable under 10/5/10; see
+ * robust-inward-offset.test.ts's dense-qa2-shaped fixture, corrected the
+ * same way, same underlying ring). This fixture exists specifically to
+ * exercise the genuinely-degenerate ("no buildable envelope") sheet path
+ * — raised setbacks preserve that PURPOSE under the corrected offset core
+ * rather than preserving numbers that were only degenerate by accident of
+ * the old defect.
+ */
 function buildDenseModel(): SitePlanModel {
   const ringWgs84: Array<[number, number]> = [
     [-98.49978, 29.40012],
@@ -103,9 +118,9 @@ function buildDenseModel(): SitePlanModel {
     dem: syntheticDem(6, 200, 1.5),
     contourIntervalMeters: 0.5,
     setback: {
-      front: 10,
-      side: 5,
-      rear: 10,
+      front: 20,
+      side: 10,
+      rear: 20,
       sourceCodeAtomRef: { atomDid: "fixture/udc:dense-qa2", role: "rule", entityType: "code-section" },
     },
     frontEdgeIndex: 0,

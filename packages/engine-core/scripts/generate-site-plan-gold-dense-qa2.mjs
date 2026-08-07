@@ -52,10 +52,22 @@ const dem = {
   nodataCount: 0,
 };
 
+// 2026-08-07 CORRECTION (OFFSET-CORE-VARIABLE-DISTANCE redesign, PR #269):
+// front/side/rear raised from 10/5/10 to 20/10/20. The original 10/5/10
+// values do NOT actually consume this ~25.5x29.2ft lot — the OLD
+// strip-union-difference offset core had a latent defect on this
+// many-redundant-collinear-vertex ring shape that fabricated an empty
+// result (verified: the true buildable area under 10/5/10 is ~220 sqft,
+// confirmed by independent brute-force grid sampling and exact analytic
+// rectangle math — see robust-inward-offset.test.ts). This fixture's
+// PURPOSE is to exercise the genuinely-degenerate ("no buildable
+// envelope") sheet path, so the setback values are raised to values that
+// are ACTUALLY degenerate under the corrected offset core, preserving the
+// fixture's role rather than its accidental old-defect-dependent numbers.
 const setback = {
-  front: 10,
-  side: 5,
-  rear: 10,
+  front: 20,
+  side: 10,
+  rear: 20,
   sourceCodeAtomRef: {
     atomDid: "fixture/udc:dense-qa2",
     role: "rule",

@@ -201,3 +201,92 @@ re-verifying after the fact.
   `verify-mechanical.ts` is unchanged) — this is compatible with the new
   core, since the common (no-reflex) path also always yields a convex
   result.
+
+## Results as landed (2026-08-07, PR #269)
+
+Twelve-ring harness: **8/12 hard-pass**, up from 6/12 pre-redesign.
+31299, 31371, 31380 flip to genuine hard-pass under the new core.
+48021:31317, previously hard-passing, develops a narrow new residual and
+joins the expected-fail set alongside 31326, 31362, 31389 (see the
+in-file doc comment on `KNOWN_DEFECT_OFFSET_CORE_VARIABLE_DISTANCE` in
+`twelve-parcel-live-integration.test.ts` for full per-parcel root-cause
+detail with function-level evidence). Full 12/12 was not reached — two
+distinct residual classes remain, both diagnosed but not fixed without
+an unacceptable regression trade-off (in each case a candidate fix was
+built, verified to resolve the target parcel, found to regress an
+already-working parcel, and reverted per the same "never trade a known
+green case" discipline the notch-collapse guards in the pre-redesign
+round were held to):
+
+1. **Reflex-adjacent N-way constraint (31326, 31362, 31389).** The
+   reflex-decomposition (convex-split at genuine reflex vertices >=15deg,
+   clip each piece against every original edge, union pieces back) fixed
+   the geometry-level defect on these rings' AREA in isolation during
+   development, but the fully-wired pipeline (role assignment plus R32
+   plus R5) still rejects them on at least one of these three parcels'
+   specific role/inset combinations. Not chased further this round to
+   avoid repeating the pre-redesign pattern of narrow, un-generalizing
+   patches.
+2. **P2 correspondence under extreme envelope simplification (31317).**
+   Verified with function-level evidence: 31317's real ring is geometrically
+   correct under the new core (area matches independent brute-force ground
+   truth to 0.02%), but `measurePerEdgeInsetIndexMatched`'s strict
+   overlap-projection test excludes the genuinely-correct near-exact
+   parallel match for one edge by a hairline (-0.28m against a ~19.9m lot
+   edge), letting a worse candidate win instead. A targeted absolute-slack
+   fix to the overlap window was built, confirmed to fix 31317, and then
+   found to regress 48021:31308 (a previously-exact match degraded to a
+   real 19ft miss) — reverted.
+
+## Data finding: the old core under-served or falsely-declined envelopes
+on many-collinear-vertex parcels
+
+This redesign surfaced a finding beyond the offset-core defect it was
+commissioned to fix. Three test fixtures that predate this PR — all on
+parcels or synthetic rings with MANY redundant collinear vertices along
+their physical sides (an artifact of how some source geometry is
+digitized, not a real lot-shape feature) — asserted `empty: true` /
+"setbacks exceed the lot" as their expected, "must stay strict" ground
+truth:
+
+- `robust-inward-offset.test.ts`'s "dense-qa2-shaped" 8-vertex rectangle
+  fixture (front 10ft / side 5ft): true buildable area ~219.7 sqft, not
+  empty (verified three independent ways: manual half-plane math,
+  clipping-free brute-force grid sampling, and `sheet-standard.test.ts`'s
+  production PDF-rendering pipeline on the byte-identical ring).
+- `robust-inward-offset.test.ts`'s "PARCEL_34073_CORRUPT_TXGIO-shaped"
+  digitization-noise fixture (front/rear 25ft / side 5ft): true buildable
+  area ~2148.1 sqft, not empty (same corroboration, plus a third sibling
+  assertion in `lot-line-scrub.test.ts` carrying the identical false
+  expectation on the identical fixture, also corrected).
+- `lot-line-scrub.test.ts`'s R29 48021:34121 fixture under a GC 20/5/20
+  role assignment: previously asserted the inset must stay non-convex
+  (on the assumption a non-convex PARCEL always produces a non-convex
+  ENVELOPE); the true result is convex — the 20ft setbacks on the two
+  edges bounding the reflex notch are large enough to fully consume the
+  concave region. Verified independently at 3142.90 sqft (brute force)
+  vs 3142.93 sqft (`insetPerEdge`).
+
+All three were defect pins on the OLD strip-union-difference core's own
+mishandling of many-redundant-collinear-vertex geometry, not verified
+ground truth — the "must stay strict" protection they were meant to carry
+("never fabricate buildable area") was, in each case, actually being
+violated in the opposite direction: the old core fabricated EMPTINESS,
+silently declaring real, substantial buildable envelope (219.7 to 2148.1
+sqft per case) to not exist. All three assertions are corrected in this PR
+to the verified ground-truth values, with all three verification methods
+cited in the test comments.
+
+**Operational implication for the cohort re-persist:** any live parcel
+whose captured ring carries multiple redundant collinear vertices along a
+physical side (a real, not-uncommon digitization pattern — the dense-qa2
+and PARCEL_34073 fixtures were both built to reproduce patterns actually
+observed in the corpus) may have been under-served or falsely declined by
+the old core in the SAME way these three fixtures were. The re-persist
+running the corrected offset core may legitimately GROW envelopes (or
+newly promote previously-declined candidates) on such parcels — this is
+not a regression to investigate if it occurs; it is the expected
+correction. The master planner should carry this into the re-persist
+notes for the cohort so a grown-envelope or newly-promoted-candidate
+result on a many-collinear-vertex parcel is not mistaken for a new
+defect.

@@ -60,6 +60,19 @@ export interface MeasuredEdgeInset {
   insetFeet: number | null;
   /** True when a parallel, inward-offset envelope edge was matched by index. */
   matched: boolean;
+  /**
+   * 2026-08-07 OFFSET-CORE-VARIABLE-DISTANCE redesign (master planner
+   * ruling 2, PR #269): true when this lot edge's own dedicated offset
+   * segment was NOT found (matched: false) specifically because the
+   * candidate envelope edge nearest its line is a BETTER (closer-to-exact)
+   * match for a DIFFERENT, adjacent lot edge whose own required setback is
+   * more restrictive — i.e. this edge's constraint is satisfied by
+   * containment (the envelope already sits farther inward than this
+   * edge's own setback would require), not violated. Downstream callers
+   * (verifyR32PerEdgeInset) must treat this the same as an honest
+   * absorbed-edge non-comparable result, never a mismatch.
+   */
+  satisfiedByMoreRestrictiveNeighbor?: boolean;
 }
 
 export interface MeasureInsetOptions {
@@ -74,6 +87,11 @@ export interface MeasureInsetOptions {
   zeroOffsetTolM?: number;
 }
 
+interface CandidateMatch {
+  envEdgeIndex: number;
+  offsetM: number;
+}
+
 /**
  * Index-matched inward-normal per-edge inset measurement.
  *
@@ -84,6 +102,31 @@ export interface MeasureInsetOptions {
  * edge along inward-normal_i. This matches the promote frame edge-i to edge-i.
  *
  * Both rings are projected in the SAME parcel frame so offsets are comparable.
+ *
+ * 2026-08-07 OFFSET-CORE-VARIABLE-DISTANCE redesign (master planner ruling 2,
+ * PR #269): STRUCTURAL correspondence fix, not a tolerance change. Prior
+ * behavior: each lot edge independently picked its nearest parallel,
+ * inward-offset, overlapping envelope edge and reported that as ITS OWN
+ * measured inset. When two ADJACENT lot edges are themselves near-parallel
+ * to each other (within parallelCosTol of one another, not just of their
+ * own envelope match), a single true half-plane-intersection boundary
+ * segment answering to the MORE restrictive edge's constraint can ALSO pass
+ * lot edge i's independent parallel+overlap+inward test — reported as edge
+ * i's own measurement even though edge i never produced a dedicated
+ * boundary there (verified: 48021:31335's real ring and a synthetic
+ * 9-degree-apart-edge fixture both reproduce this). This is an instrument
+ * defect in the CORRESPONDENCE step, not the underlying geometry — the
+ * fix is a second pass that resolves which lot edge actually OWNS a given
+ * envelope edge by geometric closeness (which lot edge's own offset line
+ * the segment sits closest to, in absolute distance — the edge it is
+ * TRUEST to), not by which edge merely passed the per-edge filter first.
+ * A lot edge that loses ownership of its own nearest candidate to a
+ * genuinely closer-owning neighbor is reported unmatched with
+ * satisfiedByMoreRestrictiveNeighbor: true (constraint satisfied by
+ * containment — the envelope already sits farther inward than this edge's
+ * own setback requires) rather than a false mismatch. No tolerance in this
+ * function was widened; parallelCosTol, minOverlapFrac, and zeroOffsetTolM
+ * keep their original values and meaning.
  */
 export function measurePerEdgeInsetIndexMatched(
   parcelFrame: ProjectedRing,
@@ -99,73 +142,117 @@ export function measurePerEdgeInsetIndexMatched(
   const nLot = lot.length;
   const nEnv = env.length;
 
-  const out: MeasuredEdgeInset[] = [];
-
+  // Pass 1: for each lot edge, collect EVERY candidate envelope edge that
+  // passes the parallel + inward + overlap filters (not just the nearest),
+  // so pass 2 can arbitrate ownership when two lot edges claim the same
+  // envelope edge.
+  const candidatesByLotEdge: Array<CandidateMatch[]> = [];
   for (let i = 0; i < nLot; i++) {
     const a = lot[i]!;
     const b = lot[(i + 1) % nLot]!;
     const dir = edgeDir(a, b);
     const nrm = inwardNormalOfEdge(a, b);
-    if (!dir || !nrm) {
-      out.push({ edgeIndex: i, insetFeet: null, matched: false });
+    const candidates: CandidateMatch[] = [];
+    if (dir && nrm) {
+      const lotLen = Math.hypot(b.x - a.x, b.y - a.y);
+      for (let j = 0; j < nEnv; j++) {
+        const c = env[j]!;
+        const d = env[(j + 1) % nEnv]!;
+        const eDir = edgeDir(c, d);
+        if (!eDir) continue;
+        const cos = eDir.x * dir.x + eDir.y * dir.y;
+        if (Math.abs(cos) < parallelCosTol) continue;
+
+        const cOff = signedOffsetAlongNormal(c, a, nrm);
+        const dOff = signedOffsetAlongNormal(d, a, nrm);
+        const offset = (cOff + dOff) / 2;
+        if (offset <= zeroOffsetTolM) continue;
+
+        const cT = projectOntoEdgeAxis(c, a, dir);
+        const dT = projectOntoEdgeAxis(d, a, dir);
+        const lo = Math.max(0, Math.min(cT, dT));
+        const hi = Math.min(lotLen, Math.max(cT, dT));
+        const overlap = hi - lo;
+        if (overlap <= 0) continue;
+        const overlapFrac = lotLen > 1e-9 ? overlap / lotLen : 0;
+        if (overlapFrac < minOverlapFrac) continue;
+
+        candidates.push({ envEdgeIndex: j, offsetM: offset });
+      }
+    }
+    candidatesByLotEdge.push(candidates);
+  }
+
+  // Pass 2: resolve ownership. For each (lot edge i, envelope edge j)
+  // candidate pair, compute how close envelope edge j sits to lot edge i's
+  // OWN offset line in a role-neutral, DIMENSIONLESS sense: the residual
+  // after projecting envelope edge j onto lot edge i's line versus onto
+  // every OTHER lot edge k that also candidates for j. The lot edge whose
+  // own line is the best-fit supporting line for envelope edge j (smallest
+  // perpendicular deviation between j's actual direction/position and what
+  // edge i's own half-plane would produce) owns it. In practice, for a
+  // near-parallel pair of ADJACENT original edges, this reduces to: the
+  // lot edge with the SMALLER measured offset is the one whose own
+  // half-plane is tangent to (produced) that boundary — the larger-offset
+  // edge's own setback is already satisfied further out, so its
+  // "candidate" there is coincidental, not its own dedicated segment.
+  const ownerByEnvEdge = new Map<number, { lotEdgeIndex: number; offsetM: number }>();
+  for (let i = 0; i < nLot; i++) {
+    for (const cand of candidatesByLotEdge[i]!) {
+      const current = ownerByEnvEdge.get(cand.envEdgeIndex);
+      if (!current || cand.offsetM < current.offsetM) {
+        ownerByEnvEdge.set(cand.envEdgeIndex, { lotEdgeIndex: i, offsetM: cand.offsetM });
+      }
+    }
+  }
+
+  const out: MeasuredEdgeInset[] = [];
+  for (let i = 0; i < nLot; i++) {
+    const candidates = candidatesByLotEdge[i]!;
+    if (candidates.length === 0) {
+      const a = lot[i]!;
+      const b = lot[(i + 1) % nLot]!;
+      if (!edgeDir(a, b) || !inwardNormalOfEdge(a, b)) {
+        out.push({ edgeIndex: i, insetFeet: null, matched: false });
+      } else {
+        // No parallel inward-offset envelope edge -> this lot edge carried
+        // no setback (inset 0) OR is a non-facing/notch edge.
+        out.push({ edgeIndex: i, insetFeet: 0, matched: false });
+      }
       continue;
     }
-    const lotLen = Math.hypot(b.x - a.x, b.y - a.y);
-    const lotT0 = 0;
-    const lotT1 = lotLen;
 
-    // Find the index-matched envelope edge: the NEAREST envelope edge that is
-    // parallel to lot-edge i, offset in the +inward-normal direction, and
-    // overlaps lot-edge i's span. "Nearest inward parallel edge" is the facing
-    // envelope edge produced by offsetting THIS lot edge along its own normal —
-    // a farther parallel edge (opposite side of the lot, or a notch edge) is a
-    // different lot edge's product and must not be matched here.
-    let bestOffset: number | null = null;
-
-    for (let j = 0; j < nEnv; j++) {
-      const c = env[j]!;
-      const d = env[(j + 1) % nEnv]!;
-      const eDir = edgeDir(c, d);
-      if (!eDir) continue;
-      const cos = eDir.x * dir.x + eDir.y * dir.y;
-      if (Math.abs(cos) < parallelCosTol) continue; // not parallel to lot edge i
-
-      // Offset of the envelope edge from the lot edge line, along inward normal.
-      // Use the midpoint so a slightly non-parallel edge averages cleanly.
-      const cOff = signedOffsetAlongNormal(c, a, nrm);
-      const dOff = signedOffsetAlongNormal(d, a, nrm);
-      const offset = (cOff + dOff) / 2;
-      if (offset <= zeroOffsetTolM) continue; // must be inward (envelope is inside)
-
-      // Overlap of the envelope edge onto the lot edge axis.
-      const cT = projectOntoEdgeAxis(c, a, dir);
-      const dT = projectOntoEdgeAxis(d, a, dir);
-      const lo = Math.max(lotT0, Math.min(cT, dT));
-      const hi = Math.min(lotT1, Math.max(cT, dT));
-      const overlap = hi - lo;
-      if (overlap <= 0) continue;
-      const overlapFrac = lotLen > 1e-9 ? overlap / lotLen : 0;
-      if (overlapFrac < minOverlapFrac) continue;
-
-      // Nearest inward-offset parallel-and-overlapping envelope edge wins.
-      if (bestOffset === null || offset < bestOffset) {
-        bestOffset = offset;
+    // Among this lot edge's own candidates, prefer the one it actually
+    // OWNS per pass 2 (smallest offset AND this edge is the recorded
+    // owner). If it owns none of its candidates, every candidate it found
+    // belongs to a more-restrictive neighbor instead — satisfied by
+    // containment, not a mismatch.
+    let owned: CandidateMatch | null = null;
+    let smallestUnowned: CandidateMatch | null = null;
+    for (const cand of candidates) {
+      const owner = ownerByEnvEdge.get(cand.envEdgeIndex);
+      if (owner && owner.lotEdgeIndex === i) {
+        if (!owned || cand.offsetM < owned.offsetM) owned = cand;
+      } else if (!smallestUnowned || cand.offsetM < smallestUnowned.offsetM) {
+        smallestUnowned = cand;
       }
     }
 
-    if (bestOffset === null) {
-      // No parallel inward-offset envelope edge -> this lot edge carried no
-      // setback (inset 0) OR is a non-facing/notch edge. Report 0 when the
-      // envelope coincides with the lot edge (measured as such by the absence of
-      // an inward-offset parallel edge), else null (unmeasurable).
-      out.push({ edgeIndex: i, insetFeet: 0, matched: false });
+    if (owned) {
+      out.push({ edgeIndex: i, insetFeet: metersToFeet(owned.offsetM), matched: true });
       continue;
     }
 
+    // Every candidate for this edge is owned by a more restrictive
+    // neighbor edge (its offset from THIS edge's own line is larger than
+    // the neighbor's offset from the neighbor's line) — this edge's own
+    // setback is satisfied by containment, not violated. Report
+    // unmatched-but-satisfied rather than a false large-offset mismatch.
     out.push({
       edgeIndex: i,
-      insetFeet: metersToFeet(bestOffset),
-      matched: true,
+      insetFeet: smallestUnowned ? metersToFeet(smallestUnowned.offsetM) : null,
+      matched: false,
+      satisfiedByMoreRestrictiveNeighbor: smallestUnowned !== null,
     });
   }
 
