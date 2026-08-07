@@ -250,31 +250,66 @@ export function measurePerEdgeInsetIndexMatched(
   // to each other, a degenerate case the tiebreak still resolves
   // sensibly).
   const OWNERSHIP_VARIANCE_TOL_M = 0.01; // ~0.4in — treat sub-cm variance as tied, fall through to offset tiebreak
+
+  // 2026-08-07 fix (block13 fossil-cohort regression — 48021:34121/34161,
+  // root-caused via P:/tmp/r32-vs-block13.json's live candidate dump): a lot
+  // edge's FAR (non-nearest) candidates must never be allowed to WIN
+  // ownership arbitration over another lot edge's own nearest candidate.
+  // Verified on 48021:34121's real 8-edge ring: lot edge 7's own line sits
+  // ~84ft from lot edge 1/2's shared near-collinear line (a genuinely
+  // unrelated part of the parcel), yet lot edge 7 ALSO passes the loose
+  // parallel+overlap filter for that distant envelope segment (its second,
+  // non-nearest candidate there, offsetVarianceM=0.77ft) — low enough
+  // variance to outcompete lot edge 1/2's OWN legitimate ~4.5ft candidates
+  // for that segment (variance 0.84-0.94ft) purely because 0.77 < 0.84,
+  // even though lot edge 7 already has an unambiguous, near-zero-variance
+  // true home elsewhere (its own nearest candidate, offsetVarianceM~0,
+  // offset 5.00ft). Stealing that segment then cascades: lot edge 2 loses
+  // its true ~4.5ft match and falls through to its own farthest leftover
+  // candidate (84ft), reported as a real measurement — a 79ft-plus false
+  // R32 mismatch on an already-correct envelope. Fix: restrict ownership
+  // ARBITRATION (who WINS a contested envelope edge) to each lot edge's own
+  // NEAREST candidate only — a lot edge's farther candidates remain
+  // available for the existing pass-3 "satisfied by more restrictive
+  // neighbor" fallback (never fabricated as a false measurement), but they
+  // cannot outbid another edge's legitimate primary claim. This does not
+  // reintroduce the original 48021:31389 defect (a short dominated side
+  // edge's SMALLEST-offset candidate stealing the true front edge's SAME
+  // segment): that case is still resolved correctly, because both edges'
+  // competing bids there were each edge's own nearest candidate, and
+  // offsetVarianceM still correctly discriminates the true producer among
+  // nearest-vs-nearest bids — verified via the full twelve-parcel harness
+  // (12/12 unaffected) and the 31308/34785 regression fixtures below.
   const ownerByEnvEdge = new Map<
     number,
     { lotEdgeIndex: number; offsetM: number; offsetVarianceM: number }
   >();
   for (let i = 0; i < nLot; i++) {
-    for (const cand of candidatesByLotEdge[i]!) {
-      const current = ownerByEnvEdge.get(cand.envEdgeIndex);
-      if (!current) {
-        ownerByEnvEdge.set(cand.envEdgeIndex, {
-          lotEdgeIndex: i,
-          offsetM: cand.offsetM,
-          offsetVarianceM: cand.offsetVarianceM,
-        });
-        continue;
-      }
-      const varianceDiff = cand.offsetVarianceM - current.offsetVarianceM;
-      const strictlyBetterVariance = varianceDiff < -OWNERSHIP_VARIANCE_TOL_M;
-      const tiedVariance = Math.abs(varianceDiff) <= OWNERSHIP_VARIANCE_TOL_M;
-      if (strictlyBetterVariance || (tiedVariance && cand.offsetM < current.offsetM)) {
-        ownerByEnvEdge.set(cand.envEdgeIndex, {
-          lotEdgeIndex: i,
-          offsetM: cand.offsetM,
-          offsetVarianceM: cand.offsetVarianceM,
-        });
-      }
+    const ownEdgeCandidates = candidatesByLotEdge[i]!;
+    if (ownEdgeCandidates.length === 0) continue;
+    // This lot edge's own PRIMARY bid: its nearest (smallest-offset)
+    // candidate. Only this bid is eligible to WIN ownership arbitration.
+    const nearest = ownEdgeCandidates.reduce((best, cand) =>
+      cand.offsetM < best.offsetM ? cand : best,
+    );
+    const current = ownerByEnvEdge.get(nearest.envEdgeIndex);
+    if (!current) {
+      ownerByEnvEdge.set(nearest.envEdgeIndex, {
+        lotEdgeIndex: i,
+        offsetM: nearest.offsetM,
+        offsetVarianceM: nearest.offsetVarianceM,
+      });
+      continue;
+    }
+    const varianceDiff = nearest.offsetVarianceM - current.offsetVarianceM;
+    const strictlyBetterVariance = varianceDiff < -OWNERSHIP_VARIANCE_TOL_M;
+    const tiedVariance = Math.abs(varianceDiff) <= OWNERSHIP_VARIANCE_TOL_M;
+    if (strictlyBetterVariance || (tiedVariance && nearest.offsetM < current.offsetM)) {
+      ownerByEnvEdge.set(nearest.envEdgeIndex, {
+        lotEdgeIndex: i,
+        offsetM: nearest.offsetM,
+        offsetVarianceM: nearest.offsetVarianceM,
+      });
     }
   }
 
