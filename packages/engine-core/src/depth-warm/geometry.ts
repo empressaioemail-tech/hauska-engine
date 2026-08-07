@@ -157,6 +157,24 @@ function projectRingInFrame(ring: Ring, frame: ProjectedRing): XY[] | null {
   }));
 }
 
+/**
+ * Project an ARBITRARY point list (not a ring — no closed/≥3-vertex
+ * requirement, unlike openRing/projectRingInFrame) into an existing parcel
+ * frame. Used for miterPoints, which is commonly just 1-2 points and would
+ * be silently dropped by projectRingInFrame's openRing-based ring parsing.
+ */
+function projectPointsInFrame(points: Ring, frame: ProjectedRing): XY[] {
+  return points
+    .filter(
+      (c): c is LngLat =>
+        Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1]),
+    )
+    .map(([lng, lat]) => ({
+      x: (lng - frame.originLng) * frame.mPerDegLng,
+      y: (lat - frame.originLat) * frame.mPerDegLat,
+    }));
+}
+
 /** Variable-distance inset on a projected CCW ring (delegates to shared polygon-inset). */
 function insetProjected(
   proj: ProjectedRing,
@@ -177,11 +195,18 @@ export function geometryCorrectnessGate(
   storedInwardNormals?: Array<{ x: number; y: number }>,
   /**
    * Miter points collapseNearCollinearOffsetNotches produced for THIS
-   * inset, already in the SAME projected local-metre frame as this
-   * function's own `orig`/`inset` (i.e. `insetXY.miterPoints` from
-   * insetRingMetersWithNormals) — never WGS84. See perEdgeOffsetPlausible.
+   * inset, in WGS84 (Ring) — the SAME representation as parcelRing/
+   * insetRing, so ANY caller holding onto a WarmCandidate's
+   * miterPointsWgs84 field can pass it here without needing access to an
+   * internal projected frame. Re-projected into this function's OWN
+   * parcelProj frame below, so it is never subject to floating-point
+   * frame drift against a caller's separately-computed projection (2026-08-06
+   * live-pipeline fix: verifyWarmCandidateMechanically calls this gate a
+   * SECOND time, independent of insetPerEdge's own internal call, and had
+   * no access to insetXY.miterPoints at all before WarmCandidate carried
+   * them — this parameter closes that gap. See perEdgeOffsetPlausible).
    */
-  knownMiterPointsProjected?: Array<{ x: number; y: number }>,
+  knownMiterPointsWgs84?: Ring,
 ): GeometryCorrectnessResult {
   const reasons: string[] = [];
   if (!insetRing) {
@@ -211,9 +236,11 @@ export function geometryCorrectnessGate(
       break;
     }
   }
-  if (
-    !perEdgeOffsetPlausible(orig, inset, insetMeters, storedInwardNormals, knownMiterPointsProjected)
-  ) {
+  const knownMiterPoints =
+    knownMiterPointsWgs84 && knownMiterPointsWgs84.length > 0
+      ? projectPointsInFrame(knownMiterPointsWgs84, parcelProj)
+      : undefined;
+  if (!perEdgeOffsetPlausible(orig, inset, insetMeters, storedInwardNormals, knownMiterPoints)) {
     reasons.push("per-edge offset distance implausible");
   }
   if (Math.abs(signedArea(inset)) < Math.abs(signedArea(orig)) * 0.0025) {
@@ -228,6 +255,16 @@ export interface InsetResult {
   parcelAreaSqFt: number;
   empty: boolean;
   emptyReason?: string;
+  /**
+   * Miter points collapseNearCollinearOffsetNotches produced building this
+   * inset (WGS84). Present only when `empty` is false and at least one
+   * notch was collapsed. Callers that re-run geometryCorrectnessGate
+   * independently of this function's own internal call (e.g.
+   * verifyWarmCandidateMechanically) MUST pass this through — without it,
+   * the second gate call is blind to the collapse and can reject a
+   * correct, already-validated envelope (2026-08-06 live-pipeline fix).
+   */
+  miterPointsWgs84?: Ring;
 }
 
 export interface StoredEdgeInsetInput {
@@ -329,13 +366,14 @@ export function insetPerEdgeFromPrimitive(
     ringAreaM2(insetXY.points) * FEET_PER_METER * FEET_PER_METER;
   const closed: Ring = insetXY.points.map((p) => unproject(p, proj));
   closed.push([closed[0]![0], closed[0]![1]]);
+  const miterPointsWgs84: Ring = insetXY.miterPoints.map((p) => unproject(p, proj));
 
   const fullGate = geometryCorrectnessGate(
     ring,
     closed,
     insetFeetPerEdge,
     inwardNormals,
-    insetXY.miterPoints,
+    miterPointsWgs84,
   );
   if (!fullGate.pass) {
     return {
@@ -352,6 +390,7 @@ export function insetPerEdgeFromPrimitive(
     areaSqFt: insetArea,
     parcelAreaSqFt,
     empty: false,
+    miterPointsWgs84,
   };
 }
 
@@ -435,13 +474,14 @@ export function insetPerEdge(
     ringAreaM2(insetXY.points) * FEET_PER_METER * FEET_PER_METER;
   const closed: Ring = insetXY.points.map((p) => unproject(p, proj));
   closed.push([closed[0]![0], closed[0]![1]]);
+  const miterPointsWgs84: Ring = insetXY.miterPoints.map((p) => unproject(p, proj));
 
   const fullGate = geometryCorrectnessGate(
     ring,
     closed,
     insetFeetPerEdge,
     undefined,
-    insetXY.miterPoints,
+    miterPointsWgs84,
   );
   if (!fullGate.pass) {
     return {
@@ -458,5 +498,6 @@ export function insetPerEdge(
     areaSqFt: insetArea,
     parcelAreaSqFt,
     empty: false,
+    miterPointsWgs84,
   };
 }

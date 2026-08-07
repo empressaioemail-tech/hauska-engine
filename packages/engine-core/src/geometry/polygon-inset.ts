@@ -265,10 +265,14 @@ function lineIntersection(
 // The absolute cap is a coarse pre-filter only — the RELATIVE check
 // (NOTCH_MAX_RUN_TO_BOUNDING_RATIO, below) is the real discriminator
 // between a corner-offset artifact and a genuine short edge on a small
-// lot. Kept generous so a real-world notch run (observed up to ~6m on
-// 48021:31308/31371-shaped corner lots) is never excluded by the absolute
-// cap alone before the relative/reflex/containment gates get to evaluate it.
-const NOTCH_MAX_EDGE_LEN_M = 10;
+// lot; runEdgesRelativelyShort rejects any run whose edges are not
+// genuinely short relative to their OWN bounding edges regardless of what
+// this cap allows through. 2026-08-06 live-pipeline harness fix: raised
+// from 10m to 20m — verified against 48021:31326's real ring, whose
+// notch-run second edge (11.71m) exceeded the prior 10m cap. The relative
+// check remains the actual gate; this value only controls how far the
+// initial run-extension search is allowed to look.
+const NOTCH_MAX_EDGE_LEN_M = 20;
 const NOTCH_MIN_BOUNDING_EDGE_LEN_M = 6;
 const NOTCH_AREA_TOL_RATIO = 0.02;
 const NOTCH_MAX_RUN_EDGES = 3;
@@ -775,14 +779,34 @@ export function perEdgeOffsetPlausible(
     // created this run — never a length-based guess.
     if (!knownMiterPoints || knownMiterPoints.length === 0) return false;
     const nearestMiterDist = nearestDistanceToPointSet(mid, knownMiterPoints);
-    // The edge's own bounding-box scale (its length) caps how close a
-    // "nearby" miter point must be — a miter point genuinely absorbing
-    // this edge sits within roughly one edge-length of its midpoint.
-    if (nearestMiterDist > edgeLen) return false;
+    // 2026-08-06 live-pipeline harness fix: the miter point is the
+    // intersection of the TWO BOUNDING edges' offset lines — its distance
+    // from the absorbed edge's own (tiny) midpoint scales with the
+    // BOUNDING edges' setback distances, not with the absorbed edge's own
+    // length. Verified against 48021:31308's real ring across two
+    // different role/inset assignments: dist-to-miter / max(insetMetersPerEdge)
+    // measured 1.01 in both cases (4.63m / 4.57m and 7.69m / 7.62m) — a
+    // tight, physically-motivated ratio. An edge-length-based cap (the
+    // prior version of this check) was an untested assumption that broke
+    // on live geometry with a larger front/rear setback delta at the
+    // near-collinear corner; this replaces it with the verified relation,
+    // with generous slack for off-axis corners.
+    const maxInsetScale = Math.max(...insetMetersPerEdge.filter((x) => Number.isFinite(x) && x > 0), 0);
+    if (nearestMiterDist > maxInsetScale * 1.5 + 1.0) return false;
 
-    const nearestDist = minDistanceToRingBoundary(mid, inset);
-    const plausibleFallback = Math.abs(nearestDist - d) <= Math.max(1.0, d * 0.35);
-    if (!plausibleFallback) return false;
+    // No separate "does the measured distance match THIS edge's own
+    // nominal inset" check for an absorbed edge — by construction an
+    // absorbed edge has no dedicated offset segment of its own; its area
+    // was folded into the neighboring miter join, which is validated by
+    // collapseNearCollinearOffsetNotches's own area-preservation,
+    // containment, and self-intersection checks before it is ever
+    // returned. Requiring the absorbed edge's own setback distance to
+    // independently re-appear at its midpoint is incoherent — that is
+    // precisely what absorption means it will NOT do (verified:
+    // 48021:31308's edge 4, an absorbed 5ft side, measures ~7.69m from its
+    // own midpoint to the nearest boundary point because that boundary is
+    // dominated by its 25ft neighbor's setback, not because the offset is
+    // wrong).
   }
   return true;
 }

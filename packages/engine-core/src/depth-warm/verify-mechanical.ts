@@ -198,6 +198,8 @@ export function verifyWarmCandidateMechanically(
     candidate.parcelRing,
     candidate.empty ? null : candidate.insetRing,
     candidate.insetFeetPerEdge,
+    undefined,
+    candidate.miterPointsWgs84,
   );
   if (candidate.empty) {
     geometry.pass = false;
@@ -264,6 +266,7 @@ export function verifyWarmCandidateMechanically(
           edgeLabels: r32EdgeLabels,
           descriptor,
           district: candidate.district,
+          miterPointsWgs84: candidate.miterPointsWgs84,
         });
 
   const facesAnswerResult =

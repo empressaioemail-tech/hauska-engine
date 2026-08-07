@@ -130,5 +130,6 @@ export function computeWarmCandidateFromBoundary(
     emptyReason: inset.emptyReason,
     warmAt,
     warmAgentId,
+    miterPointsWgs84: inset.miterPointsWgs84,
   };
 }

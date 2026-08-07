@@ -53,6 +53,18 @@ export interface WarmCandidate {
   emptyReason?: string;
   warmAt: string;
   warmAgentId: string;
+  /**
+   * Miter points collapseNearCollinearOffsetNotches (polygon-inset.ts)
+   * produced building insetRing, WGS84. Carried on the candidate so any
+   * SECOND, independent call to geometryCorrectnessGate downstream (e.g.
+   * verifyWarmCandidateMechanically, which re-derives geometry from the
+   * candidate alone) is not blind to a legitimate notch collapse (2026-08-06
+   * live-pipeline fix — the prior gap: WarmCandidate carried no such field,
+   * so a real corner-lot envelope that insetPerEdge/insetPerEdgeFromPrimitive
+   * already validated correctly could still fail the mechanical verify
+   * gate's OWN geometryCorrectnessGate call).
+   */
+  miterPointsWgs84?: Ring;
 }
 
 export interface MechanicalGateResult {

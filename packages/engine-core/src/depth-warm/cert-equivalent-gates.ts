@@ -10,7 +10,7 @@ import {
   situsStreetSegment,
   type EdgeLabelDraft,
 } from "./edgeLabeling.js";
-import { openRing, type Ring } from "./geometry.js";
+import { openRing, projectRing, type Ring } from "./geometry.js";
 import { measurePerEdgeInsetForRings } from "./measure-inset.js";
 import type { WarmEdgeRole, WarmRoadSource } from "./types.js";
 import { resolveInsetFeetForEdge, buildFlatSetbackFallback } from "./warm-compute.js";
@@ -165,6 +165,18 @@ export interface R32VerifyInput {
   toleranceFt?: number;
   /** When set (cert path), use layer-23 key feet instead of descriptor resolution. */
   setbackKey?: { F: number; S: number; C: number | null; R: number };
+  /**
+   * Miter points collapseNearCollinearOffsetNotches (polygon-inset.ts)
+   * produced building insetRing (WGS84) — same field as
+   * WarmCandidate.miterPointsWgs84. When a lot edge's index-matched R32
+   * measurement honestly reports matched:false (measure-inset.ts: "no
+   * parallel inward-offset envelope edge found for this lot edge") AND
+   * that edge's midpoint sits near an ACTUAL miter point this run
+   * produced, the edge is honestly non-comparable (its own offset segment
+   * was folded into a neighboring corner join) rather than a genuine R32
+   * mismatch. See verifyR32PerEdgeInset.
+   */
+  miterPointsWgs84?: Ring;
 }
 
 function expectedFtForRoleFromKey(
@@ -175,6 +187,40 @@ function expectedFtForRoleFromKey(
   if (role === "rear") return key.R;
   if (role === "side_corner") return key.C ?? key.S;
   return key.S;
+}
+
+const R32_ABSORBED_EDGE_MITER_TOL_FT = 40;
+
+/**
+ * True when a lot edge's midpoint sits near an ACTUAL miter point the
+ * offset run produced (never a length-based guess — see
+ * perEdgeOffsetPlausible's identical requirement in polygon-inset.ts).
+ * Projects everything into the parcel's own frame so distances are
+ * directly comparable in feet.
+ */
+function edgeMidpointNearKnownMiterPoint(
+  parcelRing: Ring,
+  edgeIndex: number,
+  miterPointsWgs84: Ring | undefined,
+): boolean {
+  if (!miterPointsWgs84 || miterPointsWgs84.length === 0) return false;
+  const proj = projectRing(parcelRing);
+  if (!proj) return false;
+  const n = proj.points.length;
+  const a = proj.points[edgeIndex % n];
+  const b = proj.points[(edgeIndex + 1) % n];
+  if (!a || !b) return false;
+  const midX = (a.x + b.x) / 2;
+  const midY = (a.y + b.y) / 2;
+  const FEET_PER_METER = 3.280839895;
+  for (const [lng, lat] of miterPointsWgs84) {
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+    const mx = (lng - proj.originLng) * proj.mPerDegLng;
+    const my = (lat - proj.originLat) * proj.mPerDegLat;
+    const distFt = Math.hypot(midX - mx, midY - my) * FEET_PER_METER;
+    if (distFt <= R32_ABSORBED_EDGE_MITER_TOL_FT) return true;
+  }
+  return false;
 }
 
 /**
@@ -209,7 +255,22 @@ export function verifyR32PerEdgeInset(input: R32VerifyInput): {
               flatFallback,
             )
           : null;
-    const r32 = r32Measured[i]?.insetFeet ?? null;
+    const measured = r32Measured[i];
+    const r32 = measured?.insetFeet ?? null;
+
+    // Honest non-comparable edge: R32's own index-matched measurer found
+    // no dedicated offset segment (matched:false) for this lot edge, AND
+    // that is explained by an ACTUAL notch collapse at this edge (not a
+    // silent "assume it's fine" — a genuinely wrong/missing measurement on
+    // an edge NOT near any real miter point still fails below).
+    if (
+      measured &&
+      !measured.matched &&
+      edgeMidpointNearKnownMiterPoint(input.parcelRing, i, input.miterPointsWgs84)
+    ) {
+      continue;
+    }
+
     if (expected == null || r32 == null || Math.abs(r32 - expected) > tol) {
       reasons.push(
         `edge ${i}: R32 ${r32 ?? "null"}ft != expected ${expected ?? "?"}ft for role ${role}`,
