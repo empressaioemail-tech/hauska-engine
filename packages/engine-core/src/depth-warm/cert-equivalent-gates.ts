@@ -189,7 +189,7 @@ function expectedFtForRoleFromKey(
   return key.S;
 }
 
-const R32_ABSORBED_EDGE_MITER_TOL_FT = 40;
+export const R32_ABSORBED_EDGE_MITER_TOL_FT = 40;
 
 /**
  * True when a lot edge's midpoint sits near an ACTUAL miter point the
@@ -197,8 +197,24 @@ const R32_ABSORBED_EDGE_MITER_TOL_FT = 40;
  * perEdgeOffsetPlausible's identical requirement in polygon-inset.ts).
  * Projects everything into the parcel's own frame so distances are
  * directly comparable in feet.
+ *
+ * Exported (2026-08-07, block13 fossil-cohort fix) so every R32 per-edge
+ * consumer — not just verifyR32PerEdgeInset — can apply the SAME
+ * honest-non-comparable test instead of re-deriving it. This file's header
+ * rule ("Warm and mechanical cert MUST call these functions; no parallel
+ * checks") previously covered the pass/fail threshold call
+ * (verifyR32PerEdgeInset) but not this helper specifically, which is how
+ * cert-grade-core.ts's block13/query-mode grader drifted: it measures via
+ * the same measurePerEdgeInsetForRings but never applied this or the
+ * satisfiedByMoreRestrictiveNeighbor check, so an edge honestly reported as
+ * "satisfied by containment" (measure-inset.ts's ownership-arbitration
+ * rewrite, PR #269/#270) surfaced its neighbor's leftover unowned candidate
+ * as if it were this edge's own measurement — false perEdgeInset failures
+ * on 48021:34121 (edge 2: 84.06ft leftover reported against a 5ft side
+ * expectation) and 48021:34161 (edge 0: 14.84ft leftover, matching the
+ * REAR edge's ~15ft candidate, reported against a 5ft side expectation).
  */
-function edgeMidpointNearKnownMiterPoint(
+export function edgeMidpointNearKnownMiterPoint(
   parcelRing: Ring,
   edgeIndex: number,
   miterPointsWgs84: Ring | undefined,

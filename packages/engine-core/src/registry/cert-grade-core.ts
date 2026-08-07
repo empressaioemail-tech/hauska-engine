@@ -55,6 +55,7 @@ import {
   streetNamesMatchForFacesAnswer,
   isNoDeterminableFrontageSitus,
   R35_ORIENTATION_DECLINE,
+  edgeMidpointNearKnownMiterPoint,
 } from "../depth-warm/cert-equivalent-gates.js";
 import { resolveSetbackTableRow } from "../property-reasoning/emit-setback-rule.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
@@ -569,6 +570,67 @@ async function gradeAgainstKey(
   const zoningFact = zfRow?.body ?? null;
   const setbackRule = srRow?.body ?? null;
 
+  let boundaryEdgesRaw: Awaited<ReturnType<typeof readBoundaryEdgesForParcel>> | null = null;
+  try {
+    boundaryEdgesRaw = await readBoundaryEdgesForParcel(storage, parcelNodeId);
+  } catch (e) {
+    if (!(e instanceof BoundaryPrimitiveMissingError)) throw e;
+  }
+
+  return gradeAgainstKeyResolved(
+    parcelNodeId,
+    key,
+    situsAddress,
+    ring,
+    { zoningFact, setbackRule, insetRing, boundaryEdges: boundaryEdgesRaw, roads, descriptor },
+    isBlock13Mode,
+  );
+}
+
+/**
+ * Pure, DB-free grading body (2026-08-07, block13 offline-fixture fix). Takes
+ * every value gradeAgainstKey previously fetched live (zoningFact,
+ * setbackRule, insetRing, boundaryEdges) as plain resolved data instead of
+ * sql/storage handles, so this exact function — the SAME one the live
+ * block13/query-mode graders call, not a re-derived copy — can run against a
+ * frozen fixture in CI with no DB/network dependency. This is what closes
+ * the gap the master planner flagged: a block13 regression (the
+ * 34121/34161 R32 fossil-cohort defect) was only ever caught by a live,
+ * manually-dispatched run; this function is the seam that makes an offline
+ * regression test possible without duplicating the grading logic.
+ */
+export function gradeAgainstKeyResolved(
+  parcelNodeId: string,
+  key: { district: string; F: number; S: number; C: number | null; R: number; frontStreet: string | null },
+  situsAddress: string | null,
+  ring: unknown,
+  resolved: {
+    zoningFact: { district?: string } | null;
+    setbackRule: {
+      districtCode?: string;
+      front?: number;
+      rear?: number;
+      side?: number;
+      sideInteriorFt?: number;
+      sideCornerFt?: number;
+    } | null;
+    insetRing: unknown;
+    boundaryEdges: Awaited<ReturnType<typeof readBoundaryEdgesForParcel>> | null;
+    roads: unknown[];
+    descriptor: unknown;
+  },
+  isBlock13Mode = false,
+): ParcelGradeResult {
+  const { roads, descriptor } = resolved;
+  const insetRing = resolved.insetRing as never;
+  const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
+  if (!(insetRing as { length?: number } | null)?.length) {
+    parcelResult.error = "no-promoted-envelope-geojson";
+    return parcelResult;
+  }
+  const zoningFact = resolved.zoningFact;
+  const setbackRule = resolved.setbackRule;
+
   const servedDistrict = zoningFact?.district ?? setbackRule?.districtCode ?? null;
   const districtOk =
     (setbackRule?.districtCode == null ||
@@ -595,12 +657,8 @@ async function gradeAgainstKey(
   const labelResult = labelEdgesFromRoads({ parcelRing: ring as never, roads: roads as never, situsAddress });
   const freshLabels = labelResult.ok ? labelResult.edgeLabels : [];
 
-  let boundaryEdges: Awaited<ReturnType<typeof readBoundaryEdgesForParcel>> | null = null;
-  try {
-    boundaryEdges = await readBoundaryEdgesForParcel(storage, parcelNodeId);
-  } catch (e) {
-    if (!(e instanceof BoundaryPrimitiveMissingError)) throw e;
-  }
+  let boundaryEdges: Awaited<ReturnType<typeof readBoundaryEdgesForParcel>> | null =
+    resolved.boundaryEdges;
   if (boundaryEdges?.length) {
     const ringVerts = openRing(ring as never).length;
     if (boundaryEdges.length > ringVerts) {
@@ -694,6 +752,8 @@ async function gradeAgainstKey(
 
   const r32Measured = measurePerEdgeInsetForRings(ring as never, insetRing) ?? [];
   const nEdges = openRing(ring as never).length;
+  const miterPointsWgs84 = (warmCandidate as { miterPointsWgs84?: unknown } | null)
+    ?.miterPointsWgs84 as never;
   let insetGatePass = true;
   for (let i = 0; i < nEdges; i++) {
     const role =
@@ -704,8 +764,32 @@ async function gradeAgainstKey(
       boundaryEdges?.find((e) => e.edgeIndex === i)?.role ??
       "?";
     const expected = expectedFtForRole(role, key);
-    const r32 = r32Measured[i]?.insetFeet ?? null;
-    const edgeOk = r32 != null && Math.abs(r32 - expected) <= CERT_GRADE_INSET_TOL_FT;
+    const measured = r32Measured[i];
+    const r32 = measured?.insetFeet ?? null;
+
+    // Honest non-comparable edge — MUST mirror verifyR32PerEdgeInset
+    // (cert-equivalent-gates.ts) exactly, per this module's header rule
+    // ("Both reuse the identical gate logic"): measure-inset.ts's
+    // ownership-arbitration rewrite (PR #269/#270) reports
+    // satisfiedByMoreRestrictiveNeighbor: true, or matched:false near a
+    // real notch-collapse miter point, when this lot edge's own boundary
+    // segment is legitimately not independently measurable (satisfied by
+    // containment, or folded into a neighbor's corner join) — the
+    // insetFeet value in that case is a NEIGHBOR's leftover unowned
+    // candidate, not a measurement of this edge, and must never be
+    // compared against this edge's own expected setback. Root cause of
+    // the 48021:34121 / 48021:34161 block13 regression (2026-08-07): this
+    // loop measured via the same measurePerEdgeInsetForRings but never
+    // applied either check, so it graded that leftover number as if it
+    // were a real measurement.
+    const honestNonComparable =
+      !!measured &&
+      !measured.matched &&
+      (measured.satisfiedByMoreRestrictiveNeighbor === true ||
+        edgeMidpointNearKnownMiterPoint(ring as never, i, miterPointsWgs84));
+
+    const edgeOk =
+      honestNonComparable || (r32 != null && Math.abs(r32 - expected) <= CERT_GRADE_INSET_TOL_FT);
     if (!edgeOk) insetGatePass = false;
     parcelResult.edges.push({
       edgeIndex: i,
@@ -713,6 +797,7 @@ async function gradeAgainstKey(
       expectedFt: expected,
       r32IndexMatched_ft: r32 == null ? null : Number(r32.toFixed(2)),
       insetPass: edgeOk,
+      ...(honestNonComparable ? { honestNonComparable: true } : {}),
     });
   }
 
