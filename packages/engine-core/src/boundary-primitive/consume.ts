@@ -53,6 +53,8 @@ export interface WarmFromBoundaryInput {
   warmAt?: string;
   /** When per-parcel layer 23 overlays the table, use descriptor feet not stored atom feet. */
   descriptor?: JurisdictionDescriptor;
+  /** GROUND-TRUTH FRAME LAW — see WarmCandidate.rawParcelRing. */
+  rawParcelRing?: Ring;
 }
 
 function perParcelDescriptorSetbacks(descriptor?: JurisdictionDescriptor): boolean {
@@ -131,5 +133,6 @@ export function computeWarmCandidateFromBoundary(
     warmAt,
     warmAgentId,
     miterPointsWgs84: inset.miterPointsWgs84,
+    rawParcelRing: input.rawParcelRing ?? input.parcelRing,
   };
 }

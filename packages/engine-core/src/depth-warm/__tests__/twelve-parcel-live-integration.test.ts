@@ -205,27 +205,51 @@ describe("twelve-parcel LIVE pipeline integration harness (real rings, real road
       ];
       results[parcelNodeId] = { pass: result.verify.pass, reasons };
 
-      // Cross-check with the shared ground-truth predicate (P1 containment)
-      // independent of mechanical verify, when a candidate envelope exists.
+      expect(
+        result.verify.pass,
+        `${parcelNodeId} verify-fail reasons: ${JSON.stringify(reasons, null, 2)}\ncandidate.empty=${result.candidate.empty} emptyReason=${result.candidate.emptyReason}`,
+      ).toBe(true);
+
+      // GROUND-TRUTH FRAME LAW (2026-08-07, master planner ruling) — the
+      // full shared predicate (P1 containment, P2 inset distance, P3
+      // front-on-street), measured against fixture.coordinates AS STORED
+      // (the raw, unscrubbed txgio ring — this fixture has never been
+      // scrubbed; 31299 in particular carries its full real 6-vertex/5-edge
+      // ring including the true 2.428m/7.97ft jog edge). edgeRoles is
+      // deliberately omitted (see promote.ts's identical reasoning) so P2's
+      // role resolution comes from a FRESH labelEdgesFromRoads call on this
+      // exact ring, never an index carried over from a different frame.
+      // This is a hard assertion, not an informational cross-check: the
+      // acceptance bar per the master planner's final ruling is the served
+      // envelope must clear ground truth against the RAW ring, not merely
+      // pass mechanical verify against whatever ring computed it.
       if (!result.candidate.empty && result.candidate.insetRing) {
-        const edgeRoles = new Map(result.candidate.edges.map((e) => [e.index, e.label]));
         const groundTruth = checkEnvelopeGroundTruth({
           parcelRing,
           envelopeRing: result.candidate.insetRing,
           descriptor,
           district: DISTRICT,
           roads: ROADS,
-          edgeRoles,
+          situsAddress,
+          // Honor genuine notch-collapse absences (e.g. 48021:31308's real
+          // 9.09ft corner-jog edge folded into a miter join) — see
+          // envelope-ground-truth.ts's checkInsetDistances doc comment.
+          miterPointsWgs84: result.candidate.miterPointsWgs84,
         });
-        if (!groundTruth.p1.pass) {
-          reasons.push(`ground-truth P1 containment fail: ${JSON.stringify(groundTruth.p1)}`);
-        }
+        expect(
+          groundTruth.pass,
+          `${parcelNodeId} ground-truth (RAW ring) fail: ${JSON.stringify(
+            {
+              failureReason: groundTruth.failureReason,
+              p1: groundTruth.p1,
+              p2Fails: groundTruth.p2.edges.filter((e) => !e.pass),
+              p3: groundTruth.p3,
+            },
+            null,
+            2,
+          )}`,
+        ).toBe(true);
       }
-
-      expect(
-        result.verify.pass,
-        `${parcelNodeId} verify-fail reasons: ${JSON.stringify(reasons, null, 2)}\ncandidate.empty=${result.candidate.empty} emptyReason=${result.candidate.emptyReason}`,
-      ).toBe(true);
     });
   }
 });

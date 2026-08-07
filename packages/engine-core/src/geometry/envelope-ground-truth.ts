@@ -53,6 +53,11 @@ import { openRing, projectRing, type Ring } from "../depth-warm/geometry.js";
 import { pointInOrOnPolygon } from "./polygon-inset.js";
 import type { WarmEdgeRole, WarmRoadSource } from "../depth-warm/types.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
+import { edgeMidpointNearKnownMiterPoint } from "../depth-warm/cert-equivalent-gates.js";
+import {
+  perpDistanceToChord,
+  SHAPE_PRESERVATION_EPSILON_M,
+} from "../boundary-primitive/lot-line-scrub.js";
 
 export type EnvelopeGroundTruthFailureReason =
   | "invalid-parcel-ring"
@@ -85,6 +90,22 @@ export interface EnvelopeGroundTruthInput {
    * when omitted.
    */
   edgeRoles?: ReadonlyMap<number, WarmEdgeRole>;
+  /**
+   * Miter points collapseNearCollinearOffsetNotches produced building this
+   * candidate's insetRing (WarmCandidate.miterPointsWgs84). When a parcel
+   * edge's index-matched R32 measurement honestly reports matched:false
+   * (measure-inset.ts: no candidate envelope edge found at all, e.g. a real
+   * short corner-jog edge folded into a neighboring miter join during
+   * offset) AND that edge's midpoint sits near an ACTUAL miter point this
+   * run produced, P2 treats it as honestly non-comparable — the SAME fix
+   * verifyR32PerEdgeInset (cert-equivalent-gates.ts) already applies.
+   * Omitting this parameter is safe (P2 simply cannot distinguish "genuinely
+   * absorbed by a real notch" from "genuinely missing" in that case, same
+   * as before this option existed) but risks a false P2 failure on a
+   * legitimately-absorbed short edge — see 48021:31308 edge 4 (9.09ft
+   * corner jog, root-caused under the Ground-Truth Frame Law hardening).
+   */
+  miterPointsWgs84?: Ring;
   options?: EnvelopeGroundTruthOptions;
 }
 
@@ -176,6 +197,36 @@ export function checkEnvelopeContainment(
  * offset + overlap — never by stored label) must match the district
  * setback for that edge's role.
  */
+/**
+ * True when EITHER endpoint of edge `edgeIndex` sits within the
+ * shape-preservation epsilon of the chord connecting ITS OWN neighbors —
+ * the identical geometric fact removeCollinearVertices (lot-line-scrub.ts)
+ * uses to decide a vertex is safe to drop. Ground-Truth Frame Law measures
+ * against the RAW ring, which may still carry a vertex the (correctly,
+ * legitimately) scrubbed working ring dropped — the raw edge bounded by
+ * that vertex then has zero R32 candidates by construction (it never
+ * produced a distinct offset boundary segment, because the ring the offset
+ * actually ran on never had it). This is honestly non-comparable for the
+ * SAME reason scrub was allowed to drop that vertex, not a real setback
+ * miss. Checks both endpoints since either one could be the near-collinear
+ * vertex that made this specific edge short/spurious.
+ */
+function edgeNearOwnNeighborChord(parcelRing: Ring, edgeIndex: number): boolean {
+  const proj = projectRing(parcelRing);
+  if (!proj) return false;
+  const n = proj.points.length;
+  if (n < 3) return false;
+  const i = edgeIndex % n;
+  const j = (edgeIndex + 1) % n;
+  const checkVertex = (v: number): boolean => {
+    const a = proj.points[(v + n - 1) % n]!;
+    const b = proj.points[v]!;
+    const c = proj.points[(v + 1) % n]!;
+    return perpDistanceToChord(b, a, c) <= SHAPE_PRESERVATION_EPSILON_M;
+  };
+  return checkVertex(i) || checkVertex(j);
+}
+
 function checkInsetDistances(
   parcelRing: Ring,
   envelopeRing: Ring,
@@ -185,6 +236,7 @@ function checkInsetDistances(
   edgeRoles: ReadonlyMap<number, WarmEdgeRole> | undefined,
   roads: ReadonlyArray<WarmRoadSource>,
   situsAddress: string | null | undefined,
+  miterPointsWgs84: Ring | undefined,
 ): EnvelopeGroundTruthP2Result | null {
   const measured = measurePerEdgeInsetForRings(parcelRing, envelopeRing);
   if (!measured) return null;
@@ -209,9 +261,23 @@ function checkInsetDistances(
     // satisfiedByMoreRestrictiveNeighbor edge is honestly non-comparable
     // (satisfied by containment via a more restrictive adjacent edge), the
     // SAME category as "no determinable role," never compared against
-    // expectedFt.
+    // expectedFt. Also honor a genuine notch-collapse absence (matched:false,
+    // no candidate found at all) when the edge midpoint sits near an ACTUAL
+    // miter point this run produced — the same check verifyR32PerEdgeInset
+    // already applies (cert-equivalent-gates.ts), now shared here so P2
+    // does not false-fail a real short edge folded into a corner join
+    // during offset (48021:31308 edge 4, a genuine 9.09ft corner jog).
+    const honestlyAbsorbed =
+      !m.matched &&
+      !m.satisfiedByMoreRestrictiveNeighbor &&
+      (edgeMidpointNearKnownMiterPoint(parcelRing, m.edgeIndex, miterPointsWgs84) ||
+        edgeNearOwnNeighborChord(parcelRing, m.edgeIndex));
     const pass =
-      role == null || expectedFt == null || measuredFt == null || m.satisfiedByMoreRestrictiveNeighbor
+      role == null ||
+      expectedFt == null ||
+      measuredFt == null ||
+      m.satisfiedByMoreRestrictiveNeighbor ||
+      honestlyAbsorbed
         ? true // no determinable role, or honestly non-comparable — not a P2 failure
         : Math.abs(measuredFt - expectedFt) <= toleranceFt;
     return {
@@ -318,6 +384,7 @@ export function checkEnvelopeGroundTruth(
     input.edgeRoles,
     input.roads,
     input.situsAddress,
+    input.miterPointsWgs84,
   ) ?? { pass: false, edges: [] };
 
   const p3 = checkFrontOnStreet(input.parcelRing, input.roads, input.situsAddress, input.edgeRoles);

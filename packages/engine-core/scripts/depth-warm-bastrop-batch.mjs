@@ -546,6 +546,20 @@ for (const row of parcelRows) {
   }
 
   const geom = await geomResolver.resolve(parcelNodeId);
+  // GROUND-TRUTH FRAME LAW (2026-08-07): capture the RAW ring, exactly as
+  // read from the source-of-truth store, BEFORE any scrub — this is what
+  // gets threaded through as rawParcelRing for the ground-truth predicate.
+  // geom.ring (TxgioDatabaseParcelGeometryResolver) is unscrubbed by
+  // construction (exteriorRingFromGeoJson, no cleanup pass); currencyResult
+  // .ring (fetchBcadParcelRings) is likewise raw — only the FALLBACK branch
+  // used to scrub inline, which this fix removes so both branches leave
+  // rawParcelRing pointing at genuinely unscrubbed source geometry.
+  let rawParcelRing =
+    geom?.ring && geom.ring.length >= 3
+      ? geom.ring
+      : currencyResult?.ok
+        ? currencyResult.ring
+        : null;
   let parcelRing =
     geom?.ring && geom.ring.length >= 3
       ? geom.ring
@@ -578,6 +592,7 @@ for (const row of parcelRows) {
     try {
       const bcad = await fetchBcadParcelRings([propId]);
       if (bcad[0]?.ring) {
+        rawParcelRing = bcad[0].ring;
         parcelRingWorking = scrubLotLineRing(bcad[0].ring);
         ringSwapped = true;
       }
@@ -590,6 +605,7 @@ for (const row of parcelRows) {
       try {
         const bcad = await fetchBcadParcelRings([propId]);
         if (bcad[0]?.ring) {
+          rawParcelRing = bcad[0].ring;
           parcelRingWorking = scrubLotLineRing(bcad[0].ring);
           ringSwapped = true;
         }
@@ -680,6 +696,11 @@ for (const row of parcelRows) {
       parcelNodeId,
       district: warmDistrict,
       parcelRing: parcelRingWorking,
+      // GROUND-TRUTH FRAME LAW — threaded through to WarmCandidate.rawParcelRing
+      // so promote's checkEnvelopeGroundTruth gate (and any write-then-verify
+      // read-back check) measures against the true source ring, never the
+      // scrubbed working ring.
+      rawParcelRing,
       descriptor: builtDescriptor.descriptor,
       roads,
       edgeLabels: labelResult.ok ? labelResult.edgeLabels : [],

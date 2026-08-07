@@ -134,18 +134,89 @@ export function removeNearlyStraightVertices(
   return pts;
 }
 
+/**
+ * SHAPE_PRESERVATION_EPSILON_M (2026-08-07, master planner ruling — third
+ * instance of the "gate against an internal representation instead of
+ * ground truth" defect class): the maximum perpendicular distance a removed
+ * vertex may sit from the chord connecting its neighbors, AND the maximum
+ * fractional area a removal may shed, before that removal is refused as
+ * carving real property geometry rather than digitization noise. 0.15m
+ * (~0.5ft) is comfortably above GPS/digitization jitter (sub-decimeter) and
+ * comfortably below any real lot corner's minimum meaningful offset.
+ *
+ * Root cause this closes: 48021:31299's raw 6-vertex ring (from BOTH txgio
+ * and BCAD, independently) has a real 2.428m (7.97ft) edge whose FAR vertex
+ * sits at perpendicular distance ~0.0001m from the chord connecting ITS
+ * OWN neighbors (i.e. that one vertex, in isolation, looks like
+ * near-exact collinearity — genuinely near-zero cross-product, not a
+ * numerically-fuzzy near-zero). The OLD collinearity test only checked the
+ * raw (unnormalized) cross-product magnitude against a fixed tolerance —
+ * for a vertex bounded by one short (2.4m) and one long (26.2m) edge, that
+ * raw cross-product can be small even though removing the vertex relocates
+ * the ring's boundary by a real ~7.95ft at the vertex's own short-edge
+ * neighbor (verified: P:/tmp/twelve-live-rings.json 31299, auditor's
+ * from-scratch measurement of the served store against the true parcel
+ * ring showed exactly this ~7.5-8ft-scale miss). The area-ratio test alone
+ * (removeShortEdgeVertices' targetArea * 0.998 guard) does not catch this
+ * either: a short edge near a large parcel's corner sheds well under 0.2%
+ * of total area while still being a real, several-foot boundary feature.
+ * Both tests now require BOTH a normalized perpendicular-distance bound
+ * AND an area-delta bound before removing any vertex — a true digitization
+ * jog fails both checks cleanly (near-zero on both); a real short property
+ * edge fails at least one.
+ */
+export const SHAPE_PRESERVATION_EPSILON_M = 0.15;
+const SHAPE_PRESERVATION_AREA_FRAC = 0.001; // 0.1%
+
+/**
+ * Perpendicular distance from point p to the infinite line through a-b.
+ * Exported (2026-08-07) so the Ground-Truth Frame Law's P2 check
+ * (envelope-ground-truth.ts) can apply the SAME collinearity test to
+ * recognize a raw-ring edge that was ELIGIBLE for scrub removal (i.e.
+ * genuinely near-collinear with its own neighbors, the exact fact that
+ * justifies dropping it from the offset computation) but has zero
+ * measurable R32 correspondence in the raw frame — honestly non-comparable
+ * for the same underlying geometric reason, not a re-derived heuristic.
+ */
+export function perpDistanceToChord(p: PlanarPoint, a: PlanarPoint, b: PlanarPoint): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const chordLen = Math.hypot(dx, dy);
+  if (chordLen < 1e-9) return Math.hypot(p.x - a.x, p.y - a.y);
+  const cross = dx * (p.y - a.y) - dy * (p.x - a.x);
+  return Math.abs(cross) / chordLen;
+}
+
+/**
+ * Drop a vertex only when BOTH conditions hold: (a) exact-scale
+ * collinearity (raw cross-product test, tol in the same units the caller
+ * always used) as a fast pre-filter, AND (b) removing it stays within the
+ * shape-preservation bound (perpendicular distance from the vertex to its
+ * neighbors' chord, plus fractional area delta) — never on cross-product
+ * magnitude alone, which is not scale-normalized and can pass a real
+ * multi-foot jog when one bounding edge is short and the other long.
+ */
 function removeCollinearVertices(points: PlanarPoint[], tol: number): PlanarPoint[] {
   const n = points.length;
   if (n < 3) return points.map((p) => ({ x: p.x, y: p.y }));
+  const targetArea = Math.abs(signedArea(points));
   const out: PlanarPoint[] = [];
   for (let i = 0; i < n; i++) {
     const a = points[(i + n - 1) % n]!;
     const b = points[i]!;
     const c = points[(i + 1) % n]!;
     const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-    if (Math.abs(cross) > tol) {
-      out.push({ x: b.x, y: b.y });
+    if (Math.abs(cross) <= tol) {
+      // Candidate for removal — verify shape preservation before dropping.
+      const perpDist = perpDistanceToChord(b, a, c);
+      const candidate = points.filter((_, j) => j !== i);
+      const nextArea = candidate.length >= 3 ? Math.abs(signedArea(candidate)) : 0;
+      const areaFrac = targetArea > 1e-9 ? Math.abs(targetArea - nextArea) / targetArea : 0;
+      const shapePreserved =
+        perpDist <= SHAPE_PRESERVATION_EPSILON_M && areaFrac <= SHAPE_PRESERVATION_AREA_FRAC;
+      if (shapePreserved) continue; // safe to drop — falls through, not pushed to out
     }
+    out.push({ x: b.x, y: b.y });
   }
   return out.length >= 3 ? out : points.map((p) => ({ x: p.x, y: p.y }));
 }
@@ -179,6 +250,12 @@ export function removeShortEdgeVertices(
       if (candidate.length < 3) continue;
       const nextArea = Math.abs(signedArea(candidate));
       if (nextArea < targetArea * 0.998) continue;
+      // Shape-preservation bound (same law as removeCollinearVertices): a
+      // short-edge vertex may still sit far from the chord connecting its
+      // neighbors (a real jog whose bounding edges happen to be short) —
+      // the area-ratio check alone does not catch this on a large parcel
+      // where the short edge is a small fraction of the perimeter/area.
+      if (perpDistanceToChord(cur, prev, next) > SHAPE_PRESERVATION_EPSILON_M) continue;
       if (ringSelfIntersects(candidate)) continue;
 
       pts = candidate;

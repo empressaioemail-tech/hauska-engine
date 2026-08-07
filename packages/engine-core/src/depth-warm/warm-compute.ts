@@ -37,6 +37,13 @@ export interface WarmComputeInput {
   boundaryEdges?: ReadonlyArray<BoundaryEdgeAtomInstance>;
   warmAgentId?: string;
   warmAt?: string;
+  /**
+   * GROUND-TRUTH FRAME LAW — the RAW parcel ring (pre-scrub), threaded onto
+   * the resulting WarmCandidate for the ground-truth predicate to measure
+   * against. Absent (or equal to parcelRing) when the caller never scrubs
+   * — see WarmCandidate.rawParcelRing doc comment.
+   */
+  rawParcelRing?: Ring;
 }
 
 export interface FlatSetbackFallback {
@@ -157,6 +164,7 @@ function computeWarmCandidateWithLabels(
     warmAt,
     warmAgentId,
     miterPointsWgs84: inset.miterPointsWgs84,
+    rawParcelRing: input.rawParcelRing ?? input.parcelRing,
   };
 }
 
