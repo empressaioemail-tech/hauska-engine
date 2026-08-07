@@ -161,7 +161,7 @@ function projectRingInFrame(ring: Ring, frame: ProjectedRing): XY[] | null {
 function insetProjected(
   proj: ProjectedRing,
   insetMetersPerEdge: number[],
-): { points: XY[] } | null {
+): { points: XY[]; miterPoints: XY[] } | null {
   return insetRingMeters(proj.points, insetMetersPerEdge);
 }
 
@@ -175,6 +175,13 @@ export function geometryCorrectnessGate(
   insetRing: Ring | null,
   insetFeetPerEdge: number[],
   storedInwardNormals?: Array<{ x: number; y: number }>,
+  /**
+   * Miter points collapseNearCollinearOffsetNotches produced for THIS
+   * inset, already in the SAME projected local-metre frame as this
+   * function's own `orig`/`inset` (i.e. `insetXY.miterPoints` from
+   * insetRingMetersWithNormals) — never WGS84. See perEdgeOffsetPlausible.
+   */
+  knownMiterPointsProjected?: Array<{ x: number; y: number }>,
 ): GeometryCorrectnessResult {
   const reasons: string[] = [];
   if (!insetRing) {
@@ -204,7 +211,9 @@ export function geometryCorrectnessGate(
       break;
     }
   }
-  if (!perEdgeOffsetPlausible(orig, inset, insetMeters, storedInwardNormals)) {
+  if (
+    !perEdgeOffsetPlausible(orig, inset, insetMeters, storedInwardNormals, knownMiterPointsProjected)
+  ) {
     reasons.push("per-edge offset distance implausible");
   }
   if (Math.abs(signedArea(inset)) < Math.abs(signedArea(orig)) * 0.0025) {
@@ -299,7 +308,13 @@ export function insetPerEdgeFromPrimitive(
   }
 
   if (
-    isInsetDegenerate(proj.points, insetXY.points, insetMeters, inwardNormals)
+    isInsetDegenerate(
+      proj.points,
+      insetXY.points,
+      insetMeters,
+      inwardNormals,
+      insetXY.miterPoints,
+    )
   ) {
     return {
       ring: null,
@@ -320,6 +335,7 @@ export function insetPerEdgeFromPrimitive(
     closed,
     insetFeetPerEdge,
     inwardNormals,
+    insetXY.miterPoints,
   );
   if (!fullGate.pass) {
     return {
@@ -397,7 +413,15 @@ export function insetPerEdge(
     };
   }
 
-  if (isInsetDegenerate(proj.points, insetXY.points, insetMeters)) {
+  if (
+    isInsetDegenerate(
+      proj.points,
+      insetXY.points,
+      insetMeters,
+      undefined,
+      insetXY.miterPoints,
+    )
+  ) {
     return {
       ring: null,
       areaSqFt: 0,
@@ -412,7 +436,13 @@ export function insetPerEdge(
   const closed: Ring = insetXY.points.map((p) => unproject(p, proj));
   closed.push([closed[0]![0], closed[0]![1]]);
 
-  const fullGate = geometryCorrectnessGate(ring, closed, insetFeetPerEdge);
+  const fullGate = geometryCorrectnessGate(
+    ring,
+    closed,
+    insetFeetPerEdge,
+    undefined,
+    insetXY.miterPoints,
+  );
   if (!fullGate.pass) {
     return {
       ring: null,

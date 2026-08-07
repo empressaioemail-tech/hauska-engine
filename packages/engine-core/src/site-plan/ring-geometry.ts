@@ -325,7 +325,7 @@ export function computeSetbackOffset(
     };
   }
 
-  if (isInsetDegenerate(ccwRing, insetXY.points, ccwInset)) {
+  if (isInsetDegenerate(ccwRing, insetXY.points, ccwInset, undefined, insetXY.miterPoints)) {
     return {
       basis,
       segments: withAssignment,

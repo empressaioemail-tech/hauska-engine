@@ -94,7 +94,7 @@ function setbackStrip(
 export function insetRingMeters(
   ccwRing: PlanarPoint[],
   insetMetersPerEdge: number[],
-): { points: PlanarPoint[] } | null {
+): { points: PlanarPoint[]; miterPoints: PlanarPoint[] } | null {
   const n = ccwRing.length;
   const normals: PlanarPoint[] = [];
   for (let i = 0; i < n; i++) {
@@ -115,7 +115,7 @@ export function insetRingMetersWithNormals(
   ccwRing: PlanarPoint[],
   insetMetersPerEdge: number[],
   inwardNormalsPerEdge: PlanarPoint[],
-): { points: PlanarPoint[] } | null {
+): { points: PlanarPoint[]; miterPoints: PlanarPoint[] } | null {
   const pts = ccwRing;
   const n = pts.length;
   if (n < 3 || insetMetersPerEdge.length !== n) return null;
@@ -146,7 +146,7 @@ export function insetRingMetersWithNormals(
   }
 
   if (!forbidden) {
-    return { points: pts.map((p) => ({ x: p.x, y: p.y })) };
+    return { points: pts.map((p) => ({ x: p.x, y: p.y })), miterPoints: [] };
   }
 
   let diff: polygonClipping.MultiPolygon;
@@ -175,7 +175,21 @@ export function insetRingMetersWithNormals(
   // polygon-clipping difference can retain the original edge as a zero-width
   // spike (self-touch) while the interior area is correct — clean before the
   // degeneracy guard sees the ring (PATCH-A). Guard stays strict on leftovers.
-  return { points: cleanClipRingArtifacts(best) };
+  const cleaned = cleanClipRingArtifacts(best);
+  // 2026-08-06 robust-inward-offset fix: when two adjacent parcel edges meet
+  // at a near-collinear vertex and carry DIFFERENT inset distances, the
+  // strip-union boundary at that corner is not a clean miter join — it
+  // retains a short reflex "step" (two short edges with a turn-sign flip
+  // relative to the rest of the ring) instead of a single intersection
+  // point. PATCH-A's spike cleanup does not catch this (it is not a U-turn
+  // and does not touch a non-adjacent edge — it is a genuine small notch).
+  // Collapse it IN OFFSET SPACE to the analytic miter point of the two
+  // bounding (long) offset edges, never touching the original parcel ring.
+  // The parcel ring is passed only as a miter-limit backstop (P1
+  // containment) — a candidate miter point that would land outside the
+  // parcel is rejected and that notch is left as a bevel instead.
+  const collapsed = collapseNearCollinearOffsetNotches(cleaned, { parcelRing: pts });
+  return { points: collapsed.points, miterPoints: collapsed.miterPoints };
 }
 
 /**
@@ -229,6 +243,253 @@ export function cleanClipRingArtifacts(
   pts = dedupeConsecutivePoints(pts, 1e-9);
   pts = removeCollinearPoints(pts, 1e-7);
   return pts;
+}
+
+/** Line-line intersection of two infinite lines (p1->p2) and (p3->p4). Null when parallel. */
+function lineIntersection(
+  p1: PlanarPoint,
+  p2: PlanarPoint,
+  p3: PlanarPoint,
+  p4: PlanarPoint,
+): PlanarPoint | null {
+  const d1x = p2.x - p1.x;
+  const d1y = p2.y - p1.y;
+  const d2x = p4.x - p3.x;
+  const d2y = p4.y - p3.y;
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-12) return null;
+  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
+  return { x: p1.x + t * d1x, y: p1.y + t * d1y };
+}
+
+// The absolute cap is a coarse pre-filter only — the RELATIVE check
+// (NOTCH_MAX_RUN_TO_BOUNDING_RATIO, below) is the real discriminator
+// between a corner-offset artifact and a genuine short edge on a small
+// lot. Kept generous so a real-world notch run (observed up to ~6m on
+// 48021:31308/31371-shaped corner lots) is never excluded by the absolute
+// cap alone before the relative/reflex/containment gates get to evaluate it.
+const NOTCH_MAX_EDGE_LEN_M = 10;
+const NOTCH_MIN_BOUNDING_EDGE_LEN_M = 6;
+const NOTCH_AREA_TOL_RATIO = 0.02;
+const NOTCH_MAX_RUN_EDGES = 3;
+/** A run edge must also be at most this fraction of the shorter bounding edge — keeps the absolute cap from ever firing on a genuinely small lot's real short edge. */
+const NOTCH_MAX_RUN_TO_BOUNDING_RATIO = 0.35;
+
+/**
+ * Collapse a short reflex "notch" run in an offset (strip-union) ring to
+ * the analytic miter intersection of its two bounding (long) edges.
+ *
+ * Root cause (2026-08-06 robust-inward-offset fix): when two adjacent
+ * parcel edges meeting at a near-collinear vertex carry DIFFERENT inset
+ * distances, insetRingMetersWithNormals's strip-union-difference boundary
+ * at that corner is not a single miter point — it retains a short chain of
+ * 1-3 edges whose vertices include a turn-sign flip relative to the ring's
+ * dominant winding (a genuine geometric artifact of the union operation,
+ * not real parcel geometry; the true parcel corner there is a single
+ * point). This is invisible to cleanClipRingArtifacts's spike removal (not
+ * a near-180deg U-turn, does not touch a non-adjacent edge — it is a
+ * short, real-looking notch/step).
+ *
+ * Detection is EDGE-based, not vertex-based: find a maximal run of
+ * consecutive short edges (each <= maxEdgeLenM, AND each at most
+ * NOTCH_MAX_RUN_TO_BOUNDING_RATIO of the shorter bounding edge — the
+ * relative check is the real discriminator, the absolute cap is only a
+ * coarse pre-filter) bracketed on both sides by long edges (each >=
+ * minBoundingEdgeLenM), where at least one vertex spanned by the run
+ * (including its start/end vertices, which are also collapsed) is reflex
+ * relative to the ring's dominant turn sign. Every vertex spanned by the
+ * run is replaced by the single line-line intersection of the two
+ * bounding (long) edges' supporting lines — i.e. the analytic miter point
+ * — PROVIDED that point (a) falls within the true parcel ring when one is
+ * supplied (miter-limit backstop — an over-extended miter is rejected and
+ * the notch left as a bevel, mirroring CSS/SVG stroke miter-limit
+ * fallback), (b) preserves ring area within NOTCH_AREA_TOL_RATIO, and (c)
+ * introduces no self-intersection/self-touch. A REAL short edge on a REAL
+ * small lot survives untouched whenever
+ * collapsing it would fail any of those checks (wrong area, crossing,
+ * etc.) — the loop simply moves on and leaves it as-is.
+ */
+export interface CollapseNotchesResult {
+  points: PlanarPoint[];
+  /**
+   * Every miter point this function created, in the SAME coordinate frame
+   * as `points`. Callers (perEdgeOffsetPlausible) use this to scope their
+   * own leniency STRICTLY to points this function actually produced —
+   * never a heuristic re-guess by edge length, which cannot distinguish a
+   * genuine corner-offset artifact from unrelated short/noisy geometry
+   * (e.g. a corrupt digitization-noise ring with its own short edges that
+   * must still fail plausibility). See perEdgeOffsetPlausible's doc.
+   */
+  miterPoints: PlanarPoint[];
+}
+
+export function collapseNearCollinearOffsetNotches(
+  points: PlanarPoint[],
+  options?: {
+    maxEdgeLenM?: number;
+    minBoundingEdgeLenM?: number;
+    areaTolRatio?: number;
+    /**
+     * Miter-limit backstop (P1 containment): when supplied, a candidate
+     * miter point that lands outside this ring (beyond containmentTolM) is
+     * rejected — that notch is left as-is (bevel) rather than forcing an
+     * over-extended miter join outside the true parcel boundary. Mirrors
+     * the classic SVG/CSS stroke miter-limit-then-bevel-fallback pattern.
+     */
+    parcelRing?: PlanarPoint[];
+    containmentTolM?: number;
+  },
+): CollapseNotchesResult {
+  const maxEdgeLen = options?.maxEdgeLenM ?? NOTCH_MAX_EDGE_LEN_M;
+  const minBoundingLen = options?.minBoundingEdgeLenM ?? NOTCH_MIN_BOUNDING_EDGE_LEN_M;
+  const areaTolRatio = options?.areaTolRatio ?? NOTCH_AREA_TOL_RATIO;
+  const containmentTol = options?.containmentTolM ?? 0.12;
+
+  let pts = points.map((p) => ({ x: p.x, y: p.y }));
+  const miterPoints: PlanarPoint[] = [];
+  if (pts.length < 5) return { points: pts, miterPoints }; // need room to drop vertices and stay a polygon
+
+  const targetArea = Math.abs(signedArea(pts));
+  if (targetArea <= 1e-12) return { points: pts, miterPoints };
+
+  const dominantSign = ringDominantTurnSign(pts);
+  if (dominantSign === 0) return { points: pts, miterPoints };
+
+  let changed = true;
+  let guard = 0;
+  while (changed && pts.length > 3 && guard++ < 32) {
+    changed = false;
+    const n = pts.length;
+
+    // edgeLen(i) = length of edge pts[i] -> pts[i+1].
+    const edgeLen = (i: number): number => {
+      const a = pts[i % n]!;
+      const b = pts[(i + 1) % n]!;
+      return Math.hypot(b.x - a.x, b.y - a.y);
+    };
+
+    outer: for (let edgeStart = 0; edgeStart < n; edgeStart++) {
+      if (edgeLen(edgeStart) > maxEdgeLen) continue; // run must start at a short edge
+
+      // Extend the run while edges stay short (cap NOTCH_MAX_RUN_EDGES to
+      // avoid ever collapsing a large fraction of the ring).
+      let runEdgeCount = 1;
+      while (
+        runEdgeCount < NOTCH_MAX_RUN_EDGES &&
+        runEdgeCount < n - 2 &&
+        edgeLen(edgeStart + runEdgeCount) <= maxEdgeLen
+      ) {
+        runEdgeCount++;
+      }
+
+      // The run spans edges [edgeStart, edgeStart+runEdgeCount) and
+      // VERTICES [beforeIdx, afterIdx] inclusive (runEdgeCount+1 vertices
+      // total) — every one of them is replaced by a single miter point.
+      // Need at least 2 edges (3 vertices) for this to be a genuine notch;
+      // a single short edge alone is not a step artifact.
+      const beforeIdx = edgeStart % n;
+      const afterIdx = (edgeStart + runEdgeCount) % n;
+      if (afterIdx === beforeIdx) continue;
+      if (runEdgeCount < 2) continue;
+
+      // At least one vertex IN THE RUN (beforeIdx..afterIdx inclusive) must
+      // be reflex relative to the ring's dominant winding — the artifact
+      // signature (a real corner never flips winding sign locally).
+      let anyReflex = false;
+      for (let k = 0; k <= runEdgeCount; k++) {
+        const idx = (edgeStart + k) % n;
+        const p = pts[(idx + n - 1) % n]!;
+        const q = pts[idx]!;
+        const r = pts[(idx + 1) % n]!;
+        const cross = (q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x);
+        if (Math.sign(cross) !== 0 && Math.sign(cross) !== dominantSign) anyReflex = true;
+      }
+      if (!anyReflex) continue;
+
+      // Bounding edges (the long edges immediately before/after the run)
+      // must be substantial — never collapse a genuinely tiny lot feature.
+      const priorToBeforeIdx = (beforeIdx + n - 1) % n;
+      const afterNextIdx = (afterIdx + 1) % n;
+      const priorToBefore = pts[priorToBeforeIdx]!;
+      const before = pts[beforeIdx]!;
+      const after = pts[afterIdx]!;
+      const afterNext = pts[afterNextIdx]!;
+      const boundingLenA = Math.hypot(before.x - priorToBefore.x, before.y - priorToBefore.y);
+      const boundingLenB = Math.hypot(afterNext.x - after.x, afterNext.y - after.y);
+      if (boundingLenA < minBoundingLen || boundingLenB < minBoundingLen) continue;
+
+      // Every edge IN the run must also be small relative to its bounding
+      // edges (not just below the absolute cap) — this is what
+      // distinguishes a corner-offset artifact from a real short edge on a
+      // genuinely small lot feature, where the "short" edge could still be
+      // a meaningful fraction of the surrounding edges' length.
+      const minBounding = Math.min(boundingLenA, boundingLenB);
+      let runEdgesRelativelyShort = true;
+      for (let k = 0; k < runEdgeCount; k++) {
+        if (edgeLen(edgeStart + k) > minBounding * NOTCH_MAX_RUN_TO_BOUNDING_RATIO) {
+          runEdgesRelativelyShort = false;
+          break;
+        }
+      }
+      if (!runEdgesRelativelyShort) continue;
+
+      const miter = lineIntersection(priorToBefore, before, after, afterNext);
+      if (!miter || !Number.isFinite(miter.x) || !Number.isFinite(miter.y)) continue;
+
+      // Miter-limit backstop: never let the analytic intersection land
+      // outside the true parcel ring (classic miter-join over-extension —
+      // the SAME failure mode CSS/SVG stroke miter joins guard against
+      // with a miter-limit-then-bevel fallback). Skip this notch (bevel:
+      // leave it as-is) when a parcel ring was supplied and the miter
+      // point falls outside it.
+      if (options?.parcelRing && !pointInOrOnPolygon(miter, options.parcelRing, containmentTol)) {
+        continue;
+      }
+
+      // Rebuild: keep every vertex from `after` around to `before`
+      // inclusive (ring order), splicing the miter point in between them
+      // (i.e. replacing before/after and all interior run vertices with a
+      // single point) — before and after themselves are also folded into
+      // the miter since they bound the SHORT run on both sides and a
+      // proper miter join replaces the whole short chain with one point.
+      const keep = n - runEdgeCount - 1; // vertices strictly outside [before..after] inclusive
+      const rebuilt: PlanarPoint[] = [miter];
+      for (let k = 0; k < keep; k++) {
+        const idx = (afterNextIdx + k) % n;
+        rebuilt.push(pts[idx]!);
+      }
+
+      if (rebuilt.length < 3) continue outer;
+      const candArea = Math.abs(signedArea(rebuilt));
+      if (Math.abs(candArea - targetArea) > targetArea * areaTolRatio) continue;
+      if (ringSelfIntersects(rebuilt)) continue;
+      if (ringHasSelfTouch(rebuilt)) continue;
+
+      pts = rebuilt;
+      miterPoints.push({ x: miter.x, y: miter.y });
+      changed = true;
+      break;
+    }
+  }
+
+  return { points: pts, miterPoints };
+}
+
+/** Dominant turn sign across a ring's significant (non-collinear) vertices. */
+function ringDominantTurnSign(points: PlanarPoint[]): number {
+  const n = points.length;
+  let posCount = 0;
+  let negCount = 0;
+  for (let i = 0; i < n; i++) {
+    const a = points[(i + n - 1) % n]!;
+    const b = points[i]!;
+    const c = points[(i + 1) % n]!;
+    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (cross > 1e-9) posCount++;
+    else if (cross < -1e-9) negCount++;
+  }
+  if (posCount === 0 && negCount === 0) return 0;
+  return posCount >= negCount ? 1 : -1;
 }
 
 /** True when path a→b→c nearly reverses (clip out-and-back spike). */
@@ -408,11 +669,72 @@ export function isConvexPlanarRing(
   return sign !== 0;
 }
 
+/** Minimum distance from point p to the ring boundary (nearest point on any edge). */
+function minDistanceToRingBoundary(p: PlanarPoint, ring: PlanarPoint[]): number {
+  const n = ring.length;
+  let best = Infinity;
+  for (let i = 0; i < n; i++) {
+    const a = ring[i]!;
+    const b = ring[(i + 1) % n]!;
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const len2 = abx * abx + aby * aby;
+    let cx: number;
+    let cy: number;
+    if (len2 < 1e-12) {
+      cx = a.x;
+      cy = a.y;
+    } else {
+      let t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2;
+      t = Math.max(0, Math.min(1, t));
+      cx = a.x + t * abx;
+      cy = a.y + t * aby;
+    }
+    const dist = Math.hypot(p.x - cx, p.y - cy);
+    if (dist < best) best = dist;
+  }
+  return best;
+}
+
+/** Nearest distance from point p to any point in a candidate set. */
+function nearestDistanceToPointSet(p: PlanarPoint, candidates: PlanarPoint[]): number {
+  let best = Infinity;
+  for (const c of candidates) {
+    const d = Math.hypot(p.x - c.x, p.y - c.y);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/**
+ * Per-original-edge offset plausibility. For a normal edge, verifies the
+ * strict pair of just-inside/just-outside midpoint tests against the inset
+ * boundary. For an edge whose dedicated offset segment was absorbed into a
+ * neighboring notch-collapse miter join (collapseNearCollinearOffsetNotches
+ * — 2026-08-06 robust-inward-offset fix), the strict midpoint-in-polygon
+ * test can legitimately fail even though the offset is correct: there is
+ * no longer a dedicated inset EDGE sitting at distance `d` from this
+ * original edge's own midpoint, because it was folded into a single miter
+ * point shared with an adjacent edge.
+ *
+ * The leniency for that case is scoped STRICTLY to points
+ * collapseNearCollinearOffsetNotches actually produced (`knownMiterPoints`)
+ * — never re-derived heuristically from edge length. An earlier version of
+ * this function used a length-relative heuristic ("this edge is short
+ * relative to its neighbors, so maybe it was absorbed") and that heuristic
+ * cannot distinguish a genuine corner-offset artifact from an unrelated
+ * short/noisy edge on a corrupt or digitization-noise ring (verified
+ * regression: PARCEL_34073_CORRUPT_TXGIO, whose own noise vertices are
+ * near-collinear and produce short edges by the SAME signature, yet must
+ * still fail plausibility before scrubbing). Requiring proximity to an
+ * ACTUAL miter point this run created eliminates that ambiguity entirely.
+ */
 export function perEdgeOffsetPlausible(
   orig: PlanarPoint[],
   inset: PlanarPoint[],
   insetMetersPerEdge: number[],
   inwardNormalsPerEdge?: PlanarPoint[],
+  knownMiterPoints?: PlanarPoint[],
 ): boolean {
   const n = orig.length;
   for (let i = 0; i < n; i++) {
@@ -436,14 +758,31 @@ export function perEdgeOffsetPlausible(
       x: mid.x + nrm.x * (d + 0.12),
       y: mid.y + nrm.y * (d + 0.12),
     };
-    if (!pointInOrOnPolygon(justInsideBuildable, inset, 0.2)) return false;
-    if (d > 0.25) {
-      const stillForbidden = {
-        x: mid.x + nrm.x * Math.max(0, d - 0.15),
-        y: mid.y + nrm.y * Math.max(0, d - 0.15),
-      };
-      if (pointInOrOnPolygon(stillForbidden, inset, 0.05)) return false;
-    }
+    const strictPass = pointInOrOnPolygon(justInsideBuildable, inset, 0.2);
+    const strictForbiddenOk =
+      strictPass && d > 0.25
+        ? !pointInOrOnPolygon(
+            { x: mid.x + nrm.x * Math.max(0, d - 0.15), y: mid.y + nrm.y * Math.max(0, d - 0.15) },
+            inset,
+            0.05,
+          )
+        : true;
+
+    if (strictPass && strictForbiddenOk) continue;
+
+    // Notch-collapse fallback, scoped to edges whose nearest inset-boundary
+    // vertex is an ACTUAL miter point collapseNearCollinearOffsetNotches
+    // created this run — never a length-based guess.
+    if (!knownMiterPoints || knownMiterPoints.length === 0) return false;
+    const nearestMiterDist = nearestDistanceToPointSet(mid, knownMiterPoints);
+    // The edge's own bounding-box scale (its length) caps how close a
+    // "nearby" miter point must be — a miter point genuinely absorbing
+    // this edge sits within roughly one edge-length of its midpoint.
+    if (nearestMiterDist > edgeLen) return false;
+
+    const nearestDist = minDistanceToRingBoundary(mid, inset);
+    const plausibleFallback = Math.abs(nearestDist - d) <= Math.max(1.0, d * 0.35);
+    if (!plausibleFallback) return false;
   }
   return true;
 }
@@ -462,6 +801,7 @@ export function isInsetDegenerate(
   inset: PlanarPoint[],
   insetMetersPerEdge: number[],
   inwardNormalsPerEdge?: PlanarPoint[],
+  knownMiterPoints?: PlanarPoint[],
 ): boolean {
   const insetArea = signedArea(inset);
   if (insetArea <= 0) return true;
@@ -471,7 +811,9 @@ export function isInsetDegenerate(
   for (const p of inset) {
     if (!pointInOrOnPolygon(p, orig)) return true;
   }
-  if (!perEdgeOffsetPlausible(orig, inset, insetMetersPerEdge, inwardNormalsPerEdge)) {
+  if (
+    !perEdgeOffsetPlausible(orig, inset, insetMetersPerEdge, inwardNormalsPerEdge, knownMiterPoints)
+  ) {
     return true;
   }
   return false;
