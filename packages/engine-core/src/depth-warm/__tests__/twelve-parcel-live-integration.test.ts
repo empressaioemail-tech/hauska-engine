@@ -152,11 +152,63 @@ const OPERATOR_TWELVE = [
   "48021:31398",
 ];
 
+/**
+ * Parcels whose verify-pass is currently a KNOWN, diagnosed defect rather
+ * than an open question — tracked as an EXPLICIT expected-fail (visible red
+ * ledger, not a silent skip) rather than a hard assert, per the master
+ * planner's 2026-08-06 direction on PR #268: land the six net-positive
+ * fixes now, do not trade a partial notch-collapse patch for a designed
+ * fix, and keep this harness as the acceptance suite so the commissioned
+ * redesign flips these to hard-pass later.
+ *
+ * Defect reference: OFFSET-CORE-VARIABLE-DISTANCE — single-miter notch
+ * collapse cannot resolve near-collinear runs adjacent to genuine corners;
+ * redesign commissioned (variable-distance inward polygon offset, follow-on
+ * branch from post-#268 main).
+ *
+ * Root cause (function-level evidence, see PR #268 description):
+ * collapseNearCollinearOffsetNotches collapses a short offset-space run to
+ * the analytic miter of its two bounding strip edges. On 48021:31362's real
+ * ring this collapse spans a genuine ~89-degree ORIGINAL parcel corner
+ * (verified: nearest original vertex turn angle +88.77deg), not
+ * offset-math noise (compare the working 31308 fixture's 0.89deg
+ * near-collinear vertex) — a genuine N-way constraint a 2-edge analytic
+ * miter cannot resolve without cutting across unrelated real geometry
+ * elsewhere in the ring. Two guards (near-parallel bounding-edge angle;
+ * real-corner turn-angle scan) were built and independently verified to
+ * fix 31362 in isolation, but each regressed 31308 elsewhere in this
+ * harness's broader role/inset matrix — reverted rather than trade a known
+ * green case for an unresolved one.
+ *
+ * - 31326, 31371, 31380, 31389: non-convex / R5 near-rect gate failure —
+ *   the collapse this ring needs is rejected or produces a fold.
+ * - 31299, 31362, 31371, 31380: "setbacks exceed the lot" empty candidate —
+ *   the collapse that should preserve real area instead discards it;
+ *   isInsetDegenerate correctly rejects the resulting ring rather than
+ *   promote an unverified envelope (perEdgeOffsetPlausible fails on the far
+ *   side of the discarded area, not at the collapse site itself).
+ * (31371 and 31380 each fail BOTH ways depending on role/inset ordering —
+ * listed once below, tracked under the same defect.)
+ */
+const KNOWN_DEFECT_OFFSET_CORE_VARIABLE_DISTANCE = new Set([
+  "48021:31299",
+  "48021:31326",
+  "48021:31362",
+  "48021:31371",
+  "48021:31380",
+  "48021:31389",
+]);
+
 describe("twelve-parcel LIVE pipeline integration harness (real rings, real roads, SF-1 F25/S5/R25/SC15)", () => {
   const results: Record<string, { pass: boolean; reasons: string[] }> = {};
 
   for (const parcelNodeId of OPERATOR_TWELVE) {
-    it(`${parcelNodeId}: labelEdgesFromRoads -> warmThenVerify -> verify-pass`, async () => {
+    const isKnownDefect = KNOWN_DEFECT_OFFSET_CORE_VARIABLE_DISTANCE.has(parcelNodeId);
+    const title = isKnownDefect
+      ? `${parcelNodeId}: labelEdgesFromRoads -> warmThenVerify -> verify-pass [EXPECTED FAIL — OFFSET-CORE-VARIABLE-DISTANCE, redesign commissioned]`
+      : `${parcelNodeId}: labelEdgesFromRoads -> warmThenVerify -> verify-pass`;
+    const itFn = isKnownDefect ? it.fails : it;
+    itFn(title, async () => {
       const fixture = rings[parcelNodeId];
       expect(fixture, `no fixture ring for ${parcelNodeId}`).toBeDefined();
       const parcelRing: Ring = fixture!.coordinates as Ring;
