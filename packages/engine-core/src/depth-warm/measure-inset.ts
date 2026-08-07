@@ -90,6 +90,17 @@ export interface MeasureInsetOptions {
 interface CandidateMatch {
   envEdgeIndex: number;
   offsetM: number;
+  /**
+   * |cOff - dOff|: how much the perpendicular offset from this lot edge's
+   * own line changes across the candidate envelope edge's two endpoints.
+   * Near-zero for a lot edge that TRULY produced this envelope boundary
+   * (the boundary is exactly parallel to, and at a constant distance from,
+   * the lot edge's own offset line by construction). Large for a lot edge
+   * whose "candidate" is really a neighboring edge's boundary that only
+   * happens to pass the parallel/overlap filters — see the ownership
+   * arbitration comment below for the verified case this discriminates.
+   */
+  offsetVarianceM: number;
 }
 
 /**
@@ -173,35 +184,96 @@ export function measurePerEdgeInsetIndexMatched(
         const lo = Math.max(0, Math.min(cT, dT));
         const hi = Math.min(lotLen, Math.max(cT, dT));
         const overlap = hi - lo;
-        if (overlap <= 0) continue;
+        const offsetVarianceM = Math.abs(cOff - dOff);
+        // 2026-08-07 fix: a candidate whose offset is EXACTLY constant
+        // across its own span (offsetVarianceM at true machine-precision
+        // zero, not merely "small") is, by construction, a segment this
+        // lot edge's own half-plane produced — no coincidental near-parallel
+        // neighbor's boundary can be perfectly constant-offset from a
+        // DIFFERENT edge's line over a nonzero span (that would require the
+        // two lines to be exactly parallel with zero angular error, which
+        // the strict `cos` check upstream already only loosely bounds).
+        // Verified on 48021:31317's real ring: lot edge 2's true matching
+        // envelope segment has offsetVarianceM effectively 0 (a perfect
+        // 25.00ft/25.00ft match) but its overlap is -0.93ft (a genuine,
+        // non-floating-point miss against the strict overlap>0 gate) at
+        // a near-collinear vertex — the same class of hairline-projection
+        // sensitivity already diagnosed on this exact fixture in the
+        // OFFSET-CORE-VARIABLE-DISTANCE redesign. Unlike the reverted
+        // global overlap-slack attempt from that round (which admitted a
+        // genuinely wrong ~28ft candidate on 48021:31308's edge 4), this
+        // rescue is gated on near-perfect variance, not a raw distance
+        // slack, so it cannot admit a merely-nearby-but-not-truly-owned
+        // segment — a non-owning segment's offset varies measurably across
+        // its span (see the ownership-arbitration fix above), so this
+        // path structurally cannot rescue the same failure mode the
+        // reverted fix caused.
+        const EXACT_VARIANCE_TOL_M = 0.01; // ~0.4in — true near-machine-precision constancy only
         const overlapFrac = lotLen > 1e-9 ? overlap / lotLen : 0;
-        if (overlapFrac < minOverlapFrac) continue;
+        if (overlap <= 0 || overlapFrac < minOverlapFrac) {
+          if (!(offsetVarianceM <= EXACT_VARIANCE_TOL_M && overlap > -lotLen * 0.1)) continue;
+        }
 
-        candidates.push({ envEdgeIndex: j, offsetM: offset });
+        candidates.push({ envEdgeIndex: j, offsetM: offset, offsetVarianceM });
       }
     }
     candidatesByLotEdge.push(candidates);
   }
 
   // Pass 2: resolve ownership. For each (lot edge i, envelope edge j)
-  // candidate pair, compute how close envelope edge j sits to lot edge i's
-  // OWN offset line in a role-neutral, DIMENSIONLESS sense: the residual
-  // after projecting envelope edge j onto lot edge i's line versus onto
-  // every OTHER lot edge k that also candidates for j. The lot edge whose
-  // own line is the best-fit supporting line for envelope edge j (smallest
-  // perpendicular deviation between j's actual direction/position and what
-  // edge i's own half-plane would produce) owns it. In practice, for a
-  // near-parallel pair of ADJACENT original edges, this reduces to: the
-  // lot edge with the SMALLER measured offset is the one whose own
-  // half-plane is tangent to (produced) that boundary — the larger-offset
-  // edge's own setback is already satisfied further out, so its
-  // "candidate" there is coincidental, not its own dedicated segment.
-  const ownerByEnvEdge = new Map<number, { lotEdgeIndex: number; offsetM: number }>();
+  // candidate pair, decide which lot edge TRULY produced envelope edge j
+  // as its own offset boundary.
+  //
+  // 2026-08-07 fix (coordinate-verified root cause — see
+  // P:/tmp/r32-vs-auditor.json and the master-planner-arbitrated verdict):
+  // the prior rule ("smallest offsetM wins ownership") is WRONG. Verified
+  // on 48021:31389's real ring: lot edge 0 (the true 25ft front edge) and
+  // lot edge 1 (a short, genuinely-dominated 5ft side edge next to it)
+  // both candidate for the SAME envelope boundary segment. Edge 0's
+  // candidate offset is a PERFECTLY CONSTANT 25.000ft at both of the
+  // segment's endpoints (offsetVarianceM ~= 0) — direct evidence the
+  // segment is exactly parallel to, and at a fixed distance from, edge 0's
+  // own line, i.e. edge 0 truly produced it. Edge 1's candidate offset
+  // varies from 26.29ft to 22.96ft across the SAME segment (offsetVarianceM
+  // ~= 1.02m / 3.3ft) — direct evidence the segment is NOT edge 1's own
+  // line, only close enough in angle/position to pass the parallel+overlap
+  // filters; edge 1 is riding on edge 0's boundary, not producing its own.
+  // The prior rule picked edge 1 anyway because its AVERAGE offset
+  // (24.62ft) happened to be marginally smaller than edge 0's (25.00ft) —
+  // an accident of where the shared boundary's corner falls, not a
+  // meaningful signal. offsetVarianceM is the direct geometric test for
+  // "did this lot edge actually produce this boundary" (a true producer's
+  // offset is constant by construction — half-plane clipping preserves
+  // exact parallel offset the length of the boundary IT contributes);
+  // ownership now goes to the smallest variance, with offsetM as a
+  // tiebreak only when variance is equal (e.g. two edges exactly parallel
+  // to each other, a degenerate case the tiebreak still resolves
+  // sensibly).
+  const OWNERSHIP_VARIANCE_TOL_M = 0.01; // ~0.4in — treat sub-cm variance as tied, fall through to offset tiebreak
+  const ownerByEnvEdge = new Map<
+    number,
+    { lotEdgeIndex: number; offsetM: number; offsetVarianceM: number }
+  >();
   for (let i = 0; i < nLot; i++) {
     for (const cand of candidatesByLotEdge[i]!) {
       const current = ownerByEnvEdge.get(cand.envEdgeIndex);
-      if (!current || cand.offsetM < current.offsetM) {
-        ownerByEnvEdge.set(cand.envEdgeIndex, { lotEdgeIndex: i, offsetM: cand.offsetM });
+      if (!current) {
+        ownerByEnvEdge.set(cand.envEdgeIndex, {
+          lotEdgeIndex: i,
+          offsetM: cand.offsetM,
+          offsetVarianceM: cand.offsetVarianceM,
+        });
+        continue;
+      }
+      const varianceDiff = cand.offsetVarianceM - current.offsetVarianceM;
+      const strictlyBetterVariance = varianceDiff < -OWNERSHIP_VARIANCE_TOL_M;
+      const tiedVariance = Math.abs(varianceDiff) <= OWNERSHIP_VARIANCE_TOL_M;
+      if (strictlyBetterVariance || (tiedVariance && cand.offsetM < current.offsetM)) {
+        ownerByEnvEdge.set(cand.envEdgeIndex, {
+          lotEdgeIndex: i,
+          offsetM: cand.offsetM,
+          offsetVarianceM: cand.offsetVarianceM,
+        });
       }
     }
   }

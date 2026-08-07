@@ -21,6 +21,22 @@ import type { WarmEdgeRole, WarmRoadProvenanceKind, WarmRoadSource } from "./typ
 export const DEFAULT_ROAD_PROXIMITY_THRESHOLD_M = 25;
 
 /**
+ * R33 street-distance sanity guard ratio (2026-08-07, master planner
+ * ruling): the chosen front edge's own distance to its matched road must
+ * not exceed this multiple of the closest OTHER road-adjacent, front-
+ * eligible edge's distance, or the labeling declines rather than serves a
+ * suspect front. Calibrated against the verified role-inversion SIGNATURE
+ * the independent auditor's street-distance table would have shown had one
+ * of the suspected parcels actually been mislabeled (a ~7x ratio, e.g.
+ * front at 159ft vs a sibling edge at 22ft) — comfortably above any
+ * legitimate same-block variation observed in the real Jones/Higgins
+ * dataset (siblings typically within 2x of each other), so this guard
+ * only fires on the genuine defect signature, never on ordinary lot-shape
+ * variation.
+ */
+export const FRONT_STREET_DISTANCE_SANITY_RATIO = 3;
+
+/**
  * OSM highway tags that must never win front labeling (pedestrian / non-ROW).
  * Re-export of the atoms package set — ONE taxonomy with isPedestrianWay.
  */
@@ -552,6 +568,51 @@ export function labelEdgesFromRoads(input: {
         normalizeStreetNameForMatch(h.road.name) === situsKey,
     );
     if (situsAdjacentEligible) {
+      return { ok: false, decline: "front-orientation-unresolved" };
+    }
+  }
+
+  // R33 street-distance sanity guard (2026-08-07, master planner ruling):
+  // cheap insurance modeled on the independent auditor's own street-
+  // distance check. A chosen front edge whose OWN distance to its matched
+  // road is much larger than another road-adjacent edge's distance to a
+  // road of EQUAL OR HIGHER class preference is a labeling error signature
+  // (the front candidate that should have won proximity did not, among
+  // comparably-or-more-preferred road classes) — fail closed rather than
+  // silently promote a wrong-edge front. Scoped to equal-or-higher
+  // preference ONLY: the adjacency-heuristic legitimately prefers a
+  // farther higher-class-preference road (e.g. a residential street) over
+  // a closer LOWER-preference one (e.g. a collector) — verified against
+  // 48021:34785's real fixture (front correctly on an unclassified/local
+  // edge 3, not the nearer collector) — so a closer LOWER-preference
+  // sibling losing to a farther front is the intended, legitimate outcome
+  // and must not trip the guard; only a closer-or-equal-distance sibling
+  // of EQUAL OR BETTER class standing signals a genuine labeling error.
+  // Verified this round
+  // that labelEdgesFromRoads' actual front selection was CORRECT on every
+  // parcel it was suspected of inverting (coordinate-keyed cross-check
+  // against the independent auditor's re-grade), so this guard is not
+  // patching a live defect — it is a fail-closed backstop making a future
+  // instance of this defect class impossible to silently serve, the same
+  // "make the class unrepresentable" principle as the joined-structure
+  // clipper-input invariant.
+  if (frontHit) {
+    const frontPreference = frontStreetPreference(frontHit.road.classification);
+    const bestOtherDistanceM = Math.min(
+      ...frontCandidates
+        .filter(
+          (h) =>
+            h.edgeIndex !== frontHit!.edgeIndex &&
+            frontStreetPreference(h.road.classification) >= frontPreference,
+        )
+        .map((h) => h.distanceM),
+      Infinity,
+    );
+    if (
+      Number.isFinite(bestOtherDistanceM) &&
+      bestOtherDistanceM > 0 &&
+      frontHit.distanceM > bestOtherDistanceM * FRONT_STREET_DISTANCE_SANITY_RATIO
+    ) {
       return { ok: false, decline: "front-orientation-unresolved" };
     }
   }
