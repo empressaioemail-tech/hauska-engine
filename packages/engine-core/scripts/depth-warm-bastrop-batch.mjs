@@ -14,6 +14,7 @@
  * conditional districts without setback rows (MU/GC/… honest no-setback-row).
  */
 
+import { writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
 import postgres from "postgres";
@@ -47,6 +48,10 @@ import {
   bucketVerifyFailReasons,
   promoteHonestVerifyDecline,
 } from "../src/depth-warm/honest-decline-promote.ts";
+import {
+  EnvelopeGroundTruthPromoteDeclineError,
+  EnvelopeWriteThenVerifyMismatchError,
+} from "../src/depth-warm/promote.ts";
 import { loadLayer23CityPropIds } from "./bastrop-layer23-roster.mjs";
 import { loadDominantDistrictRoster } from "./bastrop-dominant-district-roster.mjs";
 import { upsertCountyFacetLedger } from "./upsert-county-facet-ledger.mjs";
@@ -188,6 +193,7 @@ function parseArgs(argv) {
     dominantDistrictCohort: false,
     diagnoseFailures: false,
     upsertLedger: false,
+    refusedRosterOut: null,
     districtPrefix: null,
     excludeParcels: new Set(),
   };
@@ -225,6 +231,12 @@ function parseArgs(argv) {
     else if (a === "--dominant-district-cohort") out.dominantDistrictCohort = true;
     else if (a === "--diagnose-failures") out.diagnoseFailures = true;
     else if (a === "--upsert-ledger") out.upsertLedger = true;
+    else if (a === "--refused-roster-out") {
+      out.refusedRosterOut = String(argv[++i] || "").trim() || null;
+    }
+    else if (a.startsWith("--refused-roster-out=")) {
+      out.refusedRosterOut = a.slice("--refused-roster-out=".length).trim() || null;
+    }
   }
   if (out.forceOverwrite) out.forceRepromote = true;
   for (const id of BLOCK13_QUARANTINE) out.excludeParcels.add(id);
@@ -274,10 +286,12 @@ if (!substrateUrl) {
 
 const t0 = performance.now();
 const sql = postgres(substrateUrl, { ssl: "require", max: 4, prepare: false });
-let storageHandle = null;
-if (!dryRun) {
-  storageHandle = createPgStorage({ databaseUrl: substrateUrl, maxConnections: 2 });
-}
+// Dry-run must READ stored boundary primitives (SELECT-only) so compute
+// matches apply; only WRITES/promotes stay gated on !dryRun.
+let storageHandle = createPgStorage({
+  databaseUrl: substrateUrl,
+  maxConnections: dryRun ? 1 : 2,
+});
 
 const geomResolver = new TxgioDatabaseParcelGeometryResolver({ databaseUrl: txgioUrl });
 const txSql = postgres(txgioUrl, { ssl: "require", max: 2, prepare: false });
@@ -460,6 +474,8 @@ const stats = {
       "superseded-prop-id": 0,
       "front-orientation-unresolved": 0,
       "no-zoning-fact-stamp": 0,
+      "ground-truth-promote-decline": 0,
+      "write-then-verify-mismatch": 0,
       other: 0,
   },
   failureBuckets: {},
@@ -477,11 +493,19 @@ const stats = {
 
 const sampleOutcomes = [];
 const failureSamples = [];
+/** @type {{ parcelNodeId: string; reason: string }[]} */
+const refusedParcels = [];
+
+/** @param {string} parcelNodeId @param {string} reason */
+function recordRefusedParcel(parcelNodeId, reason) {
+  refusedParcels.push({ parcelNodeId, reason });
+}
 
 /** @param {string} bucket @param {string} parcelNodeId @param {string[]} reasons */
 function recordEarlyDecline(bucket, parcelNodeId, reasons) {
   stats.declines[bucket in stats.declines ? bucket : "other"]++;
   stats.failureBuckets[bucket] = (stats.failureBuckets[bucket] ?? 0) + 1;
+  recordRefusedParcel(parcelNodeId, bucket);
   if (args.diagnoseFailures && failureSamples.length < 30) {
     failureSamples.push({ parcelNodeId, bucket, reasons: reasons.slice(0, 3) });
   }
@@ -507,6 +531,7 @@ for (const row of parcelRows) {
 
   if (args.placeTypeCohort && !isPlaceTypeDistrict(row.district, placeTypeDistrictCodes)) {
     stats.declines["no-setback-row"]++;
+    recordRefusedParcel(parcelNodeId, "no-setback-row");
     stats.processed++;
     continue;
   }
@@ -643,6 +668,7 @@ for (const row of parcelRows) {
         : null;
   if (!parcelRing || parcelRing.length < 3) {
     stats.declines["no-geometry"]++;
+    recordRefusedParcel(parcelNodeId, "no-geometry");
     stats.processed++;
     stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
     continue;
@@ -650,7 +676,7 @@ for (const row of parcelRows) {
 
   /** @type {import('@hauska-engine/atoms').BoundaryEdgeAtomInstance[] | null} */
   let boundaryEdges = null;
-  if (!dryRun && storageHandle?.storage) {
+  if (storageHandle?.storage) {
     try {
       boundaryEdges = await readBoundaryEdgesForParcel(
         storageHandle.storage,
@@ -820,7 +846,14 @@ for (const row of parcelRows) {
       situsAddress,
     });
   } catch (err) {
-    stats.declines.other++;
+    let declineKey = "other";
+    if (err instanceof EnvelopeGroundTruthPromoteDeclineError) {
+      declineKey = "ground-truth-promote-decline";
+    } else if (err instanceof EnvelopeWriteThenVerifyMismatchError) {
+      declineKey = "write-then-verify-mismatch";
+    }
+    stats.declines[declineKey]++;
+    recordRefusedParcel(parcelNodeId, declineKey);
     stats.processed++;
     stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
     if (sampleOutcomes.length < 8) {
@@ -862,6 +895,7 @@ for (const row of parcelRows) {
     ];
     const bucket = bucketVerifyFailReasons(reasons);
     stats.failureBuckets[bucket] = (stats.failureBuckets[bucket] ?? 0) + 1;
+    recordRefusedParcel(parcelNodeId, bucket);
     if (args.diagnoseFailures && failureSamples.length < 30) {
       failureSamples.push({ parcelNodeId, bucket, reasons: reasons.slice(0, 3) });
     }
@@ -962,6 +996,27 @@ const costJson = {
 };
 
 console.log(JSON.stringify(costJson, null, 2));
+
+const refusedRosterPath =
+  args.refusedRosterOut ??
+  `depth-warm-bastrop-refused-roster-${dryRun ? "dry" : "apply"}.json`;
+const refusedRosterArtifact = {
+  event: "R4-depth-refused-roster",
+  countyFips: COUNTY_FIPS,
+  dryRun,
+  refusedCount: refusedParcels.length,
+  parcels: refusedParcels,
+};
+writeFileSync(refusedRosterPath, `${JSON.stringify(refusedRosterArtifact, null, 2)}\n`, {
+  encoding: "utf8",
+});
+console.log(
+  JSON.stringify({
+    event: "R4-depth-refused-roster.written",
+    path: refusedRosterPath,
+    refusedCount: refusedParcels.length,
+  }),
+);
 
 if (args.upsertLedger && !dryRun && cohortRosterMeta) {
   const ledgerUrl = txgioUrl;

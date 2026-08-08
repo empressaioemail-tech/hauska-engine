@@ -131,10 +131,10 @@ if (!substrateUrl) {
 
 const t0 = performance.now();
 const sql = postgres(substrateUrl, { ssl: "require", max: 4, prepare: false });
-let storageHandle = null;
-if (!dryRun) {
-  storageHandle = createPgStorage({ databaseUrl: substrateUrl, maxConnections: 2 });
-}
+let storageHandle = createPgStorage({
+  databaseUrl: substrateUrl,
+  maxConnections: dryRun ? 1 : 2,
+});
 
 const geomResolver = new TxgioDatabaseParcelGeometryResolver({ databaseUrl: txgioUrl });
 const txSql = postgres(txgioUrl, { ssl: "require", max: 2, prepare: false });
@@ -302,7 +302,7 @@ for (const row of parcelRows) {
 
   /** @type {import('@hauska-engine/atoms').BoundaryEdgeAtomInstance[] | null} */
   let boundaryEdges = null;
-  if (!dryRun && storageHandle?.storage) {
+  if (storageHandle?.storage) {
     try {
       boundaryEdges = await readBoundaryEdgesForParcel(
         storageHandle.storage,
