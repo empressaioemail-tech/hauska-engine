@@ -63,31 +63,65 @@ function collectGeoJsonPoints(geometry: unknown): Array<[number, number]> {
   return values;
 }
 
+/** Named, countable reason a geometry resolve declines rather than serving a ring. */
+export const MULTI_PART_GEOMETRY_UNSUPPORTED = "MULTI_PART_GEOMETRY_UNSUPPORTED" as const;
+
+/**
+ * Result of attempting to reduce a GeoJSON Polygon/MultiPolygon to the single
+ * exterior ring this resolver's downstream (openRing, projectRing, the
+ * offset core, edge labeling) assumes. Multi-part geometry is a named,
+ * explicit decline rather than a silently truncated ring — see
+ * `_decisions/2026-08-08_multipolygon_fail_closed_and_the_real_fix.md`.
+ */
+type RingReductionResult =
+  | { ok: true; ring: Array<[number, number]> }
+  | { ok: false; reason: typeof MULTI_PART_GEOMETRY_UNSUPPORTED }
+  | { ok: false; reason: null };
+
 /**
  * Exterior ring only (first ring of the first polygon) for Polygon /
- * MultiPolygon GeoJSON. Returns null rather than guessing for other geometry
- * types (e.g. Point) — a site-plan PROPERTY_LINE layer must not draw a
- * fabricated ring.
+ * MultiPolygon GeoJSON. Returns an explicit decline rather than truncating a
+ * multi-part geometry: a Polygon with interior rings (holes) or a
+ * MultiPolygon with more than one part cannot be reduced to a single ring
+ * without silently dropping area, so this fails closed with a named reason
+ * (`MULTI_PART_GEOMETRY_UNSUPPORTED`) instead of returning the exterior ring
+ * of only one part. Also declines (reason: null) for other geometry types
+ * (e.g. Point) — a site-plan PROPERTY_LINE layer must not draw a fabricated
+ * ring.
+ *
+ * Reducibility ruling: a MultiPolygon with exactly one part AND that part
+ * has no interior rings is safely reducible — `coordinates[0][0]` is the
+ * complete geometry in that case, not a truncation, so it is treated the
+ * same as a simple Polygon. A MultiPolygon with one part that itself has
+ * holes is NOT reducible and declines, same as a holed Polygon.
  */
-function exteriorRingFromGeoJson(geometry: unknown): Array<[number, number]> | null {
+function reduceToExteriorRing(geometry: unknown): RingReductionResult {
   const geom = geometry as { type?: string; coordinates?: unknown } | null;
-  if (!geom || typeof geom !== "object") return null;
+  if (!geom || typeof geom !== "object") return { ok: false, reason: null };
   if (geom.type === "Polygon") {
     const rings = geom.coordinates as unknown;
-    const exterior = Array.isArray(rings) ? rings[0] : null;
+    if (!Array.isArray(rings)) return { ok: false, reason: null };
+    if (rings.length > 1) return { ok: false, reason: MULTI_PART_GEOMETRY_UNSUPPORTED };
+    const exterior = rings[0];
     return Array.isArray(exterior) && exterior.length >= 3
-      ? (exterior as Array<[number, number]>)
-      : null;
+      ? { ok: true, ring: exterior as Array<[number, number]> }
+      : { ok: false, reason: null };
   }
   if (geom.type === "MultiPolygon") {
     const polygons = geom.coordinates as unknown;
-    const firstPolygon = Array.isArray(polygons) ? polygons[0] : null;
-    const exterior = Array.isArray(firstPolygon) ? firstPolygon[0] : null;
+    if (!Array.isArray(polygons)) return { ok: false, reason: null };
+    if (polygons.length > 1) return { ok: false, reason: MULTI_PART_GEOMETRY_UNSUPPORTED };
+    const onlyPolygon = polygons[0];
+    if (!Array.isArray(onlyPolygon)) return { ok: false, reason: null };
+    // Single part, but that part itself has interior rings (holes) — not
+    // safely reducible either, same treatment as a holed Polygon.
+    if (onlyPolygon.length > 1) return { ok: false, reason: MULTI_PART_GEOMETRY_UNSUPPORTED };
+    const exterior = onlyPolygon[0];
     return Array.isArray(exterior) && exterior.length >= 3
-      ? (exterior as Array<[number, number]>)
-      : null;
+      ? { ok: true, ring: exterior as Array<[number, number]> }
+      : { ok: false, reason: null };
   }
-  return null;
+  return { ok: false, reason: null };
 }
 
 /**
@@ -111,7 +145,7 @@ export class TxgioDatabaseParcelGeometryResolver implements ParcelGeometryResolv
     if (!parsed) return null;
     const row = await this.query(parsed.countyFips, parsed.propId);
     if (!row || !validBbox(row)) return null;
-    const ring = exteriorRingFromGeoJson(row.geometry) ?? undefined;
+    const reduction = reduceToExteriorRing(row.geometry);
     return {
       bbox: {
         westLng: row.westLng,
@@ -120,7 +154,8 @@ export class TxgioDatabaseParcelGeometryResolver implements ParcelGeometryResolv
         northLat: row.northLat,
       },
       sourceRef: `txgio-parcel:${parsed.countyFips}:${parsed.propId}:${row.sourceVintage}`,
-      ring,
+      ring: reduction.ok ? reduction.ring : undefined,
+      ringDeclineReason: !reduction.ok && reduction.reason ? reduction.reason : undefined,
     };
   }
 
@@ -171,8 +206,14 @@ export class ArcGisParcelGeometryResolver implements ParcelGeometryResolver {
     const body = await response.json() as { features?: Array<{ geometry?: unknown }> };
     const geometry = body.features?.[0]?.geometry;
     const bbox = geometry ? bboxFromGeoJson(geometry) : null;
-    const ring = geometry ? exteriorRingFromGeoJson(geometry) ?? undefined : undefined;
-    return bbox ? { bbox, sourceRef: `arcgis-parcel:${parsed.countyFips}:${parsed.propId}`, ring } : null;
+    const reduction = geometry ? reduceToExteriorRing(geometry) : null;
+    if (!bbox) return null;
+    return {
+      bbox,
+      sourceRef: `arcgis-parcel:${parsed.countyFips}:${parsed.propId}`,
+      ring: reduction?.ok ? reduction.ring : undefined,
+      ringDeclineReason: reduction && !reduction.ok && reduction.reason ? reduction.reason : undefined,
+    };
   }
 }
 
