@@ -8,7 +8,13 @@
  *
  *   PROPERTY_ATOM_PATH=1 DATABASE_URL=... TXGIO_DATABASE_URL=... \
  *     pnpm --filter @hauska-engine/engine-core run depth-warm-elgin-batch -- \
- *       --limit=500 [--offset=0] [--promote] [--dry-run] [--city-cohort] [--parcel=48021:...]
+ *       --limit=500 [--offset=0] [--promote] [--dry-run] [--city-cohort] \
+ *       [--parcel=48021:...] [--force-overwrite] [--force-repromote] \
+ *       [--diagnose-failures] [--upsert-ledger]
+ *
+ * --force-overwrite: re-process already-promoted parcels; on verify-fail or early
+ * decline, persist an honest-decline envelope (R27) instead of skipping.
+ * Implies --force-repromote (R28 boundary-edge recompute + R30 role re-derive).
  */
 
 import { performance } from "node:perf_hooks";
@@ -23,14 +29,82 @@ import {
   readBoundaryEdgesForParcel,
   BoundaryPrimitiveMissingError,
 } from "../src/boundary-primitive/read.ts";
+import {
+  primitiveNormalsAgreeWithRing,
+  recomputeBoundaryEdgesForRing,
+} from "../src/boundary-primitive/recompute-for-ring.ts";
+import { relabelBoundaryEdgesFromRoadLabels } from "../src/boundary-primitive/relabel-from-roads.ts";
+import {
+  fetchBcadParcelRings,
+  scrubLotLineRing,
+} from "../src/boundary-primitive/index.ts";
+import { openRing, projectRing } from "../src/depth-warm/geometry.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
 import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import { ELGIN_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
 import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parcel-geometry-resolver.ts";
+import {
+  bucketVerifyFailReasons,
+  promoteHonestVerifyDecline,
+} from "../src/depth-warm/honest-decline-promote.ts";
+import { upsertCountyFacetLedger } from "./upsert-county-facet-ledger.mjs";
 
 const COUNTY_FIPS = "48021";
 const descriptor = elginDescriptor;
+
+const FEET_PER_METER = 3.280839895;
+/**
+ * PARCEL-RING-SOURCE-DIVERGENCE tolerance (2026-08-07, Serve-Consistency
+ * Principle ruling): BCAD (live CAD service) and txgio_parcel (StratMap-
+ * derived, the geometry the product renders as the lot line) are
+ * independently digitized sources that can drift by several feet on a
+ * given parcel. txgio is the truth frame for everything the user sees;
+ * BCAD's live ring is a parcel-currency cross-check only.
+ */
+const PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT = 2;
+
+/**
+ * Max perpendicular deviation between two rings, sampled at every vertex
+ * of BOTH rings against the nearest edge of the OTHER ring. Returns feet.
+ */
+function maxRingDeviationFt(ringA, ringB) {
+  const projA = projectRing(ringA);
+  if (!projA) return null;
+  const toLocal = (ring) =>
+    openRing(ring).map(([lng, lat]) => ({
+      x: (lng - projA.originLng) * projA.mPerDegLng,
+      y: (lat - projA.originLat) * projA.mPerDegLat,
+    }));
+  const a = toLocal(ringA);
+  const b = toLocal(ringB);
+  if (a.length < 2 || b.length < 2) return null;
+
+  const distPointToSegment = (p, s0, s1) => {
+    const abx = s1.x - s0.x;
+    const aby = s1.y - s0.y;
+    const apx = p.x - s0.x;
+    const apy = p.y - s0.y;
+    const ab2 = abx * abx + aby * aby;
+    if (ab2 < 1e-12) return Math.hypot(apx, apy);
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / ab2));
+    return Math.hypot(p.x - (s0.x + t * abx), p.y - (s0.y + t * aby));
+  };
+  const oneSidedMax = (from, to) => {
+    let max = 0;
+    for (const p of from) {
+      let nearest = Infinity;
+      for (let i = 0; i < to.length; i++) {
+        const d = distPointToSegment(p, to[i], to[(i + 1) % to.length]);
+        if (d < nearest) nearest = d;
+      }
+      if (nearest > max) max = nearest;
+    }
+    return max;
+  };
+  const maxM = Math.max(oneSidedMax(a, b), oneSidedMax(b, a));
+  return maxM * FEET_PER_METER;
+}
 
 function districtHasSetbackRow(district) {
   const row = resolveSetbackTableRow(descriptor.setbackTable, district);
@@ -45,6 +119,10 @@ function parseArgs(argv) {
     dryRun: false,
     parcel: null,
     cityCohort: false,
+    forceRepromote: false,
+    forceOverwrite: false,
+    diagnoseFailures: false,
+    upsertLedger: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -57,7 +135,12 @@ function parseArgs(argv) {
     else if (a === "--promote") out.promote = true;
     else if (a === "--dry-run") out.dryRun = true;
     else if (a === "--city-cohort") out.cityCohort = true;
+    else if (a === "--force-repromote") out.forceRepromote = true;
+    else if (a === "--force-overwrite") out.forceOverwrite = true;
+    else if (a === "--diagnose-failures") out.diagnoseFailures = true;
+    else if (a === "--upsert-ledger") out.upsertLedger = true;
   }
+  if (out.forceOverwrite) out.forceRepromote = true;
   return out;
 }
 
@@ -204,50 +287,89 @@ const stats = {
     "no-boundary-primitive": 0,
     other: 0,
   },
+  failureBuckets: {},
+  honestDeclines: 0,
   atomWrites: 0,
   wallMsPerParcel: [],
+  parcelRingSourceDivergences: [],
 };
 
 const sampleOutcomes = [];
+const failureSamples = [];
+
+/** @param {string} bucket @param {string} parcelNodeId @param {string[]} reasons */
+function recordEarlyDecline(bucket, parcelNodeId, reasons) {
+  stats.declines[bucket in stats.declines ? bucket : "other"]++;
+  stats.failureBuckets[bucket] = (stats.failureBuckets[bucket] ?? 0) + 1;
+  if (args.diagnoseFailures && failureSamples.length < 30) {
+    failureSamples.push({ parcelNodeId, bucket, reasons: reasons.slice(0, 3) });
+  }
+}
 
 for (const row of parcelRows) {
   const parcelNodeId = row.parcel_node_id;
   const district = normalizeDistrict(row.district);
   if (!district) continue;
 
+  const parcelT0 = performance.now();
+  const propId = parcelNodeId.split(":")[1];
+
   if (!districtHasSetbackRow(district)) {
-    stats.declines["no-setback-row"]++;
+    recordEarlyDecline("no-setback-row", parcelNodeId, ["no descriptor setback row"]);
     stats.processed++;
+    if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
+      await promoteHonestVerifyDecline(storageHandle.storage, {
+        parcelNodeId,
+        zoningFactAtomDid: row.zoning_fact_did,
+        descriptor,
+        verifyReasons: ["no descriptor setback row"],
+        declineCode: "no-setback-row",
+      });
+      stats.honestDeclines++;
+      stats.atomWrites++;
+    }
     continue;
   }
 
-  const parcelT0 = performance.now();
+  if (!args.forceRepromote && !args.forceOverwrite) {
+    const [existing] = await sql`
+      SELECT 1 FROM atoms
+      WHERE entity_type = 'buildable-envelope'
+        AND body->>'parcelNodeId' = ${parcelNodeId}
+        AND body->>'depthWarmPromotion' = ${DEPTH_WARM_PROMOTION_MARKER}
+      LIMIT 1
+    `;
+    if (existing) {
+      stats.declines["already-promoted"]++;
+      stats.processed++;
+      continue;
+    }
+  }
 
-  const [existing] = await sql`
-    SELECT 1 FROM atoms
-    WHERE entity_type = 'buildable-envelope'
-      AND body->>'parcelNodeId' = ${parcelNodeId}
-      AND body->>'depthWarmPromotion' = ${DEPTH_WARM_PROMOTION_MARKER}
-    LIMIT 1
-  `;
-  if (existing) {
-    stats.declines["already-promoted"]++;
-    stats.processed++;
-    continue;
+  /** @type {string | null} */
+  let situsAddress = null;
+  if (propId) {
+    const [situsRow] = await txSql`
+      SELECT situs_address FROM txgio_parcel
+      WHERE county_fips = ${COUNTY_FIPS} AND prop_id = ${propId}
+      LIMIT 1
+    `;
+    const raw =
+      typeof situsRow?.situs_address === "string" ? situsRow.situs_address.trim() : "";
+    situsAddress = raw || null;
   }
 
   const geom = await geomResolver.resolve(parcelNodeId);
-  if (!geom?.ring || geom.ring.length < 3) {
+  const rawParcelRing =
+    geom?.ring && geom.ring.length >= 3 ? geom.ring : null;
+  const parcelRing =
+    rawParcelRing ? scrubLotLineRing(rawParcelRing) : null;
+  if (!parcelRing || parcelRing.length < 3) {
     stats.declines["no-geometry"]++;
     stats.processed++;
     stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
     continue;
   }
-
-  const labelResult = labelEdgesFromRoads({
-    parcelRing: geom.ring,
-    roads,
-  });
 
   /** @type {import('@hauska-engine/atoms').BoundaryEdgeAtomInstance[] | null} */
   let boundaryEdges = null;
@@ -262,11 +384,108 @@ for (const row of parcelRows) {
     }
   }
 
+  function recordParcelRingSourceDivergence(bcadRing) {
+    if (!rawParcelRing || !bcadRing) return;
+    const deviationFt = maxRingDeviationFt(rawParcelRing, bcadRing);
+    if (deviationFt != null && deviationFt > PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT) {
+      stats.parcelRingSourceDivergences.push({
+        parcelNodeId,
+        event: "PARCEL-RING-SOURCE-DIVERGENCE",
+        deviationFt: Number(deviationFt.toFixed(2)),
+        toleranceFt: PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT,
+        note: "BCAD (live CAD) vs txgio_parcel (served truth frame) ring geometry disagree beyond tolerance — R15 parcel-currency candidate, not an engine defect.",
+      });
+    }
+  }
+
+  let parcelRingWorking = parcelRing;
+  let ringSwapped = false;
+  if (args.forceRepromote && propId) {
+    try {
+      const bcad = await fetchBcadParcelRings([propId]);
+      if (bcad[0]?.ring) recordParcelRingSourceDivergence(bcad[0].ring);
+    } catch {
+      /* divergence report is best-effort */
+    }
+    if (rawParcelRing) {
+      parcelRingWorking = scrubLotLineRing(rawParcelRing);
+      ringSwapped = true;
+    }
+  } else if (boundaryEdges?.length) {
+    const ringVerts = openRing(parcelRingWorking).length;
+    if (boundaryEdges.length !== ringVerts) {
+      try {
+        const bcad = await fetchBcadParcelRings([propId]);
+        if (bcad[0]?.ring) recordParcelRingSourceDivergence(bcad[0].ring);
+      } catch {
+        /* divergence report is best-effort */
+      }
+      if (rawParcelRing) {
+        parcelRingWorking = scrubLotLineRing(rawParcelRing);
+        ringSwapped = true;
+      }
+    }
+  }
+
+  const ringVerts = openRing(parcelRingWorking).length;
+  if (boundaryEdges?.length && boundaryEdges.length > ringVerts) {
+    boundaryEdges = boundaryEdges.filter((e) => e.edgeIndex < ringVerts);
+  } else if (boundaryEdges?.length && boundaryEdges.length < ringVerts) {
+    boundaryEdges = null;
+  }
+
+  if (boundaryEdges?.length && boundaryEdges.length === ringVerts) {
+    const agree = primitiveNormalsAgreeWithRing(boundaryEdges, parcelRingWorking);
+    if (ringSwapped || !agree.ok) {
+      const rebuilt = recomputeBoundaryEdgesForRing({
+        storedEdges: boundaryEdges,
+        ring: parcelRingWorking,
+        roads,
+      });
+      const rebuiltAgree = primitiveNormalsAgreeWithRing(rebuilt, parcelRingWorking);
+      if (rebuiltAgree.ok) {
+        boundaryEdges = rebuilt;
+      } else {
+        boundaryEdges = null;
+      }
+    }
+  }
+
+  const labelResult = labelEdgesFromRoads({
+    parcelRing: parcelRingWorking,
+    roads,
+    situsAddress,
+  });
+
+  if (
+    boundaryEdges?.length &&
+    labelResult.ok &&
+    (args.forceRepromote || ringSwapped)
+  ) {
+    boundaryEdges = relabelBoundaryEdgesFromRoadLabels({
+      storedEdges: boundaryEdges,
+      edgeLabels: labelResult.edgeLabels,
+      roads,
+      countyFips: COUNTY_FIPS,
+    });
+  }
+
   if (!boundaryEdges?.length && !labelResult.ok) {
     const key = labelResult.decline in stats.declines ? labelResult.decline : "other";
-    stats.declines[key]++;
+    recordEarlyDecline(key, parcelNodeId, [`label declined: ${labelResult.decline}`]);
     stats.processed++;
     stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+    if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
+      await promoteHonestVerifyDecline(storageHandle.storage, {
+        parcelNodeId,
+        zoningFactAtomDid: row.zoning_fact_did,
+        descriptor,
+        verifyReasons: [`label declined: ${labelResult.decline}`],
+        declineCode: key,
+      });
+      stats.honestDeclines++;
+      stats.atomWrites++;
+    }
     continue;
   }
 
@@ -275,7 +494,8 @@ for (const row of parcelRows) {
     result = await warmThenVerify({
       parcelNodeId,
       district,
-      parcelRing: geom.ring,
+      parcelRing: parcelRingWorking,
+      rawParcelRing,
       descriptor,
       roads,
       edgeLabels: labelResult.ok ? labelResult.edgeLabels : [],
@@ -283,6 +503,7 @@ for (const row of parcelRows) {
       zoningFactAtomDid: row.zoning_fact_did,
       storage: dryRun ? undefined : storageHandle?.storage,
       promote: !dryRun,
+      situsAddress,
     });
   } catch (err) {
     stats.declines.other++;
@@ -317,16 +538,37 @@ for (const row of parcelRows) {
     }
   } else {
     stats.verifyFail++;
+    const reasons = [
+      ...result.verify.gates.geometry.reasons,
+      ...result.verify.gates.roadClassification.reasons,
+      ...result.verify.gates.setbackEdgeDistance.reasons,
+      ...result.verify.gates.frontOrientation.reasons,
+      ...result.verify.gates.r32PerEdgeInset.reasons,
+      ...result.verify.gates.facesAnswer.reasons,
+    ];
+    const bucket = bucketVerifyFailReasons(reasons);
+    stats.failureBuckets[bucket] = (stats.failureBuckets[bucket] ?? 0) + 1;
+    if (args.diagnoseFailures && failureSamples.length < 30) {
+      failureSamples.push({ parcelNodeId, bucket, reasons: reasons.slice(0, 3) });
+    }
     if (sampleOutcomes.length < 8) {
       sampleOutcomes.push({
         parcelNodeId,
         verifyPass: false,
-        reasons: [
-          ...result.verify.gates.geometry.reasons,
-          ...result.verify.gates.roadClassification.reasons,
-          ...result.verify.gates.setbackEdgeDistance.reasons,
-        ].slice(0, 3),
+        reasons: reasons.slice(0, 3),
+        bucket,
       });
+    }
+    if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
+      await promoteHonestVerifyDecline(storageHandle.storage, {
+        parcelNodeId,
+        zoningFactAtomDid: row.zoning_fact_did,
+        descriptor,
+        verifyReasons: reasons,
+        declineCode: bucket,
+      });
+      stats.honestDeclines++;
+      stats.atomWrites++;
     }
   }
 }
@@ -357,14 +599,18 @@ const costJson = {
     cityCohort: args.cityCohort,
     cityParcelUniverse: cityParcelIds?.length ?? null,
     cityBbox: args.cityCohort ? cityBbox : null,
+    forceOverwrite: args.forceOverwrite,
   },
   roadsLoaded: stats.roadsLoaded,
   outcomes: {
     promoted: stats.promoted,
     verifyPass: stats.verifyPass,
     verifyFail: stats.verifyFail,
+    honestDeclines: stats.honestDeclines,
     declines: stats.declines,
+    failureBuckets: stats.failureBuckets,
   },
+  parcelRingSourceDivergences: stats.parcelRingSourceDivergences,
   cost: {
     wallMsTotal,
     msPerParcel,
@@ -381,9 +627,23 @@ const costJson = {
       "usd = 0.25 CU × $0.16/hr wall + $0.000002/atom-write; extrapolation = usdPerParcel × extrapolationDenominator",
   },
   sampleOutcomes,
+  failureSamples: args.diagnoseFailures ? failureSamples : undefined,
 };
 
 console.log(JSON.stringify(costJson, null, 2));
+
+if (args.upsertLedger && !dryRun && args.cityCohort && cityParcelIds?.length) {
+  const ledgerResult = await upsertCountyFacetLedger({
+    countyFips: COUNTY_FIPS,
+    databaseUrl: txgioUrl,
+    rosterSize: cityParcelIds.length,
+    promotedCount: stats.promoted,
+    honestDeclineCount: stats.honestDeclines,
+    districtPrefix: "elgin-city-cohort",
+    costUsd: Number(usdSample.toFixed(4)),
+  });
+  console.log(JSON.stringify({ event: "county-facet-ledger.upserted", ...ledgerResult }, null, 2));
+}
 
 await sql.end({ timeout: 5 });
 await txSql.end({ timeout: 5 });
