@@ -511,7 +511,7 @@ async function main() {
           ORDER BY updated_at DESC NULLS LAST LIMIT 1
         `;
         const [situsRow] = await txSql`
-          SELECT situs_addr FROM txgio_parcel
+          SELECT situs_address FROM txgio_parcel
           WHERE county_fips = ${row.fips}
             AND regexp_replace(prop_id, '^0+', '') = regexp_replace(${propId}, '^0+', '')
           LIMIT 1
@@ -519,7 +519,7 @@ async function main() {
         serveTruthInputs.push({
           parcelNodeId,
           parcelRing: await loadParcelRingFromTxgio(row.fips, propId),
-          situsAddress: situsRow?.situs_addr ?? null,
+          situsAddress: situsRow?.situs_address ?? null,
           storedEdges: edgeRows.map((r) => r.body),
           setbackRule: sr?.body ?? null,
           envelopeBody: await loadEnvelopeBody(parcelNodeId),
