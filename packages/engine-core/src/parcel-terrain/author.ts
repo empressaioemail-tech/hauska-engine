@@ -26,6 +26,16 @@ export interface ResolvedParcelGeometry {
    * fail closed rather than approximate a ring from the bbox rectangle.
    */
   ring?: Array<[number, number]>;
+  /**
+   * Named, countable reason `ring` is absent because the source geometry was
+   * an unsupported multi-part shape (MultiPolygon with more than one part,
+   * or a Polygon/MultiPolygon-part with interior rings/holes) rather than
+   * genuinely missing. `"MULTI_PART_GEOMETRY_UNSUPPORTED"` today; absent
+   * when `ring` is present, and also absent (not fabricated) when `ring` is
+   * missing for any other reason (e.g. non-polygon geometry, no geometry at
+   * all). See `_decisions/2026-08-08_multipolygon_fail_closed_and_the_real_fix.md`.
+   */
+  ringDeclineReason?: "MULTI_PART_GEOMETRY_UNSUPPORTED";
 }
 
 export interface ParcelGeometryResolver {

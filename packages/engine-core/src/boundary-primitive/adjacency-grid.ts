@@ -107,18 +107,45 @@ function neighborForEdge(
   return null;
 }
 
+/**
+ * Reduces GeoJSON Polygon/MultiPolygon to the single exterior ring the
+ * adjacency grid's PIP/edge-projection machinery assumes. Fails closed
+ * (returns null, same as an unsupported geometry type) rather than
+ * truncating: a Polygon with interior rings (holes) or a MultiPolygon with
+ * more than one part would silently drop area if reduced to one ring, so
+ * those parcels are dropped from the adjacency index by the caller
+ * (`load-parcel-index.ts`'s `if (!ring) continue`) instead of being indexed
+ * with a partial boundary. See
+ * `_decisions/2026-08-08_multipolygon_fail_closed_and_the_real_fix.md`.
+ *
+ * Reducibility ruling (matches parcel-geometry-resolver.ts): a MultiPolygon
+ * with exactly one part AND that part has no interior rings is safely
+ * reducible — `coordinates[0][0]` is the complete geometry, not a
+ * truncation. A MultiPolygon with one part that itself has holes is NOT
+ * reducible and is dropped, same as a holed Polygon.
+ */
 export function exteriorRingFromGeoJson(geometry: unknown): Ring | null {
   if (!geometry || typeof geometry !== "object") return null;
   const g = geometry as {
     type?: string;
     coordinates?: number[][][] | number[][][][];
   };
-  if (g.type === "Polygon" && Array.isArray(g.coordinates?.[0])) {
-    return g.coordinates[0].map((c) => [c[0]!, c[1]!] as [number, number]);
+  if (g.type === "Polygon") {
+    const rings = g.coordinates as number[][][] | undefined;
+    if (!Array.isArray(rings)) return null;
+    if (rings.length > 1) return null; // holes — MULTI_PART_GEOMETRY_UNSUPPORTED class, fail closed
+    const exterior = rings[0];
+    if (!Array.isArray(exterior)) return null;
+    return exterior.map((c) => [c[0]!, c[1]!] as [number, number]);
   }
   if (g.type === "MultiPolygon") {
     const mp = g.coordinates as number[][][][] | undefined;
-    const ring = mp?.[0]?.[0];
+    if (!Array.isArray(mp)) return null;
+    if (mp.length > 1) return null; // multi-part — MULTI_PART_GEOMETRY_UNSUPPORTED class, fail closed
+    const onlyPolygon = mp[0];
+    if (!Array.isArray(onlyPolygon)) return null;
+    if (onlyPolygon.length > 1) return null; // single part but holed — same fail-closed treatment
+    const ring = onlyPolygon[0];
     if (!Array.isArray(ring)) return null;
     return ring.map((c) => [c[0]!, c[1]!] as [number, number]);
   }
