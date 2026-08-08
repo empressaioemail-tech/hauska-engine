@@ -222,6 +222,7 @@ export {
   parseBastropPerParcelAttributes,
   parseScalarSetbackFeet,
   parseSideSetbackText,
+  resolveBastropLayer23DominantRow,
   selectBastropLayer23Attributes,
   setbackTableFromBastropPerParcelRecord,
   type BastropChartDisagreement,

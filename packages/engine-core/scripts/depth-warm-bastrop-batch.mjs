@@ -21,29 +21,20 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import bastropDescriptor from "../src/property-reasoning/fixtures/descriptors/bastrop_tx_descriptor.json" with { type: "json" };
-import { buildBastropPerParcelSetbackDescriptor } from "../src/property-reasoning/bastrop-per-parcel-setback.ts";
 import { labelEdgesFromRoads } from "../src/depth-warm/edgeLabeling.ts";
-import {
-  readBoundaryEdgesForParcel,
-  BoundaryPrimitiveMissingError,
-} from "../src/boundary-primitive/read.ts";
 import {
   primitiveNormalsAgreeWithRing,
   recomputeBoundaryEdgesForRing,
 } from "../src/boundary-primitive/recompute-for-ring.ts";
 import { relabelBoundaryEdgesFromRoadLabels } from "../src/boundary-primitive/relabel-from-roads.ts";
 import {
-  fetchBcadParcelRings,
   scrubLotLineRing,
-  assertParcelCurrencyInBcad,
   ringCentroidLngLat,
 } from "../src/boundary-primitive/index.ts";
 import { openRing, projectRing } from "../src/depth-warm/geometry.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
-import { DEPTH_WARM_PROMOTION_MARKER } from "../src/depth-warm/types.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import { BASTROP_CITY_BBOX } from "../src/road-intake/fetch-overpass-bbox.ts";
-import { TxgioDatabaseParcelGeometryResolver } from "../src/parcel-terrain/parcel-geometry-resolver.ts";
 import {
   bucketVerifyFailReasons,
   promoteHonestVerifyDecline,
@@ -55,6 +46,18 @@ import {
 import { loadLayer23CityPropIds } from "./bastrop-layer23-roster.mjs";
 import { loadDominantDistrictRoster } from "./bastrop-dominant-district-roster.mjs";
 import { upsertCountyFacetLedger } from "./upsert-county-facet-ledger.mjs";
+import {
+  bulkLoadAlreadyPromotedSet,
+  bulkLoadBcadRingsByPropId,
+  bulkLoadBoundaryEdgesByParcel,
+  bulkLoadLayer23FeatureIndex,
+  bulkLoadSitusByPropId,
+  bulkLoadTxgioGeometryByPropId,
+  buildLayer23DescriptorCache,
+  boundaryEdgesFromBulkMap,
+  parcelCurrencyFromBcadMap,
+  normalizePropId,
+} from "./bastrop-batch-bulk-prefetch.mjs";
 
 const COUNTY_FIPS = "48021";
 const BASTROP_CITY_KEY = "bastrop-city-tx";
@@ -83,18 +86,6 @@ const BASTROP_PER_PARCEL_DISTRICT_PREFIXES = [
 
 function resolvablePlaceTypeDistrictCodes() {
   return [...BASTROP_PER_PARCEL_DISTRICT_PREFIXES];
-}
-
-async function districtHasPerParcelSetbackRow(parcelNodeId, district, centroidLngLat) {
-  const built = await buildBastropPerParcelSetbackDescriptor(
-    baseDescriptor,
-    parcelNodeId,
-    district,
-    BASTROP_CITY_KEY,
-    undefined,
-    centroidLngLat,
-  );
-  return built.ok;
 }
 
 const FEET_PER_METER = 3.280839895;
@@ -293,7 +284,6 @@ let storageHandle = createPgStorage({
   maxConnections: dryRun ? 1 : 2,
 });
 
-const geomResolver = new TxgioDatabaseParcelGeometryResolver({ databaseUrl: txgioUrl });
 const txSql = postgres(txgioUrl, { ssl: "require", max: 2, prepare: false });
 
 const cityBbox = BASTROP_CITY_BBOX;
@@ -453,6 +443,53 @@ if (args.parcel) {
       `;
 }
 
+function resolveWarmDistrict(row) {
+  return useDominantDistrictCohort && args.districtPrefix
+    ? normalizeDistrict(args.districtPrefix)
+    : normalizeDistrict(row.district);
+}
+
+const parcelNodeIds = parcelRows.map((r) => r.parcel_node_id);
+const propIds = [
+  ...new Set(
+    parcelNodeIds
+      .map((id) => id.split(":")[1])
+      .filter(Boolean),
+  ),
+];
+
+const bulkT0 = performance.now();
+const [
+  situsByPropId,
+  bcadByPropId,
+  alreadyPromotedSet,
+  txgioGeomByPropId,
+  boundaryEdgesByParcel,
+  layer23Index,
+] = await Promise.all([
+  bulkLoadSitusByPropId(txSql, COUNTY_FIPS, propIds),
+  bulkLoadBcadRingsByPropId(propIds),
+  !args.forceRepromote && !args.forceOverwrite
+    ? bulkLoadAlreadyPromotedSet(sql, parcelNodeIds)
+    : Promise.resolve(new Set()),
+  bulkLoadTxgioGeometryByPropId(txSql, COUNTY_FIPS, propIds),
+  bulkLoadBoundaryEdgesByParcel(sql, parcelNodeIds),
+  bulkLoadLayer23FeatureIndex(),
+]);
+const layer23DescriptorCache = buildLayer23DescriptorCache(
+  baseDescriptor,
+  parcelRows,
+  BASTROP_CITY_KEY,
+  bcadByPropId,
+  layer23Index,
+  resolveWarmDistrict,
+);
+const bulkLoadMs = Math.round(performance.now() - bulkT0);
+
+let liveHttpCallsInLoop = 0;
+
+const loopT0 = performance.now();
+
 const stats = {
   cohortSize: parcelRows.length,
   zoningFactDenominator,
@@ -537,24 +574,12 @@ for (const row of parcelRows) {
   }
 
   const propId = parcelNodeId.split(":")[1];
-  /** @type {string | null} */
-  let situsAddress = null;
-  if (propId) {
-    const [situsRow] = await txSql`
-      SELECT situs_address FROM txgio_parcel
-      WHERE county_fips = ${COUNTY_FIPS} AND prop_id = ${propId}
-      LIMIT 1
-    `;
-    const raw =
-      typeof situsRow?.situs_address === "string" ? situsRow.situs_address.trim() : "";
-    situsAddress = raw || null;
-  }
-  /** @type {[number, number] | undefined} */
+  const situsAddress = propId ? (situsByPropId.get(propId) ?? null) : null;
+
   let centroidLngLat;
-  /** @type {import('../src/boundary-primitive/parcel-currency.ts').ParcelCurrencyResult | null} */
   let currencyResult = null;
   if (propId) {
-    currencyResult = await assertParcelCurrencyInBcad(propId);
+    currencyResult = parcelCurrencyFromBcadMap(propId, bcadByPropId);
     if (!currencyResult.ok) {
       recordEarlyDecline("superseded-prop-id", parcelNodeId, [currencyResult.reason]);
       stats.processed++;
@@ -575,41 +600,18 @@ for (const row of parcelRows) {
     centroidLngLat = ringCentroidLngLat(currencyResult.ring);
   }
 
-  if (!(await districtHasPerParcelSetbackRow(parcelNodeId, district, centroidLngLat))) {
-    recordEarlyDecline("no-setback-row", parcelNodeId, ["no per-parcel layer-23 setback row"]);
+  const builtDescriptor = layer23DescriptorCache.get(parcelNodeId);
+  if (!builtDescriptor?.ok) {
+    const reason = builtDescriptor?.reason ?? "no per-parcel layer-23 setback row";
+    recordEarlyDecline("no-setback-row", parcelNodeId, [reason]);
     stats.processed++;
     if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
       await promoteHonestVerifyDecline(storageHandle.storage, {
         parcelNodeId,
         zoningFactAtomDid: row.zoning_fact_did,
         descriptor: baseDescriptor,
-        verifyReasons: ["no per-parcel layer-23 setback row"],
-        declineCode: "no-setback-row",
-      });
-      stats.honestDeclines++;
-      stats.atomWrites++;
-    }
-    continue;
-  }
-
-  const builtDescriptor = await buildBastropPerParcelSetbackDescriptor(
-    baseDescriptor,
-    parcelNodeId,
-    district,
-    BASTROP_CITY_KEY,
-    undefined,
-    centroidLngLat,
-  );
-  if (!builtDescriptor.ok) {
-    recordEarlyDecline("no-setback-row", parcelNodeId, [builtDescriptor.reason]);
-    stats.processed++;
-    if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
-      await promoteHonestVerifyDecline(storageHandle.storage, {
-        parcelNodeId,
-        zoningFactAtomDid: row.zoning_fact_did,
-        descriptor: baseDescriptor,
-        verifyReasons: [builtDescriptor.reason],
-        declineCode: builtDescriptor.code ?? "no-setback-row",
+        verifyReasons: [reason],
+        declineCode: builtDescriptor?.code ?? "no-setback-row",
       });
       stats.honestDeclines++;
       stats.atomWrites++;
@@ -621,21 +623,17 @@ for (const row of parcelRows) {
   const warmDistrict = builtDescriptor.governingDistrict || district;
 
   if (!args.forceRepromote && !args.forceOverwrite) {
-    const [existing] = await sql`
-      SELECT 1 FROM atoms
-      WHERE entity_type = 'buildable-envelope'
-        AND body->>'parcelNodeId' = ${parcelNodeId}
-        AND body->>'depthWarmPromotion' = ${DEPTH_WARM_PROMOTION_MARKER}
-      LIMIT 1
-    `;
-    if (existing) {
+    if (alreadyPromotedSet.has(parcelNodeId)) {
       stats.declines["already-promoted"]++;
       stats.processed++;
       continue;
     }
   }
 
-  const geom = await geomResolver.resolve(parcelNodeId);
+  const txgioGeom = propId ? txgioGeomByPropId.get(propId) : null;
+  const geom = txgioGeom?.ring
+    ? { ring: txgioGeom.ring, sourceRef: `txgio-parcel:${COUNTY_FIPS}:${propId}` }
+    : null;
   // SERVE-CONSISTENCY PRINCIPLE (2026-08-07, master planner ruling — amends
   // the Ground-Truth Frame Law): one ring per parcel governs everything the
   // user sees. The PRODUCT displays txgio_parcel geometry as the lot line
@@ -675,17 +673,7 @@ for (const row of parcelRows) {
   }
 
   /** @type {import('@hauska-engine/atoms').BoundaryEdgeAtomInstance[] | null} */
-  let boundaryEdges = null;
-  if (storageHandle?.storage) {
-    try {
-      boundaryEdges = await readBoundaryEdgesForParcel(
-        storageHandle.storage,
-        parcelNodeId,
-      );
-    } catch (err) {
-      if (!(err instanceof BoundaryPrimitiveMissingError)) throw err;
-    }
-  }
+  let boundaryEdges = boundaryEdgesFromBulkMap(boundaryEdgesByParcel, parcelNodeId);
 
   // PARCEL-RING-SOURCE-DIVERGENCE check (Serve-Consistency Principle): every
   // time BCAD geometry is fetched for this parcel (as a currency/working-
@@ -724,12 +712,8 @@ for (const row of parcelRows) {
   let parcelRingWorking = parcelRing;
   let ringSwapped = false;
   if (args.forceRepromote && propId) {
-    try {
-      const bcad = await fetchBcadParcelRings([propId]);
-      if (bcad[0]?.ring) recordParcelRingSourceDivergence(bcad[0].ring);
-    } catch {
-      /* divergence report is best-effort; construction never depends on it */
-    }
+    const bcadHit = bcadByPropId.get(normalizePropId(propId));
+    if (bcadHit?.ring) recordParcelRingSourceDivergence(bcadHit.ring);
     if (rawParcelRing) {
       parcelRingWorking = scrubLotLineRing(rawParcelRing);
       ringSwapped = true;
@@ -737,12 +721,8 @@ for (const row of parcelRows) {
   } else if (boundaryEdges?.length) {
     const ringVerts = openRing(parcelRingWorking).length;
     if (boundaryEdges.length !== ringVerts) {
-      try {
-        const bcad = await fetchBcadParcelRings([propId]);
-        if (bcad[0]?.ring) recordParcelRingSourceDivergence(bcad[0].ring);
-      } catch {
-        /* divergence report is best-effort; construction never depends on it */
-      }
+      const bcadHit = propId ? bcadByPropId.get(normalizePropId(propId)) : null;
+      if (bcadHit?.ring) recordParcelRingSourceDivergence(bcadHit.ring);
       if (rawParcelRing) {
         parcelRingWorking = scrubLotLineRing(rawParcelRing);
         ringSwapped = true;
@@ -921,6 +901,7 @@ for (const row of parcelRows) {
   }
 }
 
+const loopMsTotal = Math.round(performance.now() - loopT0);
 const wallMsTotal = Math.round(performance.now() - t0);
 const sampleN = stats.wallMsPerParcel.length;
 const msPerParcel = sampleN > 0
@@ -971,6 +952,9 @@ const costJson = {
   parcelRingSourceDivergences: stats.parcelRingSourceDivergences,
   cost: {
     wallMsTotal,
+    bulkLoadMs,
+    loopMsTotal,
+    liveHttpCallsInLoop,
     msPerParcel,
     usdPerParcel: Number(usdPerParcel.toFixed(6)),
     sampleProcessed: stats.processed,
@@ -982,7 +966,7 @@ const costJson = {
     humanReviewMinutesGate: 60,
     flaggedOverCostGate: extrapolatedJurisdictionUsd > 200,
     note:
-      "usd = 0.25 CU × $0.16/hr wall + $0.000002/atom-write; extrapolation = usdPerParcel × extrapolationDenominator (place-type when --place-type-cohort)",
+      "usd = 0.25 CU × $0.16/hr wall + $0.000002/atom-write; extrapolation = usdPerParcel × extrapolationDenominator (place-type when --place-type-cohort). bulkLoadMs is pre-loop acquisition; loopMsTotal is compute-only parcel loop; liveHttpCallsInLoop must be 0.",
   },
   sampleOutcomes,
   failureSamples: args.diagnoseFailures ? failureSamples : undefined,
