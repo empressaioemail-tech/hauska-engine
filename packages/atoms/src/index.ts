@@ -33,6 +33,7 @@
 
 export * from "./instances.js";
 export * from "./property-instances.js";
+export * from "./parcel-node-writer.js";
 export * from "./road-instances.js";
 export * from "./boundary-instances.js";
 export * from "./pedestrian-way.js";

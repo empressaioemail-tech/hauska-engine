@@ -2,6 +2,7 @@
  * Shared token search scoring for StoragePort back-ends.
  */
 
+import { isPropertyEntityType } from "@hauska-engine/atoms";
 import type { CodeAtomInstance, PropertyAtomInstance, StoredAtomInstance } from "@hauska-engine/atoms";
 
 import type { AtomQuery, AtomSearchResult } from "./port.js";
@@ -18,31 +19,33 @@ export function buildSnippet(inst: StoredAtomInstance): string {
     const road = inst as import("@hauska-engine/atoms").RoadNodeAtomInstance;
     return `${road.entityType} ${road.roadNodeId} ${road.displayName ?? ""} ${road.sourceCitation}`;
   }
+  // Derive from the registry rather than re-listing property types here — a
+  // hardcoded copy silently drops newly registered families out of search.
   if (
-    inst.entityType === "zoning-fact" ||
-    inst.entityType === "setback-rule" ||
-    inst.entityType === "buildable-envelope" ||
-    inst.entityType === "parcel-terrain-model" ||
+    isPropertyEntityType(inst.entityType) ||
     inst.entityType === "property-boundary-edge"
   ) {
     const property = inst as PropertyAtomInstance;
     return `${property.entityType} ${property.parcelNodeId} ${property.sourceCitation}`;
   }
-  switch (inst.entityType) {
+  // Everything reaching here is a code atom; the switch below stays exhaustive
+  // over CodeAtomInstance so a new CODE family is still a compile error.
+  const code: CodeAtomInstance = inst as CodeAtomInstance;
+  switch (code.entityType) {
     case "code-section":
-      return `${inst.sectionNumber} ${inst.title}. ${inst.bodyText}`;
+      return `${code.sectionNumber} ${code.title}. ${code.bodyText}`;
     case "code-definition":
-      return `${inst.term} — ${inst.definitionText}`;
+      return `${code.term} — ${code.definitionText}`;
     case "code-cross-reference":
-      return `${inst.referenceText} (${inst.referenceType})`;
+      return `${code.referenceText} (${code.referenceType})`;
     case "code-amendment":
-      return `Ordinance ${inst.ordinanceId}: ${inst.amendmentText}`;
+      return `Ordinance ${code.ordinanceId}: ${code.amendmentText}`;
     case "code-edition":
-      return inst.editionLabel;
+      return code.editionLabel;
     case "jurisdiction-corpus":
-      return inst.jurisdictionName;
+      return code.jurisdictionName;
     default: {
-      const exhaustive: never = inst;
+      const exhaustive: never = code;
       return String(exhaustive);
     }
   }

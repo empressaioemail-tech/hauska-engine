@@ -11,10 +11,13 @@
 import type {
   AtomInputRef,
   BuildableEnvelopeAtomInstance as ContractBuildableEnvelopeAtomInstance,
+  BuildingFootprintAtomInstance as ContractBuildingFootprintAtomInstance,
+  ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
   SetbackMatchBasis,
   SetbackRuleAtomInstance as ContractSetbackRuleAtomInstance,
   TerrainExportFormat as ContractTerrainExportFormat,
+  UtilityEasementAtomInstance as ContractUtilityEasementAtomInstance,
   ZoningFactAtomInstance as ContractZoningFactAtomInstance,
 } from "@empressaio/atom-contract/property";
 import type { ReasoningReadContract } from "@empressaio/atom-contract/read-contract";
@@ -32,6 +35,21 @@ export type {
   BuildableEnvelopeAtomInstance as ContractBuildableEnvelopeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
   TerrainExportFormat as ContractTerrainExportFormat,
+  ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
+  BuildingFootprintAtomInstance as ContractBuildingFootprintAtomInstance,
+  UtilityEasementAtomInstance as ContractUtilityEasementAtomInstance,
+  ParcelKeyKind,
+  ParcelNodeAbsence,
+  ParcelNodeAbsenceKind,
+  ParcelGeometrySourceTier,
+  ParcelGeometryStoreRef,
+  ParcelExternalKey,
+  SiteLayerVerifiedAbsence,
+  BuildingFootprintAbsence,
+  BuildingFootprintSourceTier,
+  UtilityEasementAbsence,
+  UtilityEasementClass,
+  UtilityEasementSourceTier,
 } from "@empressaio/atom-contract/property";
 
 export {
@@ -48,19 +66,49 @@ export {
   createSetbackRule,
   createBuildableEnvelope,
   createParcelTerrainModel,
+  createParcelNode,
+  createBuildingFootprint,
+  createUtilityEasement,
+  PARCEL_NODE_SCHEMA,
+  BUILDING_FOOTPRINT_SCHEMA,
+  UTILITY_EASEMENT_SCHEMA,
+  parcelNodeAtomDid,
+  countyCoverageParcelNodeId,
+  PARCEL_NODE_ID_PATTERN,
+  PARCEL_NODE_ABSENCE_KINDS,
+  BUILDING_FOOTPRINT_ABSENCE_KIND,
+  UTILITY_EASEMENT_ABSENCE_KIND,
 } from "@empressaio/atom-contract/property";
 
+/**
+ * Property entity types the engine persists and serves.
+ *
+ * 1.13.0 registration wave adds `parcel-node` (Rail 1 anchor, previously
+ * advertised by MCP with no engine writer) plus the two ADR-029 site layers
+ * that shipped in contract 1.12.0 but were never registered here — which is
+ * why their manifest columns read UNPUB.
+ *
+ * All seven are keyed on `parcelNodeId`, which is what
+ * `listPropertyAtomsByParcelNodeId` and the snapshot partition in
+ * `@hauska-engine/storage` assume of anything in this list.
+ */
 export type PropertyEntityType =
+  | "parcel-node"
   | "zoning-fact"
   | "setback-rule"
   | "buildable-envelope"
-  | "parcel-terrain-model";
+  | "parcel-terrain-model"
+  | "building-footprint"
+  | "utility-easement";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
+  "parcel-node",
   "zoning-fact",
   "setback-rule",
   "buildable-envelope",
   "parcel-terrain-model",
+  "building-footprint",
+  "utility-easement",
 ];
 
 export type PropertyAtomStatus = "active" | "retired";
@@ -306,11 +354,34 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
       };
 }
 
+/**
+ * Rail 1 parcel anchor as persisted by the engine.
+ *
+ * The contract payload carries identity and ring PROVENANCE; `txgio_parcel`
+ * stays the one geometry truth frame (Geometry Law rule 1). Nothing here adds
+ * a geometry body, and nothing here bolts an engine-only decline field onto the
+ * instance — typed absence is already first-class on the contract shape
+ * (`absence` / `verifiedAbsence`), unlike the `buildable-envelope` case.
+ */
+export type ParcelNodeAtomInstance = ContractParcelNodeAtomInstance &
+  EnginePropertyPersistence;
+
+/** ADR-029 building footprint as persisted by the engine (contract 1.12.0). */
+export type BuildingFootprintAtomInstance = ContractBuildingFootprintAtomInstance &
+  EnginePropertyPersistence;
+
+/** ADR-029 utility easement as persisted by the engine (contract 1.12.0). */
+export type UtilityEasementAtomInstance = ContractUtilityEasementAtomInstance &
+  EnginePropertyPersistence;
+
 export type PropertyAtomInstance =
+  | ParcelNodeAtomInstance
   | ZoningFactAtomInstance
   | SetbackRuleAtomInstance
   | BuildableEnvelopeAtomInstance
-  | ParcelTerrainModelAtomInstance;
+  | ParcelTerrainModelAtomInstance
+  | BuildingFootprintAtomInstance
+  | UtilityEasementAtomInstance;
 
 export function isPropertyEntityType(
   value: string,
