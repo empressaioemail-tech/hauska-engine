@@ -98,6 +98,7 @@ export {
   isBdcPerParcelDistrictCode,
   parseBastropPerParcelAttributes,
   parseSideSetbackText,
+  resolveBastropLayer23DominantRow,
   selectBastropLayer23Attributes,
   setbackTableFromBastropPerParcelRecord,
   BASTROP_PARCELS_ONE_CLICK_LAYER_23,

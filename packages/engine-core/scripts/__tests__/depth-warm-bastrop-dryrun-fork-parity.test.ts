@@ -190,14 +190,12 @@ function verifySnapshot(result: Awaited<ReturnType<typeof warmThenVerify>>) {
 }
 
 describe("depth-warm batch dry-run fork parity (2026-08-08)", () => {
-  it("bastrop batch reads boundary primitive on dry-run (not gated on !dryRun)", () => {
-    expect(bastropBatchSource).toContain("readBoundaryEdgesForParcel(");
-    expect(bastropBatchSource).not.toMatch(
-      /if\s*\(\s*!dryRun\s*&&\s*storageHandle\?\.storage\s*\)\s*\{[\s\S]*?readBoundaryEdgesForParcel/,
-    );
-    expect(bastropBatchSource).toMatch(
-      /if\s*\(\s*storageHandle\?\.storage\s*\)\s*\{[\s\S]*?readBoundaryEdgesForParcel/,
-    );
+  it("bastrop batch loads boundary primitives in bulk before the compute loop (dry-run parity)", () => {
+    expect(bastropBatchSource).toContain("bulkLoadBoundaryEdgesByParcel");
+    expect(bastropBatchSource).toContain("boundaryEdgesFromBulkMap");
+    const loopStart = bastropBatchSource.indexOf("for (const row of parcelRows)");
+    const loopBody = bastropBatchSource.slice(loopStart);
+    expect(loopBody).not.toMatch(/await readBoundaryEdgesForParcel\(/);
     expect(bastropBatchSource).not.toMatch(
       /if\s*\(\s*!dryRun\s*\)\s*\{[\s\S]*?createPgStorage/,
     );
