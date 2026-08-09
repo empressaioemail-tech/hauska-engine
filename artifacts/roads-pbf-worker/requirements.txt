@@ -1,0 +1,3 @@
+# Pinned for statewide roads PBF extract (L3).
+# pyosmium provides the `osmium` module (locations=True + flex_mem index).
+osmium>=4.0.0,<5.0.0
