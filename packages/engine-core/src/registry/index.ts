@@ -6,8 +6,12 @@ export {
   BASTROP_REGISTRY_ROW,
   BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW,
   ELGIN_REGISTRY_ROW,
+  LOCKHART_REGISTRY_ROW,
   type PerParcelCohortRail,
   type ParcelCohortFilter,
+  type WarmRunnerConfig,
+  type WarmRunnerSetbackStrategy,
+  type WarmRunnerCityBbox,
 } from "./jurisdiction-registry.js";
 export type {
   JurisdictionRegistryRow,
@@ -15,6 +19,9 @@ export type {
   JoinKey,
   ZoningRegime,
   RegistryRowStatus,
+  WarmRunnerConfig,
+  WarmRunnerSetbackStrategy,
+  WarmRunnerCityBbox,
 } from "./jurisdiction-registry.js";
 export {
   loadRegistryDistrictCohort,

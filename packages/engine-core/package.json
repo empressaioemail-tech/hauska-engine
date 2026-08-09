@@ -79,6 +79,7 @@
     "fetch-bastrop-overpass-fixture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-bastrop-overpass-fixture.ps1",
     "depth-warm-bastrop-pilot": "tsx scripts/depth-warm-bastrop-pilot.mjs",
     "depth-warm-bastrop-batch": "tsx scripts/depth-warm-bastrop-batch.mjs",
+    "depth-warm-city-batch": "tsx scripts/depth-warm-city-batch.mjs",
     "boundary-primitive-bastrop": "tsx scripts/boundary-primitive-bastrop.mjs",
     "boundary-primitive-bastrop-downtown-scrub": "tsx scripts/boundary-primitive-bastrop-downtown-scrub.mjs",
     "backfill-property-line-tags-bastrop": "tsx scripts/backfill-property-line-tags-bastrop.mjs",

@@ -84,6 +84,44 @@ export interface PerParcelCohortRail {
  */
 export type RegistryRowStatus = "active" | "pre-flight-pending";
 
+/** How depth-warm-city-batch resolves setbacks for a registry row. */
+export type WarmRunnerSetbackStrategy = "layer23" | "descriptor-table";
+
+/** City bbox for depth-warm city cohort selection (txgio_parcel centroid filter). */
+export interface WarmRunnerCityBbox {
+  readonly south: number;
+  readonly west: number;
+  readonly north: number;
+  readonly east: number;
+}
+
+/**
+ * Frozen depth-warm runner config — read by depth-warm-city-batch.mjs at
+ * warm time instead of hardcoding per-city constants.
+ */
+export interface WarmRunnerConfig {
+  /** Fixture descriptor key (e.g. bastrop_tx, elgin_tx, caldwell_tx). */
+  readonly descriptorId: string;
+  readonly setbackStrategy: WarmRunnerSetbackStrategy;
+  readonly cityBbox: WarmRunnerCityBbox;
+  /** When true, bulk-fetch BCAD rings before the loop; false skips (Lockhart). */
+  readonly bulkBcad: boolean;
+  /** Cost event name emitted at close (Bastrop must stay R4-depth-cost.done). */
+  readonly costEventName: string;
+  /** layer23 only: adapter city key for getSetbackTableForZoning. */
+  readonly layer23CityKey?: string;
+  /** layer23 only: BDC per-parcel district prefixes for place-type cohort. */
+  readonly placeTypeDistrictPrefixes?: readonly string[];
+  /** layer23 only: quarantined Block-13 parcels never re-warmed. */
+  readonly block13Quarantine?: readonly string[];
+  /** descriptor-table: map GIS domain values to canonical district (Elgin A→R-4). */
+  readonly gisDistrictAliases?: Readonly<Record<string, string>>;
+  /** Prefix for refused-roster artifact filename (suffix -dry/-apply added). */
+  readonly refusedRosterPrefix: string;
+  /** Optional jurisdiction label in cost JSON. */
+  readonly jurisdictionLabel?: string;
+}
+
 /**
  * FLIP-BLOCKED (S4, 2026-08-04): BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW
  * and ELGIN_REGISTRY_ROW cannot yet be promoted from "pre-flight-pending" to
@@ -167,6 +205,8 @@ export interface JurisdictionRegistryRow {
   };
   /** Freshness/coverage flags surfaced by the registry (e.g. STALE, NOT_COVERED). */
   readonly flags: readonly string[];
+  /** Optional depth-warm-city-batch config (when absent, row is not warm-runner eligible). */
+  readonly warmRunner?: WarmRunnerConfig;
   /** Provenance: where this row's data came from + when it was frozen. */
   readonly provenance: {
     readonly sourcePage: string;
@@ -221,6 +261,43 @@ export const BASTROP_REGISTRY_ROW: JurisdictionRegistryRow = {
   join: {
     joinKey: "prop_id",
     ownerMatchRequired: true,
+  },
+  warmRunner: {
+    descriptorId: "bastrop_tx",
+    setbackStrategy: "layer23",
+    cityBbox: {
+      south: 30.04,
+      west: -97.38,
+      north: 30.16,
+      east: -97.25,
+    },
+    bulkBcad: true,
+    costEventName: "R4-depth-cost.done",
+    layer23CityKey: "bastrop-city-tx",
+    placeTypeDistrictPrefixes: [
+      "SF-1",
+      "SF-2",
+      "SF-3",
+      "RR",
+      "MU",
+      "GC",
+      "PI",
+      "IND",
+      "OS",
+      "P/OS",
+      "P-OS",
+      "PDD",
+    ],
+    block13Quarantine: [
+      "48021:34145",
+      "48021:34121",
+      "48021:34153",
+      "48021:34137",
+      "48021:34169",
+      "48021:34177",
+      "48021:34161",
+    ],
+    refusedRosterPrefix: "depth-warm-bastrop-refused-roster",
   },
   flags: ["STALE"],
   provenance: {
@@ -350,6 +427,21 @@ export const ELGIN_REGISTRY_ROW: JurisdictionRegistryRow = {
   // claim "not yet wired" about a source that IS wired). Check 2 now runs the
   // normal probeZoningSource path like Bastrop, and check 3
   // (parcelLayerWired) mechanically confirms the row's filter shape compiles.
+  warmRunner: {
+    descriptorId: "elgin_tx",
+    setbackStrategy: "descriptor-table",
+    cityBbox: {
+      south: 30.313790730771967,
+      west: -97.410938698399292,
+      north: 30.369229436331114,
+      east: -97.355026917826052,
+    },
+    bulkBcad: true,
+    costEventName: "RECIPE-PROOF-48021-elgin-depth-cost.done",
+    gisDistrictAliases: { A: "R-4" },
+    refusedRosterPrefix: "depth-warm-elgin-refused-roster",
+    jurisdictionLabel: "elgin_tx",
+  },
   flags: ["STALE", "PRE_FLIGHT_PENDING"],
   provenance: {
     sourcePage: "https://tnris.org/stratmap/land-parcels.html",
@@ -533,6 +625,80 @@ export const CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW: JurisdictionRegistryRo
       registryVersion: "1.2.0",
     },
   };
+
+/** Lockhart zoning districts — Caldwell CAD FeatureServer layer 49 (244 polygons). */
+const LOCKHART_ZONING_LAYER_49 =
+  "https://services.arcgis.com/rVxY74DxxIDrDbc0/arcgis/rest/services/Caldwell_CAD_Parcel_Map/FeatureServer/49";
+
+/**
+ * Lockhart (48055) — city-scoped euclidean-zoned row, "pre-flight-pending".
+ * Rail A points at the Lockhart Zoning polygon layer (layer 49) on the same
+ * Caldwell CAD hub as the county unincorporated row. NOTE: layer 49 carries
+ * district polygons (field ZONING) but NO prop_id — propIdField is a county-
+ * pattern guess pending freeze review; cohort warm uses descriptor-table
+ * setbacks keyed on stamped zoning-fact atoms, not per-parcel Rail A rows.
+ * railC mirrors CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW (StratMap 48055).
+ */
+export const LOCKHART_REGISTRY_ROW: JurisdictionRegistryRow = {
+  rowId: "Lockhart",
+  fips: "48055",
+  countyName: "Caldwell",
+  status: "pre-flight-pending",
+  zoningRegime: "euclidean-zoned",
+  railPerParcel: {
+    featureServerLayerUrl: LOCKHART_ZONING_LAYER_49,
+    parcelFilter: { kind: "noFilter" },
+    districtField: "ZONING",
+    districtValueByPrefix: {
+      RLD: "RLD",
+      RMD: "RMD",
+      RHD: "RHD",
+      AO: "AO",
+      CCB: "CCB",
+      IH: "IH",
+      MH: "MH",
+      PDD: "PDD",
+      PI: "PI",
+    },
+    // Layer 49 has no prop_id field (polygon districts, not parcels) — guess
+    // from county parcel-layer pattern; freeze review required before Rail A
+    // per-parcel cohort queries can key on this field.
+    propIdField: "prop_id",
+  },
+  railC: {
+    geometrySource: "stratmap_bulk_zip",
+    downloadUrl:
+      "https://data.geographic.texas.gov/0fa04328-872e-481c-b453-126a74777593/resources/stratmap25-landparcels_48055_lp.zip",
+    vintageYyyymm: "202503",
+    featureCount: 26155,
+    propIdBadRate: 0.0074,
+    cadastralQueryUrl: CALDWELL_COUNTY_CADASTRAL_PARCELS_LAYER,
+  },
+  join: {
+    joinKey: "prop_id",
+    ownerMatchRequired: true,
+  },
+  warmRunner: {
+    descriptorId: "caldwell_tx",
+    setbackStrategy: "descriptor-table",
+    cityBbox: {
+      south: 29.83787,
+      west: -97.72866,
+      north: 29.9244,
+      east: -97.62483,
+    },
+    bulkBcad: false,
+    costEventName: "RECIPE-PROOF-48055-depth-cost.done",
+    refusedRosterPrefix: "depth-warm-lockhart-refused-roster",
+    jurisdictionLabel: "lockhart_tx",
+  },
+  flags: ["STALE", "PRE_FLIGHT_PENDING", "RAIL_A_FIELDS_NEEDS_FREEZE_REVIEW"],
+  provenance: {
+    sourcePage: "https://tnris.org/stratmap/land-parcels.html",
+    frozenAt: "2026-08-08",
+    registryVersion: "1.3.0",
+  },
+};
 
 /**
  * Comal County (48091) — CONFIRMED WITH CAVEAT: the only discoverable layer
@@ -850,6 +1016,7 @@ const REGISTRY_BY_ROW_ID: ReadonlyMap<string, JurisdictionRegistryRow> = new Map
     BASTROP_REGISTRY_ROW,
     BASTROP_COUNTY_UNINCORPORATED_REGISTRY_ROW,
     ELGIN_REGISTRY_ROW,
+    LOCKHART_REGISTRY_ROW,
     BELL_COUNTY_UNINCORPORATED_REGISTRY_ROW,
     BEXAR_COUNTY_UNINCORPORATED_REGISTRY_ROW,
     CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW,
