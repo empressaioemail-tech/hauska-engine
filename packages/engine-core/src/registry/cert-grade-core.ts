@@ -28,7 +28,7 @@ import type { PgStorage } from "@hauska-engine/storage";
 
 import {
   fetchBcadParcelRings,
-  scrubLotLineRing,
+  exteriorRingFromGeoJson,
   ringCentroidLngLat,
   BASTROP_BCAD_PARCELS_URL,
 } from "../boundary-primitive/index.js";
@@ -38,7 +38,7 @@ import {
 } from "../boundary-primitive/read.js";
 import { labelEdgesFromRoads } from "../depth-warm/edgeLabeling.js";
 import { DEPTH_WARM_PROMOTION_MARKER, RECIPE_VERSION } from "../depth-warm/types.js";
-import { openRing } from "../depth-warm/geometry.js";
+import { openRing, projectRing } from "../depth-warm/geometry.js";
 import { measurePerEdgeInsetForRings } from "../depth-warm/measure-inset.js";
 import { computeWarmCandidateFromBoundary } from "../boundary-primitive/consume.js";
 import { computeWarmCandidate } from "../depth-warm/warm-compute.js";
@@ -62,6 +62,139 @@ import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 
 export const CERT_GRADE_COUNTY_FIPS = "48021";
 export const CERT_GRADE_INSET_TOL_FT = 1.0;
+
+/** BCAD vs txgio divergence tolerance (matches depth-warm-city-batch.mjs). */
+export const PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT = 2;
+
+export interface ParcelRingSourceDivergence {
+  event: "PARCEL-RING-SOURCE-DIVERGENCE";
+  deviationFt: number;
+  toleranceFt: number;
+}
+
+type CertGradeRing = Array<[number, number]>;
+
+/** Raw txgio_parcel exterior ring — the Geometry Law truth frame for cert grading. */
+async function loadTxgioParcelRing(
+  txSql: Sql,
+  countyFips: string,
+  propId: string,
+): Promise<CertGradeRing | null> {
+  const [row] = await txSql`
+    SELECT geometry FROM txgio_parcel
+    WHERE county_fips = ${countyFips}
+      AND regexp_replace(prop_id, '^0+', '') = regexp_replace(${propId}, '^0+', '')
+    ORDER BY ingested_at DESC NULLS LAST
+    LIMIT 1
+  `;
+  if (!row?.geometry) return null;
+  const ring = exteriorRingFromGeoJson(row.geometry);
+  return ring && ring.length >= 3 ? ring : null;
+}
+
+/** Two-sided Hausdorff-style max deviation in feet (city-batch parity). */
+function maxRingDeviationFt(ringA: CertGradeRing, ringB: CertGradeRing): number | null {
+  const projA = projectRing(ringA);
+  if (!projA) return null;
+  const toLocal = (ring: CertGradeRing) =>
+    openRing(ring).map(([lng, lat]) => ({
+      x: (lng - projA.originLng) * projA.mPerDegLng,
+      y: (lat - projA.originLat) * projA.mPerDegLat,
+    }));
+  const a = toLocal(ringA);
+  const b = toLocal(ringB);
+  if (a.length < 2 || b.length < 2) return null;
+
+  const distPointToSegment = (
+    p: { x: number; y: number },
+    s0: { x: number; y: number },
+    s1: { x: number; y: number },
+  ) => {
+    const abx = s1.x - s0.x;
+    const aby = s1.y - s0.y;
+    const apx = p.x - s0.x;
+    const apy = p.y - s0.y;
+    const ab2 = abx * abx + aby * aby;
+    if (ab2 < 1e-12) return Math.hypot(apx, apy);
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / ab2));
+    return Math.hypot(p.x - (s0.x + t * abx), p.y - (s0.y + t * aby));
+  };
+  const oneSidedMax = (from: typeof a, to: typeof b) => {
+    let max = 0;
+    for (const p of from) {
+      let nearest = Infinity;
+      for (let i = 0; i < to.length; i++) {
+        const d = distPointToSegment(p, to[i]!, to[(i + 1) % to.length]!);
+        if (d < nearest) nearest = d;
+      }
+      if (nearest > max) max = nearest;
+    }
+    return max;
+  };
+  const FEET_PER_METER = 3.280839895;
+  return Math.max(oneSidedMax(a, b), oneSidedMax(b, a)) * FEET_PER_METER;
+}
+
+/** BCAD is a divergence-reporting instrument only; never substitutes as graded frame. */
+async function observeBcadRingDivergence(
+  txgioRing: CertGradeRing,
+  propId: string,
+  cadastralQueryUrl: string,
+  propIdField: string,
+): Promise<ParcelRingSourceDivergence | null> {
+  try {
+    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl, propIdField);
+    const bcadRing = bcad[0]?.ring;
+    if (!bcadRing) return null;
+    const deviationFt = maxRingDeviationFt(txgioRing, bcadRing);
+    if (deviationFt != null && deviationFt > PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT) {
+      return {
+        event: "PARCEL-RING-SOURCE-DIVERGENCE",
+        deviationFt: Number(deviationFt.toFixed(2)),
+        toleranceFt: PARCEL_RING_SOURCE_DIVERGENCE_TOLERANCE_FT,
+      };
+    }
+  } catch {
+    /* report-only; BCAD fetch failure does not gate grade */
+  }
+  return null;
+}
+
+async function resolveCertGradeRing(
+  parcelNodeId: string,
+  ctx: Pick<CertGradeContext, "txSql" | "cadastralQueryUrl" | "cadastralPropIdField">,
+): Promise<
+  | { ok: true; ring: CertGradeRing; divergence: ParcelRingSourceDivergence | null }
+  | { ok: false; error: string; reason?: string }
+> {
+  const propId = parcelNodeId.split(":")[1]!;
+  const countyFips = parcelNodeId.split(":")[0]!;
+  const propIdField = ctx.cadastralPropIdField ?? "prop_id";
+
+  let ring: CertGradeRing | null;
+  try {
+    ring = await loadTxgioParcelRing(ctx.txSql, countyFips, propId);
+  } catch (err) {
+    return {
+      ok: false,
+      error: "txgio-fetch-failed",
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+  if (!ring) {
+    return { ok: false, error: "no-ring" };
+  }
+
+  let divergence: ParcelRingSourceDivergence | null = null;
+  try {
+    const cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
+    divergence = await observeBcadRingDivergence(ring, propId, cadastralQueryUrl, propIdField);
+  } catch {
+    /* non-Bastrop without cadastral URL: grade on txgio; skip BCAD divergence */
+  }
+
+  return { ok: true, ring, divergence };
+}
 
 /** Frozen Block-13 regression roster + answer key. */
 export const BLOCK13_ROSTER = [
@@ -263,6 +396,7 @@ export interface ParcelGradeResult {
   answerKey?: unknown;
   situs?: string | null;
   orientationHonestDecline?: string | null;
+  parcelRingSourceDivergence?: ParcelRingSourceDivergence;
 }
 
 /**
@@ -276,9 +410,7 @@ export async function gradeOneParcelInQueryMode(
 ): Promise<ParcelGradeResult> {
   const { sql, txSql, storage, roads, descriptor, districtPrefix } = ctx;
   const propId = parcelNodeId.split(":")[1]!;
-  const propIdField = ctx.cadastralPropIdField ?? "prop_id";
   const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
-  const cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
 
   const [envRowPre] = await sql`
     SELECT body FROM atoms
@@ -329,20 +461,14 @@ export async function gradeOneParcelInQueryMode(
   const situsAddress: string | null = situsRow?.situs_address?.trim() ?? null;
   parcelResult.situs = situsAddress;
 
-  let ring: unknown = null;
-  try {
-    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl, propIdField);
-    const bcadRing = bcad[0]?.ring;
-    ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
-  } catch (err) {
-    parcelResult.error = "bcad-fetch-failed";
-    parcelResult.reason = err instanceof Error ? err.message : String(err);
+  const ringResolved = await resolveCertGradeRing(parcelNodeId, ctx);
+  if (!ringResolved.ok) {
+    parcelResult.error = ringResolved.error;
+    parcelResult.reason = ringResolved.reason;
     return parcelResult;
   }
-  if (!ring) {
-    parcelResult.error = "no-ring";
-    return parcelResult;
-  }
+  const { ring, divergence } = ringResolved;
+  if (divergence) parcelResult.parcelRingSourceDivergence = divergence;
 
   const centroidLngLat = ringCentroidLngLat(ring as never);
 
@@ -398,21 +524,13 @@ export const UNZONED_CASCADE_DECLINE_CODE = "unzoned-no-district-basis";
  */
 export async function gradeUnzonedParcel(
   parcelNodeId: string,
-  ctx: Pick<CertGradeContext, "sql" | "cadastralQueryUrl" | "cadastralPropIdField">,
+  ctx: Pick<CertGradeContext, "sql" | "txSql" | "cadastralQueryUrl" | "cadastralPropIdField">,
 ): Promise<ParcelGradeResult> {
-  const { sql } = ctx;
+  const { sql, txSql } = ctx;
   const propId = parcelNodeId.split(":")[1]!;
+  const countyFips = parcelNodeId.split(":")[0]!;
   const propIdField = ctx.cadastralPropIdField ?? "prop_id";
   const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
-  let cadastralQueryUrl: string;
-  try {
-    cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
-  } catch (err) {
-    parcelResult.pass = false;
-    parcelResult.reason = "cadastral-query-url-not-configured";
-    parcelResult.error = err instanceof Error ? err.message : String(err);
-    return parcelResult;
-  }
 
   const [zfRow] = await sql`
     SELECT body FROM atoms WHERE entity_type = 'zoning-fact'
@@ -459,13 +577,18 @@ export async function gradeUnzonedParcel(
   }
 
   try {
-    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl, propIdField);
-    const bcadRing = bcad[0]?.ring;
-    const ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
+    const ring = await loadTxgioParcelRing(txSql, countyFips, propId);
     if (!ring) {
       parcelResult.pass = false;
       parcelResult.reason = "cadastral-ring-unresolved";
       return parcelResult;
+    }
+    try {
+      const cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
+      const divergence = await observeBcadRingDivergence(ring, propId, cadastralQueryUrl, propIdField);
+      if (divergence) parcelResult.parcelRingSourceDivergence = divergence;
+    } catch {
+      /* txgio is the graded frame; BCAD divergence is optional */
     }
   } catch (err) {
     parcelResult.pass = false;
@@ -495,9 +618,7 @@ export async function gradeBlock13Parcel(
 ): Promise<ParcelGradeResult> {
   const { sql, txSql, storage, roads, descriptor } = ctx;
   const propId = parcelNodeId.split(":")[1]!;
-  const propIdField = ctx.cadastralPropIdField ?? "prop_id";
   const parcelResult: ParcelGradeResult = { pass: false, gates: {}, edges: [] };
-  const cadastralQueryUrl = resolveCadastralQueryUrl(parcelNodeId, ctx.cadastralQueryUrl);
 
   const resolved = resolveBlock13Key(parcelNodeId);
   if (!resolved.ok) {
@@ -515,20 +636,14 @@ export async function gradeBlock13Parcel(
   const situsAddress: string | null = situsRow?.situs_address?.trim() ?? null;
   parcelResult.situs = situsAddress;
 
-  let ring: unknown = null;
-  try {
-    const bcad = await fetchBcadParcelRings([propId], fetch, cadastralQueryUrl, propIdField);
-    const bcadRing = bcad[0]?.ring;
-    ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
-  } catch (err) {
-    parcelResult.error = "bcad-fetch-failed";
-    parcelResult.reason = err instanceof Error ? err.message : String(err);
+  const ringResolved = await resolveCertGradeRing(parcelNodeId, ctx);
+  if (!ringResolved.ok) {
+    parcelResult.error = ringResolved.error;
+    parcelResult.reason = ringResolved.reason;
     return parcelResult;
   }
-  if (!ring) {
-    parcelResult.error = "no-ring";
-    return parcelResult;
-  }
+  const { ring, divergence } = ringResolved;
+  if (divergence) parcelResult.parcelRingSourceDivergence = divergence;
 
   return gradeAgainstKey(parcelNodeId, propId, key, situsAddress, ring, { sql, txSql, storage, roads, descriptor }, true);
 }
@@ -683,7 +798,7 @@ export function gradeAgainstKeyResolved(
       boundaryEdges = null;
     }
   }
-  // R28 — recompute primitive when stored normals disagree with BCAD ring.
+  // R28 — recompute primitive when stored normals disagree with the txgio graded ring.
   if (boundaryEdges?.length) {
     const ringVerts = openRing(ring as never).length;
     if (boundaryEdges.length === ringVerts) {
@@ -719,7 +834,11 @@ export function gradeAgainstKeyResolved(
       descriptor: descriptor as never,
     });
   }
-  // Edge-count mismatch (TXGIO primitive vs BCAD ring): warm uses road-label path.
+  // Edge-count mismatch (stored boundary primitive vs txgio graded ring): when the
+  // promoted primitive's vertex count does not match the served ring, or normals
+  // cannot be reconciled (R28 above), fall back to the road-label warm path.
+  // Previously this comment referenced BCAD because cert graded a scrubbed BCAD
+  // ring; with txgio as the truth frame the mismatch is primitive-vs-served-ring.
   if ((!warmCandidate || (warmCandidate as { empty?: boolean }).empty) && labelResult.ok) {
     warmCandidate = computeWarmCandidate({
       parcelNodeId,

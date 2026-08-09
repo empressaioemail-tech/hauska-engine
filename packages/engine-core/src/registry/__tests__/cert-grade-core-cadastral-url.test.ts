@@ -10,7 +10,6 @@ vi.mock("../../boundary-primitive/index.js", async () => {
   return {
     ...actual,
     fetchBcadParcelRings: vi.fn(),
-    scrubLotLineRing: vi.fn((ring: unknown) => ring),
     ringCentroidLngLat: vi.fn(() => [0, 0]),
   };
 });
@@ -57,21 +56,41 @@ describe("gradeOneParcelInQueryMode cadastralQueryUrl threading", () => {
     mockedFetchBcadParcelRings.mockReset();
   });
 
-  it("a non-Bastrop parcel with no cadastralQueryUrl throws loud BEFORE any sql call (fail-closed, not a silent Bastrop default)", async () => {
-    const sql = vi.fn(() => {
-      throw new Error("sql should never be called — the URL check must short-circuit first");
+  it("a non-Bastrop parcel with no cadastralQueryUrl does not throw — txgio is the graded frame", async () => {
+    const txSql = ((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (text.includes("FROM txgio_parcel")) {
+        return Promise.resolve([
+          {
+            geometry: {
+              type: "Polygon",
+              coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]],
+            },
+          },
+        ]);
+      }
+      throw new Error(`unexpected txSql query: ${text}`);
     }) as unknown as import("postgres").Sql;
 
-    await expect(
-      gradeOneParcelInQueryMode("48453:99999", {
-        sql,
-        txSql: sql,
-        storage: {} as never,
-        roads: [],
-        descriptor: {},
-        districtPrefix: null,
-      }),
-    ).rejects.toThrow(/cadastral query URL not configured/);
+    const sql = ((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (text.includes("entity_type = 'buildable-envelope'")) return Promise.resolve([]);
+      if (text.includes("entity_type = 'zoning-fact'")) return Promise.resolve([]);
+      throw new Error(`unexpected query: ${text}`);
+    }) as unknown as import("postgres").Sql;
+
+    const result = await gradeOneParcelInQueryMode("48453:99999", {
+      sql,
+      txSql,
+      storage: {} as never,
+      roads: [],
+      descriptor: {},
+      districtPrefix: null,
+    });
+
+    expect(result.pass).toBe(true);
+    expect(result.honestDecline).toBe(true);
+    expect(mockedFetchBcadParcelRings).not.toHaveBeenCalled();
   });
 
   it("a configured cadastralQueryUrl is threaded through to fetchBcadParcelRings for a non-Bastrop row", async () => {

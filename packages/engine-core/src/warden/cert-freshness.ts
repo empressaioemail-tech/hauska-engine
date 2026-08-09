@@ -108,6 +108,7 @@ export async function runCertFreshnessCheck(params: {
       result = isUnzoned
         ? await gradeUnzonedParcel(parcelNodeId, {
             sql: deps.ctx.sql,
+            txSql: deps.ctx.txSql,
             cadastralQueryUrl: deps.row.railC.cadastralQueryUrl,
           })
         : await gradeOneParcelInQueryMode(parcelNodeId, {
