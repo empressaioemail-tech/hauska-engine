@@ -54,6 +54,17 @@
  * against `PARCEL_NODE_SCHEMA` plus the plan that produced them. A verify
  * failure is fatal — the run stops rather than continuing to write atoms whose
  * stored form was never confirmed.
+ *
+ * RE-ACQUISITION (invariants S1/S2 — see src/parcel-node/). Upsert alone is
+ * only correct for a county being written for the FIRST time. On a re-acquire,
+ * parcels that vanished from the source were previously left `status: "active"`
+ * with a pointer at deleted geometry, reading as current forever. This CLI now
+ * reconciles the prior active set against the plan, RETIRES the orphans, and
+ * fails closed if any active orphan survives the pass — a run cannot report
+ * success while stale rows still read as live. Keyless features are keyed
+ * `_feature-<vintage>-<index>` so a shapefile reshuffle cannot upsert one
+ * vintage's land onto another's; the prior vintage's synthetic rows drop out of
+ * the plan and are retired like any other orphan.
  */
 
 import { writeFileSync } from "node:fs";
@@ -63,8 +74,10 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import {
+  assertNoActiveOrphans,
   buildAtomsForPlan,
   planCountyParcelNodes,
+  reconcileCountyParcelNodes,
   verifyStoredParcelNodeAtom,
 } from "../src/parcel-node/index.ts";
 
@@ -201,12 +214,33 @@ const summary = {
   mode: args.apply ? "apply" : "dry-run",
   storeTruth: null,
   plan: null,
+  reconcile: null,
   atomsBuilt: 0,
   atomsWritten: 0,
   verified: 0,
+  orphansRetired: 0,
   verifyFailures: [],
   errors: 0,
 };
+
+/**
+ * Read the county's CURRENT active parcel-node rows so the reconcile can
+ * compute the orphan set. Read in both modes: the dry run must predict the
+ * retirements as well as the writes, or it is not a prediction of the apply.
+ */
+async function readPriorActiveParcelNodes(sql, countyFips) {
+  const rows = await sql`
+    SELECT body
+    FROM atoms
+    WHERE entity_type = 'parcel-node'
+      AND body->>'countyFips' = ${countyFips}
+  `;
+  return rows.map((r) => ({
+    parcelNodeId: r.body?.parcelNodeId,
+    status: r.body?.status === "retired" ? "retired" : "active",
+    sourceVintage: r.body?.sourceVintage ?? null,
+  }));
+}
 
 try {
   // ---- Store-truth sizing for THIS county, at execution time.
@@ -310,6 +344,76 @@ try {
     const atoms = buildAtomsForPlan(plan, args.tier, provenance);
     summary.atomsBuilt = atoms.length;
 
+    // ---- RE-ACQUISITION RECONCILE (invariant S2). Needs the atoms store, so
+    // it only runs when one is configured. In dry-run WITHOUT a substrate URL
+    // the orphan set is unknowable and is reported as such rather than as zero
+    // — reporting zero orphans because we did not look is the lie this whole
+    // module exists to prevent.
+    let reconcile = null;
+    let retireAtoms = [];
+    if (substrateUrl) {
+      const reconcileHandle =
+        handle ?? createPgStorage({ databaseUrl: substrateUrl, maxConnections: 2 });
+      try {
+        const priorRows = await readPriorActiveParcelNodes(
+          reconcileHandle.sql,
+          args.county,
+        );
+        reconcile = reconcileCountyParcelNodes(
+          priorRows,
+          plan,
+          summary.storeTruth.vintage,
+        );
+
+        // Retirement is a STATUS TRANSITION on the row, re-persisted through
+        // the same writer seam so the retired body is contract-valid and
+        // write-then-verifiable like any other. Bodies are rebuilt from the
+        // stored row so retiring never invents a new claim.
+        if (reconcile.orphans.length > 0) {
+          const orphanIds = reconcile.orphans.map((o) => o.parcelNodeId);
+          const retiredAt = new Date().toISOString();
+          for (let i = 0; i < orphanIds.length; i += 500) {
+            const idSlice = orphanIds.slice(i, i + 500);
+            const stored = await reconcileHandle.sql`
+              SELECT body FROM atoms
+              WHERE entity_type = 'parcel-node'
+                AND body->>'parcelNodeId' IN ${reconcileHandle.sql(idSlice)}
+            `;
+            for (const s of stored) {
+              const orphan = reconcile.orphans.find(
+                (o) => o.parcelNodeId === s.body?.parcelNodeId,
+              );
+              if (!orphan) continue;
+              retireAtoms.push({
+                ...s.body,
+                status: "retired",
+                retiredAt,
+                retiredReason: orphan.reason,
+              });
+            }
+          }
+        }
+
+        summary.reconcile = {
+          priorActive: reconcile.priorActive,
+          plannedIds: reconcile.plannedIds,
+          ...reconcile.counts,
+          orphanSample: reconcile.orphans.slice(0, 5),
+          retireAtomsBuilt: retireAtoms.length,
+        };
+      } finally {
+        if (!handle) await reconcileHandle.close();
+      }
+    } else {
+      summary.reconcile = {
+        skipped: true,
+        reason:
+          "no DATABASE_URL / SUBSTRATE_DATABASE_URL configured; the prior active set could not be " +
+          "read, so the orphan set is UNKNOWN — not zero. Re-acquiring a county without this " +
+          "reconcile is contract-unsafe.",
+      };
+    }
+
     if (!args.apply) {
       console.log(
         JSON.stringify({
@@ -317,12 +421,13 @@ try {
           county: args.county,
           ...summary.plan,
           atomsBuilt: atoms.length,
+          reconcile: summary.reconcile,
           sample: atoms.slice(0, 3).map((a) => ({
             parcelNodeId: a.parcelNodeId,
             geometryLoaded: a.geometryLoaded,
             absenceKind: a.absence?.kind ?? null,
           })),
-          note: "every atom above was CONSTRUCTED and contract-validated; --apply persists exactly these",
+          note: "every atom above was CONSTRUCTED and contract-validated; --apply persists exactly these, and retires the orphans reported above",
         }),
       );
     } else {
@@ -374,6 +479,47 @@ try {
             ofTotal: atoms.length,
           }),
         );
+      }
+
+      // ---- ORPHAN RETIREMENT (invariant S2), after the upserts so the new
+      // plan is fully landed before anything is taken out of currency.
+      if (retireAtoms.length > 0) {
+        for (let i = 0; i < retireAtoms.length; i += args.batch) {
+          const slice = retireAtoms.slice(i, i + args.batch);
+          await handle.storage.writePropertyAtomsBatch(slice);
+          summary.orphansRetired += slice.length;
+        }
+        console.log(
+          JSON.stringify({
+            event: "parcel-node-county.orphans-retired",
+            county: args.county,
+            retired: summary.orphansRetired,
+          }),
+        );
+      }
+
+      // ---- FAIL-CLOSED post-condition (invariant S2). Read the store back and
+      // require that no active row for this county is absent from the plan.
+      // Gated on what the STORE now holds, never on what we intended to write.
+      if (reconcile) {
+        const remaining = await handle.sql`
+          SELECT body->>'parcelNodeId' AS parcel_node_id
+          FROM atoms
+          WHERE entity_type = 'parcel-node'
+            AND body->>'countyFips' = ${args.county}
+            AND coalesce(body->>'status', 'active') <> 'retired'
+        `;
+        const verdict = assertNoActiveOrphans(
+          reconcile,
+          remaining.map((r) => r.parcel_node_id),
+        );
+        summary.orphanVerdict = verdict;
+        if (!verdict.ok) {
+          throw new Error(
+            `ORPHAN RETIREMENT FAILED (invariant S2): ${verdict.problem}; ` +
+              `still active: ${JSON.stringify(verdict.stillActive)}`,
+          );
+        }
       }
     }
   }

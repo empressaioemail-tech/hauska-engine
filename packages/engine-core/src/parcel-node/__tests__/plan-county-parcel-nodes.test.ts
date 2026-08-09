@@ -12,8 +12,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   classifyGeometryShape,
+  isSyntheticParcelKey,
   normalizeParcelKeyToken,
   planCountyParcelNodes,
+  syntheticParcelKey,
   type TxgioParcelRowInput,
 } from "../plan-county-parcel-nodes.js";
 
@@ -218,8 +220,12 @@ describe("planCountyParcelNodes — typed absence, all three kinds", () => {
     const absent = plan.planned.find((p) => p.outcome === "absent");
     expect(absent?.absenceKind).toBe("parcel-key-unresolved");
     // Never minted under the fabricated `48261:0` key that every account-less
-    // feature in the county would collide onto.
-    expect(absent?.parcelKey).toBe("_feature-0");
+    // feature in the county would collide onto. The key is VINTAGE-SCOPED
+    // (invariant S1): a bare `_feature-0` would let a reshuffled shapefile in a
+    // later vintage upsert different land onto this row. See
+    // re-acquisition-contract.test.ts.
+    expect(absent?.parcelKey).toBe(syntheticParcelKey(0, absent!.sourceVintage));
+    expect(isSyntheticParcelKey(absent!.parcelKey)).toBe(true);
     expect(absent?.reason).toMatch(/placeholder or blank id is not an account/);
   });
 

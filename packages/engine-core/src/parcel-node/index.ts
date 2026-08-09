@@ -9,9 +9,13 @@
  */
 
 export {
+  SYNTHETIC_PARCEL_KEY_PREFIX,
   classifyGeometryShape,
+  isSyntheticParcelKey,
   normalizeParcelKeyToken,
   planCountyParcelNodes,
+  sanitizeVintageToken,
+  syntheticParcelKey,
   type CountyKeyPolicy,
   type CountyParcelNodePlan,
   type GeometryShape,
@@ -20,6 +24,29 @@ export {
   type PlannedResolvedParcel,
   type TxgioParcelRowInput,
 } from "./plan-county-parcel-nodes.js";
+
+export {
+  assertNoActiveOrphans,
+  reconcileCountyParcelNodes,
+  type CountyReconcilePlan,
+  type OrphanRetirementVerdict,
+  type ParcelNodeOrphan,
+  type ParcelNodeSurvivor,
+  type StoredParcelNodeRow,
+} from "./reconcile-county-parcel-nodes.js";
+
+export {
+  assertWarmGateApplied,
+  emptyWarmGateTally,
+  gateWarmCohort,
+  parcelNodeWarmEligibility,
+  tallyWarmEligibility,
+  type ParcelNodeAnchorState,
+  type WarmDeclineCode,
+  type WarmEligibility,
+  type WarmGateTally,
+  type WarmGateVerdict,
+} from "./warm-preflight-gate.js";
 
 export {
   buildAtomForPlanned,
