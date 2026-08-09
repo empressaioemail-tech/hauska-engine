@@ -1,5 +1,6 @@
 /**
- * Structural pins — depth-warm-bastrop-batch bulk acquisition (2026-08-08).
+ * Structural pins — depth-warm-city-batch bulk acquisition (unified runner,
+ * supersedes depth-warm-bastrop-batch.mjs pins from 2026-08-08).
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -8,12 +9,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const batchPath = join(HERE, "../depth-warm-bastrop-batch.mjs");
+const batchPath = join(HERE, "../depth-warm-city-batch.mjs");
 const prefetchPath = join(HERE, "../bastrop-batch-bulk-prefetch.mjs");
 const batchSource = readFileSync(batchPath, "utf8");
 const prefetchSource = readFileSync(prefetchPath, "utf8");
 
-describe("depth-warm-bastrop-batch bulk acquisition", () => {
+describe("depth-warm-city-batch bulk acquisition", () => {
   it("prefetch module exports bulk loaders for situs, BCAD, layer-23, geometry, idempotency, boundary edges", () => {
     expect(prefetchSource).toContain("export async function bulkLoadSitusByPropId");
     expect(prefetchSource).toContain("export async function bulkLoadBcadRingsByPropId");
@@ -27,6 +28,7 @@ describe("depth-warm-bastrop-batch bulk acquisition", () => {
   it("batch script bulk-loads before the compute loop and tracks liveHttpCallsInLoop", () => {
     expect(batchSource).toContain("bulkLoadSitusByPropId");
     expect(batchSource).toContain("bulkLoadBcadRingsByPropId");
+    expect(batchSource).toContain("bulkLoadTxgioGeometryByPropId");
     expect(batchSource).toContain("bulkLoadLayer23FeatureIndex");
     expect(batchSource).toContain("layer23DescriptorCache");
     expect(batchSource).toContain("liveHttpCallsInLoop");
@@ -58,5 +60,6 @@ describe("depth-warm-bastrop-batch bulk acquisition", () => {
       /for \(const row of parcelRows\)[\s\S]*fetchBcadParcelRings\(/,
     );
     expect(batchSource).toMatch(/bcadByPropId\.get\(normalizePropId\(propId\)\)/);
+    expect(batchSource).toContain("PARCEL-RING-SOURCE-DIVERGENCE");
   });
 });

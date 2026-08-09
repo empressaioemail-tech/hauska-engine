@@ -2,6 +2,9 @@
  * Dry-run / apply compute-path parity — regression guard for the 2026-08-08
  * fork where readBoundaryEdgesForParcel was gated on !dryRun, making dry-run
  * incapable of emitting road-classification-mismatch (472 apply-only bucket).
+ *
+ * Pins the unified depth-warm-city-batch.mjs runner (PR #287); retired per-city
+ * scripts are exit-2 stubs and no longer carry the invariants.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -22,12 +25,8 @@ import type { JurisdictionDescriptor } from "../../src/property-reasoning/types.
 import { warmThenVerify } from "../../src/depth-warm/warm-then-verify.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const bastropBatchPath = join(HERE, "../depth-warm-bastrop-batch.mjs");
-const elginBatchPath = join(HERE, "../depth-warm-elgin-batch.mjs");
-const caldwellBatchPath = join(HERE, "../depth-warm-caldwell-batch.mjs");
-const bastropBatchSource = readFileSync(bastropBatchPath, "utf8");
-const elginBatchSource = readFileSync(elginBatchPath, "utf8");
-const caldwellBatchSource = readFileSync(caldwellBatchPath, "utf8");
+const cityBatchPath = join(HERE, "../depth-warm-city-batch.mjs");
+const cityBatchSource = readFileSync(cityBatchPath, "utf8");
 
 const COUNTY_FIPS = "48021";
 const PARCEL_NODE_ID = `${COUNTY_FIPS}:28286`;
@@ -190,26 +189,29 @@ function verifySnapshot(result: Awaited<ReturnType<typeof warmThenVerify>>) {
 }
 
 describe("depth-warm batch dry-run fork parity (2026-08-08)", () => {
-  it("bastrop batch loads boundary primitives in bulk before the compute loop (dry-run parity)", () => {
-    expect(bastropBatchSource).toContain("bulkLoadBoundaryEdgesByParcel");
-    expect(bastropBatchSource).toContain("boundaryEdgesFromBulkMap");
-    const loopStart = bastropBatchSource.indexOf("for (const row of parcelRows)");
-    const loopBody = bastropBatchSource.slice(loopStart);
+  it("city-batch loads boundary primitives in bulk before the compute loop (dry-run parity)", () => {
+    expect(cityBatchSource).toContain("bulkLoadBoundaryEdgesByParcel");
+    expect(cityBatchSource).toContain("boundaryEdgesFromBulkMap");
+    const loopStart = cityBatchSource.indexOf("for (const row of parcelRows)");
+    const loopBody = cityBatchSource.slice(loopStart);
     expect(loopBody).not.toMatch(/await readBoundaryEdgesForParcel\(/);
-    expect(bastropBatchSource).not.toMatch(
+    // Dry-run must still open storage for SELECT-only boundary reads; only
+    // writes/promotes gate on !dryRun (engine #279 dry-must-predict-apply).
+    expect(cityBatchSource).not.toMatch(
       /if\s*\(\s*!dryRun\s*\)\s*\{[\s\S]*?createPgStorage/,
     );
+    expect(cityBatchSource).toMatch(
+      /storage:\s*dryRun\s*\?\s*undefined\s*:\s*storageHandle\?\.storage/,
+    );
+    expect(cityBatchSource).toMatch(/promote:\s*!dryRun/);
   });
 
-  it("elgin and caldwell sibling batches also read boundary primitive on dry-run", () => {
-    for (const source of [elginBatchSource, caldwellBatchSource]) {
-      expect(source).not.toMatch(
-        /if\s*\(\s*!dryRun\s*&&\s*storageHandle\?\.storage\s*\)\s*\{[\s\S]*?readBoundaryEdgesForParcel/,
-      );
-      expect(source).toMatch(
-        /if\s*\(\s*storageHandle\?\.storage\s*\)\s*\{[\s\S]*?readBoundaryEdgesForParcel/,
-      );
-    }
+  it("city-batch warmThenVerify receives boundary edges on dry-run (not gated on storage for reads)", () => {
+    // Unified runner bulk-loads boundary edges once; loop never re-fetches per parcel.
+    expect(cityBatchSource).toContain("boundaryEdges: boundaryEdges ?? undefined");
+    expect(cityBatchSource).toMatch(
+      /Dry-run must READ stored boundary primitives[\s\S]*?only WRITES\/promotes stay gated on !dryRun/,
+    );
   });
 
   it("dry and apply warmThenVerify legs match verifyPass and failure-bucket distribution on fixture cohort", async () => {
