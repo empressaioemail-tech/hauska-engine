@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // Mocked BEFORE importing cert-grade-core.ts, which imports fetchBcadParcelRings
-// + scrubLotLineRing + BASTROP_BCAD_PARCELS_URL from this exact module path.
+// + exteriorRingFromGeoJson + BASTROP_BCAD_PARCELS_URL from this exact module path.
 // BASTROP_BCAD_PARCELS_URL must be the REAL constant (not mocked) — it is a
 // plain string re-exported by lot-line-scrub.ts, and cert-grade-core.ts's
 // resolveCadastralQueryUrl (fix/unzoned-cert-cadastral-url-param) compares
@@ -13,7 +13,6 @@ vi.mock("../../boundary-primitive/index.js", async () => {
   return {
     ...actual,
     fetchBcadParcelRings: vi.fn(),
-    scrubLotLineRing: vi.fn((ring: unknown) => ring),
     ringCentroidLngLat: vi.fn(() => [0, 0]),
   };
 });
@@ -24,6 +23,11 @@ import { gradeUnzonedParcel, UNZONED_CASCADE_DECLINE_CODE } from "../cert-grade-
 const mockedFetchBcadParcelRings = vi.mocked(fetchBcadParcelRings);
 
 const PARCEL = "48021:UNZONED-TEST-1";
+const TXGIO_RING = [[0, 0], [1, 0], [1, 1], [0, 0]] as Array<[number, number]>;
+const TXGIO_GEOMETRY = {
+  type: "Polygon",
+  coordinates: [TXGIO_RING],
+};
 
 /** Minimal fake `postgres` Sql tagged-template — dispatches by matching a
  * marker substring in the query's raw strings against a caller-provided
@@ -46,6 +50,17 @@ function makeFakeSql(responses: {
       return Promise.resolve(responses.buildableEnvelope ?? []);
     }
     throw new Error(`makeFakeSql: unrecognized query: ${text}`);
+  };
+  return fn as unknown as import("postgres").Sql;
+}
+
+function makeFakeTxSql(responses: { geometry?: unknown | null }) {
+  const fn = (strings: TemplateStringsArray, ..._values: unknown[]) => {
+    const text = strings.join("?");
+    if (text.includes("FROM txgio_parcel")) {
+      return Promise.resolve(responses.geometry != null ? [{ geometry: responses.geometry }] : []);
+    }
+    throw new Error(`makeFakeTxSql: unrecognized query: ${text}`);
   };
   return fn as unknown as import("postgres").Sql;
 }
@@ -92,14 +107,16 @@ describe("gradeUnzonedParcel (--grade-mode=unzoned)", () => {
 
   it("verdict: district-present fails expected-unzoned-but-district-present", async () => {
     const sql = makeFakeSql({ zoningFact: [districtZoningFactRow] });
-    const result = await gradeUnzonedParcel(PARCEL, { sql });
+    const txSql = makeFakeTxSql({ geometry: TXGIO_GEOMETRY });
+    const result = await gradeUnzonedParcel(PARCEL, { sql, txSql });
     expect(result.pass).toBe(false);
     expect(result.reason).toBe("expected-unzoned-but-district-present");
   });
 
   it("verdict: no zoning-fact at all also fails expected-unzoned-but-district-present", async () => {
     const sql = makeFakeSql({ zoningFact: [] });
-    const result = await gradeUnzonedParcel(PARCEL, { sql });
+    const txSql = makeFakeTxSql({ geometry: TXGIO_GEOMETRY });
+    const result = await gradeUnzonedParcel(PARCEL, { sql, txSql });
     expect(result.pass).toBe(false);
     expect(result.reason).toBe("expected-unzoned-but-district-present");
   });
@@ -109,7 +126,8 @@ describe("gradeUnzonedParcel (--grade-mode=unzoned)", () => {
       zoningFact: [absenceZoningFactRow],
       setbackRule: [{ exists: 1 }],
     });
-    const result = await gradeUnzonedParcel(PARCEL, { sql });
+    const txSql = makeFakeTxSql({ geometry: TXGIO_GEOMETRY });
+    const result = await gradeUnzonedParcel(PARCEL, { sql, txSql });
     expect(result.pass).toBe(false);
     expect(result.reason).toBe("unexpected-setback-rule");
   });
@@ -120,7 +138,8 @@ describe("gradeUnzonedParcel (--grade-mode=unzoned)", () => {
       setbackRule: [],
       buildableEnvelope: [],
     });
-    const result = await gradeUnzonedParcel(PARCEL, { sql });
+    const txSql = makeFakeTxSql({ geometry: TXGIO_GEOMETRY });
+    const result = await gradeUnzonedParcel(PARCEL, { sql, txSql });
     expect(result.pass).toBe(false);
     expect(result.reason).toBe("cascade-missing");
   });
@@ -131,49 +150,52 @@ describe("gradeUnzonedParcel (--grade-mode=unzoned)", () => {
       setbackRule: [],
       buildableEnvelope: [wrongCodeEnvelopeRow],
     });
-    const result = await gradeUnzonedParcel(PARCEL, { sql });
+    const txSql = makeFakeTxSql({ geometry: TXGIO_GEOMETRY });
+    const result = await gradeUnzonedParcel(PARCEL, { sql, txSql });
     expect(result.pass).toBe(false);
     expect(result.reason).toBe("cascade-missing");
   });
 
-  it("verdict: cadastral ring does not resolve fails cadastral-ring-unresolved", async () => {
+  it("verdict: txgio ring does not resolve fails cadastral-ring-unresolved", async () => {
     const sql = makeFakeSql({
       zoningFact: [absenceZoningFactRow],
       setbackRule: [],
       buildableEnvelope: [cascadeEnvelopeRow],
     });
-    mockedFetchBcadParcelRings.mockResolvedValueOnce([]);
-    const result = await gradeUnzonedParcel(PARCEL, { sql });
+    const txSql = makeFakeTxSql({ geometry: null });
+    const result = await gradeUnzonedParcel(PARCEL, { sql, txSql });
     expect(result.pass).toBe(false);
     expect(result.reason).toBe("cadastral-ring-unresolved");
   });
 
-  it("verdict: genuine absence + cascade present + ring resolves => pass", async () => {
+  it("verdict: genuine absence + cascade present + txgio ring resolves => pass", async () => {
     const sql = makeFakeSql({
       zoningFact: [absenceZoningFactRow],
       setbackRule: [],
       buildableEnvelope: [cascadeEnvelopeRow],
     });
+    const txSql = makeFakeTxSql({ geometry: TXGIO_GEOMETRY });
     mockedFetchBcadParcelRings.mockResolvedValueOnce([
-      { propId: "UNZONED-TEST-1", ring: [[0, 0], [1, 0], [1, 1], [0, 0]] },
+      { propId: "UNZONED-TEST-1", ring: TXGIO_RING },
     ]);
-    const result = await gradeUnzonedParcel(PARCEL, { sql });
+    const result = await gradeUnzonedParcel(PARCEL, { sql, txSql });
     expect(result.pass).toBe(true);
     expect(result.honestDecline).toBe(true);
     expect(result.reason).toBeUndefined();
   });
 
-  describe("cadastralQueryUrl threading (fix/unzoned-cert-cadastral-url-param)", () => {
-    it("Bastrop (48021) parcel with no cadastralQueryUrl configured falls back to BASTROP_BCAD_PARCELS_URL (pin — byte-equivalent default path)", async () => {
+  describe("cadastralQueryUrl threading (BCAD divergence instrument only)", () => {
+    it("Bastrop (48021) parcel with no cadastralQueryUrl configured falls back to BASTROP_BCAD_PARCELS_URL for divergence check", async () => {
       const sql = makeFakeSql({
         zoningFact: [absenceZoningFactRow],
         setbackRule: [],
         buildableEnvelope: [cascadeEnvelopeRow],
       });
+      const txSql = makeFakeTxSql({ geometry: TXGIO_GEOMETRY });
       mockedFetchBcadParcelRings.mockResolvedValueOnce([
-        { propId: "UNZONED-TEST-1", ring: [[0, 0], [1, 0], [1, 1], [0, 0]] },
+        { propId: "UNZONED-TEST-1", ring: TXGIO_RING },
       ]);
-      const result = await gradeUnzonedParcel(PARCEL, { sql, cadastralQueryUrl: undefined });
+      const result = await gradeUnzonedParcel(PARCEL, { sql, txSql, cadastralQueryUrl: undefined });
       expect(result.pass).toBe(true);
       expect(mockedFetchBcadParcelRings).toHaveBeenCalledWith(
         ["UNZONED-TEST-1"],
@@ -183,7 +205,7 @@ describe("gradeUnzonedParcel (--grade-mode=unzoned)", () => {
       );
     });
 
-    it("a configured cadastralQueryUrl is threaded through to fetchBcadParcelRings instead of the Bastrop default", async () => {
+    it("a configured cadastralQueryUrl is threaded through to fetchBcadParcelRings for divergence reporting", async () => {
       const OTHER_COUNTY_PARCEL = "48453:UNZONED-TEST-2"; // Travis
       const otherCountyAbsenceRow = {
         body: { ...absenceZoningFactRow.body, parcelNodeId: OTHER_COUNTY_PARCEL },
@@ -198,11 +220,13 @@ describe("gradeUnzonedParcel (--grade-mode=unzoned)", () => {
         setbackRule: [],
         buildableEnvelope: [otherCountyEnvelopeRow],
       });
+      const txSql = makeFakeTxSql({ geometry: TXGIO_GEOMETRY });
       mockedFetchBcadParcelRings.mockResolvedValueOnce([
-        { propId: "UNZONED-TEST-2", ring: [[0, 0], [1, 0], [1, 1], [0, 0]] },
+        { propId: "UNZONED-TEST-2", ring: TXGIO_RING },
       ]);
       const result = await gradeUnzonedParcel(OTHER_COUNTY_PARCEL, {
         sql,
+        txSql,
         cadastralQueryUrl: travisUrl,
       });
       expect(result.pass).toBe(true);
@@ -214,17 +238,26 @@ describe("gradeUnzonedParcel (--grade-mode=unzoned)", () => {
       );
     });
 
-    it("a non-Bastrop row with NO configured cadastralQueryUrl fails LOUD with a named error, never silently defaulting to Bastrop's endpoint", async () => {
+    it("a non-Bastrop row with NO configured cadastralQueryUrl still passes when txgio ring resolves (BCAD divergence skipped)", async () => {
       const OTHER_COUNTY_PARCEL = "48453:UNZONED-TEST-3"; // Travis, no row URL configured
-      const sql = makeFakeSql({}); // never reached — the URL check declines before any SELECT
+      const otherCountyAbsenceRow = {
+        body: { ...absenceZoningFactRow.body, parcelNodeId: OTHER_COUNTY_PARCEL },
+      };
+      const otherCountyEnvelopeRow = {
+        body: { ...cascadeEnvelopeRow.body, parcelNodeId: OTHER_COUNTY_PARCEL },
+      };
+      const sql = makeFakeSql({
+        zoningFact: [otherCountyAbsenceRow],
+        setbackRule: [],
+        buildableEnvelope: [otherCountyEnvelopeRow],
+      });
+      const txSql = makeFakeTxSql({ geometry: TXGIO_GEOMETRY });
       const result = await gradeUnzonedParcel(OTHER_COUNTY_PARCEL, {
         sql,
+        txSql,
         cadastralQueryUrl: undefined,
       });
-      expect(result.pass).toBe(false);
-      expect(result.reason).toBe("cadastral-query-url-not-configured");
-      expect(result.error).toMatch(/cadastral query URL not configured/);
-      expect(result.error).toContain(OTHER_COUNTY_PARCEL);
+      expect(result.pass).toBe(true);
       expect(mockedFetchBcadParcelRings).not.toHaveBeenCalled();
     });
   });

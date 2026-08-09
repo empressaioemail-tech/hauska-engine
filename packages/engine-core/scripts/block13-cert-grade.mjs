@@ -250,6 +250,7 @@ try {
     if (args.gradeMode === "unzoned") {
       parcelResult = await gradeUnzonedParcel(parcelNodeId, {
         sql,
+        txSql,
         cadastralQueryUrl: resolvedRegistryRow?.railC.cadastralQueryUrl,
         cadastralPropIdField: resolvedRegistryRow?.railPerParcel?.propIdField,
       });
