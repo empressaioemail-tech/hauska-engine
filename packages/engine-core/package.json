@@ -98,7 +98,10 @@
     "onboard-preflight": "tsx scripts/onboard-preflight.mjs",
     "preflight-and-report": "tsx scripts/preflight-and-report.mjs",
     "cert-grade-and-report": "tsx scripts/cert-grade-and-report.mjs",
-    "write-parcel-node-county": "tsx scripts/write-parcel-node-county.mjs"
+    "write-parcel-node-county": "tsx scripts/write-parcel-node-county.mjs",
+    "write-cad-parcel-roll-county": "tsx scripts/write-cad-parcel-roll-county.mjs",
+    "write-land-use-fact-county": "tsx scripts/write-land-use-fact-county.mjs",
+    "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
