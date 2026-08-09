@@ -1,0 +1,37 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": "ml-fixture-1" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-97.32652, 30.10629],
+            [-97.32678, 30.10629],
+            [-97.32677, 30.10664],
+            [-97.32652, 30.10664],
+            [-97.32652, 30.10629]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "ml-fixture-orphan" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-97.33, 30.11],
+            [-97.3298, 30.11],
+            [-97.3298, 30.1102],
+            [-97.33, 30.1102],
+            [-97.33, 30.11]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -104,7 +104,8 @@
     "write-parcel-node-county": "tsx scripts/write-parcel-node-county.mjs",
     "write-cad-parcel-roll-county": "tsx scripts/write-cad-parcel-roll-county.mjs",
     "write-land-use-fact-county": "tsx scripts/write-land-use-fact-county.mjs",
-    "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs"
+    "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs",
+    "write-building-footprint-county": "tsx scripts/write-building-footprint-county.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
