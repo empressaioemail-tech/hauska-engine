@@ -43,6 +43,10 @@ import {
   EnvelopeGroundTruthPromoteDeclineError,
   EnvelopeWriteThenVerifyMismatchError,
 } from "../src/depth-warm/promote.ts";
+import {
+  assertWarmGateApplied,
+  gateWarmCohort,
+} from "../src/parcel-node/index.ts";
 import { loadLayer23CityPropIds } from "./bastrop-layer23-roster.mjs";
 import { loadDominantDistrictRoster } from "./bastrop-dominant-district-roster.mjs";
 import { upsertCountyFacetLedger } from "./upsert-county-facet-ledger.mjs";
@@ -486,6 +490,67 @@ const layer23DescriptorCache = buildLayer23DescriptorCache(
 );
 const bulkLoadMs = Math.round(performance.now() - bulkT0);
 
+/**
+ * C1/C5 WARM PREFLIGHT (invariant S3, src/parcel-node/warm-preflight-gate.ts).
+ *
+ * The cohort above is sized from `zoning-fact` presence — RECIPE eligibility.
+ * That says which claim could be computed; it says nothing about whether the
+ * PARCEL the claim is about is established. Before this gate, a parcel with no
+ * parcel-node anchor, a typed-absence anchor, a synthetic `_feature-*` key, or
+ * an anchor retired by a county re-acquisition would be warmed and promoted as
+ * though its geometry were settled.
+ *
+ * The warm set is the INTERSECTION of recipe eligibility and parcel-node
+ * eligibility. Refusals are named and counted, never silent drops.
+ */
+const parcelNodeAnchorRows = await sql`
+  SELECT body FROM atoms
+  WHERE entity_type = 'parcel-node'
+    AND body->>'parcelNodeId' = ANY(${parcelNodeIds})
+`;
+const parcelNodeAnchors = new Map(
+  parcelNodeAnchorRows
+    .filter((r) => r.body?.parcelNodeId)
+    .map((r) => [
+      r.body.parcelNodeId,
+      {
+        parcelNodeId: r.body.parcelNodeId,
+        status: r.body.status === "retired" ? "retired" : "active",
+        geometryLoaded: r.body.geometryLoaded === true,
+        absenceKind: r.body.absence?.kind ?? null,
+        keyKind: r.body.keyKind ?? null,
+        geometryStoreRef: r.body.geometryStoreRef ?? null,
+      },
+    ]),
+);
+
+const warmGate = gateWarmCohort(parcelNodeIds, parcelNodeAnchors);
+const warmGateVerdict = assertWarmGateApplied(parcelNodeIds.length, warmGate.tally);
+if (!warmGateVerdict.ok) {
+  console.error(
+    JSON.stringify({
+      event: "depth-warm.warm-gate-bypass",
+      problem: warmGateVerdict.problem,
+    }),
+  );
+  process.exit(1);
+}
+const warmEligibleIds = new Set(warmGate.eligible);
+
+console.log(
+  JSON.stringify({
+    event: "depth-warm.parcel-node-preflight",
+    county: COUNTY_FIPS,
+    recipeCohort: parcelNodeIds.length,
+    anchorsFound: parcelNodeAnchors.size,
+    warmEligible: warmGate.tally.passed,
+    declined: warmGate.tally.declined,
+    declinesByCode: warmGate.tally.byCode,
+    sample: warmGate.declined.slice(0, 5),
+    note: "warm set is the INTERSECTION of zoning-fact recipe eligibility and parcel-node eligibility (C1/C5)",
+  }),
+);
+
 let liveHttpCallsInLoop = 0;
 
 const loopT0 = performance.now();
@@ -513,7 +578,21 @@ const stats = {
       "no-zoning-fact-stamp": 0,
       "ground-truth-promote-decline": 0,
       "write-then-verify-mismatch": 0,
+      // C1/C5 parcel-node preflight refusals (invariant S3).
+      "no-parcel-node-anchor": 0,
+      "parcel-node-absence": 0,
+      "parcel-node-key-unresolved": 0,
+      "parcel-node-retired": 0,
+      "parcel-node-geometry-incomplete": 0,
+      "parcel-node-pointer-mismatch": 0,
       other: 0,
+  },
+  parcelNodePreflight: {
+    recipeCohort: parcelNodeIds.length,
+    anchorsFound: parcelNodeAnchors.size,
+    warmEligible: warmGate.tally.passed,
+    declined: warmGate.tally.declined,
+    byCode: warmGate.tally.byCode,
   },
   failureBuckets: {},
   honestDeclines: 0,
@@ -556,6 +635,20 @@ for (const row of parcelRows) {
       ? normalizeDistrict(args.districtPrefix)
       : normalizeDistrict(row.district);
   if (!district) continue;
+
+  // C5 ORDERING: the parcel-node anchor is checked BEFORE recipe prerequisites.
+  // The statewide factory establishes that the parcel exists; only then may the
+  // jurisdiction factory compute a claim about it. Reversing this is how a
+  // zoning-fact alone ends up promoting a parcel with no established geometry.
+  if (!warmEligibleIds.has(parcelNodeId)) {
+    const refusal = warmGate.declined.find((d) => d.parcelNodeId === parcelNodeId);
+    recordEarlyDecline(refusal?.declineCode ?? "no-parcel-node-anchor", parcelNodeId, [
+      refusal?.reason ?? "parcel-node preflight refused this parcel",
+    ]);
+    stats.processed++;
+    stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+    continue;
+  }
 
   if (!row.zoning_fact_did) {
     recordEarlyDecline("no-zoning-fact-stamp", parcelNodeId, [

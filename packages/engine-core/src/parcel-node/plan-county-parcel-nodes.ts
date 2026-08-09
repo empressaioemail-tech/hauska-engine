@@ -170,6 +170,88 @@ export function normalizeParcelKeyToken(value: string): string {
 const KEY_TOKEN_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 /**
+ * INVARIANT S1 — A SYNTHETIC KEY MUST NOT ASSERT CONTINUITY IT CANNOT SUPPORT.
+ *
+ * A feature with no resolvable account key still has to be counted (absence is
+ * a finding, never a skipped row), so it is planned under a synthetic key. But
+ * the only token available to build that key from is `feature_index`, which is
+ * a SHAPEFILE SEQUENCE NUMBER — de-dupe identity WITHIN one vintage and
+ * nothing at all across vintages. StratMap reshuffles it on re-acquisition.
+ *
+ * The store upserts on `atom_did`, and `atom_did` is derived from
+ * `parcelNodeId`. So a bare `_feature-7` key means V2's feature 7 — a
+ * completely different polygon — upserts onto V1's feature 7 in place and the
+ * row silently reads as the same parcel continuing. That is the cross-vintage
+ * `feature_index` fallacy the consumption contract forbids in prose, reachable
+ * through the very key the planner mints.
+ *
+ * ENFORCING MECHANISM: the synthetic token embeds the SOURCE VINTAGE, so two
+ * vintages CANNOT produce the same `parcelNodeId` for a keyless feature. The
+ * collision is not policed at write time, it is unrepresentable — there is no
+ * pair of distinct-vintage keyless features whose ids are equal, therefore no
+ * upsert can express false continuity for them. The prior vintage's rows then
+ * fall out of the new plan and are caught by orphan retirement (invariant S2),
+ * which is the honest statement: that land was observed under V1, is no longer
+ * observed under V2, and no successor is claimed.
+ *
+ * SECOND MECHANISM: {@link isSyntheticParcelKey} is the single predicate every
+ * consumer uses to recognize these keys. Warm eligibility (invariant S3)
+ * refuses them; re-acquisition reconciliation refuses to treat them as
+ * same-key continuity. Both call this one function rather than re-deriving a
+ * prefix test, so the definition cannot drift between the producer and the
+ * consumers.
+ */
+export const SYNTHETIC_PARCEL_KEY_PREFIX = "_feature-";
+
+/**
+ * Vintage tokens come from source data (`source_vintage`), so they can carry
+ * characters `PARCEL_NODE_ID_PATTERN` rejects (spaces, slashes in a date, a
+ * null). Sanitize to the admitted alphabet so the synthetic key is always
+ * contract-legal; the token only has to DISTINGUISH vintages, not be a
+ * round-trippable copy of one.
+ */
+export function sanitizeVintageToken(sourceVintage: string | null | undefined): string {
+  const raw = (sourceVintage ?? "").trim();
+  if (raw.length === 0) return "unknown";
+  const cleaned = raw.replace(/[^A-Za-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "");
+  return cleaned.length === 0 ? "unknown" : cleaned;
+}
+
+/**
+ * Build the vintage-scoped synthetic key for a keyless source feature.
+ *
+ * Shape: `_feature-<vintage>-<featureIndex>`. Both tokens are required for the
+ * invariant: `featureIndex` distinguishes features within a vintage, the
+ * vintage distinguishes across them. Drop either and the collision returns.
+ */
+export function syntheticParcelKey(
+  featureIndex: number,
+  sourceVintage: string | null | undefined,
+): string {
+  return `${SYNTHETIC_PARCEL_KEY_PREFIX}${sanitizeVintageToken(sourceVintage)}-${featureIndex}`;
+}
+
+/**
+ * THE predicate for "this key is synthetic, not an account".
+ *
+ * Accepts either a bare key token (`_feature-2024-01-01-7`) or a full
+ * `parcelNodeId` (`48261:_feature-2024-01-01-7`), because callers on both
+ * sides of the seam hold one or the other and a consumer that had to remember
+ * which form to pass would eventually pass the wrong one.
+ *
+ * Deliberately also matches the LEGACY bare `_feature-<n>` form. Rows written
+ * before this carve-out exist in the store; they must keep being recognized as
+ * synthetic (and therefore refused for warm and for continuity) rather than
+ * being mistaken for accounts because their shape changed.
+ */
+export function isSyntheticParcelKey(keyOrParcelNodeId: string): boolean {
+  const token = keyOrParcelNodeId.includes(":")
+    ? keyOrParcelNodeId.slice(keyOrParcelNodeId.indexOf(":") + 1)
+    : keyOrParcelNodeId;
+  return token.startsWith(SYNTHETIC_PARCEL_KEY_PREFIX);
+}
+
+/**
  * Shape of the stored geometry, inspected WITHOUT reading coordinates.
  *
  * The point is to detect the multi-part case the single-ring serving path
@@ -440,9 +522,11 @@ export function planCountyParcelNodes(
     planned.push({
       outcome: "absent",
       featureIndex: view.featureIndex,
-      // Synthetic feature-scoped key: contract-legal, obviously not an account,
-      // and stable across re-runs so the atom is idempotent.
-      parcelKey: `_feature-${view.featureIndex}`,
+      // Synthetic VINTAGE-SCOPED feature key (invariant S1). Contract-legal,
+      // obviously not an account, stable across re-runs of the SAME vintage so
+      // the atom is idempotent, and provably distinct across vintages so a
+      // shapefile reshuffle cannot upsert one vintage's land onto another's.
+      parcelKey: syntheticParcelKey(view.featureIndex, view.row.sourceVintage),
       keyKind: view.keyKind,
       absenceKind,
       reason: view.keyProblem ?? "parcel key could not be established",
