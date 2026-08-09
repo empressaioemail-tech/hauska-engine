@@ -27,6 +27,15 @@ except ImportError:  # Windows
 
 FLUSH_EVERY = 500
 
+NON_PAVEMENT_HIGHWAY_TAGS = frozenset({"proposed", "construction"})
+
+
+def collinear_orientation_epsilon(*points: tuple[float, float]) -> float:
+    scale = 1.0
+    for lon, lat in points:
+        scale = max(scale, abs(lon), abs(lat))
+    return max(1e-14, scale * 1e-14)
+
 
 def _strip_bom(raw: bytes) -> bytes:
     if raw.startswith(b"\xef\xbb\xbf"):
@@ -145,15 +154,16 @@ def segments_intersect(
     o2 = orient(a, b, d)
     o3 = orient(c, d, a)
     o4 = orient(c, d, b)
+    eps = collinear_orientation_epsilon(a, b, c, d)
     if (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0):
         return True
-    if abs(o1) < 1e-18 and on_seg(a, c, b):
+    if abs(o1) < eps and on_seg(a, c, b):
         return True
-    if abs(o2) < 1e-18 and on_seg(a, d, b):
+    if abs(o2) < eps and on_seg(a, d, b):
         return True
-    if abs(o3) < 1e-18 and on_seg(c, a, d):
+    if abs(o3) < eps and on_seg(c, a, d):
         return True
-    if abs(o4) < 1e-18 and on_seg(c, b, d):
+    if abs(o4) < eps and on_seg(c, b, d):
         return True
     return False
 
@@ -217,8 +227,8 @@ def resolve_county_hits(
     return hits
 
 
-def peak_rss_mb() -> float | None:
-    """Best-effort peak RSS (MB). Prefer Working Set Peak via WinAPI; else Unix rusage."""
+def peak_rss_mb(*, fail_loud: bool = False) -> float:
+    err: str | None = None
     if sys.platform == "win32":
         try:
             import ctypes
@@ -240,7 +250,6 @@ def peak_rss_mb() -> float | None:
                 ]
 
             kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-            # Prefer K32* (kernel32) — psapi may fail depending on Python bitness.
             getter = getattr(kernel32, "K32GetProcessMemoryInfo", None)
             if getter is None:
                 getter = ctypes.WinDLL("psapi", use_last_error=True).GetProcessMemoryInfo
@@ -253,30 +262,43 @@ def peak_rss_mb() -> float | None:
             counters = PROCESS_MEMORY_COUNTERS_EX()
             counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS_EX)
             if getter(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
-                # Prefer private peak proxy when WS peak looks stuck; report max of both.
-                return max(counters.PeakWorkingSetSize, counters.PrivateUsage) / (
+                mb = max(counters.PeakWorkingSetSize, counters.PrivateUsage) / (
                     1024 * 1024
                 )
-        except Exception:
-            pass
-        try:
-            import psutil  # type: ignore
+                if mb > 0:
+                    return mb
+                err = "WinAPI returned zero peak RSS"
+            else:
+                err = f"K32GetProcessMemoryInfo failed errno={ctypes.get_last_error()}"
+        except Exception as exc:
+            err = f"WinAPI RSS probe failed: {exc}"
+        if err is None:
+            try:
+                import psutil  # type: ignore
 
-            mi = psutil.Process().memory_info()
-            return max(mi.rss, getattr(mi, "vms", 0)) / (1024 * 1024)
-        except Exception:
-            return None
-        return None
-    if resource is None:
-        return None
-    try:
-        usage = resource.getrusage(resource.RUSAGE_SELF)
-        rss = usage.ru_maxrss
-        if sys.platform == "darwin":
-            return rss / (1024 * 1024)
-        return rss / 1024.0
-    except Exception:
-        return None
+                mi = psutil.Process().memory_info()
+                mb = max(mi.rss, getattr(mi, "vms", 0)) / (1024 * 1024)
+                if mb > 0:
+                    return mb
+                err = "psutil returned zero RSS"
+            except Exception as exc:
+                err = f"psutil RSS probe failed: {exc}"
+    elif resource is not None:
+        try:
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            rss = usage.ru_maxrss
+            mb = rss / (1024 * 1024) if sys.platform == "darwin" else rss / 1024.0
+            if mb > 0:
+                return mb
+            err = "getrusage returned zero ru_maxrss"
+        except Exception as exc:
+            err = f"getrusage failed: {exc}"
+    else:
+        err = "resource module unavailable on this platform"
+
+    if fail_loud:
+        raise RuntimeError(f"peak_rss_mb instrumentation failure: {err}")
+    raise RuntimeError(f"peak_rss_mb unreadable (fail-closed): {err}")
 
 
 class HighwayExtractor(osmium.SimpleHandler):
@@ -292,15 +314,19 @@ class HighwayExtractor(osmium.SimpleHandler):
         self.multi_county = 0
         self.pending_flush = 0
         self.peak_rss_mb = 0.0
+        self.rss_probe_ok = False
 
     def _sample_rss(self) -> None:
         mb = peak_rss_mb()
-        if mb is not None and mb > self.peak_rss_mb:
+        self.rss_probe_ok = True
+        if mb > self.peak_rss_mb:
             self.peak_rss_mb = mb
 
     def way(self, w):
         self.seen_ways += 1
         if "highway" not in w.tags:
+            return
+        if w.tags.get("highway") in NON_PAVEMENT_HIGHWAY_TAGS:
             return
         self.highway_ways += 1
         coords: list[tuple[float, float]] = []
@@ -353,12 +379,19 @@ def main() -> int:
         default="",
         help="Optional MD5 hex of --pbf; fail closed on mismatch",
     )
+    ap.add_argument(
+        "--pbf-url",
+        type=str,
+        default="https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf",
+        help="Exact pinned URL (recorded in report)",
+    )
     args = ap.parse_args()
 
     if not args.pbf.is_file():
         print(f"FATAL: pbf missing: {args.pbf}", file=sys.stderr)
         return 2
 
+    verified_md5: str | None = None
     if args.expected_md5:
         import hashlib
 
@@ -371,6 +404,7 @@ def main() -> int:
         if got != want:
             print(f"FATAL: pbf md5 mismatch got={got} want={want}", file=sys.stderr)
             return 3
+        verified_md5 = got
 
     counties = load_counties(args.county_geojson)
     print(
@@ -389,10 +423,22 @@ def main() -> int:
         out_fp.flush()
         handler._sample_rss()
 
+    if not handler.rss_probe_ok:
+        print("FATAL: peak RSS never sampled successfully", file=sys.stderr)
+        return 4
+    if handler.peak_rss_mb <= 0:
+        try:
+            handler.peak_rss_mb = peak_rss_mb(fail_loud=True)
+        except RuntimeError as exc:
+            print(f"FATAL: {exc}", file=sys.stderr)
+            return 4
+
     elapsed = time.time() - t0
     report = {
         "generator": "artifacts/roads-pbf-worker/extract_highways.py",
         "pbf": str(args.pbf),
+        "pbfUrl": args.pbf_url,
+        "pbfMd5Verified": verified_md5,
         "countyGeojson": str(args.county_geojson),
         "outNdjson": str(args.out_ndjson),
         "countyCount": len(counties),

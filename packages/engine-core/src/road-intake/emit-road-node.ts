@@ -6,7 +6,7 @@ import {
   sha256HexCanonical,
   widthedFromMatchBasis,
 } from "../property-reasoning/confidence.js";
-import { assumedRowWidthFt, classifyOsmHighwayTag } from "./classify.js";
+import { assumedRowWidthFt, classifyOsmHighwayTag, isNonPavementOsmHighwayTag } from "./classify.js";
 import { buildRowEdgesFromCenterline, defaultAttachPoint } from "./geometry.js";
 import type { OsmRoadObservation, ParsedOsmElement, RoadIntakeDescriptor } from "./types.js";
 
@@ -19,6 +19,9 @@ export function parseOsmWayElement(
   }
   const tags = element.tags ?? {};
   const highwayTag = tags.highway ?? "";
+  if (isNonPavementOsmHighwayTag(highwayTag)) {
+    return null;
+  }
   const classification = classifyOsmHighwayTag(highwayTag, tags);
   const name = tags.name?.trim();
   const centerline = element.geometry.map(

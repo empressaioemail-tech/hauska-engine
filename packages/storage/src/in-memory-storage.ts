@@ -29,6 +29,11 @@ import type {
 } from "./port.js";
 import { CORPUS_SNAPSHOT_FORMAT, type CorpusSnapshot } from "./snapshot.js";
 import {
+  decideRoadSupersede,
+  retireRoadNodeInstance,
+  type WriteRoadAtomsBatchOptions,
+} from "./road-ingest-supersede.js";
+import {
   matchesAtomQuery,
   rankSearchResults,
   scoreAtomSearch,
@@ -104,10 +109,50 @@ export class InMemoryStorage implements StoragePort {
 
   async writeRoadAtomsBatch(
     instances: ReadonlyArray<RoadNodeAtomInstance>,
+    opts?: WriteRoadAtomsBatchOptions,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
-    return this.writePropertyAtomsBatch(
-      instances as unknown as ReadonlyArray<PropertyAtomInstance>,
-    );
+    if (instances.length === 0) return [];
+
+    const toWrite: PropertyAtomInstance[] = [];
+    const incomingWritten: RoadNodeAtomInstance[] = [];
+    const retiredAt = new Date().toISOString();
+
+    for (const incoming of instances) {
+      const atomDid =
+        typeof incoming.atomDid === "string" &&
+        incoming.atomDid.startsWith("did:hauska:")
+          ? incoming.atomDid
+          : buildAtomDid(incoming.entityType, incoming.entityId).raw;
+      const existingRaw = this.atoms.get(atomDid);
+      const existing =
+        existingRaw && isRoadNodeAtomInstance(existingRaw)
+          ? {
+              atomDid,
+              sourceAdapter: existingRaw.sourceAdapter,
+              versionStamp: existingRaw.versionStamp,
+              status: existingRaw.status,
+              body: existingRaw,
+            }
+          : null;
+      const action = decideRoadSupersede(incoming, existing, opts);
+      if (action === "skip-protected") continue;
+      if (action === "supersede-retire" && existing) {
+        toWrite.push(
+          retireRoadNodeInstance(
+            existing.body,
+            `superseded-by:${incoming.sourceAdapter}`,
+            retiredAt,
+          ) as unknown as PropertyAtomInstance,
+        );
+      }
+      toWrite.push(incoming as unknown as PropertyAtomInstance);
+      incomingWritten.push(incoming);
+    }
+
+    if (toWrite.length === 0) return [];
+    const written = await this.writePropertyAtomsBatch(toWrite);
+    const start = written.length - incomingWritten.length;
+    return written.slice(start);
   }
 
   async listRoadAtomsByRoadNodeId(

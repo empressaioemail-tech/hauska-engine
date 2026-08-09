@@ -10,6 +10,8 @@
  * county-line-running roads where even-odd ray cast treats boundary as outside.
  */
 
+import { collinearOrientationEpsilon } from "./geometry-epsilon.js";
+
 export type GeoJsonPolygon = {
   type: "Polygon";
   coordinates: ReadonlyArray<ReadonlyArray<readonly [number, number]>>;
@@ -206,13 +208,16 @@ export function segmentsIntersect(
   const o2 = orient(a, b, d);
   const o3 = orient(c, d, a);
   const o4 = orient(c, d, b);
+  const eps = collinearOrientationEpsilon(a, b, c, d);
   if (o1 > 0 !== o2 > 0 && o3 > 0 !== o4 > 0) return true;
-  if (Math.abs(o1) < 1e-18 && onSeg(a, c, b)) return true;
-  if (Math.abs(o2) < 1e-18 && onSeg(a, d, b)) return true;
-  if (Math.abs(o3) < 1e-18 && onSeg(c, a, d)) return true;
-  if (Math.abs(o4) < 1e-18 && onSeg(c, b, d)) return true;
+  if (Math.abs(o1) < eps && onSeg(a, c, b)) return true;
+  if (Math.abs(o2) < eps && onSeg(a, d, b)) return true;
+  if (Math.abs(o3) < eps && onSeg(c, a, d)) return true;
+  if (Math.abs(o4) < eps && onSeg(c, b, d)) return true;
   return false;
 }
+
+export { collinearOrientationEpsilon } from "./geometry-epsilon.js";
 
 function* iterateOuterRings(
   geometry: CountyPolygonGeometry,

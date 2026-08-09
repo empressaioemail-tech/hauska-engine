@@ -9,6 +9,11 @@
 
 import type { RoadClassification } from "@hauska-engine/atoms";
 
+import {
+  COUNTY_ROADWAY_ID_OFFSET,
+  LEGACY_COUNTY_ROADWAY_ID_OFFSET,
+} from "./classify-county-street.js";
+
 export interface CaldwellCadRoadAttributes {
   OBJECTID?: number | null;
   objectid?: number | null;
@@ -20,15 +25,22 @@ export interface CaldwellCadRoadAttributes {
   HWY_NUM?: string | number | null;
 }
 
-/** Synthetic way-id offset for Caldwell CAD centerlines (distinct from Bastrop 800M/900M). */
-export const CALDWELL_CAD_ROAD_ID_OFFSET = 700_000_000;
+/** Negative namespace — outside positive real OSM way id space (F5 partition). */
+export const CALDWELL_CAD_ROAD_ID_OFFSET = -700_000_000;
+export const LEGACY_CALDWELL_CAD_ROAD_ID_OFFSET = 700_000_000;
 
 export function caldwellCadSyntheticWayId(objectId: number): number {
-  return CALDWELL_CAD_ROAD_ID_OFFSET + objectId;
+  return CALDWELL_CAD_ROAD_ID_OFFSET - objectId;
 }
 
 export function isCaldwellCadSyntheticWayId(wayId: number): boolean {
-  return wayId >= CALDWELL_CAD_ROAD_ID_OFFSET && wayId < 800_000_000;
+  if (wayId < 0) {
+    return wayId <= CALDWELL_CAD_ROAD_ID_OFFSET && wayId > COUNTY_ROADWAY_ID_OFFSET;
+  }
+  return (
+    wayId >= LEGACY_CALDWELL_CAD_ROAD_ID_OFFSET &&
+    wayId < LEGACY_COUNTY_ROADWAY_ID_OFFSET
+  );
 }
 
 function norm(value: string | number | null | undefined): string {

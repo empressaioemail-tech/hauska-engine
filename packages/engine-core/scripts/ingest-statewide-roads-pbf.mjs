@@ -115,6 +115,8 @@ function runWorker({ python, pbf, countyGeojson, outNdjson, reportJson, expected
       reportJson,
       "--expected-md5",
       expectedMd5,
+      "--pbf-url",
+      GEOFABRIK_TEXAS_PBF_URL,
     ];
     const child = spawn(python, args, {
       stdio: ["ignore", "pipe", "pipe"],

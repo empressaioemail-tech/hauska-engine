@@ -129,23 +129,40 @@ export function classifyCountyStreetAttributes(
   return "unclassified";
 }
 
-export const COUNTY_ROAD_ID_OFFSET = 900_000_000;
-export const COUNTY_ROADWAY_ID_OFFSET = 800_000_000;
+export const COUNTY_ROAD_ID_OFFSET = -900_000_000;
+export const COUNTY_ROADWAY_ID_OFFSET = -800_000_000;
+
+/** Legacy positive bands — live Bastrop rows minted before F5 partition. */
+export const LEGACY_COUNTY_ROAD_ID_OFFSET = 900_000_000;
+export const LEGACY_COUNTY_ROADWAY_ID_OFFSET = 800_000_000;
 
 export function countyRoadSyntheticWayId(objectId: number): number {
-  return COUNTY_ROAD_ID_OFFSET + objectId;
+  return COUNTY_ROAD_ID_OFFSET - objectId;
 }
 
 export function countyRoadwaySyntheticWayId(objectId: number): number {
-  return COUNTY_ROADWAY_ID_OFFSET + objectId;
+  return COUNTY_ROADWAY_ID_OFFSET - objectId;
+}
+
+export function isLegacyCountySyntheticWayId(wayId: number): boolean {
+  return (
+    (wayId >= LEGACY_COUNTY_ROADWAY_ID_OFFSET &&
+      wayId < LEGACY_COUNTY_ROAD_ID_OFFSET) ||
+    wayId >= LEGACY_COUNTY_ROAD_ID_OFFSET
+  );
 }
 
 export function isCountySyntheticWayId(wayId: number): boolean {
-  return wayId >= COUNTY_ROAD_ID_OFFSET;
+  return wayId < 0 && wayId <= COUNTY_ROADWAY_ID_OFFSET;
 }
 
 export function isCountyRoadwaySyntheticWayId(wayId: number): boolean {
-  return wayId >= COUNTY_ROADWAY_ID_OFFSET && wayId < COUNTY_ROAD_ID_OFFSET;
+  if (wayId < 0) {
+    return wayId <= COUNTY_ROADWAY_ID_OFFSET && wayId > COUNTY_ROAD_ID_OFFSET;
+  }
+  return (
+    wayId >= LEGACY_COUNTY_ROADWAY_ID_OFFSET && wayId < LEGACY_COUNTY_ROAD_ID_OFFSET
+  );
 }
 
 /**

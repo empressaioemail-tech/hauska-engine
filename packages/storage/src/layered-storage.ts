@@ -65,8 +65,9 @@ export class LayeredStorage implements StoragePort {
 
   writeRoadAtomsBatch(
     instances: ReadonlyArray<import("@hauska-engine/atoms").RoadNodeAtomInstance>,
+    opts?: import("./road-ingest-supersede.js").WriteRoadAtomsBatchOptions,
   ) {
-    return this.primary.writeRoadAtomsBatch(instances);
+    return this.primary.writeRoadAtomsBatch(instances, opts);
   }
 
   async listRoadAtomsByRoadNodeId(
