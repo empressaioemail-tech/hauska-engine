@@ -16,6 +16,7 @@ import {
   HAYS_COUNTY_UNINCORPORATED_REGISTRY_ROW,
   MCLENNAN_COUNTY_UNINCORPORATED_REGISTRY_ROW,
   WILLIAMSON_COUNTY_UNINCORPORATED_REGISTRY_ROW,
+  LOCKHART_REGISTRY_ROW,
 } from "../jurisdiction-registry.js";
 import { BASTROP_BCAD_PARCELS_URL } from "../../boundary-primitive/lot-line-scrub.js";
 
@@ -198,5 +199,71 @@ describe("DFW county fan registry rows (2026-08-05)", () => {
     expect(ellis?.fips).toBe("48139");
     expect(ellis?.railC.cadastralQueryUrl).toContain("PrairielandsGMS_Parcels_Prod");
     expect(ellis?.railPerParcel?.propIdField).toBe("pid");
+  });
+});
+
+describe("warmRunner config (depth-warm-city-batch, 2026-08-08)", () => {
+  it("Bastrop warmRunner: layer23 strategy, frozen bbox, R4-depth-cost.done event", () => {
+    const wr = BASTROP_REGISTRY_ROW.warmRunner;
+    expect(wr).toBeDefined();
+    expect(wr?.setbackStrategy).toBe("layer23");
+    expect(wr?.descriptorId).toBe("bastrop_tx");
+    expect(wr?.bulkBcad).toBe(true);
+    expect(wr?.costEventName).toBe("R4-depth-cost.done");
+    expect(wr?.cityBbox).toEqual({
+      south: 30.04,
+      west: -97.38,
+      north: 30.16,
+      east: -97.25,
+    });
+    expect(wr?.layer23CityKey).toBe("bastrop-city-tx");
+    expect(wr?.block13Quarantine).toHaveLength(7);
+  });
+
+  it("Elgin warmRunner: descriptor-table, bulk BCAD, GIS A→R-4 alias", () => {
+    const wr = ELGIN_REGISTRY_ROW.warmRunner;
+    expect(wr).toBeDefined();
+    expect(wr?.setbackStrategy).toBe("descriptor-table");
+    expect(wr?.descriptorId).toBe("elgin_tx");
+    expect(wr?.bulkBcad).toBe(true);
+    expect(wr?.costEventName).toBe("RECIPE-PROOF-48021-elgin-depth-cost.done");
+    expect(wr?.cityBbox).toEqual({
+      south: 30.313790730771967,
+      west: -97.410938698399292,
+      north: 30.369229436331114,
+      east: -97.355026917826052,
+    });
+    expect(wr?.gisDistrictAliases).toEqual({ A: "R-4" });
+  });
+
+  it("Lockhart registry row: fips 48055, layer 49 Rail A, warmRunner descriptor-table, bulkBcad false", () => {
+    expect(LOCKHART_REGISTRY_ROW.rowId).toBe("Lockhart");
+    expect(LOCKHART_REGISTRY_ROW.fips).toBe("48055");
+    expect(LOCKHART_REGISTRY_ROW.zoningRegime).toBe("euclidean-zoned");
+    expect(LOCKHART_REGISTRY_ROW.railPerParcel?.featureServerLayerUrl).toContain(
+      "FeatureServer/49",
+    );
+    expect(LOCKHART_REGISTRY_ROW.railPerParcel?.districtField).toBe("ZONING");
+    expect(LOCKHART_REGISTRY_ROW.railPerParcel?.propIdField).toBe("prop_id");
+    expect(LOCKHART_REGISTRY_ROW.railC.cadastralQueryUrl).toBe(
+      CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW.railC.cadastralQueryUrl,
+    );
+    expect(loadJurisdictionRegistryRowById("Lockhart")).toBe(LOCKHART_REGISTRY_ROW);
+    const caldwellRows = loadJurisdictionRegistryRowsForFips("48055");
+    expect(caldwellRows).toContain(CALDWELL_COUNTY_UNINCORPORATED_REGISTRY_ROW);
+    expect(caldwellRows).toContain(LOCKHART_REGISTRY_ROW);
+
+    const wr = LOCKHART_REGISTRY_ROW.warmRunner;
+    expect(wr?.setbackStrategy).toBe("descriptor-table");
+    expect(wr?.descriptorId).toBe("caldwell_tx");
+    expect(wr?.bulkBcad).toBe(false);
+    expect(wr?.costEventName).toBe("RECIPE-PROOF-48055-depth-cost.done");
+    expect(wr?.cityBbox).toEqual({
+      south: 29.83787,
+      west: -97.72866,
+      north: 29.9244,
+      east: -97.62483,
+    });
+    expect(LOCKHART_REGISTRY_ROW.flags).toContain("RAIL_A_FIELDS_NEEDS_FREEZE_REVIEW");
   });
 });
