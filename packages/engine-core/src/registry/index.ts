@@ -9,9 +9,6 @@ export {
   LOCKHART_REGISTRY_ROW,
   type PerParcelCohortRail,
   type ParcelCohortFilter,
-  type WarmRunnerConfig,
-  type WarmRunnerSetbackStrategy,
-  type WarmRunnerCityBbox,
 } from "./jurisdiction-registry.js";
 export type {
   JurisdictionRegistryRow,
