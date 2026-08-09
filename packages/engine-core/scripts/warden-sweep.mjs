@@ -219,6 +219,8 @@ const DEPTH_WARM_PROMOTION_MARKER = "depth-warm-promoted-v1";
 function envelopeIndependentOfStaleSetback(envelopeBody) {
   if (!envelopeBody || typeof envelopeBody !== "object") return false;
   if (envelopeBody.depthWarmPromotion === DEPTH_WARM_PROMOTION_MARKER) return true;
+  const absenceKind = envelopeBody.absence?.kind;
+  if (typeof absenceKind === "string" && absenceKind.trim().length > 0) return true;
   if (typeof envelopeBody.warmVerifyDecline === "string" && envelopeBody.warmVerifyDecline.trim().length > 0) return true;
   if (typeof envelopeBody.warmVerifyDeclineCode === "string" && envelopeBody.warmVerifyDeclineCode.trim().length > 0) return true;
   const citation = envelopeBody.sourceCitation;
@@ -287,7 +289,8 @@ async function loadDbTruthForParcel(parcelNodeId) {
   };
 }
 
-/** Latest envelope warmVerifyDeclineCode for crossStore decline-aware consistency (Warden v1.1). */
+/** Latest envelope decline code for crossStore consistency (Warden v1.1).
+ * Prefer contract absence.kind (1.15.0+); fall back to legacy warmVerifyDeclineCode. */
 async function loadEnvelopeDeclineCode(parcelNodeId) {
   if (!sql) return null;
   const [env] = await sql`
@@ -295,7 +298,10 @@ async function loadEnvelopeDeclineCode(parcelNodeId) {
       AND body->>'parcelNodeId' = ${parcelNodeId}
     ORDER BY updated_at DESC NULLS LAST LIMIT 1
   `;
-  const code = env?.body?.warmVerifyDeclineCode;
+  const body = env?.body ?? null;
+  const kind = body?.absence?.kind;
+  if (typeof kind === "string" && kind.trim().length > 0) return kind.trim();
+  const code = body?.warmVerifyDeclineCode;
   return typeof code === "string" && code.trim().length > 0 ? code.trim() : null;
 }
 

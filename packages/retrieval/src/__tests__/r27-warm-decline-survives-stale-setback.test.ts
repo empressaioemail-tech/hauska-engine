@@ -32,6 +32,25 @@ describe("envelopeServeIndependentOfStaleSetback", () => {
     ).toBe(true);
   });
 
+  it("returns true for contract-shaped absence declines (1.15.0+)", () => {
+    expect(
+      envelopeServeIndependentOfStaleSetback(
+        asStoredAtom({
+          entityType: "buildable-envelope",
+          entityId: PARCEL,
+          absence: {
+            kind: "superseded-prop-id",
+            reason: "prop_id absent from county cadastral",
+          },
+          verifiedAbsence: {
+            evaluated: true,
+            provenanceScope: ["depth-warm-verify"],
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it("returns false for breadth-bake dependent envelopes", () => {
     expect(
       envelopeServeIndependentOfStaleSetback(

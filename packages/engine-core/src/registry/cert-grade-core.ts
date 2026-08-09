@@ -286,7 +286,12 @@ export async function gradeOneParcelInQueryMode(
     ORDER BY updated_at DESC NULLS LAST LIMIT 1
   `;
   const envPre = envRowPre?.body;
-  const warmDecline = envPre?.warmVerifyDecline ?? null;
+  const warmDecline =
+    (typeof envPre?.absence?.reason === "string" && envPre.absence.reason.trim().length > 0
+      ? envPre.absence.reason
+      : null) ??
+    envPre?.warmVerifyDecline ??
+    null;
   const isPromotedPre = envPre?.depthWarmPromotion === DEPTH_WARM_PROMOTION_MARKER;
   const recipeVersionPre = envPre?.recipeVersion ?? null;
 
@@ -441,7 +446,13 @@ export async function gradeUnzonedParcel(
     ORDER BY updated_at DESC NULLS LAST LIMIT 1
   `;
   const envelope = envRow?.body ?? null;
-  if (!envelope || envelope.warmVerifyDeclineCode !== UNZONED_CASCADE_DECLINE_CODE) {
+  const envelopeDeclineCode =
+    (typeof envelope?.absence?.kind === "string" && envelope.absence.kind.trim().length > 0
+      ? envelope.absence.kind
+      : null) ??
+    envelope?.warmVerifyDeclineCode ??
+    null;
+  if (!envelope || envelopeDeclineCode !== UNZONED_CASCADE_DECLINE_CODE) {
     parcelResult.pass = false;
     parcelResult.reason = "cascade-missing";
     return parcelResult;
@@ -465,7 +476,12 @@ export async function gradeUnzonedParcel(
 
   parcelResult.pass = true;
   parcelResult.honestDecline = true;
-  parcelResult.declineReason = envelope.warmVerifyDecline ?? UNZONED_CASCADE_DECLINE_CODE;
+  parcelResult.declineReason =
+    (typeof envelope.absence?.reason === "string" && envelope.absence.reason.trim().length > 0
+      ? envelope.absence.reason
+      : null) ??
+    envelope.warmVerifyDecline ??
+    UNZONED_CASCADE_DECLINE_CODE;
   return parcelResult;
 }
 

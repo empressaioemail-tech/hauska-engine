@@ -1,6 +1,12 @@
 /**
  * R27 / force-overwrite — supersede stale depth-warm promotes with an honest
  * verify-fail decline (recipe-version stamped, NO depthWarmPromotion marker).
+ *
+ * 1.15.0+: declines emit contract-shaped `absence` + `verifiedAbsence`. Legacy
+ * engine-extension fields `warmVerifyDecline` / `warmVerifyDeclineCode` are
+ * STILL written so old readers keep working, and STILL read by
+ * {@link resolveEnvelopeDeclineCode} when stored rows predate the contract
+ * shape (no store rewrite in this lane).
  */
 import type { StoragePort } from "@hauska-engine/storage";
 import {
@@ -9,6 +15,10 @@ import {
   type BuildableEnvelopeAtomInstance,
 } from "@hauska-engine/atoms";
 import { createWidthedConfidence } from "@empressaio/atom-contract/read-contract";
+import {
+  toBuildableEnvelopeAbsenceKind,
+  type BuildableEnvelopeAbsenceKind,
+} from "@empressaio/atom-contract/property";
 import {
   buildPropertyReadContract,
   contentHashExcludingProvenance,
@@ -25,23 +35,81 @@ export interface HonestVerifyDeclineInput {
   verifyReasons: string[];
   declineCode: string;
   extractedAt?: string;
+  /** Optional override for verifiedAbsence.provenanceScope (defaults applied). */
+  provenanceScope?: ReadonlyArray<string>;
 }
 
-/** Engine-extension fields carried on a persisted honest-decline envelope atom. */
+/**
+ * Engine-extension fields carried on a persisted honest-decline envelope atom.
+ * `warmVerifyDecline*` remain for dual-read of pre-1.15.0 store rows; new
+ * writers also set contract `absence` / `verifiedAbsence`.
+ */
 export type HonestVerifyDeclineAtom = BuildableEnvelopeAtomInstance & {
   recipeVersion?: string;
+  /** @deprecated Prefer `absence.reason`; kept for dual-read of legacy rows. */
   warmVerifyDecline?: string;
+  /** @deprecated Prefer `absence.kind`; kept for dual-read of legacy rows. */
   warmVerifyDeclineCode?: string;
 };
+
+/** Default evaluation sources cited on contract verifiedAbsence for declines. */
+export const ENVELOPE_DECLINE_PROVENANCE_SCOPE_DEFAULT = [
+  "depth-warm-verify",
+  "txgio-parcel",
+  "zoning-fact",
+] as const;
+
+/**
+ * Resolve the named decline code from a stored envelope body.
+ * Prefer contract `absence.kind`; fall back to legacy `warmVerifyDeclineCode`.
+ */
+export function resolveEnvelopeDeclineCode(body: {
+  absence?: { kind?: string } | null;
+  warmVerifyDeclineCode?: string | null;
+} | null | undefined): string | null {
+  if (!body) return null;
+  const kind = body.absence?.kind;
+  if (typeof kind === "string" && kind.trim().length > 0) return kind.trim();
+  const legacy = body.warmVerifyDeclineCode;
+  if (typeof legacy === "string" && legacy.trim().length > 0) return legacy.trim();
+  return null;
+}
+
+/**
+ * Resolve the human decline reason from a stored envelope body.
+ * Prefer contract `absence.reason`; fall back to legacy `warmVerifyDecline`
+ * then `outcome.reason` on no-buildable-area.
+ */
+export function resolveEnvelopeDeclineReason(body: {
+  absence?: { reason?: string } | null;
+  warmVerifyDecline?: string | null;
+  outcome?: { kind?: string; reason?: string } | null;
+} | null | undefined): string | null {
+  if (!body) return null;
+  const reason = body.absence?.reason;
+  if (typeof reason === "string" && reason.trim().length > 0) return reason.trim();
+  const legacy = body.warmVerifyDecline;
+  if (typeof legacy === "string" && legacy.trim().length > 0) return legacy.trim();
+  if (
+    body.outcome?.kind === "no-buildable-area" &&
+    typeof body.outcome.reason === "string" &&
+    body.outcome.reason.trim().length > 0
+  ) {
+    return body.outcome.reason.trim();
+  }
+  return null;
+}
 
 /**
  * Build (without writing) a no-buildable-area envelope decline atom in the
  * R27 persisted-decline shape. Pure — callers own the write. Extracted so
  * both the depth-warm force-overwrite path (below) and other honest-decline
- * producers (e.g. the unzoned-county cascade bake) mint the SAME shape —
- * engine-extension fields warmVerifyDecline/warmVerifyDeclineCode on the
- * envelope instance — so downstream serve/cert/roster reads treat every
- * honest-decline uniformly regardless of which producer wrote it.
+ * producers (e.g. the unzoned-county cascade bake) mint the SAME shape.
+ *
+ * Contract fields (1.15.0+): `absence` + `verifiedAbsence`.
+ * Legacy dual-write: `warmVerifyDecline` / `warmVerifyDeclineCode` so
+ * pre-migration readers and JSON path filters keep working until a
+ * dedicated store rewrite lane lands.
  */
 export function buildHonestVerifyDeclineAtom(
   input: HonestVerifyDeclineInput,
@@ -53,6 +121,12 @@ export function buildHonestVerifyDeclineAtom(
   const declineReason =
     input.verifyReasons.slice(0, 3).join("; ") ||
     "Mechanical warm verify failed — honest decline.";
+  const absenceKind: BuildableEnvelopeAbsenceKind = toBuildableEnvelopeAbsenceKind(
+    input.declineCode,
+  );
+  const provenanceScope = [
+    ...(input.provenanceScope ?? ENVELOPE_DECLINE_PROVENANCE_SCOPE_DEFAULT),
+  ];
 
   const instance: HonestVerifyDeclineAtom = {
     entityType: "buildable-envelope",
@@ -72,6 +146,17 @@ export function buildHonestVerifyDeclineAtom(
     outcome: {
       kind: "no-buildable-area",
       reason: declineReason,
+    },
+    absence: {
+      kind: absenceKind,
+      reason: declineReason,
+    },
+    verifiedAbsence: {
+      evaluated: true,
+      provenanceScope:
+        provenanceScope.length > 0
+          ? provenanceScope
+          : [...ENVELOPE_DECLINE_PROVENANCE_SCOPE_DEFAULT],
     },
     reasoningChain: {
       reasoningKind: "derived",
@@ -102,6 +187,7 @@ export function buildHonestVerifyDeclineAtom(
     }),
     contentHash: "",
     recipeVersion: RECIPE_VERSION,
+    // Dual-write legacy fields — DO NOT remove until store rewrite completes.
     warmVerifyDecline: declineReason,
     warmVerifyDeclineCode: input.declineCode,
   };
