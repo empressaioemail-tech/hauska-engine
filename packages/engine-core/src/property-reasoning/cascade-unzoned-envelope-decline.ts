@@ -16,14 +16,11 @@
  * buildable-envelope is deferred to a future @empressaio/atom-contract ADR
  * (planner-queued). This module does NOT mint setback-rule atoms.
  *
- * Instead the named decline lives on the envelope only, reusing the
- * EXISTING R27 persisted-decline shape (depth-warm/honest-decline-promote.ts
- * buildHonestVerifyDeclineAtom) — engine-extension fields
- * warmVerifyDecline / warmVerifyDeclineCode on a buildable-envelope
- * instance, already read by cert-grade-core.ts's warm-decline short-circuit
- * and bastrop-dominant-district-roster.mjs. Using the same shape means
- * every downstream reader that already understands an R27 decline
- * understands this one too, with no new read-path branching.
+ * Instead the named decline lives on the envelope, minting contract
+ * `absence` + `verifiedAbsence` (atom-contract 1.15.0) via
+ * buildHonestVerifyDeclineAtom, with legacy warmVerifyDecline* dual-written
+ * so pre-migration readers (cert-grade short-circuit, bastrop roster scripts)
+ * keep working until a dedicated store rewrite lands.
  *
  * CITY-AWARE REASON WORDING (2026-08-04, REASON-OVERSTATES fix / county-fan
  * prerequisite): the cascade targets every absence-zoning parcel county-wide,

@@ -13,6 +13,7 @@ export const DEPTH_WARM_PROMOTION_MARKER = "depth-warm-promoted-v1";
  */
 type DepthWarmBuildableEnvelope = BuildableEnvelopeAtomInstance & {
   depthWarmPromotion?: string;
+  /** Legacy dual-read; prefer `absence` when present (contract 1.15.0+). */
   warmVerifyDecline?: string;
   warmVerifyDeclineCode?: string;
 };
@@ -33,6 +34,12 @@ export function envelopeServeIndependentOfStaleSetback(
   if (!envelope || typeof envelope !== "object") return false;
   if (!isBuildableEnvelope(envelope)) return false;
   if (envelope.depthWarmPromotion === DEPTH_WARM_PROMOTION_MARKER) return true;
+  if (
+    typeof envelope.absence?.kind === "string" &&
+    envelope.absence.kind.trim().length > 0
+  ) {
+    return true;
+  }
   if (
     typeof envelope.warmVerifyDecline === "string" &&
     envelope.warmVerifyDecline.trim().length > 0

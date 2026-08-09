@@ -50,6 +50,14 @@ describe("isHonestEnvelopeDecline", () => {
     expect(isHonestEnvelopeDecline({ warmVerifyDecline: "front-orientation" })).toBe(true);
   });
 
+  it("treats contract absence as honest absence", () => {
+    expect(
+      isHonestEnvelopeDecline({
+        absence: { kind: "front-orientation", reason: "verify failed" },
+      }),
+    ).toBe(true);
+  });
+
   it("treats no-buildable-area outcome as honest absence", () => {
     expect(isHonestEnvelopeDecline({ outcome: { kind: "no-buildable-area", reason: "x" } })).toBe(true);
   });

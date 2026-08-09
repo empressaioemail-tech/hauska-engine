@@ -122,6 +122,10 @@ export function extractEnvelopeRingFromAtomBody(body: Record<string, unknown> | 
 /** True when the latest envelope atom is an honest decline/absence — not a shape to grade. */
 export function isHonestEnvelopeDecline(body: Record<string, unknown> | null): boolean {
   if (!body) return true;
+  const absence = body.absence as { kind?: string } | undefined;
+  if (typeof absence?.kind === "string" && absence.kind.trim().length > 0) {
+    return true;
+  }
   if (typeof body.warmVerifyDecline === "string" && body.warmVerifyDecline.trim().length > 0) {
     return true;
   }
