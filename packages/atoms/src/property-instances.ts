@@ -12,6 +12,9 @@ import type {
   AtomInputRef,
   BuildableEnvelopeAtomInstance as ContractBuildableEnvelopeAtomInstance,
   BuildingFootprintAtomInstance as ContractBuildingFootprintAtomInstance,
+  CadParcelRollAtomInstance as ContractCadParcelRollAtomInstance,
+  FloodHazardFactAtomInstance as ContractFloodHazardFactAtomInstance,
+  LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
   ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
   SetbackMatchBasis,
@@ -38,6 +41,9 @@ export type {
   ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
   BuildingFootprintAtomInstance as ContractBuildingFootprintAtomInstance,
   UtilityEasementAtomInstance as ContractUtilityEasementAtomInstance,
+  FloodHazardFactAtomInstance as ContractFloodHazardFactAtomInstance,
+  CadParcelRollAtomInstance as ContractCadParcelRollAtomInstance,
+  LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
   ParcelKeyKind,
   ParcelNodeAbsence,
   ParcelNodeAbsenceKind,
@@ -69,9 +75,15 @@ export {
   createParcelNode,
   createBuildingFootprint,
   createUtilityEasement,
+  createFloodHazardFact,
+  createCadParcelRoll,
+  createLandUseFact,
   PARCEL_NODE_SCHEMA,
   BUILDING_FOOTPRINT_SCHEMA,
   UTILITY_EASEMENT_SCHEMA,
+  FLOOD_HAZARD_FACT_SCHEMA,
+  CAD_PARCEL_ROLL_SCHEMA,
+  LAND_USE_FACT_SCHEMA,
   parcelNodeAtomDid,
   countyCoverageParcelNodeId,
   PARCEL_NODE_ID_PATTERN,
@@ -88,7 +100,11 @@ export {
  * that shipped in contract 1.12.0 but were never registered here — which is
  * why their manifest columns read UNPUB.
  *
- * All seven are keyed on `parcelNodeId`, which is what
+ * 1.14.0 registration wave adds `flood-hazard-fact`, `cad-parcel-roll`, and
+ * `land-use-fact` (manifest rails flood / cad / landuse — same UNPUB gap as
+ * footprint/easement before #282).
+ *
+ * All ten are keyed on `parcelNodeId`, which is what
  * `listPropertyAtomsByParcelNodeId` and the snapshot partition in
  * `@hauska-engine/storage` assume of anything in this list.
  */
@@ -99,7 +115,10 @@ export type PropertyEntityType =
   | "buildable-envelope"
   | "parcel-terrain-model"
   | "building-footprint"
-  | "utility-easement";
+  | "utility-easement"
+  | "flood-hazard-fact"
+  | "cad-parcel-roll"
+  | "land-use-fact";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "parcel-node",
@@ -109,6 +128,9 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "parcel-terrain-model",
   "building-footprint",
   "utility-easement",
+  "flood-hazard-fact",
+  "cad-parcel-roll",
+  "land-use-fact",
 ];
 
 export type PropertyAtomStatus = "active" | "retired";
@@ -374,6 +396,18 @@ export type BuildingFootprintAtomInstance = ContractBuildingFootprintAtomInstanc
 export type UtilityEasementAtomInstance = ContractUtilityEasementAtomInstance &
   EnginePropertyPersistence;
 
+/** FEMA NFHL flood screening fact as persisted by the engine (contract 1.14.0). */
+export type FloodHazardFactAtomInstance = ContractFloodHazardFactAtomInstance &
+  EnginePropertyPersistence;
+
+/** County CAD roll attributes as persisted by the engine (contract 1.14.0). */
+export type CadParcelRollAtomInstance = ContractCadParcelRollAtomInstance &
+  EnginePropertyPersistence;
+
+/** NLCD / land-cover fact as persisted by the engine (contract 1.14.0). */
+export type LandUseFactAtomInstance = ContractLandUseFactAtomInstance &
+  EnginePropertyPersistence;
+
 export type PropertyAtomInstance =
   | ParcelNodeAtomInstance
   | ZoningFactAtomInstance
@@ -381,7 +415,10 @@ export type PropertyAtomInstance =
   | BuildableEnvelopeAtomInstance
   | ParcelTerrainModelAtomInstance
   | BuildingFootprintAtomInstance
-  | UtilityEasementAtomInstance;
+  | UtilityEasementAtomInstance
+  | FloodHazardFactAtomInstance
+  | CadParcelRollAtomInstance
+  | LandUseFactAtomInstance;
 
 export function isPropertyEntityType(
   value: string,

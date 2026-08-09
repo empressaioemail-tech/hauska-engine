@@ -3,7 +3,7 @@
  *
  * Also pins the two ADR-029 site layers that shipped in contract 1.12.0 but
  * were never registered engine-side — the reason their manifest columns read
- * UNPUB.
+ * UNPUB — plus the 1.14.0 manifest rails (flood / cad / landuse).
  */
 import { describe, expect, it } from "vitest";
 
@@ -43,6 +43,15 @@ describe("property registration — parcel-node and ADR-029 site layers", () => 
     expect(isPropertyEntityType("utility-easement")).toBe(true);
   });
 
+  it("registers flood-hazard-fact, cad-parcel-roll, and land-use-fact (contract 1.14.0)", () => {
+    expect(PROPERTY_ENTITY_TYPES).toContain("flood-hazard-fact");
+    expect(PROPERTY_ENTITY_TYPES).toContain("cad-parcel-roll");
+    expect(PROPERTY_ENTITY_TYPES).toContain("land-use-fact");
+    expect(isPropertyEntityType("flood-hazard-fact")).toBe(true);
+    expect(isPropertyEntityType("cad-parcel-roll")).toBe(true);
+    expect(isPropertyEntityType("land-use-fact")).toBe(true);
+  });
+
   it("keeps the four pre-existing property types registered (additive only)", () => {
     for (const type of [
       "zoning-fact",
@@ -52,7 +61,7 @@ describe("property registration — parcel-node and ADR-029 site layers", () => 
     ] as ReadonlyArray<PropertyEntityType>) {
       expect(PROPERTY_ENTITY_TYPES).toContain(type);
     }
-    expect(PROPERTY_ENTITY_TYPES.length).toBe(7);
+    expect(PROPERTY_ENTITY_TYPES.length).toBe(10);
   });
 
   it("does not register unrelated types", () => {
