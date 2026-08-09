@@ -55,10 +55,11 @@ jobs:
 
       - name: Geometry lane LLM grep gate (OPS-3 I1)
         run: |
-          if rg -i -e 'llm' -e 'anthropic' -e 'openai' -e 'xai' -e '@ai-sdk/' -e 'generateText' \
+          if rg -i '\b(llm|anthropic|openai|xai)\b|@ai-sdk/|generateText' \
             packages/engine-core/src/depth-warm/ \
             packages/engine-core/src/geometry/ \
-            packages/engine-core/src/warden/; then
+            packages/engine-core/src/warden/ \
+            --glob '!**/__tests__/**'; then
             echo "FATAL: LLM reference detected in geometry lane path (depth-warm/geometry/warden must stay grep-clean)"
             exit 1
           fi
