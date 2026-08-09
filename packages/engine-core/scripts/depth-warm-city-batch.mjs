@@ -725,6 +725,30 @@ for (const row of parcelRows) {
   const propId = parcelNodeId.split(":")[1];
   const situsAddress = propId ? (situsByPropId.get(propId) ?? null) : null;
 
+  // Bastrop order (equivalence): currency BEFORE setback-descriptor resolution,
+  // so a parcel that fails both is counted superseded-prop-id (not no-setback-row).
+  let currencyResult = null;
+  if (propId && warmRunner.bulkBcad) {
+    currencyResult = parcelCurrencyFromBcadMap(propId, bcadByPropId);
+    if (!currencyResult.ok) {
+      recordEarlyDecline("superseded-prop-id", parcelNodeId, [currencyResult.reason]);
+      stats.processed++;
+      stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+      if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
+        await promoteHonestVerifyDecline(storageHandle.storage, {
+          parcelNodeId,
+          zoningFactAtomDid: row.zoning_fact_did,
+          descriptor: baseDescriptor,
+          verifyReasons: [currencyResult.reason],
+          declineCode: "superseded-prop-id",
+        });
+        stats.honestDeclines++;
+        stats.atomWrites++;
+      }
+      continue;
+    }
+  }
+
   /** @type {{ ok: true; descriptor: typeof baseDescriptor; governingDistrict?: string } | { ok: false; reason: string; code?: string }} */
   let warmDescriptorResult;
   if (isDescriptorTable) {
@@ -759,33 +783,13 @@ for (const row of parcelRows) {
     continue;
   }
 
+  // R26 — key the warm inset on the DOMINANT-area district (per-parcel record),
+  // not the stamped sliver, so edge resolution matches the single per-parcel row.
   const warmDistrict =
     isLayer23 && warmDescriptorResult.governingDistrict
       ? warmDescriptorResult.governingDistrict
       : district;
   const activeDescriptor = warmDescriptorResult.descriptor;
-
-  let currencyResult = null;
-  if (propId && warmRunner.bulkBcad) {
-    currencyResult = parcelCurrencyFromBcadMap(propId, bcadByPropId);
-    if (!currencyResult.ok) {
-      recordEarlyDecline("superseded-prop-id", parcelNodeId, [currencyResult.reason]);
-      stats.processed++;
-      stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
-      if (args.forceOverwrite && !dryRun && storageHandle?.storage && row.zoning_fact_did) {
-        await promoteHonestVerifyDecline(storageHandle.storage, {
-          parcelNodeId,
-          zoningFactAtomDid: row.zoning_fact_did,
-          descriptor: activeDescriptor,
-          verifyReasons: [currencyResult.reason],
-          declineCode: "superseded-prop-id",
-        });
-        stats.honestDeclines++;
-        stats.atomWrites++;
-      }
-      continue;
-    }
-  }
 
   if (!args.forceRepromote && !args.forceOverwrite) {
     if (alreadyPromotedSet.has(parcelNodeId)) {
