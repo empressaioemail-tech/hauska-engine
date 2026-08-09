@@ -91,3 +91,23 @@ export type {
   CityGisReachability,
   RoadSourceReconFixture,
 } from "./unreachable-city-gis.js";
+export {
+  buildCountyBoundaryIndex,
+  emitTargetsForWay,
+  pointInCountyGeometry,
+  resolveWayCounties,
+  segmentsIntersect,
+} from "./way-to-county.js";
+export type {
+  CountyBoundaryRecord,
+  CountyPolygonGeometry,
+  GeoBbox,
+  ResolveWayCountiesResult,
+  WayCountyHit,
+} from "./way-to-county.js";
+export {
+  GEOFABRIK_TEXAS_PBF_URL,
+  STATEWIDE_OSM_SOURCE_ADAPTER,
+  roadIntakeDescriptorFromCountyRegistry,
+} from "./descriptor-from-registry.js";
+export type { CountyRegistryRoadRow } from "./descriptor-from-registry.js";
