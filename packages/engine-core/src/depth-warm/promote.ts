@@ -135,6 +135,8 @@ export interface PromoteDepthWarmInput {
   descriptor: JurisdictionDescriptor;
   zoningFactAtomDid: string;
   extractedAt?: string;
+  /** R33 — situs for ground-truth P2/P3 fresh relabel (34177 situs-street-match class). */
+  situsAddress?: string | null;
 }
 
 export interface DepthWarmPromotionEmit {
@@ -282,6 +284,7 @@ export async function promoteDepthWarmToStorage(
       descriptor: input.descriptor,
       district: input.candidate.district,
       roads: input.candidate.roads,
+      situsAddress: input.situsAddress ?? null,
       // miterPointsWgs84 coordinates are absolute WGS84 points, not indexed
       // into either ring's frame — safe to pass alongside rawParcelRing
       // even though the miter run itself offset candidate.parcelRing.
@@ -365,6 +368,7 @@ export async function promoteDepthWarmToStorage(
         descriptor: input.descriptor,
         district: input.candidate.district,
         roads: input.candidate.roads,
+        situsAddress: input.situsAddress ?? null,
         miterPointsWgs84: input.candidate.miterPointsWgs84,
       });
       if (!readBackGroundTruth.pass) {

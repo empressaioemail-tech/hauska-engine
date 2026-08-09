@@ -52,6 +52,7 @@ export async function warmThenVerify(
     candidate,
     descriptor: input.descriptor,
     zoningFactAtomDid: input.zoningFactAtomDid,
+    situsAddress: input.situsAddress,
   };
 
   if (input.promote && input.storage) {
