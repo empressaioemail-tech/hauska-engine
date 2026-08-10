@@ -14,8 +14,8 @@
  *       [--fixture=path/to/ml-footprints.geojson]
  *
  * Dry-run is the default and constructs the same atoms apply would write.
- * Without --fixture the ML loader returns zero bbox features → one county-coverage
- * absence atom (never silent zero rows). Pass a clipped GeoJSON fixture for join dry-runs.
+ * Without --fixture the ML loader streams Texas.geojson.zip (bbox-filtered).
+ * Use --ml-probe-only for metro-scale stream/RSS probe without accumulating rings.
  */
 
 import { writeFileSync } from "node:fs";
@@ -32,6 +32,7 @@ import {
   buildAtomsForBuildingFootprintPlan,
   geometryOuterRing,
   loadMlFootprintsForBbox,
+  probeMlFootprintsForBbox,
   planCountyBuildingFootprints,
   verifyStoredBuildingFootprintAtom,
 } from "../src/building-footprint/index.ts";
@@ -46,6 +47,7 @@ function parseArgs(argv) {
     listCounties: false,
     fixture: null,
     adapterKind: null,
+    mlProbeOnly: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -65,6 +67,7 @@ function parseArgs(argv) {
     else if (a === "--adapter-kind") out.adapterKind = String(argv[++i] || "").trim() || null;
     else if (a.startsWith("--adapter-kind="))
       out.adapterKind = a.slice("--adapter-kind=".length).trim() || null;
+    else if (a === "--ml-probe-only") out.mlProbeOnly = true;
   }
   return out;
 }
@@ -231,13 +234,39 @@ try {
       if (page.length < pageSize) break;
     }
 
-    const mlLoad = await loadMlFootprintsForBbox({
-      bbox: countyBbox,
-      ...(args.fixture ? { fixturePath: args.fixture } : {}),
-    });
+    const mlLoad = args.mlProbeOnly
+      ? await probeMlFootprintsForBbox({
+          bbox: countyBbox,
+          ...(args.fixture ? { fixturePath: args.fixture } : {}),
+        })
+      : await loadMlFootprintsForBbox({
+          bbox: countyBbox,
+          ...(args.fixture ? { fixturePath: args.fixture } : {}),
+        });
 
     summary.storeTruth.mlSourceLabel = mlLoad.sourceLabel;
+    summary.storeTruth.mlStream = {
+      partitionsStreamed: mlLoad.partitionsStreamed,
+      featuresScanned: mlLoad.featuresScanned,
+      featuresRead: mlLoad.featuresRead,
+      peakQueueDepth: mlLoad.peakQueueDepth,
+    };
 
+    if (args.mlProbeOnly) {
+      summary.footprint = {
+        adapterKind: "ml-global-building-footprints",
+        sourceTier: "ml-derived",
+        sourceUrl: GLOBAL_ML_TEXAS_ZIP_URL,
+        featuresRead: mlLoad.featuresRead,
+        featuresScanned: mlLoad.featuresScanned,
+        partitionsStreamed: mlLoad.partitionsStreamed,
+        peakQueueDepth: mlLoad.peakQueueDepth,
+        mode: "ml-probe-only",
+      };
+      summary.wallMs = Math.round(performance.now() - t0);
+      console.log(JSON.stringify(summary, null, 2));
+      if (args.out) writeFileSync(args.out, JSON.stringify(summary, null, 2));
+    } else {
     const plan = planCountyBuildingFootprints(parcelInputs, mlLoad.features, {
       countyFips: args.county,
       ...(args.adapterKind ? { footprintAdapterKind: args.adapterKind } : {}),
@@ -353,12 +382,15 @@ try {
         );
       }
     }
+    }
   }
 
+  if (!args.mlProbeOnly) {
   summary.wallMs = Math.round(performance.now() - t0);
   console.log(JSON.stringify(summary, null, 2));
   if (args.out) {
     writeFileSync(args.out, JSON.stringify(summary, null, 2));
+  }
   }
 } catch (err) {
   summary.errors += 1;

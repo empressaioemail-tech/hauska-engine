@@ -26,7 +26,20 @@ export {
   type ResolveFootprintRouteInput,
 } from "./resolve-footprint-route.js";
 
-export { loadMlFootprintsForBbox } from "./ml-footprint-loader.js";
+export { loadMlFootprintsForBbox, probeMlFootprintsForBbox } from "./ml-footprint-loader.js";
+export {
+  ensureTexasMlZipCached,
+  texasMlZipCachePath,
+} from "./ml-texas-zip-cache.js";
+export {
+  countTexasMlFeatures,
+  streamTexasMlFeatures,
+} from "./ml-texas-feature-stream.js";
+export {
+  streamGeoJsonSeqWithBackpressure,
+  STREAM_QUEUE_HIGH_WATER,
+  STREAM_QUEUE_LOW_WATER,
+} from "./stream-geojson-seq-backpressure.js";
 
 export {
   classifyOverlapRatio,

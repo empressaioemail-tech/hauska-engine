@@ -3,6 +3,9 @@
 export const GLOBAL_ML_TEXAS_ZIP_URL =
   "https://minedbuildings.z5.web.core.windows.net/legacy/usbuildings-v2/Texas.geojson.zip";
 
+/** Entry inside Texas.geojson.zip (~3 GB uncompressed FeatureCollection). */
+export const ML_TEXAS_ZIP_ENTRY_NAME = "Texas.geojson";
+
 export const GLOBAL_ML_REPO_URL =
   "https://github.com/microsoft/GlobalMLBuildingFootprints";
 
