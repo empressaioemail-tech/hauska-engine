@@ -303,6 +303,19 @@ function polygonAreaSqMeters(ring: LocalPoint[]): number {
   return Math.abs(sum) / 2;
 }
 
+/**
+ * True when the offset ring is geometrically coincident with the property ring
+ * (zero inset on every edge). That geometry is NOT a buildable envelope — it
+ * is the honest "no setback to apply" case (missing rule atom, or all axes
+ * silent at 0 ft). Callers must treat buildable area as absent, never lot area.
+ */
+function isZeroInsetEnvelope(propertyRing: LocalPoint[], offsetRing: LocalPoint[]): boolean {
+  const propertyArea = polygonAreaSqMeters(propertyRing);
+  if (!(propertyArea > 0)) return true;
+  const offsetArea = polygonAreaSqMeters(offsetRing);
+  return Math.abs(offsetArea - propertyArea) / propertyArea < 1e-9;
+}
+
 const SQMETERS_PER_SQFOOT = 0.09290304;
 
 function parseCountyFips(parcelNodeId: string): string | null {
@@ -530,9 +543,10 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
   const scaleBar = { lengthMeters: niceScaleBarLength(extentMeters * 0.5) };
 
   const lotAreaSqFt = polygonAreaSqMeters(ringLocal) / SQMETERS_PER_SQFOOT;
-  const buildableAreaSqFt = offset.offsetRing
-    ? polygonAreaSqMeters(offset.offsetRing) / SQMETERS_PER_SQFOOT
-    : null;
+  const buildableAreaSqFt =
+    offset.offsetRing && !isZeroInsetEnvelope(ringLocal, offset.offsetRing)
+      ? polygonAreaSqMeters(offset.offsetRing) / SQMETERS_PER_SQFOOT
+      : null;
 
   const zoningDistrict = inputs.zoning && "district" in inputs.zoning ? inputs.zoning.district : undefined;
   const zoningFixture =

@@ -1370,19 +1370,23 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
               ? `(${pct}% of lot)`
               : undefined,
         }
-      : model.setback.frontEdgeUnresolved
-        ? {
-            label: "Buildable area",
-            chip: "unavailable",
-            // Warm-vs-local discrepancies live in THIS row's wording (shared
-            // vocab), never in the header stat — the header reads the model
-            // value or NONE (§2/§15).
-            chipReason:
-              s.buildableDisplayKind === "provisional"
-                ? "Front edge unresolved; a provisional warm estimate is on file."
-                : REASON.frontEdgeUnresolved,
-          }
-        : { label: "Buildable area", chip: "unavailable", chipReason: REASON.setbacksConsumeLot };
+      : model.setback.honestAbsence
+        ? { label: "Buildable area", chip: "unavailable", chipReason: REASON.noSetbackRule }
+        : model.setback.frontEdgeUnresolved
+          ? {
+              label: "Buildable area",
+              chip: "unavailable",
+              // Warm-vs-local discrepancies live in THIS row's wording (shared
+              // vocab), never in the header stat — the header reads the model
+              // value or NONE (§2/§15).
+              chipReason:
+                s.buildableDisplayKind === "provisional"
+                  ? "Front edge unresolved; a provisional warm estimate is on file."
+                  : REASON.frontEdgeUnresolved,
+            }
+          : model.setback.degenerate
+            ? { label: "Buildable area", chip: "unavailable", chipReason: REASON.setbacksConsumeLot }
+            : { label: "Buildable area", chip: "unavailable", chipReason: REASON.noSetbackRule };
 
   const flood: SummaryRow =
     "zone" in s.floodZone
