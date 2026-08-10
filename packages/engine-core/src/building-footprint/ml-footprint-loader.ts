@@ -108,6 +108,16 @@ export async function loadMlFootprintsForBbox(
     },
   })) {
     featuresScanned += 1;
+    if (featuresScanned % 500_000 === 0) {
+      console.error(
+        JSON.stringify({
+          event: "ml-footprint.stream-progress",
+          featuresScanned,
+          featuresRead,
+          peakQueueDepth,
+        }),
+      );
+    }
     const parsed = parseGeoJsonFootprintFeature(feat, featuresScanned);
     if (!parsed) continue;
     if (!bboxContainsRing(bbox, parsed.ring)) continue;

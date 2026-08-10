@@ -6,6 +6,7 @@
 import { PassThrough, type Readable } from "node:stream";
 import chain from "stream-chain";
 import { parser } from "stream-json";
+import { pick } from "stream-json/filters/pick.js";
 import { streamArray } from "stream-json/streamers/stream-array.js";
 import type { ZipFile } from "yauzl";
 
@@ -91,6 +92,7 @@ export async function* streamTexasMlFeatures(
   const jsonPipeline = chain([
     entryStream,
     parser(),
+    pick({ filter: "features" }),
     streamArray(),
   ]) as Readable;
 
