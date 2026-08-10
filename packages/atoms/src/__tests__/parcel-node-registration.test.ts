@@ -61,7 +61,12 @@ describe("property registration — parcel-node and ADR-029 site layers", () => 
     ] as ReadonlyArray<PropertyEntityType>) {
       expect(PROPERTY_ENTITY_TYPES).toContain(type);
     }
-    expect(PROPERTY_ENTITY_TYPES.length).toBe(11);
+    expect(PROPERTY_ENTITY_TYPES.length).toBe(12);
+  });
+
+  it("registers rail-corridor-fact (contract 1.17.0, NTAD NARN tracks)", () => {
+    expect(PROPERTY_ENTITY_TYPES).toContain("rail-corridor-fact");
+    expect(isPropertyEntityType("rail-corridor-fact")).toBe(true);
   });
 
   it("registers owner-fact (contract 1.16.0), the one paid property type", () => {
