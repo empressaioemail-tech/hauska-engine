@@ -42,6 +42,11 @@ import {
   railCorridorFactClaimContentHash,
 } from "../rail-corridor-fact-writer.js";
 import { railCorridorFactAtomDid } from "../fact-writer-ids.js";
+import {
+  buildOutsideSourceAbsenceReason,
+  buildPresentSpecialDistrictFactAtom,
+  buildSpecialDistrictFactAbsenceAtom,
+} from "../special-district-fact-writer.js";
 
 const PROVENANCE: PropertyFactWriteProvenance = {
   sourceAdapter: "cad-property-ingest-v1",
@@ -462,5 +467,52 @@ describe("rail-corridor-fact writer seam", () => {
       PROVENANCE,
     );
     expect(atom.absence?.kind).toBe("no-parcel-geometry");
+  });
+});
+
+describe("special-district-fact writer seam", () => {
+  it("builds present membership with point-in-polygon basis only", () => {
+    const atom = buildPresentSpecialDistrictFactAtom(
+      {
+        parcelNodeId: "48201:12345",
+        districtName: "EXAMPLE MUD",
+        districtId: "999",
+        districtType: "MUD",
+        countyFips: "48201",
+      },
+      {
+        ...PROVENANCE,
+        sourceAdapter: "tceq-water-districts-v1",
+        contentHash: "fnv1a64:test",
+      },
+    );
+    expect(atom.membershipBasis).toBe("point-in-polygon");
+    expect(atom.entityId).toBe("48201:12345:sd:999");
+  });
+
+  it("BANS statewide-negative absence phrases", () => {
+    expect(() =>
+      buildSpecialDistrictFactAbsenceAtom(
+        {
+          parcelNodeId: "48201:12345",
+          absenceKind: "outside-tceq-source-boundaries",
+          reason: "This parcel is in no special district anywhere.",
+        },
+        PROVENANCE,
+      ),
+    ).toThrow(/banned statewide-negative phrase/);
+  });
+
+  it("accepts scoped outside-source absence copy", () => {
+    const atom = buildSpecialDistrictFactAbsenceAtom(
+      {
+        parcelNodeId: "48021:27303",
+        absenceKind: "outside-tceq-source-boundaries",
+        reason: buildOutsideSourceAbsenceReason("48021"),
+      },
+      PROVENANCE,
+    );
+    expect(atom.absence?.kind).toBe("outside-tceq-source-boundaries");
+    expect(atom.entityId).toBe("48021:27303:sd:outside");
   });
 });

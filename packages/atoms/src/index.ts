@@ -50,3 +50,4 @@ export * from "./document-instances.js";
 export * from "./registry.js";
 export * from "./atom-link.js";
 export * from "./did.js";
+export * from "./special-district-fact-writer.js";

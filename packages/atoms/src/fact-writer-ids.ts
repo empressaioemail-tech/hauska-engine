@@ -118,6 +118,19 @@ export function buildingFootprintAtomDid(identity: {
   )}`;
 }
 
+export function specialDistrictFactAtomDid(identity: {
+  parcelNodeId: string;
+  districtId: string;
+}): string {
+  return `sdfact_${fnv1a64Hex(
+    JSON.stringify([
+      "special-district-fact",
+      identity.parcelNodeId,
+      identity.districtId,
+    ]),
+  )}`;
+}
+
 /**
  * Join-key normalization: strip leading zeros on all-digit ids so a
  * zero-padded CAD token and a TxGIO prop_id address the same account.
