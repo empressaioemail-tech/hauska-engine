@@ -70,7 +70,30 @@ export function ringsFromGeoJson(geometry: unknown): LngLat[][] {
 
 export function lineStringsFromGeoJson(geometry: unknown): LngLat[][] {
   if (!geometry || typeof geometry !== "object") return [];
-  const g = geometry as { type?: string; coordinates?: unknown };
+  const g = geometry as {
+    type?: string;
+    coordinates?: unknown;
+    paths?: unknown;
+  };
+
+  // Esri JSON polyline (ArcGIS REST default when f=json).
+  if (Array.isArray(g.paths)) {
+    const out: LngLat[][] = [];
+    for (const path of g.paths) {
+      if (!Array.isArray(path)) continue;
+      const line: LngLat[] = [];
+      for (const c of path) {
+        if (!Array.isArray(c) || c.length < 2) continue;
+        const lng = Number(c[0]);
+        const lat = Number(c[1]);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+        line.push([lng, lat]);
+      }
+      if (line.length >= 2) out.push(line);
+    }
+    return out;
+  }
+
   if (g.type === "LineString" && Array.isArray(g.coordinates)) {
     const line: LngLat[] = [];
     for (const c of g.coordinates) {

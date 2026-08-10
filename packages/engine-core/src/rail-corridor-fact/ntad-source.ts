@@ -7,6 +7,7 @@
  */
 
 import type { BBox } from "./geo.js";
+import { lineStringsFromGeoJson } from "./geo.js";
 import type { RailCorridorClass, RailCorridorStatus } from "@empressaio/atom-contract/property";
 
 export const NTAD_NARN_LINES_URL =
@@ -52,31 +53,55 @@ export function mapNetToClass(net: string | null | undefined): RailCorridorClass
 }
 
 function segmentBbox(geometry: unknown): BBox | null {
-  const coords: number[] = [];
-  const walk = (g: unknown) => {
-    if (!g || typeof g !== "object") return;
-    const geo = g as { type?: string; coordinates?: unknown };
-    if (geo.type === "LineString" && Array.isArray(geo.coordinates)) {
-      for (const c of geo.coordinates) {
-        if (Array.isArray(c) && c.length >= 2) coords.push(c[0], c[1]);
+  const lines = lineStringsFromGeoJson(geometry);
+  if (lines.length === 0) {
+    // Fallback for GeoJSON without paths wrapper.
+    const coords: number[] = [];
+    const walk = (g: unknown) => {
+      if (!g || typeof g !== "object") return;
+      const geo = g as { type?: string; coordinates?: unknown; paths?: unknown };
+      if (Array.isArray(geo.paths)) {
+        for (const path of geo.paths) {
+          if (!Array.isArray(path)) continue;
+          for (const c of path) {
+            if (Array.isArray(c) && c.length >= 2) coords.push(c[0], c[1]);
+          }
+        }
+      } else if (geo.type === "LineString" && Array.isArray(geo.coordinates)) {
+        for (const c of geo.coordinates) {
+          if (Array.isArray(c) && c.length >= 2) coords.push(c[0], c[1]);
+        }
+      } else if (geo.type === "MultiLineString" && Array.isArray(geo.coordinates)) {
+        for (const ls of geo.coordinates) walk({ type: "LineString", coordinates: ls });
       }
-    } else if (geo.type === "MultiLineString" && Array.isArray(geo.coordinates)) {
-      for (const ls of geo.coordinates) walk({ type: "LineString", coordinates: ls });
+    };
+    walk(geometry);
+    if (coords.length < 4) return null;
+    let west = Infinity;
+    let east = -Infinity;
+    let south = Infinity;
+    let north = -Infinity;
+    for (let i = 0; i < coords.length; i += 2) {
+      const lng = coords[i]!;
+      const lat = coords[i + 1]!;
+      if (lng < west) west = lng;
+      if (lng > east) east = lng;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
     }
-  };
-  walk(geometry);
-  if (coords.length < 4) return null;
+    return { westLng: west, southLat: south, eastLng: east, northLat: north };
+  }
   let west = Infinity;
   let east = -Infinity;
   let south = Infinity;
   let north = -Infinity;
-  for (let i = 0; i < coords.length; i += 2) {
-    const lng = coords[i]!;
-    const lat = coords[i + 1]!;
-    if (lng < west) west = lng;
-    if (lng > east) east = lng;
-    if (lat < south) south = lat;
-    if (lat > north) north = lat;
+  for (const line of lines) {
+    for (const [lng, lat] of line) {
+      if (lng < west) west = lng;
+      if (lng > east) east = lng;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
+    }
   }
   return { westLng: west, southLat: south, eastLng: east, northLat: north };
 }

@@ -22,10 +22,5 @@
     "typescript": "~5.7.2",
     "vitest": "^2.1.8"
   },
-  "packageManager": "pnpm@10.27.0",
-  "pnpm": {
-    "overrides": {
-      "@empressaio/atom-contract": "file:../rail-corridor-contract-wt"
-    }
-  }
+  "packageManager": "pnpm@10.27.0"
 }
