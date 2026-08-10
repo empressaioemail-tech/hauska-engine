@@ -75,11 +75,46 @@ export function ownerFactAtomDid(identity: {
   )}`;
 }
 
+export function wellFactAtomDid(identity: {
+  parcelNodeId: string;
+  wellKey: string;
+}): string {
+  return `wlfact_${fnv1a64Hex(
+    JSON.stringify(["well-fact", identity.parcelNodeId, identity.wellKey]),
+  )}`;
+}
+
 export function floodHazardFactAtomDid(identity: {
   parcelNodeId: string;
 }): string {
   return `fhfact_${fnv1a64Hex(
     JSON.stringify(["flood-hazard-fact", identity.parcelNodeId]),
+  )}`;
+}
+
+export function railCorridorFactAtomDid(identity: {
+  parcelNodeId: string;
+  bufferMeters: number;
+}): string {
+  return `railfact_${fnv1a64Hex(
+    JSON.stringify([
+      "rail-corridor-fact",
+      identity.parcelNodeId,
+      identity.bufferMeters,
+    ]),
+  )}`;
+}
+
+export function buildingFootprintAtomDid(identity: {
+  parcelNodeId: string;
+  footprintId: string;
+}): string {
+  return `bfoot_${fnv1a64Hex(
+    JSON.stringify([
+      "building-footprint",
+      identity.parcelNodeId,
+      identity.footprintId,
+    ]),
   )}`;
 }
 
