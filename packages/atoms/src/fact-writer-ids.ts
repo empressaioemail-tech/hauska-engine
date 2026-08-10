@@ -105,6 +105,19 @@ export function railCorridorFactAtomDid(identity: {
   )}`;
 }
 
+export function buildingFootprintAtomDid(identity: {
+  parcelNodeId: string;
+  footprintId: string;
+}): string {
+  return `bfoot_${fnv1a64Hex(
+    JSON.stringify([
+      "building-footprint",
+      identity.parcelNodeId,
+      identity.footprintId,
+    ]),
+  )}`;
+}
+
 /**
  * Join-key normalization: strip leading zeros on all-digit ids so a
  * zero-padded CAD token and a TxGIO prop_id address the same account.

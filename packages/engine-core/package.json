@@ -107,6 +107,7 @@
     "write-owner-fact-county": "tsx scripts/write-owner-fact-county.mjs",
     "write-well-fact-county": "tsx scripts/write-well-fact-county.mjs",
     "write-rail-corridor-fact-county": "tsx scripts/write-rail-corridor-fact-county.mjs",
+    "write-building-footprint-county": "tsx scripts/write-building-footprint-county.mjs",
     "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs"
   },
   "dependencies": {
@@ -123,11 +124,15 @@
     "pngjs": "^7.0.0",
     "polygon-clipping": "^0.15.7",
     "postgres": "^3.4.5",
+    "stream-chain": "^4.2.5",
+    "stream-json": "^3.5.0",
+    "yauzl": "^3.4.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
     "@types/pngjs": "^6.0.5",
+    "@types/yauzl": "^3.4.0",
     "tsx": "^4.19.2",
     "typescript": "~5.7.2",
     "vitest": "^2.1.8"
