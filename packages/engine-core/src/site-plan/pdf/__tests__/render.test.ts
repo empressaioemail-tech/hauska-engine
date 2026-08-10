@@ -258,6 +258,42 @@ describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
     expect(decoded).not.toContain("16,046 SF");
   });
 
+  // BAN legend/header contradiction: when the legend says the buildable
+  // envelope is not drawn because no setback rule is on file, the sheet-1
+  // header must not print a numeric BUILDABLE area (48113 live defect class).
+  it("header reads NONE when the legend says buildable envelope not drawn for missing setback rule", async () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48113:007701000B0010000",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback: {
+        front: 0,
+        side: 0,
+        rear: 0,
+        sourceCodeAtomRef: {
+          atomDid: "no-setback-rule-atom",
+          role: "honest-absence",
+          entityType: "setback-rule",
+        },
+        honestAbsence: true,
+      },
+      descriptor: { address: "DALLAS TX FIXTURE", countyName: "Dallas County" },
+      floodZone: { honestUnavailable: true, reason: "test stub" },
+      geometrySourceRef: "txgio-parcel:48113:007701000B0010000",
+    });
+    expect(model.summary.buildableAreaSqFt).toBeNull();
+    expect(model.summary.lotAreaSqFt).toBeGreaterThan(0);
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
+    const decoded = decodeAllContentStreams(bytes);
+    expect(decoded).toContain("Buildable envelope — not drawn · no setback rule on file");
+    expect(decoded).toContain("NONE");
+    const lotSf = Math.round(model.summary.lotAreaSqFt).toLocaleString("en-US");
+    // Header must not duplicate lot area under BUILDABLE.
+    expect(decoded).not.toMatch(new RegExp(`BUILDABLE\\s+${lotSf.replace(/,/g, "[, ]?")}\\s*SF`, "i"));
+  });
+
   // §11 (v1.2): the county reads by NAME only. A FIPS-shaped countyName (the
   // 2026-07-28 live defect: "Parcel 48021:47719 · 48021") is omitted from
   // the header meta line, and the County summary row takes the honest chip.

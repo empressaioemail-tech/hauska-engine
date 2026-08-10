@@ -15,7 +15,7 @@
 import { writeFileSync } from "node:fs";
 import postgres from "postgres";
 import { resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
-import { fetchBcadParcelRings, scrubLotLineRing, BASTROP_BCAD_PARCELS_URL } from "../src/boundary-primitive/index.js";
+import { exteriorRingFromGeoJson } from "../src/boundary-primitive/index.js";
 import { BLOCK13_ROSTER } from "../src/registry/cert-grade-core.js";
 import { readBoundaryEdgesForParcel, BoundaryPrimitiveMissingError } from "../src/boundary-primitive/read.js";
 import { createPgStorage } from "@hauska-engine/storage";
@@ -55,10 +55,15 @@ try {
     `;
     const situsAddress = situsRow?.situs_address?.trim() ?? null;
 
-    const bcad = await fetchBcadParcelRings([propId], fetch, BASTROP_BCAD_PARCELS_URL, "prop_id");
-    const bcadRing = bcad[0]?.ring;
-    const ring = bcadRing ? scrubLotLineRing(bcadRing) : null;
-    if (!ring) throw new Error(`${parcelNodeId}: no BCAD ring`);
+    const [geomRow] = await txSql`
+      SELECT geometry FROM txgio_parcel
+      WHERE county_fips = ${COUNTY}
+        AND regexp_replace(prop_id, '^0+', '') = regexp_replace(${propId}, '^0+', '')
+      ORDER BY ingested_at DESC NULLS LAST
+      LIMIT 1
+    `;
+    const ring = geomRow?.geometry ? exteriorRingFromGeoJson(geomRow.geometry) : null;
+    if (!ring || ring.length < 3) throw new Error(`${parcelNodeId}: no txgio_parcel ring`);
 
     const [zfRow] = await sql`
       SELECT body FROM atoms WHERE entity_type = 'zoning-fact'

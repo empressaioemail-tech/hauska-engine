@@ -11,7 +11,15 @@ import {
   isUsablePropId,
   landUseFactAtomDid,
   normalizeForJoin,
+  ownerFactAtomDid,
 } from "../fact-writer-ids.js";
+import {
+  buildCountyOwnerCoverageAbsenceAtom,
+  buildOwnerFactAbsenceAtom,
+  buildPresentOwnerFactAtom,
+  deriveExemptionFlags,
+  ownerFactClaimContentHash,
+} from "../owner-fact-writer.js";
 import {
   buildCadParcelRollAbsenceAtom,
   buildCountyCadRollCoverageAbsenceAtom,
@@ -28,6 +36,12 @@ import {
   buildFloodHazardFactAbsenceAtom,
   buildPresentFloodHazardFactAtom,
 } from "../flood-hazard-fact-writer.js";
+import {
+  buildPresentRailCorridorFactAtom,
+  buildRailCorridorFactAbsenceAtom,
+  railCorridorFactClaimContentHash,
+} from "../rail-corridor-fact-writer.js";
+import { railCorridorFactAtomDid } from "../fact-writer-ids.js";
 
 const PROVENANCE: PropertyFactWriteProvenance = {
   sourceAdapter: "cad-property-ingest-v1",
@@ -193,6 +207,144 @@ describe("land-use-fact writer seam", () => {
   });
 });
 
+describe("owner-fact writer seam (the paid facet)", () => {
+  it("builds present from CAD owner_name, tagged public-paid", () => {
+    const atom = buildPresentOwnerFactAtom(
+      {
+        parcelNodeId: "48021:27303",
+        taxYear: 2026,
+        ownerName: "SAMPLE OWNER LLC",
+        ownerMailingAddress: "PO BOX 1234, BASTROP, TX 78602",
+      },
+      PROVENANCE,
+    );
+    expect(atom.entityType).toBe("owner-fact");
+    expect(atom.ownerName).toBe("SAMPLE OWNER LLC");
+    expect(atom.entityId).toBe("48021:27303:2026");
+    expect(atom.atomDid).toMatch(/^ownfact_[0-9a-f]{16}$/);
+    // The whole point of the rail: owner never ships free.
+    expect(atom.accessPolicy).toBe("public-paid");
+  });
+
+  it("EVERY owner atom is public-paid, including absences", () => {
+    const absence = buildOwnerFactAbsenceAtom(
+      {
+        parcelNodeId: "48021:27303",
+        taxYear: 2026,
+        absenceKind: "owner-withheld",
+        reason: "statutory confidentiality election",
+      },
+      PROVENANCE,
+    );
+    const county = buildCountyOwnerCoverageAbsenceAtom(
+      { countyFips: "48021", taxYear: 2026, provenanceScope: ["cad_property"] },
+      PROVENANCE,
+    );
+    expect(absence.accessPolicy).toBe("public-paid");
+    expect(county.accessPolicy).toBe("public-paid");
+  });
+
+  it("builds all four absence kinds incl. statutory owner-withheld", () => {
+    for (const kind of [
+      "no-owner-name",
+      "owner-withheld",
+      "no-cad-row",
+      "join-hold",
+    ] as const) {
+      const atom = buildOwnerFactAbsenceAtom(
+        {
+          parcelNodeId: "48021:27303",
+          taxYear: 2026,
+          absenceKind: kind,
+          reason: `test ${kind}`,
+        },
+        PROVENANCE,
+      );
+      expect(atom.absence?.kind).toBe(kind);
+      expect(atom.ownerName).toBeUndefined();
+      expect(atom.ownerMailingAddress).toBeUndefined();
+    }
+  });
+
+  it("atomDid is stable across runs and distinct per tax year", () => {
+    const a = ownerFactAtomDid({ parcelNodeId: "48021:27303", taxYear: 2026 });
+    const b = ownerFactAtomDid({ parcelNodeId: "48021:27303", taxYear: 2026 });
+    const c = ownerFactAtomDid({ parcelNodeId: "48021:27303", taxYear: 2025 });
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+  });
+
+  describe("deriveExemptionFlags — flags, never raw codes", () => {
+    it("returns undefined when the roll carries no exemption data", () => {
+      expect(deriveExemptionFlags(undefined)).toBeUndefined();
+      expect(deriveExemptionFlags(null)).toBeUndefined();
+      expect(deriveExemptionFlags([])).toBeUndefined();
+      expect(deriveExemptionFlags(["", "  "])).toBeUndefined();
+    });
+
+    it("matches known CAD variants by prefix, not exact equality", () => {
+      // A false negative would assert "no homestead", which is a wrong claim.
+      for (const code of ["HS", "HB", "HS1", "hs"]) {
+        expect(deriveExemptionFlags([code])?.homestead).toBe(true);
+      }
+      for (const code of ["OV65", "O65", "DP", "DI"]) {
+        expect(deriveExemptionFlags([code])?.seniorOrDisability).toBe(true);
+      }
+      for (const code of ["DV1", "DV4", "VET"]) {
+        expect(deriveExemptionFlags([code])?.veteran).toBe(true);
+      }
+      for (const code of ["AG", "1D1", "OS", "TIM"]) {
+        expect(deriveExemptionFlags([code])?.agricultural).toBe(true);
+      }
+    });
+
+    it("reports false — not undefined — for a roll with unrelated codes", () => {
+      const flags = deriveExemptionFlags(["XYZ"]);
+      expect(flags).toEqual({
+        homestead: false,
+        seniorOrDisability: false,
+        agricultural: false,
+        veteran: false,
+      });
+    });
+
+    it("NEVER surfaces a raw exemption code on the atom", () => {
+      const atom = buildPresentOwnerFactAtom(
+        {
+          parcelNodeId: "48021:27303",
+          taxYear: 2026,
+          ownerName: "SAMPLE OWNER LLC",
+          exemptionFlags: deriveExemptionFlags(["HS", "OV65"]),
+        },
+        PROVENANCE,
+      );
+      const serialized = JSON.stringify(atom);
+      expect(serialized).not.toContain("OV65");
+      expect(atom.exemptionFlags).toEqual({
+        homestead: true,
+        seniorOrDisability: true,
+        agricultural: false,
+        veteran: false,
+      });
+    });
+  });
+
+  it("content hash is claim-shaped: stable on re-run, moves on owner change", () => {
+    const base = {
+      parcelNodeId: "48021:27303",
+      taxYear: 2026,
+      sourceTier: "cad-authoritative",
+      ownerName: "SAMPLE OWNER LLC",
+    };
+    expect(ownerFactClaimContentHash(base)).toBe(
+      ownerFactClaimContentHash(base),
+    );
+    expect(ownerFactClaimContentHash(base)).not.toBe(
+      ownerFactClaimContentHash({ ...base, ownerName: "NEW OWNER LLC" }),
+    );
+  });
+});
+
 describe("flood-hazard-fact writer seam", () => {
   it("builds present outside-mapped SFHA=false", () => {
     const atom = buildPresentFloodHazardFactAtom(
@@ -238,5 +390,77 @@ describe("flood-hazard-fact writer seam", () => {
     expect(atom.verifiedAbsence?.provenanceScope).toContain(
       "tx_fema_nfhl_flood_zone",
     );
+  });
+});
+
+describe("rail-corridor-fact writer seam", () => {
+  it("mints stable prefixed DIDs including bufferMeters", () => {
+    const did = railCorridorFactAtomDid({
+      parcelNodeId: "48021:27303",
+      bufferMeters: 152.4,
+    });
+    expect(did).toMatch(/^railfact_[0-9a-f]{16}$/);
+  });
+
+  it("builds present-near with status/class and buffer in body", () => {
+    const atom = buildPresentRailCorridorFactAtom(
+      {
+        parcelNodeId: "48021:27303",
+        nearRailCorridor: true,
+        corridorStatus: "active",
+        corridorClass: "mainline",
+        nearestCorridorDistanceMeters: 42.5,
+        atGradeCrossings: [{ crossingId: "416320C", distanceMeters: 88.2 }],
+      },
+      {
+        ...PROVENANCE,
+        contentHash: railCorridorFactClaimContentHash({
+          parcelNodeId: "48021:27303",
+          sourceTier: "ntad-narn",
+          bufferMeters: 152.4,
+          nearRailCorridor: true,
+          corridorStatus: "active",
+          corridorClass: "mainline",
+          nearestCorridorDistanceMeters: 42.5,
+          atGradeCrossings: [{ crossingId: "416320C", distanceMeters: 88.2 }],
+        }),
+      },
+    );
+    expect(atom.entityType).toBe("rail-corridor-fact");
+    expect(atom.bufferMeters).toBe(152.4);
+    expect(atom.accessPolicy).toBe("public-free");
+    expect(atom.atGradeCrossings?.[0]?.crossingId).toBe("416320C");
+  });
+
+  it("builds present-outside with nearRailCorridor false", () => {
+    const atom = buildPresentRailCorridorFactAtom(
+      {
+        parcelNodeId: "48021:99999",
+        nearRailCorridor: false,
+      },
+      {
+        ...PROVENANCE,
+        contentHash: railCorridorFactClaimContentHash({
+          parcelNodeId: "48021:99999",
+          sourceTier: "ntad-narn",
+          bufferMeters: 152.4,
+          nearRailCorridor: false,
+        }),
+      },
+    );
+    expect(atom.nearRailCorridor).toBe(false);
+    expect(atom.corridorStatus).toBeUndefined();
+  });
+
+  it("builds no-parcel-geometry absence", () => {
+    const atom = buildRailCorridorFactAbsenceAtom(
+      {
+        parcelNodeId: "48021:88888",
+        absenceKind: "no-parcel-geometry",
+        reason: "missing ring",
+      },
+      PROVENANCE,
+    );
+    expect(atom.absence?.kind).toBe("no-parcel-geometry");
   });
 });

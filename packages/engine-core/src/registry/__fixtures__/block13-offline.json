@@ -1,29 +1,29 @@
 {
   "fixtureVersion": 1,
-  "generatedAt": "2026-08-07T16:30:06.286Z",
+  "generatedAt": "2026-08-09T21:23:09.297Z",
   "parcels": {
     "48021:34145": {
       "situsAddress": "909 PECAN ST , BASTROP, TX 78602",
       "ring": [
         [
-          -97.31694869370423,
-          30.110251391330063
+          -97.31694869399996,
+          30.110251391000077
         ],
         [
-          -97.31695316451284,
-          30.11049057184738
+          -97.31744866799994,
+          30.110243538000077
         ],
         [
-          -97.3174508131638,
-          30.110482742357647
+          -97.31745081299994,
+          30.110482742000045
         ],
         [
-          -97.31744866789808,
-          30.11024353820601
+          -97.31695316499997,
+          30.11049057200006
         ],
         [
-          -97.31694869370423,
-          30.110251391330063
+          -97.31694869399996,
+          30.110251391000077
         ]
       ],
       "insetRing": [
@@ -552,40 +552,40 @@
       "situsAddress": "907 CHESTNUT ST , BASTROP, TX 78602",
       "ring": [
         [
-          -97.31668774600331,
-          30.110494384656565
+          -97.31668774599996,
+          30.110494385000038
         ],
         [
-          -97.31695316451284,
-          30.11049057184738
+          -97.31668279499996,
+          30.110221169000056
         ],
         [
-          -97.31694869370423,
-          30.110251391330063
+          -97.31638174899996,
+          30.110224436000067
         ],
         [
-          -97.31694780308284,
-          30.11003542504962
+          -97.31638153399996,
+          30.11003779500004
         ],
         [
-          -97.31669481114571,
-          30.110037138570224
+          -97.31669481099999,
+          30.110037139000042
         ],
         [
-          -97.31638153415243,
-          30.110037795238938
+          -97.31694780299995,
+          30.110035425000035
         ],
         [
-          -97.31638174941722,
-          30.110224436073096
+          -97.31694869399996,
+          30.110251391000077
         ],
         [
-          -97.31668279530915,
-          30.110221169029927
+          -97.31695316499997,
+          30.11049057200006
         ],
         [
-          -97.31668774600331,
-          30.110494384656565
+          -97.31668774599996,
+          30.110494385000038
         ]
       ],
       "insetRing": [
@@ -1497,24 +1497,24 @@
       "situsAddress": "909 CHESTNUT ST , BASTROP, TX 78602",
       "ring": [
         [
-          -97.31638174941722,
-          30.110224436073096
+          -97.31638174899996,
+          30.110224436000067
         ],
         [
-          -97.31638491346317,
-          30.1104987331004
+          -97.31668279499996,
+          30.110221169000056
         ],
         [
-          -97.31668774600331,
-          30.110494384656565
+          -97.31668774599996,
+          30.110494385000038
         ],
         [
-          -97.31668279530915,
-          30.110221169029927
+          -97.31638491299998,
+          30.110498733000043
         ],
         [
-          -97.31638174941722,
-          30.110224436073096
+          -97.31638174899996,
+          30.110224436000067
         ]
       ],
       "insetRing": [
@@ -2064,24 +2064,24 @@
       "situsAddress": "908 PINE , BASTROP, TX 78602",
       "ring": [
         [
-          -97.31637445638977,
-          30.109579694899743
+          -97.31637445599995,
+          30.109579695000036
         ],
         [
-          -97.31638153415243,
-          30.110037795238938
+          -97.31669069099996,
+          30.10957718000003
         ],
         [
-          -97.31669481114571,
-          30.110037138570224
+          -97.31669481099999,
+          30.110037139000042
         ],
         [
-          -97.31669069092459,
-          30.10957717956972
+          -97.31638153399996,
+          30.11003779500004
         ],
         [
-          -97.31637445638977,
-          30.109579694899743
+          -97.31637445599995,
+          30.109579695000036
         ]
       ],
       "insetRing": [
@@ -2626,24 +2626,28 @@
       "situsAddress": "906 PINE ST , BASTROP, TX 78602",
       "ring": [
         [
-          -97.31669069092459,
-          30.10957717956972
+          -97.31669069099996,
+          30.10957718000003
         ],
         [
-          -97.31669481114571,
-          30.110037138570224
+          -97.31694368199999,
+          30.109575466000024
         ],
         [
-          -97.31694780308284,
-          30.11003542504962
+          -97.31694646099999,
+          30.10988563400008
         ],
         [
-          -97.31694368165857,
-          30.109575466057354
+          -97.31694780299995,
+          30.110035425000035
         ],
         [
-          -97.31669069092459,
-          30.10957717956972
+          -97.31669481099999,
+          30.110037139000042
+        ],
+        [
+          -97.31669069099996,
+          30.10957718000003
         ]
       ],
       "insetRing": [
@@ -3276,46 +3280,54 @@
       "situsAddress": "901 PECAN ST , BASTROP, TX 78602",
       "ring": [
         [
-          -97.31694368165857,
-          30.109575466057354
+          -97.31694368199999,
+          30.109575466000024
         ],
         [
-          -97.31694646104549,
-          30.109885633974258
+          -97.31743416199998,
+          30.109569837000038
         ],
         [
-          -97.3174444516977,
-          30.10988224711613
+          -97.31744445199996,
+          30.10988224700003
         ],
         [
-          -97.31743416161125,
-          30.109569837440745
+          -97.31700654699995,
+          30.109885225000028
         ],
         [
-          -97.31694368165857,
-          30.109575466057354
+          -97.31694646099999,
+          30.10988563400008
+        ],
+        [
+          -97.31694368199999,
+          30.109575466000024
         ]
       ],
       "insetRing": [
         [
-          -97.31739651496505,
-          30.109868882388113
+          -97.31699381414708,
+          30.109871620842622
         ],
         [
-          -97.31738803542478,
-          30.109611441360965
+          -97.31700642253436,
+          30.109871535098506
         ],
         [
-          -97.31695987428766,
-          30.109616354823533
+          -97.31739651517445,
+          30.10986887977264
         ],
         [
-          -97.31696216363547,
-          30.10987183643218
+          -97.31738713419875,
+          30.10958406824485
         ],
         [
-          -97.31739651496505,
-          30.109868882388113
+          -97.31699127847753,
+          30.109588611288093
+        ],
+        [
+          -97.31699381414708,
+          30.109871620842622
         ]
       ],
       "zoningFact": {
@@ -3395,12 +3407,12 @@
         "atomDid": "did:hauska:setback-rule:48021:34177",
         "atomTier": "data",
         "entityId": "48021:34177",
-        "fetchedAt": "2026-07-31T15:14:02.453Z",
+        "fetchedAt": "2026-08-09T20:48:44.941Z",
         "sourceUrl": "https://www.cityofbastrop.org/page/open/6743/0/ORDINANCE%20NO.%202019-51%20BASTROP%20BUILDING%20BLOCK%20B3%20-%202.pdf",
         "entityType": "setback-rule",
         "matchBasis": "exact",
         "minLotSize": "0.33",
-        "contentHash": "48439ea50b134b7ca17b19befe272d17edec4bcbe106811ec30a56fb28e3e422",
+        "contentHash": "4b42bd598eebf50b655dd3f66b35068f041234b939df392a8a1594ef031fc638",
         "displayMeta": {
           "minLotSize": "0.33",
           "secondSource": {
@@ -3412,7 +3424,7 @@
           "resolvedDistrictCode": "MU",
           "sideFireCodeDeferral": true
         },
-        "extractedAt": "2026-07-31T15:14:02.453Z",
+        "extractedAt": "2026-08-09T20:48:44.941Z",
         "maxHeightFt": 40,
         "accessPolicy": "public-free",
         "districtCode": "MU",
@@ -3422,7 +3434,7 @@
             "consequence": {
               "kind": "not-applicable",
               "reason": "setback-rule-citation-has-no-life-safety-stratum",
-              "assertedAt": "2026-07-31T15:14:02.453Z"
+              "assertedAt": "2026-08-09T20:48:44.941Z"
             },
             "assertedConfidence": {
               "n": 0,
@@ -3437,10 +3449,10 @@
               "intervalWidth": 0.12
             }
           },
-          "assembledAt": "2026-07-31T15:14:02.453Z"
+          "assembledAt": "2026-08-09T20:48:44.941Z"
         },
         "sideCornerFt": 5,
-        "versionStamp": "48021:34177:setback-rule:1:2026-07-31T15:14:02.453Z",
+        "versionStamp": "48021:34177:setback-rule:1:2026-08-09T20:48:44.941Z",
         "sourceAdapter": "bastrop-per-parcel-record-layer-23",
         "reasoningChain": {
           "reasoningKind": "observed"
@@ -3492,8 +3504,9 @@
           "status": "active",
           "atomDid": "did:hauska:property-boundary-edge:48021:34177:boundary:0",
           "setback": {
-            "kind": "unmapped-adjacency",
-            "reason": "No parcel or ROW adjacency mapped for this edge."
+            "feet": 5,
+            "provenance": "depth-warm-promote",
+            "atomCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6)"
           },
           "atomTier": "data",
           "entityId": "48021:34177:boundary:0",
@@ -3516,13 +3529,13 @@
             "centroidInside": true
           },
           "edgeIndex": 0,
-          "fetchedAt": "2026-07-29T21:07:59.334Z",
-          "sourceUrl": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+          "fetchedAt": "2026-08-09T20:48:44.941Z",
+          "sourceUrl": "https://hauska.dev/internal/depth-warm/promote",
           "countyFips": "48021",
           "entityType": "property-boundary-edge",
           "facingRoad": null,
-          "contentHash": "e8513472007d6f423b83885eae4fd263f4be122b1ba4d84166ec834814ce6d5d",
-          "extractedAt": "2026-07-29T21:07:59.334Z",
+          "contentHash": "39f96cc8a516b591f474b8ba39a5ce6c2424a52da27441d86e89bb5d6ab3c44b",
+          "extractedAt": "2026-08-09T20:48:44.941Z",
           "accessPolicy": "public-free",
           "parcelNodeId": "48021:34177",
           "readContract": {
@@ -3530,7 +3543,7 @@
               "consequence": {
                 "kind": "not-applicable",
                 "reason": "property-boundary-edge-v1-no-life-safety-stratum",
-                "assertedAt": "2026-07-29T21:07:59.334Z"
+                "assertedAt": "2026-08-09T20:48:44.941Z"
               },
               "assertedConfidence": {
                 "n": 0,
@@ -3545,16 +3558,17 @@
                 "intervalWidth": 0.22
               }
             },
-            "assembledAt": "2026-07-29T21:07:59.334Z"
+            "assembledAt": "2026-08-09T20:48:44.941Z"
           },
+          "versionStamp": "48021:34177:property-boundary-edge:2026-08-09T20:48:44.941Z",
           "adjacencyKind": "unmapped",
-          "effectiveDate": "2026-07-29",
-          "sourceAdapter": "descriptor-fixture",
+          "effectiveDate": "2026-08-09",
+          "sourceAdapter": "depth-warm-verify-promote",
           "boundaryEdgeId": "48021:34177:boundary:0",
           "reasoningChain": {
             "reasoningKind": "observed"
           },
-          "sourceCitation": "boundary-primitive S2-U2 (PRE-2 adjacency + road-node attach)",
+          "sourceCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6) (depth-warm-promoted-v1)",
           "propertyLineTags": {
             "bearing": "S 89°33' W",
             "provenance": {
@@ -3574,8 +3588,9 @@
           "status": "active",
           "atomDid": "did:hauska:property-boundary-edge:48021:34177:boundary:1",
           "setback": {
-            "kind": "unmapped-adjacency",
-            "reason": "No parcel or ROW adjacency mapped for this edge."
+            "feet": 5,
+            "provenance": "depth-warm-promote",
+            "atomCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6)"
           },
           "atomTier": "data",
           "entityId": "48021:34177:boundary:1",
@@ -3598,13 +3613,13 @@
             "centroidInside": true
           },
           "edgeIndex": 1,
-          "fetchedAt": "2026-07-29T21:07:59.334Z",
-          "sourceUrl": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+          "fetchedAt": "2026-08-09T20:48:44.941Z",
+          "sourceUrl": "https://hauska.dev/internal/depth-warm/promote",
           "countyFips": "48021",
           "entityType": "property-boundary-edge",
           "facingRoad": null,
-          "contentHash": "3a8160579c47dc87c6f3ed294c11cfe9d1ffc7e8dac7f77838f3049a019ecff3",
-          "extractedAt": "2026-07-29T21:07:59.334Z",
+          "contentHash": "54ce4d864c884f63d9118d4bc5a3df71f8d429ad3fb3dbe799f26beaf7fd57f3",
+          "extractedAt": "2026-08-09T20:48:44.941Z",
           "accessPolicy": "public-free",
           "parcelNodeId": "48021:34177",
           "readContract": {
@@ -3612,7 +3627,7 @@
               "consequence": {
                 "kind": "not-applicable",
                 "reason": "property-boundary-edge-v1-no-life-safety-stratum",
-                "assertedAt": "2026-07-29T21:07:59.334Z"
+                "assertedAt": "2026-08-09T20:48:44.941Z"
               },
               "assertedConfidence": {
                 "n": 0,
@@ -3627,16 +3642,17 @@
                 "intervalWidth": 0.22
               }
             },
-            "assembledAt": "2026-07-29T21:07:59.334Z"
+            "assembledAt": "2026-08-09T20:48:44.941Z"
           },
+          "versionStamp": "48021:34177:property-boundary-edge:2026-08-09T20:48:44.941Z",
           "adjacencyKind": "unmapped",
-          "effectiveDate": "2026-07-29",
-          "sourceAdapter": "descriptor-fixture",
+          "effectiveDate": "2026-08-09",
+          "sourceAdapter": "depth-warm-verify-promote",
           "boundaryEdgeId": "48021:34177:boundary:1",
           "reasoningChain": {
             "reasoningKind": "observed"
           },
-          "sourceCitation": "boundary-primitive S2-U2 (PRE-2 adjacency + road-node attach)",
+          "sourceCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6) (depth-warm-promoted-v1)",
           "propertyLineTags": {
             "bearing": "S 89°33' W",
             "provenance": {
@@ -3657,8 +3673,8 @@
           "atomDid": "did:hauska:property-boundary-edge:48021:34177:boundary:2",
           "setback": {
             "feet": 15,
-            "provenance": "road-class-setback-table",
-            "atomCitation": "bastrop_tx"
+            "provenance": "depth-warm-promote",
+            "atomCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6)"
           },
           "atomTier": "data",
           "entityId": "48021:34177:boundary:2",
@@ -3681,19 +3697,18 @@
             "centroidInside": true
           },
           "edgeIndex": 2,
-          "fetchedAt": "2026-07-29T21:07:59.334Z",
-          "sourceUrl": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+          "fetchedAt": "2026-08-09T20:48:44.941Z",
+          "sourceUrl": "https://hauska.dev/internal/depth-warm/promote",
           "countyFips": "48021",
           "entityType": "property-boundary-edge",
           "facingRoad": {
             "provenance": "osm-overpass-v1",
-            "roadNodeId": "48021:road:1346059468",
+            "roadNodeId": "48021:road:15104838",
             "osmHighwayTag": "tertiary",
             "classification": "minor_collector"
           },
-          "frontBasis": "situs-street-match",
-          "contentHash": "b903f773cacc09b77eccce51c58b5904451251c642505c8bc92258f58c46b4d8",
-          "extractedAt": "2026-07-29T21:07:59.334Z",
+          "contentHash": "cea1bd4ba85c8b03b7b8370aa76485873683a8ec02b500001c91aa76e2e8cda2",
+          "extractedAt": "2026-08-09T20:48:44.941Z",
           "accessPolicy": "public-free",
           "parcelNodeId": "48021:34177",
           "readContract": {
@@ -3701,7 +3716,7 @@
               "consequence": {
                 "kind": "not-applicable",
                 "reason": "property-boundary-edge-v1-no-life-safety-stratum",
-                "assertedAt": "2026-07-29T21:07:59.334Z"
+                "assertedAt": "2026-08-09T20:48:44.941Z"
               },
               "assertedConfidence": {
                 "n": 0,
@@ -3716,16 +3731,17 @@
                 "intervalWidth": 0.22
               }
             },
-            "assembledAt": "2026-07-29T21:07:59.334Z"
+            "assembledAt": "2026-08-09T20:48:44.941Z"
           },
+          "versionStamp": "48021:34177:property-boundary-edge:2026-08-09T20:48:44.941Z",
           "adjacencyKind": "ROW",
-          "effectiveDate": "2026-07-29",
-          "sourceAdapter": "descriptor-fixture",
+          "effectiveDate": "2026-08-09",
+          "sourceAdapter": "depth-warm-verify-promote",
           "boundaryEdgeId": "48021:34177:boundary:2",
           "reasoningChain": {
             "reasoningKind": "observed"
           },
-          "sourceCitation": "boundary-primitive S2-U2 (PRE-2 adjacency + road-node attach)",
+          "sourceCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6) (depth-warm-promoted-v1)",
           "propertyLineTags": {
             "bearing": "S 1°38' E",
             "provenance": {
@@ -3737,17 +3753,17 @@
           },
           "jurisdictionTenant": "breadth_48021_bastrop",
           "supersedesEntityId": null,
-          "parcelNeighborPropId": "34161"
+          "parcelNeighborPropId": null
         },
         {
-          "role": "rear",
+          "role": "side_corner",
           "propId": "34177",
           "status": "active",
           "atomDid": "did:hauska:property-boundary-edge:48021:34177:boundary:3",
           "setback": {
-            "feet": 0,
-            "provenance": "road-class-setback-table",
-            "atomCitation": "bastrop_tx"
+            "feet": 5,
+            "provenance": "depth-warm-promote",
+            "atomCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6)"
           },
           "atomTier": "data",
           "entityId": "48021:34177:boundary:3",
@@ -3770,13 +3786,18 @@
             "centroidInside": true
           },
           "edgeIndex": 3,
-          "fetchedAt": "2026-07-29T21:07:59.334Z",
-          "sourceUrl": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+          "fetchedAt": "2026-08-09T20:48:44.941Z",
+          "sourceUrl": "https://hauska.dev/internal/depth-warm/promote",
           "countyFips": "48021",
           "entityType": "property-boundary-edge",
-          "facingRoad": null,
-          "contentHash": "f37071af186529854c29856420ba33f59937c7e26f6b78416ce0f81b8663f447",
-          "extractedAt": "2026-07-29T21:07:59.334Z",
+          "facingRoad": {
+            "provenance": "osm-overpass-v1",
+            "roadNodeId": "48021:road:15094381",
+            "osmHighwayTag": "residential",
+            "classification": "residential"
+          },
+          "contentHash": "38e6f8515633dc796d580f08fa3e5d0c39eb70f43515eaaa66538d7c02640be2",
+          "extractedAt": "2026-08-09T20:48:44.941Z",
           "accessPolicy": "public-free",
           "parcelNodeId": "48021:34177",
           "readContract": {
@@ -3784,7 +3805,7 @@
               "consequence": {
                 "kind": "not-applicable",
                 "reason": "property-boundary-edge-v1-no-life-safety-stratum",
-                "assertedAt": "2026-07-29T21:07:59.334Z"
+                "assertedAt": "2026-08-09T20:48:44.941Z"
               },
               "assertedConfidence": {
                 "n": 0,
@@ -3799,16 +3820,17 @@
                 "intervalWidth": 0.22
               }
             },
-            "assembledAt": "2026-07-29T21:07:59.334Z"
+            "assembledAt": "2026-08-09T20:48:44.941Z"
           },
-          "adjacencyKind": "neighbor-parcel",
-          "effectiveDate": "2026-07-29",
-          "sourceAdapter": "descriptor-fixture",
+          "versionStamp": "48021:34177:property-boundary-edge:2026-08-09T20:48:44.941Z",
+          "adjacencyKind": "ROW",
+          "effectiveDate": "2026-08-09",
+          "sourceAdapter": "depth-warm-verify-promote",
           "boundaryEdgeId": "48021:34177:boundary:3",
           "reasoningChain": {
             "reasoningKind": "observed"
           },
-          "sourceCitation": "boundary-primitive S2-U2 (PRE-2 adjacency + road-node attach)",
+          "sourceCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6) (depth-warm-promoted-v1)",
           "propertyLineTags": {
             "bearing": "N 89°14' E",
             "provenance": {
@@ -3820,17 +3842,17 @@
           },
           "jurisdictionTenant": "breadth_48021_bastrop",
           "supersedesEntityId": null,
-          "parcelNeighborPropId": "34161"
+          "parcelNeighborPropId": null
         },
         {
-          "role": "side",
+          "role": "rear",
           "propId": "34177",
           "status": "active",
           "atomDid": "did:hauska:property-boundary-edge:48021:34177:boundary:4",
           "setback": {
-            "feet": 0,
-            "provenance": "road-class-setback-table",
-            "atomCitation": "bastrop_tx"
+            "feet": 15,
+            "provenance": "depth-warm-promote",
+            "atomCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6)"
           },
           "atomTier": "data",
           "entityId": "48021:34177:boundary:4",
@@ -3853,13 +3875,13 @@
             "centroidInside": true
           },
           "edgeIndex": 4,
-          "fetchedAt": "2026-07-29T21:07:59.334Z",
-          "sourceUrl": "https://www.cityofbastrop.org/upload/page/0107/docs/B3/B3%20Code%20-%20April%202025.pdf",
+          "fetchedAt": "2026-08-09T20:48:44.941Z",
+          "sourceUrl": "https://hauska.dev/internal/depth-warm/promote",
           "countyFips": "48021",
           "entityType": "property-boundary-edge",
           "facingRoad": null,
-          "contentHash": "03671ded74a1bb4bab24f8b766d8ea29085213fa98999d79243071b336dfe277",
-          "extractedAt": "2026-07-29T21:07:59.334Z",
+          "contentHash": "e3d670eb12da1ad36f48e914366380326665517fdc99ed1c51f60f96e20c7870",
+          "extractedAt": "2026-08-09T20:48:44.941Z",
           "accessPolicy": "public-free",
           "parcelNodeId": "48021:34177",
           "readContract": {
@@ -3867,7 +3889,7 @@
               "consequence": {
                 "kind": "not-applicable",
                 "reason": "property-boundary-edge-v1-no-life-safety-stratum",
-                "assertedAt": "2026-07-29T21:07:59.334Z"
+                "assertedAt": "2026-08-09T20:48:44.941Z"
               },
               "assertedConfidence": {
                 "n": 0,
@@ -3882,16 +3904,17 @@
                 "intervalWidth": 0.22
               }
             },
-            "assembledAt": "2026-07-29T21:07:59.334Z"
+            "assembledAt": "2026-08-09T20:48:44.941Z"
           },
-          "adjacencyKind": "neighbor-parcel",
-          "effectiveDate": "2026-07-29",
-          "sourceAdapter": "descriptor-fixture",
+          "versionStamp": "48021:34177:property-boundary-edge:2026-08-09T20:48:44.941Z",
+          "adjacencyKind": "unmapped",
+          "effectiveDate": "2026-08-09",
+          "sourceAdapter": "depth-warm-verify-promote",
           "boundaryEdgeId": "48021:34177:boundary:4",
           "reasoningChain": {
             "reasoningKind": "observed"
           },
-          "sourceCitation": "boundary-primitive S2-U2 (PRE-2 adjacency + road-node attach)",
+          "sourceCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6) (depth-warm-promoted-v1)",
           "propertyLineTags": {
             "bearing": "N 0°27' W",
             "provenance": {
@@ -3903,7 +3926,7 @@
           },
           "jurisdictionTenant": "breadth_48021_bastrop",
           "supersedesEntityId": null,
-          "parcelNeighborPropId": "34169"
+          "parcelNeighborPropId": null
         }
       ]
     },
@@ -3911,28 +3934,32 @@
       "situsAddress": "905 PECAN ST , BASTROP, TX 78602",
       "ring": [
         [
-          -97.31694646104549,
-          30.109885633974258
+          -97.31700654699995,
+          30.109885225000028
         ],
         [
-          -97.31694780308284,
-          30.11003542504962
+          -97.31744445199996,
+          30.10988224700003
         ],
         [
-          -97.31694869370423,
-          30.110251391330063
+          -97.31744866799994,
+          30.110243538000077
         ],
         [
-          -97.31744866789808,
-          30.11024353820601
+          -97.31694869399996,
+          30.110251391000077
         ],
         [
-          -97.3174444516977,
-          30.10988224711613
+          -97.31694780299995,
+          30.110035425000035
         ],
         [
-          -97.31694646104549,
-          30.109885633974258
+          -97.31694646099999,
+          30.10988563400008
+        ],
+        [
+          -97.31700654699995,
+          30.109885225000028
         ]
       ],
       "insetRing": [

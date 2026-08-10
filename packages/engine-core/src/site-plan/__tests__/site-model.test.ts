@@ -331,4 +331,30 @@ describe("composeSitePlanModel", () => {
     expect(model.summary.buildableAreaHonestNote).toMatch(/provisional-front-edge/i);
     expect(model.summary.buildableAreaHonestNote).toMatch(/front-edge-anchor atom unresolved/);
   });
+
+  it("reports null buildable area (not lot area) when no setback-rule atom is on file — zero inset offset ring equals property line", () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48113:007701000B0010000",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback: {
+        front: 0,
+        side: 0,
+        rear: 0,
+        sourceCodeAtomRef: {
+          atomDid: "no-setback-rule-atom",
+          role: "honest-absence",
+          entityType: "setback-rule",
+        },
+        honestAbsence: true,
+      },
+    });
+    expect(model.setback.honestAbsence).toBe(true);
+    expect(model.setback.offsetRingLocal).not.toBeNull();
+    expect(model.setback.degenerate).toBe(false);
+    expect(model.summary.buildableAreaSqFt).toBeNull();
+    expect(model.summary.lotAreaSqFt).toBeGreaterThan(0);
+  });
 });

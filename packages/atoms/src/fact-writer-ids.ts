@@ -66,11 +66,42 @@ export function landUseFactAtomDid(identity: {
   )}`;
 }
 
+export function ownerFactAtomDid(identity: {
+  parcelNodeId: string;
+  taxYear: number;
+}): string {
+  return `ownfact_${fnv1a64Hex(
+    JSON.stringify(["owner-fact", identity.parcelNodeId, identity.taxYear]),
+  )}`;
+}
+
+export function wellFactAtomDid(identity: {
+  parcelNodeId: string;
+  wellKey: string;
+}): string {
+  return `wlfact_${fnv1a64Hex(
+    JSON.stringify(["well-fact", identity.parcelNodeId, identity.wellKey]),
+  )}`;
+}
+
 export function floodHazardFactAtomDid(identity: {
   parcelNodeId: string;
 }): string {
   return `fhfact_${fnv1a64Hex(
     JSON.stringify(["flood-hazard-fact", identity.parcelNodeId]),
+  )}`;
+}
+
+export function railCorridorFactAtomDid(identity: {
+  parcelNodeId: string;
+  bufferMeters: number;
+}): string {
+  return `railfact_${fnv1a64Hex(
+    JSON.stringify([
+      "rail-corridor-fact",
+      identity.parcelNodeId,
+      identity.bufferMeters,
+    ]),
   )}`;
 }
 
