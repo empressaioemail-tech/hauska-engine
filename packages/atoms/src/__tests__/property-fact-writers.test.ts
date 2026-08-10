@@ -11,7 +11,15 @@ import {
   isUsablePropId,
   landUseFactAtomDid,
   normalizeForJoin,
+  ownerFactAtomDid,
 } from "../fact-writer-ids.js";
+import {
+  buildCountyOwnerCoverageAbsenceAtom,
+  buildOwnerFactAbsenceAtom,
+  buildPresentOwnerFactAtom,
+  deriveExemptionFlags,
+  ownerFactClaimContentHash,
+} from "../owner-fact-writer.js";
 import {
   buildCadParcelRollAbsenceAtom,
   buildCountyCadRollCoverageAbsenceAtom,
@@ -190,6 +198,144 @@ describe("land-use-fact writer seam", () => {
       expect(atom.absence?.kind).toBe(kind);
       expect(atom.landUseCode).toBeUndefined();
     }
+  });
+});
+
+describe("owner-fact writer seam (the paid facet)", () => {
+  it("builds present from CAD owner_name, tagged public-paid", () => {
+    const atom = buildPresentOwnerFactAtom(
+      {
+        parcelNodeId: "48021:27303",
+        taxYear: 2026,
+        ownerName: "SAMPLE OWNER LLC",
+        ownerMailingAddress: "PO BOX 1234, BASTROP, TX 78602",
+      },
+      PROVENANCE,
+    );
+    expect(atom.entityType).toBe("owner-fact");
+    expect(atom.ownerName).toBe("SAMPLE OWNER LLC");
+    expect(atom.entityId).toBe("48021:27303:2026");
+    expect(atom.atomDid).toMatch(/^ownfact_[0-9a-f]{16}$/);
+    // The whole point of the rail: owner never ships free.
+    expect(atom.accessPolicy).toBe("public-paid");
+  });
+
+  it("EVERY owner atom is public-paid, including absences", () => {
+    const absence = buildOwnerFactAbsenceAtom(
+      {
+        parcelNodeId: "48021:27303",
+        taxYear: 2026,
+        absenceKind: "owner-withheld",
+        reason: "statutory confidentiality election",
+      },
+      PROVENANCE,
+    );
+    const county = buildCountyOwnerCoverageAbsenceAtom(
+      { countyFips: "48021", taxYear: 2026, provenanceScope: ["cad_property"] },
+      PROVENANCE,
+    );
+    expect(absence.accessPolicy).toBe("public-paid");
+    expect(county.accessPolicy).toBe("public-paid");
+  });
+
+  it("builds all four absence kinds incl. statutory owner-withheld", () => {
+    for (const kind of [
+      "no-owner-name",
+      "owner-withheld",
+      "no-cad-row",
+      "join-hold",
+    ] as const) {
+      const atom = buildOwnerFactAbsenceAtom(
+        {
+          parcelNodeId: "48021:27303",
+          taxYear: 2026,
+          absenceKind: kind,
+          reason: `test ${kind}`,
+        },
+        PROVENANCE,
+      );
+      expect(atom.absence?.kind).toBe(kind);
+      expect(atom.ownerName).toBeUndefined();
+      expect(atom.ownerMailingAddress).toBeUndefined();
+    }
+  });
+
+  it("atomDid is stable across runs and distinct per tax year", () => {
+    const a = ownerFactAtomDid({ parcelNodeId: "48021:27303", taxYear: 2026 });
+    const b = ownerFactAtomDid({ parcelNodeId: "48021:27303", taxYear: 2026 });
+    const c = ownerFactAtomDid({ parcelNodeId: "48021:27303", taxYear: 2025 });
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+  });
+
+  describe("deriveExemptionFlags — flags, never raw codes", () => {
+    it("returns undefined when the roll carries no exemption data", () => {
+      expect(deriveExemptionFlags(undefined)).toBeUndefined();
+      expect(deriveExemptionFlags(null)).toBeUndefined();
+      expect(deriveExemptionFlags([])).toBeUndefined();
+      expect(deriveExemptionFlags(["", "  "])).toBeUndefined();
+    });
+
+    it("matches known CAD variants by prefix, not exact equality", () => {
+      // A false negative would assert "no homestead", which is a wrong claim.
+      for (const code of ["HS", "HB", "HS1", "hs"]) {
+        expect(deriveExemptionFlags([code])?.homestead).toBe(true);
+      }
+      for (const code of ["OV65", "O65", "DP", "DI"]) {
+        expect(deriveExemptionFlags([code])?.seniorOrDisability).toBe(true);
+      }
+      for (const code of ["DV1", "DV4", "VET"]) {
+        expect(deriveExemptionFlags([code])?.veteran).toBe(true);
+      }
+      for (const code of ["AG", "1D1", "OS", "TIM"]) {
+        expect(deriveExemptionFlags([code])?.agricultural).toBe(true);
+      }
+    });
+
+    it("reports false — not undefined — for a roll with unrelated codes", () => {
+      const flags = deriveExemptionFlags(["XYZ"]);
+      expect(flags).toEqual({
+        homestead: false,
+        seniorOrDisability: false,
+        agricultural: false,
+        veteran: false,
+      });
+    });
+
+    it("NEVER surfaces a raw exemption code on the atom", () => {
+      const atom = buildPresentOwnerFactAtom(
+        {
+          parcelNodeId: "48021:27303",
+          taxYear: 2026,
+          ownerName: "SAMPLE OWNER LLC",
+          exemptionFlags: deriveExemptionFlags(["HS", "OV65"]),
+        },
+        PROVENANCE,
+      );
+      const serialized = JSON.stringify(atom);
+      expect(serialized).not.toContain("OV65");
+      expect(atom.exemptionFlags).toEqual({
+        homestead: true,
+        seniorOrDisability: true,
+        agricultural: false,
+        veteran: false,
+      });
+    });
+  });
+
+  it("content hash is claim-shaped: stable on re-run, moves on owner change", () => {
+    const base = {
+      parcelNodeId: "48021:27303",
+      taxYear: 2026,
+      sourceTier: "cad-authoritative",
+      ownerName: "SAMPLE OWNER LLC",
+    };
+    expect(ownerFactClaimContentHash(base)).toBe(
+      ownerFactClaimContentHash(base),
+    );
+    expect(ownerFactClaimContentHash(base)).not.toBe(
+      ownerFactClaimContentHash({ ...base, ownerName: "NEW OWNER LLC" }),
+    );
   });
 });
 

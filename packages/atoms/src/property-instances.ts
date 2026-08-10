@@ -15,6 +15,7 @@ import type {
   CadParcelRollAtomInstance as ContractCadParcelRollAtomInstance,
   FloodHazardFactAtomInstance as ContractFloodHazardFactAtomInstance,
   LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
+  OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
   ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
   SetbackMatchBasis,
@@ -44,6 +45,10 @@ export type {
   FloodHazardFactAtomInstance as ContractFloodHazardFactAtomInstance,
   CadParcelRollAtomInstance as ContractCadParcelRollAtomInstance,
   LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
+  OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
+  OwnerExemptionFlags,
+  OwnerFactAbsence,
+  OwnerFactAbsenceKind,
   ParcelKeyKind,
   ParcelNodeAbsence,
   ParcelNodeAbsenceKind,
@@ -78,12 +83,16 @@ export {
   createFloodHazardFact,
   createCadParcelRoll,
   createLandUseFact,
+  createOwnerFact,
   PARCEL_NODE_SCHEMA,
   BUILDING_FOOTPRINT_SCHEMA,
   UTILITY_EASEMENT_SCHEMA,
   FLOOD_HAZARD_FACT_SCHEMA,
   CAD_PARCEL_ROLL_SCHEMA,
   LAND_USE_FACT_SCHEMA,
+  OWNER_FACT_SCHEMA,
+  OWNER_EXEMPTION_FLAGS_SCHEMA,
+  OWNER_FACT_ABSENCE_KINDS,
   parcelNodeAtomDid,
   countyCoverageParcelNodeId,
   PARCEL_NODE_ID_PATTERN,
@@ -104,7 +113,16 @@ export {
  * `land-use-fact` (manifest rails flood / cad / landuse — same UNPUB gap as
  * footprint/easement before #282).
  *
- * All ten are keyed on `parcelNodeId`, which is what
+ * 1.16.0 registration wave adds `owner-fact` (manifest rail OWN, which read
+ * NO ATOM while `cad_property` already carried 4.5M owner rows — the ruling
+ * that owner is `public-paid` predated any atom to carry it; see doc_repo
+ * `90_operations/OPS-15_owner_and_rrc_rail_gap_analysis.md`).
+ *
+ * `owner-fact` is the ONLY entry in this list that is not `public-free`. Its
+ * contract schema pins `public-paid` and rejects anything else, so the gate —
+ * not this list — is what keeps owner identity off the free tier.
+ *
+ * All eleven are keyed on `parcelNodeId`, which is what
  * `listPropertyAtomsByParcelNodeId` and the snapshot partition in
  * `@hauska-engine/storage` assume of anything in this list.
  */
@@ -118,7 +136,8 @@ export type PropertyEntityType =
   | "utility-easement"
   | "flood-hazard-fact"
   | "cad-parcel-roll"
-  | "land-use-fact";
+  | "land-use-fact"
+  | "owner-fact";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "parcel-node",
@@ -131,6 +150,7 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "flood-hazard-fact",
   "cad-parcel-roll",
   "land-use-fact",
+  "owner-fact",
 ];
 
 export type PropertyAtomStatus = "active" | "retired";
@@ -408,6 +428,13 @@ export type CadParcelRollAtomInstance = ContractCadParcelRollAtomInstance &
 export type LandUseFactAtomInstance = ContractLandUseFactAtomInstance &
   EnginePropertyPersistence;
 
+/**
+ * CAD owner identity as persisted by the engine (contract 1.16.0).
+ * The one `public-paid` property atom — see PROPERTY_ENTITY_TYPES.
+ */
+export type OwnerFactAtomInstance = ContractOwnerFactAtomInstance &
+  EnginePropertyPersistence;
+
 export type PropertyAtomInstance =
   | ParcelNodeAtomInstance
   | ZoningFactAtomInstance
@@ -418,7 +445,8 @@ export type PropertyAtomInstance =
   | UtilityEasementAtomInstance
   | FloodHazardFactAtomInstance
   | CadParcelRollAtomInstance
-  | LandUseFactAtomInstance;
+  | LandUseFactAtomInstance
+  | OwnerFactAtomInstance;
 
 export function isPropertyEntityType(
   value: string,

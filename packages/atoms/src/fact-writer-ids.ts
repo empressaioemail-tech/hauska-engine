@@ -66,6 +66,15 @@ export function landUseFactAtomDid(identity: {
   )}`;
 }
 
+export function ownerFactAtomDid(identity: {
+  parcelNodeId: string;
+  taxYear: number;
+}): string {
+  return `ownfact_${fnv1a64Hex(
+    JSON.stringify(["owner-fact", identity.parcelNodeId, identity.taxYear]),
+  )}`;
+}
+
 export function floodHazardFactAtomDid(identity: {
   parcelNodeId: string;
 }): string {
