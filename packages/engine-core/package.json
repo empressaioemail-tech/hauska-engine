@@ -105,11 +105,14 @@
     "write-cad-parcel-roll-county": "tsx scripts/write-cad-parcel-roll-county.mjs",
     "write-land-use-fact-county": "tsx scripts/write-land-use-fact-county.mjs",
     "write-owner-fact-county": "tsx scripts/write-owner-fact-county.mjs",
-    "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs"
+    "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs",
+    "apply-tx-special-district-migration": "node scripts/apply-tx-special-district-migration.mjs",
+    "ingest-tx-special-districts": "node scripts/ingest-tx-special-districts.mjs",
+    "write-special-district-fact-county": "tsx scripts/write-special-district-fact-county.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "@empressaio/atom-contract": "^1.16.0",
+    "@empressaio/atom-contract": "1.18.0",
     "@gltf-transform/core": "^4.2.1",
     "@hauska-engine/adapters": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",

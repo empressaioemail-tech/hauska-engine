@@ -39,6 +39,7 @@ export * from "./cad-parcel-roll-writer.js";
 export * from "./land-use-fact-writer.js";
 export * from "./owner-fact-writer.js";
 export * from "./flood-hazard-fact-writer.js";
+export * from "./special-district-fact-writer.js";
 export * from "./road-instances.js";
 export * from "./boundary-instances.js";
 export * from "./pedestrian-way.js";

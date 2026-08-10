@@ -16,6 +16,7 @@ import type {
   FloodHazardFactAtomInstance as ContractFloodHazardFactAtomInstance,
   LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
   OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
+  SpecialDistrictFactAtomInstance as ContractSpecialDistrictFactAtomInstance,
   ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
   SetbackMatchBasis,
@@ -46,6 +47,8 @@ export type {
   CadParcelRollAtomInstance as ContractCadParcelRollAtomInstance,
   LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
   OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
+  SpecialDistrictAbsence,
+  SpecialDistrictFactAtomInstance as ContractSpecialDistrictFactAtomInstance,
   OwnerExemptionFlags,
   OwnerFactAbsence,
   OwnerFactAbsenceKind,
@@ -84,6 +87,7 @@ export {
   createCadParcelRoll,
   createLandUseFact,
   createOwnerFact,
+  createSpecialDistrictFact,
   PARCEL_NODE_SCHEMA,
   BUILDING_FOOTPRINT_SCHEMA,
   UTILITY_EASEMENT_SCHEMA,
@@ -91,6 +95,7 @@ export {
   CAD_PARCEL_ROLL_SCHEMA,
   LAND_USE_FACT_SCHEMA,
   OWNER_FACT_SCHEMA,
+  SPECIAL_DISTRICT_FACT_SCHEMA,
   OWNER_EXEMPTION_FLAGS_SCHEMA,
   OWNER_FACT_ABSENCE_KINDS,
   parcelNodeAtomDid,
@@ -137,7 +142,8 @@ export type PropertyEntityType =
   | "flood-hazard-fact"
   | "cad-parcel-roll"
   | "land-use-fact"
-  | "owner-fact";
+  | "owner-fact"
+  | "special-district-fact";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "parcel-node",
@@ -151,6 +157,7 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "cad-parcel-roll",
   "land-use-fact",
   "owner-fact",
+  "special-district-fact",
 ];
 
 export type PropertyAtomStatus = "active" | "retired";
@@ -435,6 +442,10 @@ export type LandUseFactAtomInstance = ContractLandUseFactAtomInstance &
 export type OwnerFactAtomInstance = ContractOwnerFactAtomInstance &
   EnginePropertyPersistence;
 
+/** TCEQ water-district membership as persisted by the engine (contract 1.17.0). */
+export type SpecialDistrictFactAtomInstance =
+  ContractSpecialDistrictFactAtomInstance & EnginePropertyPersistence;
+
 export type PropertyAtomInstance =
   | ParcelNodeAtomInstance
   | ZoningFactAtomInstance
@@ -446,7 +457,8 @@ export type PropertyAtomInstance =
   | FloodHazardFactAtomInstance
   | CadParcelRollAtomInstance
   | LandUseFactAtomInstance
-  | OwnerFactAtomInstance;
+  | OwnerFactAtomInstance
+  | SpecialDistrictFactAtomInstance;
 
 export function isPropertyEntityType(
   value: string,
