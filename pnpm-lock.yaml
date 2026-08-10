@@ -36,8 +36,8 @@ importers:
   packages/atom-contract-pin:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.15.0
-        version: 1.15.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.16.0
+        version: 1.16.0(@types/pg@8.20.0)(postgres@3.4.9)
     devDependencies:
       typescript:
         specifier: ~5.7.2
@@ -49,8 +49,8 @@ importers:
   packages/atoms:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.15.0
-        version: 1.15.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.16.0
+        version: 1.16.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/atom-contract-pin':
         specifier: workspace:*
         version: link:../atom-contract-pin
@@ -127,8 +127,8 @@ importers:
         specifier: ^0.78.0
         version: 0.78.0(zod@3.25.76)
       '@empressaio/atom-contract':
-        specifier: ^1.15.0
-        version: 1.15.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.16.0
+        version: 1.16.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@gltf-transform/core':
         specifier: ^4.2.1
         version: 4.4.1
@@ -194,8 +194,8 @@ importers:
   packages/og-sources:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.15.0
-        version: 1.15.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.16.0
+        version: 1.16.0(@types/pg@8.20.0)(postgres@3.4.9)
       cheerio:
         specifier: ^1.0.0
         version: 1.2.0
@@ -216,8 +216,8 @@ importers:
   packages/og-title:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.15.0
-        version: 1.15.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.16.0
+        version: 1.16.0(@types/pg@8.20.0)(postgres@3.4.9)
       pdf-parse:
         specifier: ^1.1.1
         version: 1.1.4
@@ -260,8 +260,8 @@ importers:
         version: link:../storage
     devDependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.15.0
-        version: 1.15.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.16.0
+        version: 1.16.0(@types/pg@8.20.0)(postgres@3.4.9)
       typescript:
         specifier: ~5.7.2
         version: 5.7.3
@@ -288,8 +288,8 @@ importers:
         version: 3.4.9
     devDependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.15.0
-        version: 1.15.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.16.0
+        version: 1.16.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
@@ -303,8 +303,8 @@ importers:
   packages/workspace:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.15.0
-        version: 1.15.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.16.0
+        version: 1.16.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/atoms':
         specifier: workspace:*
         version: link:../atoms
@@ -396,8 +396,8 @@ importers:
   services/retrieval-api:
     dependencies:
       '@empressaio/atom-contract':
-        specifier: ^1.15.0
-        version: 1.15.0(@types/pg@8.20.0)(postgres@3.4.9)
+        specifier: ^1.16.0
+        version: 1.16.0(@types/pg@8.20.0)(postgres@3.4.9)
       '@hauska-engine/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
@@ -545,8 +545,8 @@ packages:
     resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
 
-  '@empressaio/atom-contract@1.15.0':
-    resolution: {integrity: sha512-fX694dAQHlYkK/AS+Bv7mrcrZeEbS1hbhQK5iZPV+tShx09yw6Qc+JqTyAZNNz4ECh43uEr8Lfw/StInvqMtsg==}
+  '@empressaio/atom-contract@1.16.0':
+    resolution: {integrity: sha512-3Qo+iBtROe8ctCjBKh342sm0WVdR/TpmsrRhGlRUPe+ZirA4jAwavVf3UUA1wUM28V6kCOTUghW/zhjrMQ6KdA==}
     engines: {node: '>=18.18.0'}
 
   '@esbuild/aix-ppc64@0.21.5':
@@ -1921,7 +1921,7 @@ snapshots:
 
   '@babel/runtime@7.29.7': {}
 
-  '@empressaio/atom-contract@1.15.0(@types/pg@8.20.0)(postgres@3.4.9)':
+  '@empressaio/atom-contract@1.16.0(@types/pg@8.20.0)(postgres@3.4.9)':
     dependencies:
       drizzle-orm: 0.36.4(@types/pg@8.20.0)(postgres@3.4.9)
       zod: 3.25.76
