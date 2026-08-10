@@ -16,6 +16,12 @@ import {
   type LandUseCountyRunProvenance,
 } from "../land-use-fact/index.js";
 import {
+  buildAtomsForOwnerFactPlan,
+  planCountyOwnerFacts,
+  verifyStoredOwnerFactAtom,
+  type OwnerCountyRunProvenance,
+} from "../owner-fact/index.js";
+import {
   buildAtomsForFloodHazardPlan,
   filterZonesByBBox,
   planCountyFloodHazard,
@@ -37,6 +43,12 @@ const CAD_PROV: CadCountyRunProvenance = {
 const LU_PROV: LandUseCountyRunProvenance = {
   ...CAD_PROV,
   sourceCitation: "test land use",
+};
+
+const OWN_PROV: OwnerCountyRunProvenance = {
+  ...CAD_PROV,
+  sourceAdapter: "cad-property-owner-v1",
+  sourceCitation: "test owner",
 };
 
 const FH_PROV: FloodCountyRunProvenance = {
@@ -184,6 +196,191 @@ describe("planCountyLandUseFacts", () => {
       { countyFips: "48021", taxYear: 2026 },
     );
     expect(blank.counts.absentByKind["no-land-use-code"]).toBe(1);
+  });
+});
+
+describe("planCountyOwnerFacts", () => {
+  it("joins parcels to cad via normalizeForJoin and tags the atom public-paid", () => {
+    const plan = planCountyOwnerFacts(
+      [{ parcelKey: "00027303" }, { parcelKey: "99999" }],
+      [
+        {
+          propId: "27303",
+          taxYear: 2026,
+          ownerName: "SAMPLE OWNER LLC",
+          ownerMailingAddress: "PO BOX 1234, BASTROP, TX 78602",
+          exemptionCodes: ["HS"],
+          sourceVintage: "2026-01-15",
+        },
+      ],
+      { countyFips: "48021", taxYear: 2026 },
+    );
+    expect(plan.counts.present).toBe(1);
+    expect(plan.counts.absentByKind["no-cad-row"]).toBe(1);
+    expect(plan.counts.withMailingAddress).toBe(1);
+
+    const atoms = buildAtomsForOwnerFactPlan(plan, OWN_PROV);
+    const present = atoms.find((a) => a.ownerName === "SAMPLE OWNER LLC");
+    expect(present!.parcelNodeId).toBe("48021:27303");
+    expect(present!.entityId).toBe("48021:27303:2026");
+    expect(present!.accessPolicy).toBe("public-paid");
+    expect(
+      verifyStoredOwnerFactAtom(present, {
+        parcelNodeId: "48021:27303",
+        taxYear: 2026,
+        outcome: "present",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it("reduces exemption codes to flags — no raw code reaches the atom", () => {
+    const plan = planCountyOwnerFacts(
+      [{ parcelKey: "27303" }],
+      [
+        {
+          propId: "27303",
+          taxYear: 2026,
+          ownerName: "SAMPLE OWNER LLC",
+          ownerMailingAddress: null,
+          exemptionCodes: ["HS", "OV65"],
+        },
+      ],
+      { countyFips: "48021", taxYear: 2026 },
+    );
+    const [atom] = buildAtomsForOwnerFactPlan(plan, OWN_PROV);
+    expect(atom.exemptionFlags).toEqual({
+      homestead: true,
+      seniorOrDisability: true,
+      agricultural: false,
+      veteran: false,
+    });
+    expect(JSON.stringify(atom)).not.toContain("OV65");
+  });
+
+  it("HOLD counties emit join-hold; blank owner emits no-owner-name", () => {
+    const hold = planCountyOwnerFacts(
+      [{ parcelKey: "100" }],
+      [
+        {
+          propId: "100",
+          taxYear: 2026,
+          ownerName: "SOMEONE",
+          ownerMailingAddress: null,
+          exemptionCodes: null,
+        },
+      ],
+      { countyFips: "48209", taxYear: 2026 },
+    );
+    expect(hold.hold).toBe(true);
+    expect(hold.counts.absentByKind["join-hold"]).toBe(1);
+
+    const blank = planCountyOwnerFacts(
+      [{ parcelKey: "100" }],
+      [
+        {
+          propId: "100",
+          taxYear: 2026,
+          ownerName: "   ",
+          ownerMailingAddress: null,
+          exemptionCodes: null,
+        },
+      ],
+      { countyFips: "48021", taxYear: 2026 },
+    );
+    expect(blank.counts.absentByKind["no-owner-name"]).toBe(1);
+  });
+
+  it("promotes a PUBLISHED suppression key to owner-withheld, never inferring it", () => {
+    const rows = [
+      {
+        propId: "100",
+        taxYear: 2026,
+        ownerName: "REDACTED BY DISTRICT",
+        ownerMailingAddress: null,
+        exemptionCodes: null,
+      },
+    ];
+    // Without the list: we make the weaker true claim (the name is present).
+    const inferred = planCountyOwnerFacts([{ parcelKey: "100" }], rows, {
+      countyFips: "48021",
+      taxYear: 2026,
+    });
+    expect(inferred.counts.present).toBe(1);
+    expect(inferred.counts.absentByKind["owner-withheld"]).toBe(0);
+
+    // With the district's published list: an ESTABLISHED absence.
+    const declared = planCountyOwnerFacts([{ parcelKey: "100" }], rows, {
+      countyFips: "48021",
+      taxYear: 2026,
+      withheldKeys: new Set(["100"]),
+    });
+    expect(declared.counts.absentByKind["owner-withheld"]).toBe(1);
+    const [atom] = buildAtomsForOwnerFactPlan(declared, OWN_PROV);
+    expect(atom.absence?.kind).toBe("owner-withheld");
+    expect(atom.ownerName).toBeUndefined();
+    // An absence still reveals that we looked — it stays paid.
+    expect(atom.accessPolicy).toBe("public-paid");
+  });
+
+  it("a mailing address never survives without an owner name", () => {
+    const plan = planCountyOwnerFacts(
+      [{ parcelKey: "100" }],
+      [
+        {
+          propId: "100",
+          taxYear: 2026,
+          ownerName: null,
+          ownerMailingAddress: "PO BOX 9, BASTROP, TX 78602",
+          exemptionCodes: null,
+        },
+      ],
+      { countyFips: "48021", taxYear: 2026 },
+    );
+    const [atom] = buildAtomsForOwnerFactPlan(plan, OWN_PROV);
+    expect(atom.absence?.kind).toBe("no-owner-name");
+    expect(atom.ownerMailingAddress).toBeUndefined();
+    expect(JSON.stringify(atom)).not.toContain("PO BOX 9");
+  });
+
+  it("verify REJECTS a stored atom mutated onto the free tier", () => {
+    const plan = planCountyOwnerFacts(
+      [{ parcelKey: "27303" }],
+      [
+        {
+          propId: "27303",
+          taxYear: 2026,
+          ownerName: "SAMPLE OWNER LLC",
+          ownerMailingAddress: null,
+          exemptionCodes: null,
+        },
+      ],
+      { countyFips: "48021", taxYear: 2026 },
+    );
+    const [atom] = buildAtomsForOwnerFactPlan(plan, OWN_PROV);
+    const tampered = { ...atom, accessPolicy: "public-free" };
+    const verdict = verifyStoredOwnerFactAtom(tampered, {
+      parcelNodeId: "48021:27303",
+      taxYear: 2026,
+      outcome: "present",
+    });
+    expect(verdict.ok).toBe(false);
+  });
+
+  it("dedupes parcels sharing a normalized account key", () => {
+    const plan = planCountyOwnerFacts(
+      [{ parcelKey: "00027303" }, { parcelKey: "27303" }],
+      [
+        {
+          propId: "27303",
+          taxYear: 2026,
+          ownerName: "SAMPLE OWNER LLC",
+          ownerMailingAddress: null,
+          exemptionCodes: null,
+        },
+      ],
+      { countyFips: "48021", taxYear: 2026 },
+    );
+    expect(plan.planned.length).toBe(1);
   });
 });
 
