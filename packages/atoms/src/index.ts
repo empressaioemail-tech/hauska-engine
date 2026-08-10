@@ -38,6 +38,7 @@ export * from "./fact-writer-ids.js";
 export * from "./cad-parcel-roll-writer.js";
 export * from "./land-use-fact-writer.js";
 export * from "./owner-fact-writer.js";
+export * from "./well-fact-writer.js";
 export * from "./flood-hazard-fact-writer.js";
 export * from "./road-instances.js";
 export * from "./boundary-instances.js";
