@@ -16,6 +16,7 @@ import type {
   FloodHazardFactAtomInstance as ContractFloodHazardFactAtomInstance,
   LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
   OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
+  RailCorridorFactAtomInstance as ContractRailCorridorFactAtomInstance,
   ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
   SetbackMatchBasis,
@@ -46,6 +47,7 @@ export type {
   CadParcelRollAtomInstance as ContractCadParcelRollAtomInstance,
   LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
   OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
+  RailCorridorFactAtomInstance as ContractRailCorridorFactAtomInstance,
   OwnerExemptionFlags,
   OwnerFactAbsence,
   OwnerFactAbsenceKind,
@@ -84,6 +86,7 @@ export {
   createCadParcelRoll,
   createLandUseFact,
   createOwnerFact,
+  createRailCorridorFact,
   PARCEL_NODE_SCHEMA,
   BUILDING_FOOTPRINT_SCHEMA,
   UTILITY_EASEMENT_SCHEMA,
@@ -93,6 +96,10 @@ export {
   OWNER_FACT_SCHEMA,
   OWNER_EXEMPTION_FLAGS_SCHEMA,
   OWNER_FACT_ABSENCE_KINDS,
+  RAIL_CORRIDOR_FACT_SCHEMA,
+  RAIL_CORRIDOR_DEFAULT_BUFFER_METERS,
+  RAIL_CORRIDOR_STATUS_VALUES,
+  RAIL_CORRIDOR_CLASS_VALUES,
   parcelNodeAtomDid,
   countyCoverageParcelNodeId,
   PARCEL_NODE_ID_PATTERN,
@@ -118,6 +125,9 @@ export {
  * that owner is `public-paid` predated any atom to carry it; see doc_repo
  * `90_operations/OPS-15_owner_and_rrc_rail_gap_analysis.md`).
  *
+ * 1.17.0 registration wave adds `rail-corridor-fact` (manifest rail
+ * rail-corridor — NTAD NARN railroad tracks, NOT RRC oil/gas).
+ *
  * `owner-fact` is the ONLY entry in this list that is not `public-free`. Its
  * contract schema pins `public-paid` and rejects anything else, so the gate —
  * not this list — is what keeps owner identity off the free tier.
@@ -137,7 +147,8 @@ export type PropertyEntityType =
   | "flood-hazard-fact"
   | "cad-parcel-roll"
   | "land-use-fact"
-  | "owner-fact";
+  | "owner-fact"
+  | "rail-corridor-fact";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "parcel-node",
@@ -151,6 +162,7 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "cad-parcel-roll",
   "land-use-fact",
   "owner-fact",
+  "rail-corridor-fact",
 ];
 
 export type PropertyAtomStatus = "active" | "retired";
@@ -435,6 +447,10 @@ export type LandUseFactAtomInstance = ContractLandUseFactAtomInstance &
 export type OwnerFactAtomInstance = ContractOwnerFactAtomInstance &
   EnginePropertyPersistence;
 
+/** NTAD NARN rail corridor proximity as persisted by the engine (contract 1.17.0). */
+export type RailCorridorFactAtomInstance = ContractRailCorridorFactAtomInstance &
+  EnginePropertyPersistence;
+
 export type PropertyAtomInstance =
   | ParcelNodeAtomInstance
   | ZoningFactAtomInstance
@@ -446,7 +462,8 @@ export type PropertyAtomInstance =
   | FloodHazardFactAtomInstance
   | CadParcelRollAtomInstance
   | LandUseFactAtomInstance
-  | OwnerFactAtomInstance;
+  | OwnerFactAtomInstance
+  | RailCorridorFactAtomInstance;
 
 export function isPropertyEntityType(
   value: string,
