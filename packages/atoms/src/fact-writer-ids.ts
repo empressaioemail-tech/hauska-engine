@@ -75,6 +75,15 @@ export function ownerFactAtomDid(identity: {
   )}`;
 }
 
+export function wellFactAtomDid(identity: {
+  parcelNodeId: string;
+  wellKey: string;
+}): string {
+  return `wlfact_${fnv1a64Hex(
+    JSON.stringify(["well-fact", identity.parcelNodeId, identity.wellKey]),
+  )}`;
+}
+
 export function floodHazardFactAtomDid(identity: {
   parcelNodeId: string;
 }): string {

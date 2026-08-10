@@ -17,6 +17,7 @@ import type {
   LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
   OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
   RailCorridorFactAtomInstance as ContractRailCorridorFactAtomInstance,
+  WellFactAtomInstance as ContractWellFactAtomInstance,
   ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
   SetbackMatchBasis,
@@ -48,6 +49,11 @@ export type {
   LandUseFactAtomInstance as ContractLandUseFactAtomInstance,
   OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
   RailCorridorFactAtomInstance as ContractRailCorridorFactAtomInstance,
+  WellFactAtomInstance as ContractWellFactAtomInstance,
+  WellFactAbsence,
+  WellStatus,
+  WellType,
+  WellParcelRelation,
   OwnerExemptionFlags,
   OwnerFactAbsence,
   OwnerFactAbsenceKind,
@@ -87,6 +93,7 @@ export {
   createLandUseFact,
   createOwnerFact,
   createRailCorridorFact,
+  createWellFact,
   PARCEL_NODE_SCHEMA,
   BUILDING_FOOTPRINT_SCHEMA,
   UTILITY_EASEMENT_SCHEMA,
@@ -94,6 +101,7 @@ export {
   CAD_PARCEL_ROLL_SCHEMA,
   LAND_USE_FACT_SCHEMA,
   OWNER_FACT_SCHEMA,
+  WELL_FACT_SCHEMA,
   OWNER_EXEMPTION_FLAGS_SCHEMA,
   OWNER_FACT_ABSENCE_KINDS,
   RAIL_CORRIDOR_FACT_SCHEMA,
@@ -125,8 +133,12 @@ export {
  * that owner is `public-paid` predated any atom to carry it; see doc_repo
  * `90_operations/OPS-15_owner_and_rrc_rail_gap_analysis.md`).
  *
- * 1.17.0 registration wave adds `rail-corridor-fact` (manifest rail
- * rail-corridor — NTAD NARN railroad tracks, NOT RRC oil/gas).
+ * 1.17.0/1.18.0 registration wave adds `rail-corridor-fact` (manifest rail
+ * rail-corridor — NTAD NARN railroad tracks, NOT RRC oil/gas) and
+ * `well-fact` (manifest rail rrc-wells, operations-lens public-record
+ * surface wells from Texas RRC GIS). The two rails were built in parallel
+ * and de-conflicted at the contract repo: rail-corridor-fact shipped
+ * 1.17.0, well-fact 1.18.0.
  *
  * `owner-fact` is the ONLY entry in this list that is not `public-free`. Its
  * contract schema pins `public-paid` and rejects anything else, so the gate —
@@ -148,7 +160,8 @@ export type PropertyEntityType =
   | "cad-parcel-roll"
   | "land-use-fact"
   | "owner-fact"
-  | "rail-corridor-fact";
+  | "rail-corridor-fact"
+  | "well-fact";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "parcel-node",
@@ -163,6 +176,7 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "land-use-fact",
   "owner-fact",
   "rail-corridor-fact",
+  "well-fact",
 ];
 
 export type PropertyAtomStatus = "active" | "retired";
@@ -451,6 +465,10 @@ export type OwnerFactAtomInstance = ContractOwnerFactAtomInstance &
 export type RailCorridorFactAtomInstance = ContractRailCorridorFactAtomInstance &
   EnginePropertyPersistence;
 
+/** RRC surface well on/near parcel as persisted by the engine (contract 1.18.0). */
+export type WellFactAtomInstance = ContractWellFactAtomInstance &
+  EnginePropertyPersistence;
+
 export type PropertyAtomInstance =
   | ParcelNodeAtomInstance
   | ZoningFactAtomInstance
@@ -463,7 +481,8 @@ export type PropertyAtomInstance =
   | CadParcelRollAtomInstance
   | LandUseFactAtomInstance
   | OwnerFactAtomInstance
-  | RailCorridorFactAtomInstance;
+  | RailCorridorFactAtomInstance
+  | WellFactAtomInstance;
 
 export function isPropertyEntityType(
   value: string,
