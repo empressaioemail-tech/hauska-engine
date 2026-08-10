@@ -92,6 +92,19 @@ export function floodHazardFactAtomDid(identity: {
   )}`;
 }
 
+export function railCorridorFactAtomDid(identity: {
+  parcelNodeId: string;
+  bufferMeters: number;
+}): string {
+  return `railfact_${fnv1a64Hex(
+    JSON.stringify([
+      "rail-corridor-fact",
+      identity.parcelNodeId,
+      identity.bufferMeters,
+    ]),
+  )}`;
+}
+
 /**
  * Join-key normalization: strip leading zeros on all-digit ids so a
  * zero-padded CAD token and a TxGIO prop_id address the same account.

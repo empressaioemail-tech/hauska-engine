@@ -106,6 +106,7 @@
     "write-land-use-fact-county": "tsx scripts/write-land-use-fact-county.mjs",
     "write-owner-fact-county": "tsx scripts/write-owner-fact-county.mjs",
     "write-well-fact-county": "tsx scripts/write-well-fact-county.mjs",
+    "write-rail-corridor-fact-county": "tsx scripts/write-rail-corridor-fact-county.mjs",
     "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs"
   },
   "dependencies": {

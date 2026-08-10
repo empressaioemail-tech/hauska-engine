@@ -36,6 +36,12 @@ import {
   buildFloodHazardFactAbsenceAtom,
   buildPresentFloodHazardFactAtom,
 } from "../flood-hazard-fact-writer.js";
+import {
+  buildPresentRailCorridorFactAtom,
+  buildRailCorridorFactAbsenceAtom,
+  railCorridorFactClaimContentHash,
+} from "../rail-corridor-fact-writer.js";
+import { railCorridorFactAtomDid } from "../fact-writer-ids.js";
 
 const PROVENANCE: PropertyFactWriteProvenance = {
   sourceAdapter: "cad-property-ingest-v1",
@@ -384,5 +390,77 @@ describe("flood-hazard-fact writer seam", () => {
     expect(atom.verifiedAbsence?.provenanceScope).toContain(
       "tx_fema_nfhl_flood_zone",
     );
+  });
+});
+
+describe("rail-corridor-fact writer seam", () => {
+  it("mints stable prefixed DIDs including bufferMeters", () => {
+    const did = railCorridorFactAtomDid({
+      parcelNodeId: "48021:27303",
+      bufferMeters: 152.4,
+    });
+    expect(did).toMatch(/^railfact_[0-9a-f]{16}$/);
+  });
+
+  it("builds present-near with status/class and buffer in body", () => {
+    const atom = buildPresentRailCorridorFactAtom(
+      {
+        parcelNodeId: "48021:27303",
+        nearRailCorridor: true,
+        corridorStatus: "active",
+        corridorClass: "mainline",
+        nearestCorridorDistanceMeters: 42.5,
+        atGradeCrossings: [{ crossingId: "416320C", distanceMeters: 88.2 }],
+      },
+      {
+        ...PROVENANCE,
+        contentHash: railCorridorFactClaimContentHash({
+          parcelNodeId: "48021:27303",
+          sourceTier: "ntad-narn",
+          bufferMeters: 152.4,
+          nearRailCorridor: true,
+          corridorStatus: "active",
+          corridorClass: "mainline",
+          nearestCorridorDistanceMeters: 42.5,
+          atGradeCrossings: [{ crossingId: "416320C", distanceMeters: 88.2 }],
+        }),
+      },
+    );
+    expect(atom.entityType).toBe("rail-corridor-fact");
+    expect(atom.bufferMeters).toBe(152.4);
+    expect(atom.accessPolicy).toBe("public-free");
+    expect(atom.atGradeCrossings?.[0]?.crossingId).toBe("416320C");
+  });
+
+  it("builds present-outside with nearRailCorridor false", () => {
+    const atom = buildPresentRailCorridorFactAtom(
+      {
+        parcelNodeId: "48021:99999",
+        nearRailCorridor: false,
+      },
+      {
+        ...PROVENANCE,
+        contentHash: railCorridorFactClaimContentHash({
+          parcelNodeId: "48021:99999",
+          sourceTier: "ntad-narn",
+          bufferMeters: 152.4,
+          nearRailCorridor: false,
+        }),
+      },
+    );
+    expect(atom.nearRailCorridor).toBe(false);
+    expect(atom.corridorStatus).toBeUndefined();
+  });
+
+  it("builds no-parcel-geometry absence", () => {
+    const atom = buildRailCorridorFactAbsenceAtom(
+      {
+        parcelNodeId: "48021:88888",
+        absenceKind: "no-parcel-geometry",
+        reason: "missing ring",
+      },
+      PROVENANCE,
+    );
+    expect(atom.absence?.kind).toBe("no-parcel-geometry");
   });
 });

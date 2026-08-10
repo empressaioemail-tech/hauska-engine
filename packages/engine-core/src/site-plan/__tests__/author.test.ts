@@ -187,10 +187,11 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     expect(result.atom.artifacts["pdf-site-plan"]?.setbackHonestAbsence).toBe(true);
     expect(result.atom.artifacts["dxf-site-plan"]?.setbackHonestAbsence).toBe(true);
 
-    // The honest-absent note is drawn on the PDF; no fabricated F/S/R number.
+    // Zero-inset offset ring must not fabricate buildable area on the PDF header.
     const pdfRef = result.atom.artifacts["pdf-site-plan"]!.ref;
     const pdfBytes = artifactStore.data.get(pdfRef)!;
     const decoded = decodeAllContentStreams(pdfBytes);
+    expect(decoded).toContain("NONE");
     expect(decoded.toLowerCase()).toContain("not specified");
     expect(decoded).not.toMatch(/build-to-line governs/i);
   }, 20_000);
