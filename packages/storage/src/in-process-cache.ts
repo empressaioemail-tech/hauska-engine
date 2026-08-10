@@ -50,19 +50,17 @@ export class HotCache {
 }
 
 export class InProcessIpfsPin implements IpfsPort {
-  private readonly store = new Map<string, string>();
-
   async pin(contentHash: string, body: string): Promise<IpfsPinResult> {
     const cid = `bafy-${contentHash}`;
-    this.store.set(cid, body);
+    // CID is derivable from contentHash; do not retain atom bodies in memory.
     return { cid, size: body.length };
   }
 
-  async fetch(cid: string): Promise<string | null> {
-    return this.store.get(cid) ?? null;
+  async fetch(_cid: string): Promise<string | null> {
+    return null;
   }
 
-  async isPinned(cid: string): Promise<boolean> {
-    return this.store.has(cid);
+  async isPinned(_cid: string): Promise<boolean> {
+    return false;
   }
 }
