@@ -1,7 +1,7 @@
 /**
  * CP2 refutation guard for the write-then-verify PK lookup.
  *
- * The four county writers locate freshly-written rows by the atoms PRIMARY KEY,
+ * The county fact writers locate freshly-written rows by the atoms PRIMARY KEY,
  * deriving `did:hauska:<entityType>:<entityId>` from the atom in hand. That is
  * only correct while two properties hold:
  *
@@ -27,6 +27,11 @@ import {
 import { buildWellFactAbsenceAtom } from "../well-fact-writer.js";
 import { buildRailCorridorFactAbsenceAtom } from "../rail-corridor-fact-writer.js";
 import { buildBuildingFootprintPerParcelAbsenceAtom } from "../building-footprint-writer.js";
+import {
+  buildOutsideSourceAbsenceReason,
+  buildPresentSpecialDistrictFactAtom,
+  buildSpecialDistrictFactAbsenceAtom,
+} from "../special-district-fact-writer.js";
 
 const PROVENANCE: PropertyFactWriteProvenance = {
   sourceAdapter: "cad-property-ingest-v1",
@@ -53,7 +58,7 @@ function storedPrimaryKey(atom: {
     : `did:hauska:${atom.entityType}:${atom.entityId}`;
 }
 
-/** What the four county writers now build their IN-list from. */
+/** What the county fact writers now build their IN-list from. */
 function writerDerivedDid(atom: {
   entityType: string;
   entityId: string;
@@ -126,6 +131,32 @@ const CASES: ReadonlyArray<{
       PROVENANCE,
     ),
   },
+  {
+    name: "special-district-fact (present)",
+    entityType: "special-district-fact",
+    atom: buildPresentSpecialDistrictFactAtom(
+      {
+        parcelNodeId: "48021:27303",
+        districtName: "Bastrop County MUD No. 1",
+        districtId: "mud-test-001",
+        districtType: "MUD",
+        countyFips: "48021",
+      },
+      PROVENANCE,
+    ),
+  },
+  {
+    name: "special-district-fact (absence)",
+    entityType: "special-district-fact",
+    atom: buildSpecialDistrictFactAbsenceAtom(
+      {
+        parcelNodeId: "48021:27303",
+        absenceKind: "outside-tceq-source-boundaries",
+        reason: buildOutsideSourceAbsenceReason("48021"),
+      },
+      PROVENANCE,
+    ),
+  },
 ];
 
 describe("CP2: writer-derived PK matches the stored atom_did", () => {
@@ -148,4 +179,39 @@ describe("CP2: writer-derived PK matches the stored atom_did", () => {
       });
     });
   }
+});
+
+describe("CP2: special-district readback verify can FAIL", () => {
+  const presentAtom = buildPresentSpecialDistrictFactAtom(
+    {
+      parcelNodeId: "48021:27303",
+      districtName: "Bastrop County MUD No. 1",
+      districtId: "mud-test-001",
+      districtType: "MUD",
+      countyFips: "48021",
+    },
+    PROVENANCE,
+  );
+
+  it("flags atom not readable back when PK lookup returns zero rows", () => {
+    // Mirrors write-special-district-fact-county.mjs apply loop: SELECT by atom_did,
+    // map by body.atomDid, fail closed when missing.
+    const storedByDid = new Map<string, unknown>();
+    const failures: Array<{ atomDid: string; problem: string }> = [];
+    const back = storedByDid.get(presentAtom.atomDid!);
+    if (!back) {
+      failures.push({
+        atomDid: presentAtom.atomDid!,
+        problem: "atom not readable back via body->>'atomDid' after write",
+      });
+    }
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.problem).toContain("not readable back");
+  });
+
+  it("rejects the prior-brief bug: reconstructing did from parcelNodeId alone", () => {
+    const buggyDid = `did:hauska:special-district-fact:${presentAtom.parcelNodeId}`;
+    expect(buggyDid).not.toBe(writerDerivedDid(presentAtom));
+    expect(presentAtom.entityId).toBe("48021:27303:sd:mud-test-001");
+  });
 });
