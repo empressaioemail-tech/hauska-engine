@@ -33,7 +33,7 @@ const SOURCE = "rrc-public-viewer-v1";
 /** Data vintage is UNKNOWN at source; observedAt is the fetch timestamp. */
 const SOURCE_VINTAGE = "UNKNOWN";
 const PAGE_SIZE = 1000;
-const INSERT_BATCH = 200;
+const INSERT_BATCH = 1000;
 const LOG_EVERY_PAGES = 50;
 
 const WELL_OUT_FIELDS =
@@ -252,90 +252,156 @@ async function loadOrphanApiSet(apply) {
 }
 
 async function insertWellBatch(sql, batch) {
-  for (const r of batch) {
-    await sql`
-      INSERT INTO tx_rrc_well (
-        well_row_id, uniqid, api, gis_api5, gis_well_number,
-        symnum, gis_symbol_description, reliab, gis_location_source,
-        lng, lat, geometry, west_lng, south_lat, east_lng, north_lat,
-        county_fips, is_orphan, well_status,
-        source, source_vintage, source_citation
-      ) VALUES (
-        ${r.well_row_id}, ${r.uniqid}, ${r.api}, ${r.gis_api5}, ${r.gis_well_number},
-        ${r.symnum}, ${r.gis_symbol_description}, ${r.reliab}, ${r.gis_location_source},
-        ${r.lng}, ${r.lat}, ${sql.json(r.geometry)},
-        ${r.westLng}, ${r.southLat}, ${r.eastLng}, ${r.northLat},
-        ${r.county_fips}, ${r.is_orphan}, ${r.well_status},
-        ${r.source}, ${r.source_vintage}, ${r.source_citation}
-      )
-      ON CONFLICT (well_row_id) DO UPDATE SET
-        uniqid = EXCLUDED.uniqid,
-        api = EXCLUDED.api,
-        gis_api5 = EXCLUDED.gis_api5,
-        gis_well_number = EXCLUDED.gis_well_number,
-        symnum = EXCLUDED.symnum,
-        gis_symbol_description = EXCLUDED.gis_symbol_description,
-        reliab = EXCLUDED.reliab,
-        gis_location_source = EXCLUDED.gis_location_source,
-        lng = EXCLUDED.lng,
-        lat = EXCLUDED.lat,
-        geometry = EXCLUDED.geometry,
-        west_lng = EXCLUDED.west_lng,
-        south_lat = EXCLUDED.south_lat,
-        east_lng = EXCLUDED.east_lng,
-        north_lat = EXCLUDED.north_lat,
-        county_fips = EXCLUDED.county_fips,
-        is_orphan = EXCLUDED.is_orphan,
-        well_status = EXCLUDED.well_status,
-        source = EXCLUDED.source,
-        source_vintage = EXCLUDED.source_vintage,
-        source_citation = EXCLUDED.source_citation,
-        ingested_at = now()
-    `;
-  }
+  if (batch.length === 0) return;
+  const rows = batch.map((r) => ({
+    well_row_id: r.well_row_id,
+    uniqid: r.uniqid,
+    api: r.api,
+    gis_api5: r.gis_api5,
+    gis_well_number: r.gis_well_number,
+    symnum: r.symnum,
+    gis_symbol_description: r.gis_symbol_description,
+    reliab: r.reliab,
+    gis_location_source: r.gis_location_source,
+    lng: r.lng,
+    lat: r.lat,
+    geometry: sql.json(r.geometry),
+    west_lng: r.westLng,
+    south_lat: r.southLat,
+    east_lng: r.eastLng,
+    north_lat: r.northLat,
+    county_fips: r.county_fips,
+    is_orphan: r.is_orphan,
+    well_status: r.well_status,
+    source: r.source,
+    source_vintage: r.source_vintage,
+    source_citation: r.source_citation,
+  }));
+  await sql`
+    INSERT INTO tx_rrc_well ${sql(
+      rows,
+      "well_row_id",
+      "uniqid",
+      "api",
+      "gis_api5",
+      "gis_well_number",
+      "symnum",
+      "gis_symbol_description",
+      "reliab",
+      "gis_location_source",
+      "lng",
+      "lat",
+      "geometry",
+      "west_lng",
+      "south_lat",
+      "east_lng",
+      "north_lat",
+      "county_fips",
+      "is_orphan",
+      "well_status",
+      "source",
+      "source_vintage",
+      "source_citation",
+    )}
+    ON CONFLICT (well_row_id) DO UPDATE SET
+      uniqid = EXCLUDED.uniqid,
+      api = EXCLUDED.api,
+      gis_api5 = EXCLUDED.gis_api5,
+      gis_well_number = EXCLUDED.gis_well_number,
+      symnum = EXCLUDED.symnum,
+      gis_symbol_description = EXCLUDED.gis_symbol_description,
+      reliab = EXCLUDED.reliab,
+      gis_location_source = EXCLUDED.gis_location_source,
+      lng = EXCLUDED.lng,
+      lat = EXCLUDED.lat,
+      geometry = EXCLUDED.geometry,
+      west_lng = EXCLUDED.west_lng,
+      south_lat = EXCLUDED.south_lat,
+      east_lng = EXCLUDED.east_lng,
+      north_lat = EXCLUDED.north_lat,
+      county_fips = EXCLUDED.county_fips,
+      is_orphan = EXCLUDED.is_orphan,
+      well_status = EXCLUDED.well_status,
+      source = EXCLUDED.source,
+      source_vintage = EXCLUDED.source_vintage,
+      source_citation = EXCLUDED.source_citation,
+      ingested_at = now()
+  `;
 }
 
 async function insertPipelineBatch(sql, batch) {
-  for (const r of batch) {
-    await sql`
-      INSERT INTO tx_rrc_pipeline (
-        pipeline_row_id, p5_num, t4permit, operator, system_name,
-        commodity, commodity_description, system_type, status,
-        diameter, interstate, county_fips, county_name,
-        geometry, west_lng, south_lat, east_lng, north_lat,
-        source, source_vintage, source_citation
-      ) VALUES (
-        ${r.pipeline_row_id}, ${r.p5_num}, ${r.t4permit}, ${r.operator}, ${r.system_name},
-        ${r.commodity}, ${r.commodity_description}, ${r.system_type}, ${r.status},
-        ${r.diameter}, ${r.interstate}, ${r.county_fips}, ${r.county_name},
-        ${sql.json(r.geometry)},
-        ${r.westLng}, ${r.southLat}, ${r.eastLng}, ${r.northLat},
-        ${r.source}, ${r.source_vintage}, ${r.source_citation}
-      )
-      ON CONFLICT (pipeline_row_id) DO UPDATE SET
-        p5_num = EXCLUDED.p5_num,
-        t4permit = EXCLUDED.t4permit,
-        operator = EXCLUDED.operator,
-        system_name = EXCLUDED.system_name,
-        commodity = EXCLUDED.commodity,
-        commodity_description = EXCLUDED.commodity_description,
-        system_type = EXCLUDED.system_type,
-        status = EXCLUDED.status,
-        diameter = EXCLUDED.diameter,
-        interstate = EXCLUDED.interstate,
-        county_fips = EXCLUDED.county_fips,
-        county_name = EXCLUDED.county_name,
-        geometry = EXCLUDED.geometry,
-        west_lng = EXCLUDED.west_lng,
-        south_lat = EXCLUDED.south_lat,
-        east_lng = EXCLUDED.east_lng,
-        north_lat = EXCLUDED.north_lat,
-        source = EXCLUDED.source,
-        source_vintage = EXCLUDED.source_vintage,
-        source_citation = EXCLUDED.source_citation,
-        ingested_at = now()
-    `;
-  }
+  if (batch.length === 0) return;
+  const rows = batch.map((r) => ({
+    pipeline_row_id: r.pipeline_row_id,
+    p5_num: r.p5_num,
+    t4permit: r.t4permit,
+    operator: r.operator,
+    system_name: r.system_name,
+    commodity: r.commodity,
+    commodity_description: r.commodity_description,
+    system_type: r.system_type,
+    status: r.status,
+    diameter: r.diameter,
+    interstate: r.interstate,
+    county_fips: r.county_fips,
+    county_name: r.county_name,
+    geometry: sql.json(r.geometry),
+    west_lng: r.westLng,
+    south_lat: r.southLat,
+    east_lng: r.eastLng,
+    north_lat: r.northLat,
+    source: r.source,
+    source_vintage: r.source_vintage,
+    source_citation: r.source_citation,
+  }));
+  await sql`
+    INSERT INTO tx_rrc_pipeline ${sql(
+      rows,
+      "pipeline_row_id",
+      "p5_num",
+      "t4permit",
+      "operator",
+      "system_name",
+      "commodity",
+      "commodity_description",
+      "system_type",
+      "status",
+      "diameter",
+      "interstate",
+      "county_fips",
+      "county_name",
+      "geometry",
+      "west_lng",
+      "south_lat",
+      "east_lng",
+      "north_lat",
+      "source",
+      "source_vintage",
+      "source_citation",
+    )}
+    ON CONFLICT (pipeline_row_id) DO UPDATE SET
+      p5_num = EXCLUDED.p5_num,
+      t4permit = EXCLUDED.t4permit,
+      operator = EXCLUDED.operator,
+      system_name = EXCLUDED.system_name,
+      commodity = EXCLUDED.commodity,
+      commodity_description = EXCLUDED.commodity_description,
+      system_type = EXCLUDED.system_type,
+      status = EXCLUDED.status,
+      diameter = EXCLUDED.diameter,
+      interstate = EXCLUDED.interstate,
+      county_fips = EXCLUDED.county_fips,
+      county_name = EXCLUDED.county_name,
+      geometry = EXCLUDED.geometry,
+      west_lng = EXCLUDED.west_lng,
+      south_lat = EXCLUDED.south_lat,
+      east_lng = EXCLUDED.east_lng,
+      north_lat = EXCLUDED.north_lat,
+      source = EXCLUDED.source,
+      source_vintage = EXCLUDED.source_vintage,
+      source_citation = EXCLUDED.source_citation,
+      ingested_at = now()
+  `;
 }
 
 async function streamInsertWells(sql, orphanApis, apply) {
