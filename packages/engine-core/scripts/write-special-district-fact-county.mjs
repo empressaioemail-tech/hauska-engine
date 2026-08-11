@@ -128,7 +128,8 @@ const summary = {
   atomsBuilt: 0,
   atomsWritten: 0,
   rateEnrichedCount: 0,
-  verifyFailures: 0,
+  verified: 0,
+  verifyFailures: [],
 };
 
 const t0 = performance.now();
@@ -295,14 +296,46 @@ try {
       const slice = atoms.slice(i, i + args.batch);
       await handle.storage.writePropertyAtomsBatch(slice);
       summary.atomsWritten += slice.length;
+      const dids = slice.map((a) => `did:hauska:special-district-fact:${a.entityId}`);
+      const stored = await handle.sql`
+          SELECT body FROM atoms
+          WHERE atom_did IN ${handle.sql(dids)}
+        `;
+      const storedByDid = new Map(stored.map((s) => [s.body?.atomDid, s.body]));
       for (const atom of slice) {
-        const verdict = verifyStoredSpecialDistrictFactAtom(atom, {
+        const back = storedByDid.get(atom.atomDid);
+        if (!back) {
+          summary.verifyFailures.push({
+            atomDid: atom.atomDid,
+            problem: "atom not readable back via body->>'atomDid' after write",
+          });
+          continue;
+        }
+        const verdict = verifyStoredSpecialDistrictFactAtom(back, {
           parcelNodeId: atom.parcelNodeId,
           outcome: atom.absence ? "absent" : "present",
           districtId: atom.districtId,
         });
-        if (!verdict.ok) summary.verifyFailures += 1;
+        if (verdict.ok) summary.verified += 1;
+        else summary.verifyFailures.push(verdict);
       }
+
+      if (summary.verifyFailures.length > 0) {
+        throw new Error(
+          `write-then-verify FAILED on ${summary.verifyFailures.length} atom(s); ` +
+            `first: ${JSON.stringify(summary.verifyFailures[0])}`,
+        );
+      }
+
+      console.log(
+        JSON.stringify({
+          event: "special-district-fact-county.progress",
+          county: args.county,
+          written: summary.atomsWritten,
+          verified: summary.verified,
+          ofTotal: atoms.length,
+        }),
+      );
     }
     console.log(JSON.stringify({ event: "special-district-fact-county.done", ...summary }));
   }
