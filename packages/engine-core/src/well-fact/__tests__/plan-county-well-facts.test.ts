@@ -5,7 +5,11 @@ import {
   planCountyWellFacts,
 } from "../plan-county-well-facts.js";
 import { pointInGeoJson } from "../geo.js";
-import { mapSymnumToWellStatus, mapSymnumToWellType } from "../symnum.js";
+import {
+  mapSymbolDescriptionToWellStatus,
+  mapSymnumToWellStatus,
+  mapSymnumToWellType,
+} from "../symnum.js";
 
 describe("well-fact symnum mapping", () => {
   it("maps producing oil well SYMNUM 4", () => {
@@ -18,9 +22,22 @@ describe("well-fact symnum mapping", () => {
     expect(mapSymnumToWellType(8)).toBe("gas");
   });
 
-  it("maps injection/disposal SYMNUM 11", () => {
-    expect(mapSymnumToWellStatus(11)).toBe("producing");
+  it("maps injection/disposal SYMNUM 11 to unknown status (fail closed)", () => {
+    expect(mapSymnumToWellStatus(11)).toBe("unknown");
     expect(mapSymnumToWellType(11)).toBe("disposal");
+  });
+
+  it("prefers GIS_SYMBOL_DESCRIPTION for permitted location", () => {
+    expect(mapSymbolDescriptionToWellStatus("Permitted Location")).toBe(
+      "permitted",
+    );
+  });
+
+  it("maps unmatched GIS_SYMBOL_DESCRIPTION to unknown", () => {
+    expect(mapSymbolDescriptionToWellStatus("Water Supply Well")).toBe(
+      "unknown",
+    );
+    expect(mapSymbolDescriptionToWellStatus("Core Test")).toBe("unknown");
   });
 });
 
@@ -93,6 +110,7 @@ describe("well-fact county planner", () => {
     if (hit?.outcome === "present") {
       expect(hit.parcelRelation).toBe("near-parcel");
       expect(hit.wellType).toBe("disposal");
+      expect(hit.wellStatus).toBe("unknown");
       expect(hit.proximityDistanceMeters).toBeGreaterThan(0);
     }
   });
