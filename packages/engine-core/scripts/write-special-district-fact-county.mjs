@@ -296,6 +296,13 @@ try {
       const slice = atoms.slice(i, i + args.batch);
       await handle.storage.writePropertyAtomsBatch(slice);
       summary.atomsWritten += slice.length;
+
+      // Look rows up by the atoms PRIMARY KEY (`atom_did`), never by the
+      // `body->>'atomDid'` jsonb expression: no index serves the expression, so
+      // every batch seq-scanned the whole atoms table. StoragePort upserts under
+      // the canonical `did:hauska:<entityType>:<entityId>` form (body.atomDid
+      // stays the contract hash token), so the canonical did is what the PK holds.
+      // `a.entityId` is the exact value written to `entity_id`.
       const dids = slice.map((a) => `did:hauska:special-district-fact:${a.entityId}`);
       const stored = await handle.sql`
           SELECT body FROM atoms

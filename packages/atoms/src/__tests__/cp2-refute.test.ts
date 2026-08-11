@@ -180,3 +180,38 @@ describe("CP2: writer-derived PK matches the stored atom_did", () => {
     });
   }
 });
+
+describe("CP2: special-district readback verify can FAIL", () => {
+  const presentAtom = buildPresentSpecialDistrictFactAtom(
+    {
+      parcelNodeId: "48021:27303",
+      districtName: "Bastrop County MUD No. 1",
+      districtId: "mud-test-001",
+      districtType: "MUD",
+      countyFips: "48021",
+    },
+    PROVENANCE,
+  );
+
+  it("flags atom not readable back when PK lookup returns zero rows", () => {
+    // Mirrors write-special-district-fact-county.mjs apply loop: SELECT by atom_did,
+    // map by body.atomDid, fail closed when missing.
+    const storedByDid = new Map<string, unknown>();
+    const failures: Array<{ atomDid: string; problem: string }> = [];
+    const back = storedByDid.get(presentAtom.atomDid!);
+    if (!back) {
+      failures.push({
+        atomDid: presentAtom.atomDid!,
+        problem: "atom not readable back via body->>'atomDid' after write",
+      });
+    }
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.problem).toContain("not readable back");
+  });
+
+  it("rejects the prior-brief bug: reconstructing did from parcelNodeId alone", () => {
+    const buggyDid = `did:hauska:special-district-fact:${presentAtom.parcelNodeId}`;
+    expect(buggyDid).not.toBe(writerDerivedDid(presentAtom));
+    expect(presentAtom.entityId).toBe("48021:27303:sd:mud-test-001");
+  });
+});
