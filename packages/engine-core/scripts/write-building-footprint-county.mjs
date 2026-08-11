@@ -109,6 +109,43 @@ async function readParcelRoster() {
   `;
 }
 
+async function footprintTableExists() {
+  const rows = await sql`SELECT to_regclass('public.tx_building_footprint') AS reg`;
+  return rows[0]?.reg != null;
+}
+
+async function footprintRowsInCounty(countyFips) {
+  const rows = await sql`
+    SELECT count(*)::int AS n FROM tx_building_footprint WHERE county_fips = ${countyFips}
+  `;
+  return rows[0]?.n ?? 0;
+}
+
+async function loadFootprintsFromTable(countyFips) {
+  const rows = await sql`
+    SELECT footprint_id, geometry
+    FROM tx_building_footprint
+    WHERE county_fips = ${countyFips}
+  `;
+  const features = [];
+  for (const row of rows) {
+    const ring = geometryOuterRing(row.geometry);
+    if (!ring) continue;
+    features.push({
+      footprintId: row.footprint_id,
+      ring,
+    });
+  }
+  return {
+    features,
+    sourceLabel: `tx_building_footprint (${features.length} rows for county ${countyFips})`,
+    partitionsStreamed: 0,
+    featuresScanned: features.length,
+    featuresRead: features.length,
+    peakQueueDepth: 0,
+  };
+}
+
 if (args.listCounties) {
   try {
     const roster = await readParcelRoster();
@@ -234,22 +271,37 @@ try {
       if (page.length < pageSize) break;
     }
 
-    const mlLoad = args.mlProbeOnly
-      ? await probeMlFootprintsForBbox({
-          bbox: countyBbox,
-          ...(args.fixture ? { fixturePath: args.fixture } : {}),
-        })
-      : await loadMlFootprintsForBbox({
-          bbox: countyBbox,
-          ...(args.fixture ? { fixturePath: args.fixture } : {}),
-        });
+    const mlLoadResult = await (async () => {
+      if (!args.fixture && !args.mlProbeOnly) {
+        const hasTable = await footprintTableExists();
+        if (hasTable) {
+          const n = await footprintRowsInCounty(args.county);
+          summary.storeTruth.footprintTablePresent = true;
+          summary.storeTruth.footprintRowsInCounty = n;
+          if (n > 0) {
+            return loadFootprintsFromTable(args.county);
+          }
+        } else {
+          summary.storeTruth.footprintTablePresent = false;
+        }
+      }
+      return args.mlProbeOnly
+        ? probeMlFootprintsForBbox({
+            bbox: countyBbox,
+            ...(args.fixture ? { fixturePath: args.fixture } : {}),
+          })
+        : loadMlFootprintsForBbox({
+            bbox: countyBbox,
+            ...(args.fixture ? { fixturePath: args.fixture } : {}),
+          });
+    })();
 
-    summary.storeTruth.mlSourceLabel = mlLoad.sourceLabel;
+    summary.storeTruth.mlSourceLabel = mlLoadResult.sourceLabel;
     summary.storeTruth.mlStream = {
-      partitionsStreamed: mlLoad.partitionsStreamed,
-      featuresScanned: mlLoad.featuresScanned,
-      featuresRead: mlLoad.featuresRead,
-      peakQueueDepth: mlLoad.peakQueueDepth,
+      partitionsStreamed: mlLoadResult.partitionsStreamed,
+      featuresScanned: mlLoadResult.featuresScanned,
+      featuresRead: mlLoadResult.featuresRead,
+      peakQueueDepth: mlLoadResult.peakQueueDepth,
     };
 
     if (args.mlProbeOnly) {
@@ -257,17 +309,17 @@ try {
         adapterKind: "ml-global-building-footprints",
         sourceTier: "ml-derived",
         sourceUrl: GLOBAL_ML_TEXAS_ZIP_URL,
-        featuresRead: mlLoad.featuresRead,
-        featuresScanned: mlLoad.featuresScanned,
-        partitionsStreamed: mlLoad.partitionsStreamed,
-        peakQueueDepth: mlLoad.peakQueueDepth,
+        featuresRead: mlLoadResult.featuresRead,
+        featuresScanned: mlLoadResult.featuresScanned,
+        partitionsStreamed: mlLoadResult.partitionsStreamed,
+        peakQueueDepth: mlLoadResult.peakQueueDepth,
         mode: "ml-probe-only",
       };
       summary.wallMs = Math.round(performance.now() - t0);
       console.log(JSON.stringify(summary, null, 2));
       if (args.out) writeFileSync(args.out, JSON.stringify(summary, null, 2));
     } else {
-    const plan = planCountyBuildingFootprints(parcelInputs, mlLoad.features, {
+    const plan = planCountyBuildingFootprints(parcelInputs, mlLoadResult.features, {
       countyFips: args.county,
       ...(args.adapterKind ? { footprintAdapterKind: args.adapterKind } : {}),
     });

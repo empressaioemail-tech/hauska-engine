@@ -48,8 +48,12 @@ export {
 } from "./spatial-join.js";
 
 export {
+  bboxArea,
+  bboxContainsPoint,
   bboxContainsRing,
+  bboxFromRing,
   geometryOuterRing,
+  ringCentroid,
   ringToFootprintGeometry,
 } from "./geo.js";
 
