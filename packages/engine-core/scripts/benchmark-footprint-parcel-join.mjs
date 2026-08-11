@@ -127,6 +127,7 @@ async function benchmarkCounty(countyFips) {
     footprints,
   );
   const joinMs = Math.round(performance.now() - tJoin0);
+  const totalMs = footprintQueryMs + parcelQueryMs + joinMs;
 
   return {
     countyFips,
@@ -136,6 +137,7 @@ async function benchmarkCounty(countyFips) {
     footprintQueryMs,
     parcelQueryMs,
     joinMs,
+    totalMs,
     joinStats: {
       footprintsJoined: joinResult.footprintsJoined,
       orphanRejected: joinResult.orphanRejected,

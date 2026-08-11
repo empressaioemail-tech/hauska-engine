@@ -31,7 +31,21 @@ import {
   ringToFootprintGeometry,
 } from "../src/building-footprint/geo.ts";
 
-const BATCH_SIZE = 500;
+const BATCH_SIZE = 2000;
+const INSERT_COLUMNS = [
+  "footprint_row_id",
+  "footprint_id",
+  "geometry",
+  "west_lng",
+  "south_lat",
+  "east_lng",
+  "north_lat",
+  "county_fips",
+  "source",
+  "source_tier",
+  "source_vintage",
+  "source_citation",
+];
 const SOURCE = FOOTPRINT_WRITER_ADAPTER;
 
 function parseArgs(argv) {
@@ -90,14 +104,15 @@ function assignCountyFips(centroid, countyBboxes) {
 }
 
 async function loadCountyBboxes(sql) {
+  // tx_county_boundary has all 254 TX counties; txgio_parcel only ~196 loaded.
   const rows = await sql`
     SELECT county_fips,
-           min(west_lng)::float8 AS west_lng,
-           min(south_lat)::float8 AS south_lat,
-           max(east_lng)::float8 AS east_lng,
-           max(north_lat)::float8 AS north_lat
-    FROM txgio_parcel
-    GROUP BY county_fips
+           west_lng::float8 AS west_lng,
+           south_lat::float8 AS south_lat,
+           east_lng::float8 AS east_lng,
+           north_lat::float8 AS north_lat
+    FROM tx_county_boundary
+    WHERE state_fips = '48'
     ORDER BY county_fips
   `;
   return rows.map((r) => ({
@@ -130,64 +145,47 @@ async function postgisGeomAvailable(sql) {
 
 async function insertBatch(sql, batch, usePostgisGeom) {
   if (batch.length === 0) return;
+
+  const insertRows = batch.map((r) => ({
+    footprint_row_id: r.footprint_row_id,
+    footprint_id: r.footprint_id,
+    geometry: sql.json(r.geometry),
+    west_lng: r.westLng,
+    south_lat: r.southLat,
+    east_lng: r.eastLng,
+    north_lat: r.northLat,
+    county_fips: r.county_fips,
+    source: r.source,
+    source_tier: r.source_tier,
+    source_vintage: r.source_vintage,
+    source_citation: r.source_citation,
+  }));
+
+  await sql`
+    INSERT INTO tx_building_footprint ${sql(insertRows, ...INSERT_COLUMNS)}
+    ON CONFLICT (footprint_row_id) DO UPDATE SET
+      footprint_id = EXCLUDED.footprint_id,
+      geometry = EXCLUDED.geometry,
+      west_lng = EXCLUDED.west_lng,
+      south_lat = EXCLUDED.south_lat,
+      east_lng = EXCLUDED.east_lng,
+      north_lat = EXCLUDED.north_lat,
+      county_fips = EXCLUDED.county_fips,
+      source = EXCLUDED.source,
+      source_tier = EXCLUDED.source_tier,
+      source_vintage = EXCLUDED.source_vintage,
+      source_citation = EXCLUDED.source_citation,
+      ingested_at = now()
+  `;
+
   if (usePostgisGeom) {
     for (const r of batch) {
       await sql`
-        INSERT INTO tx_building_footprint (
-          footprint_row_id, footprint_id, geometry,
-          west_lng, south_lat, east_lng, north_lat,
-          county_fips, source, source_tier, source_vintage, source_citation,
-          geom
-        ) VALUES (
-          ${r.footprint_row_id}, ${r.footprint_id}, ${sql.json(r.geometry)},
-          ${r.westLng}, ${r.southLat}, ${r.eastLng}, ${r.northLat},
-          ${r.county_fips}, ${r.source}, ${r.source_tier}, ${r.source_vintage}, ${r.source_citation},
-          ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(r.geometry)}), 4326)
-        )
-        ON CONFLICT (footprint_row_id) DO UPDATE SET
-          footprint_id = EXCLUDED.footprint_id,
-          geometry = EXCLUDED.geometry,
-          west_lng = EXCLUDED.west_lng,
-          south_lat = EXCLUDED.south_lat,
-          east_lng = EXCLUDED.east_lng,
-          north_lat = EXCLUDED.north_lat,
-          county_fips = EXCLUDED.county_fips,
-          source = EXCLUDED.source,
-          source_tier = EXCLUDED.source_tier,
-          source_vintage = EXCLUDED.source_vintage,
-          source_citation = EXCLUDED.source_citation,
-          geom = EXCLUDED.geom,
-          ingested_at = now()
+        UPDATE tx_building_footprint
+        SET geom = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(r.geometry)}), 4326)
+        WHERE footprint_row_id = ${r.footprint_row_id}
       `;
     }
-    return;
-  }
-
-  for (const r of batch) {
-    await sql`
-      INSERT INTO tx_building_footprint (
-        footprint_row_id, footprint_id, geometry,
-        west_lng, south_lat, east_lng, north_lat,
-        county_fips, source, source_tier, source_vintage, source_citation
-      ) VALUES (
-        ${r.footprint_row_id}, ${r.footprint_id}, ${sql.json(r.geometry)},
-        ${r.westLng}, ${r.southLat}, ${r.eastLng}, ${r.northLat},
-        ${r.county_fips}, ${r.source}, ${r.source_tier}, ${r.source_vintage}, ${r.source_citation}
-      )
-      ON CONFLICT (footprint_row_id) DO UPDATE SET
-        footprint_id = EXCLUDED.footprint_id,
-        geometry = EXCLUDED.geometry,
-        west_lng = EXCLUDED.west_lng,
-        south_lat = EXCLUDED.south_lat,
-        east_lng = EXCLUDED.east_lng,
-        north_lat = EXCLUDED.north_lat,
-        county_fips = EXCLUDED.county_fips,
-        source = EXCLUDED.source,
-        source_tier = EXCLUDED.source_tier,
-        source_vintage = EXCLUDED.source_vintage,
-        source_citation = EXCLUDED.source_citation,
-        ingested_at = now()
-    `;
   }
 }
 
