@@ -38,8 +38,8 @@ function parseWellFeature(raw: unknown): RrcWellFeature | null {
     geometry?: { coordinates?: unknown };
   };
   const attrs = f.properties ?? {};
-  let lng = Number(attrs.LONG83 ?? attrs.LONG27);
-  let lat = Number(attrs.LAT83 ?? attrs.LAT27);
+  let lng = Number(attrs.GIS_LONG83 ?? attrs.LONG83 ?? attrs.LONG27);
+  let lat = Number(attrs.GIS_LAT83 ?? attrs.LAT83 ?? attrs.LAT27);
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
     const coords = f.geometry?.coordinates;
     if (Array.isArray(coords) && coords.length >= 2) {
@@ -48,11 +48,15 @@ function parseWellFeature(raw: unknown): RrcWellFeature | null {
     }
   }
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  const surfaceId = Number(
+    attrs.SURFACE_ID ?? attrs.UNIQID ?? attrs.OBJECTID ?? 0,
+  );
+  const wellId = String(attrs.WELLID ?? attrs.GIS_WELL_NUMBER ?? "");
   return {
-    surfaceId: Number(attrs.SURFACE_ID ?? 0),
+    surfaceId,
     symnum: Number(attrs.SYMNUM ?? 0),
     api: String(attrs.API ?? ""),
-    wellId: String(attrs.WELLID ?? ""),
+    wellId,
     lng,
     lat,
     reliab: attrs.RELIAB != null ? String(attrs.RELIAB) : null,

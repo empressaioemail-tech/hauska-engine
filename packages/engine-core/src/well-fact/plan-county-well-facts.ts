@@ -18,7 +18,6 @@ import {
 } from "./geo.js";
 import {
   buildApiNumber14,
-  deriveOrphanedFlag,
   mapSymnumToWellStatus,
   mapSymnumToWellType,
 } from "./symnum.js";
@@ -150,7 +149,7 @@ export function planCountyWellFacts(
         apiNumber14,
         wellStatus,
         wellType: mapSymnumToWellType(well.symnum),
-        orphaned: deriveOrphanedFlag(well.symnum, wellStatus),
+        orphaned: wellStatus === "plugged-abandoned",
         surfaceLocation: { lng: well.lng, lat: well.lat },
         parcelRelation: on ? "on-parcel" : "near-parcel",
         proximityRadiusMeters: radius,

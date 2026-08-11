@@ -16,6 +16,7 @@ import type {
   CountyWellFactPlan,
   PlannedWellFact,
 } from "./plan-county-well-facts.js";
+import { toContractWellStatus } from "./symnum.js";
 
 export type WellCountyRunProvenance = Omit<
   PropertyFactWriteProvenance,
@@ -31,12 +32,13 @@ export function buildAtomForPlannedWellFact(
   const parcelNodeId = `${countyFips}:${entry.parcelKey}`;
 
   if (entry.outcome === "present") {
+    const wellStatus = toContractWellStatus(entry.wellStatus);
     return buildPresentWellFactAtom(
       {
         parcelNodeId,
         wellKey: entry.wellKey,
         apiNumber14: entry.apiNumber14,
-        wellStatus: entry.wellStatus,
+        wellStatus,
         wellType: entry.wellType,
         orphaned: entry.orphaned,
         surfaceLocation: entry.surfaceLocation,
@@ -51,7 +53,7 @@ export function buildAtomForPlannedWellFact(
           wellKey: entry.wellKey,
           sourceTier: "texas-rrc-gis",
           apiNumber14: entry.apiNumber14,
-          wellStatus: entry.wellStatus,
+          wellStatus,
           wellType: entry.wellType,
           parcelRelation: entry.parcelRelation,
         }),
