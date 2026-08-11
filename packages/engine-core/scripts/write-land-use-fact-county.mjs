@@ -330,11 +330,10 @@ try {
         await handle.storage.writePropertyAtomsBatch(slice);
         summary.atomsWritten += slice.length;
 
-        const dids = slice.map((a) => a.atomDid);
+        const dids = slice.map((a) => `did:hauska:land-use-fact:${a.entityId}`);
         const stored = await handle.sql`
           SELECT body FROM atoms
-          WHERE entity_type = 'land-use-fact'
-            AND body->>'atomDid' IN ${handle.sql(dids)}
+          WHERE atom_did IN ${handle.sql(dids)}
         `;
         const storedByDid = new Map(stored.map((s) => [s.body?.atomDid, s.body]));
         for (const atom of slice) {
@@ -342,7 +341,7 @@ try {
           if (!back) {
             summary.verifyFailures.push({
               atomDid: atom.atomDid,
-              problem: "atom not readable back via body->>'atomDid' after write",
+              problem: "atom not readable back via atom_did column after write",
             });
             continue;
           }

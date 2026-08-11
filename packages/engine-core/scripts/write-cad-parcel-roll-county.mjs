@@ -13,7 +13,11 @@
  *       --county=48021 [--apply] [--batch=500] [--limit=0]
  *
  * Dry-run is the default and constructs the same atoms apply would write.
- * Verify reads `body->>'atomDid'` (StoragePort rewrites the atom_did column).
+ * Verify looks rows up by the `atom_did` PRIMARY KEY column, computing the
+ * canonical did as `did:hauska:cad-parcel-roll:<entityId>`. StoragePort rewrites
+ * the atom_did column, so it does NOT equal `body->>'atomDid'` for this type
+ * (column `did:hauska:cad-parcel-roll:48055:10005:2026` vs body `cadroll_...`);
+ * matching on the jsonb expression is unindexed and seq-scans the atoms table.
  */
 
 import { writeFileSync } from "node:fs";
@@ -292,11 +296,10 @@ try {
         await handle.storage.writePropertyAtomsBatch(slice);
         summary.atomsWritten += slice.length;
 
-        const dids = slice.map((a) => a.atomDid);
+        const dids = slice.map((a) => `did:hauska:cad-parcel-roll:${a.entityId}`);
         const stored = await handle.sql`
           SELECT body FROM atoms
-          WHERE entity_type = 'cad-parcel-roll'
-            AND body->>'atomDid' IN ${handle.sql(dids)}
+          WHERE atom_did IN ${handle.sql(dids)}
         `;
         const storedByDid = new Map(stored.map((s) => [s.body?.atomDid, s.body]));
         for (const atom of slice) {
@@ -304,7 +307,7 @@ try {
           if (!back) {
             summary.verifyFailures.push({
               atomDid: atom.atomDid,
-              problem: "atom not readable back via body->>'atomDid' after write",
+              problem: "atom not readable back via atom_did column after write",
             });
             continue;
           }
