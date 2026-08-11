@@ -255,7 +255,7 @@ try {
   }
 
   if (args.apply && batch.length > 0) {
-    await insertBatch(sql, batch, usePostgisGeom);
+    await insertBatch(sql, batch);
     rowsLoaded += batch.length;
   }
 
