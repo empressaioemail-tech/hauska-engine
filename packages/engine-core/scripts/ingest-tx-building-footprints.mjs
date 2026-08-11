@@ -143,7 +143,7 @@ async function postgisGeomAvailable(sql) {
   }
 }
 
-async function insertBatch(sql, batch, usePostgisGeom) {
+async function insertBatch(sql, batch) {
   if (batch.length === 0) return;
 
   const insertRows = batch.map((r) => ({
@@ -177,16 +177,6 @@ async function insertBatch(sql, batch, usePostgisGeom) {
       source_citation = EXCLUDED.source_citation,
       ingested_at = now()
   `;
-
-  if (usePostgisGeom) {
-    for (const r of batch) {
-      await sql`
-        UPDATE tx_building_footprint
-        SET geom = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(r.geometry)}), 4326)
-        WHERE footprint_row_id = ${r.footprint_row_id}
-      `;
-    }
-  }
 }
 
 const sql = postgres(poolUrl, { max: 4, ssl: "require", prepare: false });
@@ -210,7 +200,7 @@ try {
   const cached = await ensureTexasMlZipCached();
   sourceBytes = cached.bytesOnDisk;
 
-  const usePostgisGeom = args.apply ? await postgisGeomAvailable(sql) : false;
+  const usePostgisGeom = false; // GiST column exists; geom backfill is a separate pass at 10.7M scale.
 
   if (args.apply) {
     await sql`DELETE FROM tx_building_footprint`;
@@ -255,7 +245,7 @@ try {
     if (args.apply) {
       batch.push(rec);
       if (batch.length >= BATCH_SIZE) {
-        await insertBatch(sql, batch, usePostgisGeom);
+        await insertBatch(sql, batch);
         rowsLoaded += batch.length;
         batch = [];
       }
