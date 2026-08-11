@@ -374,10 +374,17 @@ try {
           const retiredAt = new Date().toISOString();
           for (let i = 0; i < orphanIds.length; i += 500) {
             const idSlice = orphanIds.slice(i, i + 500);
+            // PRIMARY KEY lookup, same reason as the verify below: a
+            // `body->>'parcelNodeId' IN (...)` predicate seq-scans the whole
+            // atoms table. parcel-node atom_did is deterministic
+            // (`did:hauska:parcel-node:<parcelNodeId>`), so the orphan ids
+            // map directly onto primary keys.
+            const orphanDids = idSlice.map(
+              (pid) => `did:hauska:parcel-node:${pid}`,
+            );
             const stored = await reconcileHandle.sql`
               SELECT body FROM atoms
-              WHERE entity_type = 'parcel-node'
-                AND body->>'parcelNodeId' IN ${reconcileHandle.sql(idSlice)}
+              WHERE atom_did IN ${reconcileHandle.sql(orphanDids)}
             `;
             for (const s of stored) {
               const orphan = reconcile.orphans.find(
@@ -437,11 +444,23 @@ try {
         summary.atomsWritten += slice.length;
 
         // ---- Write-then-verify on the STORED BYTES (Geometry Law rule 3).
-        const ids = slice.map((a) => a.parcelNodeId);
+        //
+        // LOOK ROWS UP BY THE PRIMARY KEY, never by a jsonb expression.
+        // `body->>'parcelNodeId' IN (...)` is an expression predicate that no
+        // index serves for a large array, so Postgres seq-scans the WHOLE
+        // atoms table once per batch. Measured 2026-08-11 on the live table at
+        // 16.2M rows: 229,382 ms per 5,000-id batch (22 atoms/sec) versus
+        // 399 ms by atom_did (12,531 atoms/sec) — 575x. Past ~11M rows the
+        // table no longer fits cache and the scan turns into physical I/O that
+        // also evicts and dirties pages the sweep's own writes need
+        // (EXPLAIN BUFFERS: read=3,230,674 dirtied=212,124).
+        //
+        // WHAT DID NOT CHANGE: this still reads the STORED BYTES back and
+        // re-validates them. Only HOW the rows are located changed.
+        const dids = slice.map((a) => a.atomDid);
         const stored = await handle.sql`
           SELECT body FROM atoms
-          WHERE entity_type = 'parcel-node'
-            AND body->>'parcelNodeId' IN ${handle.sql(ids)}
+          WHERE atom_did IN ${handle.sql(dids)}
         `;
         const storedById = new Map(
           stored.map((s) => [s.body?.parcelNodeId, s.body]),
