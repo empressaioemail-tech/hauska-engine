@@ -70,6 +70,11 @@ if (process.env.RRC_STAGING_INGEST_PATH !== "1") {
   process.exit(1);
 }
 
+/** Windows Node often cannot verify the RRC GIS cert chain; public gov REST only. */
+if (process.env.RRC_STAGING_TLS_INSECURE === "1") {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
 const args = parseArgs(process.argv.slice(2));
 const loadWells = !args.pipelinesOnly;
 const loadPipelines = !args.wellsOnly;
