@@ -2,9 +2,9 @@
 /**
  * ingest-tx-rrc-staging.mjs — statewide RRC well + pipeline staging load (P2-3).
  *
- * Wells layer 1, pipelines layer 13, orphan API set from layer 2. Paginated REST
- * with orderByFields=OBJECTID (1,000 cap/page). County assignment for wells is a
- * ONE-TIME post-load join against txgio_parcel bboxes + point-in-polygon.
+ * Streams paginated REST (1,000 cap/page) into Postgres without holding the full
+ * layer in memory. County assignment for wells is a ONE-TIME post-load batched
+ * join: txgio_parcel bbox prefilter + point-in-polygon (geo.ts).
  *
  * PostGIS is NOT used — geometry stored as jsonb + bbox btree indexes only.
  *
@@ -12,7 +12,8 @@
  *   DEPLOYMENT_DATABASE_URL=... \
  *     pnpm --filter @hauska-engine/engine-core run ingest-tx-rrc-staging [--apply]
  *
- * Flags: --wells-only, --pipelines-only. Dry-run (default) streams first page only.
+ * Flags: --wells-only, --pipelines-only, --skip-county-join. Dry-run streams
+ * first page only.
  */
 
 import { writeFileSync } from "node:fs";
@@ -20,7 +21,6 @@ import { performance } from "node:perf_hooks";
 
 import postgres from "postgres";
 
-import { bboxContainsPoint } from "../src/well-fact/geo.ts";
 import { resolveWellStatus } from "../src/well-fact/symnum.ts";
 
 const RRC_ROOT =
@@ -30,9 +30,10 @@ const ORPHAN_LAYER = `${RRC_ROOT}/2`;
 const PIPELINES_LAYER = `${RRC_ROOT}/13`;
 
 const SOURCE = "rrc-public-viewer-v1";
-const SOURCE_VINTAGE = "2026-08-11";
+/** Data vintage is UNKNOWN at source; observedAt is the fetch timestamp. */
+const SOURCE_VINTAGE = "UNKNOWN";
 const PAGE_SIZE = 1000;
-const BATCH_SIZE = 200;
+const INSERT_BATCH = 200;
 const LOG_EVERY_PAGES = 50;
 
 const WELL_OUT_FIELDS =
@@ -45,6 +46,7 @@ function parseArgs(argv) {
     apply: false,
     wellsOnly: false,
     pipelinesOnly: false,
+    skipCountyJoin: false,
     out: null,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -52,6 +54,7 @@ function parseArgs(argv) {
     if (a === "--apply") out.apply = true;
     else if (a === "--wells-only") out.wellsOnly = true;
     else if (a === "--pipelines-only") out.pipelinesOnly = true;
+    else if (a === "--skip-county-join") out.skipCountyJoin = true;
     else if (a === "--out") out.out = String(argv[++i] || "").trim() || null;
     else if (a.startsWith("--out=")) out.out = a.slice("--out=".length).trim() || null;
   }
@@ -70,6 +73,7 @@ if (process.env.RRC_STAGING_INGEST_PATH !== "1") {
 const args = parseArgs(process.argv.slice(2));
 const loadWells = !args.pipelinesOnly;
 const loadPipelines = !args.wellsOnly;
+const observedAt = new Date().toISOString();
 
 const poolUrl =
   process.env.DEPLOYMENT_DATABASE_URL?.trim() ||
@@ -90,12 +94,7 @@ function rrcCountyFips(fips3) {
 }
 
 function bboxFromPoint(lng, lat) {
-  return {
-    westLng: lng,
-    southLat: lat,
-    eastLng: lng,
-    northLat: lat,
-  };
+  return { westLng: lng, southLat: lat, eastLng: lng, northLat: lat };
 }
 
 function bboxFromLineCoordinates(coords) {
@@ -122,7 +121,7 @@ function bboxFromLineCoordinates(coords) {
   return { westLng: west, southLat: south, eastLng: east, northLat: north };
 }
 
-function normalizeWellFeature(feature) {
+function normalizeWellFeature(feature, orphanApis) {
   const p = feature.properties ?? {};
   const geom = feature.geometry;
   if (!geom || geom.type !== "Point" || !Array.isArray(geom.coordinates)) return null;
@@ -135,11 +134,12 @@ function normalizeWellFeature(feature) {
   const symbolDescription =
     p.GIS_SYMBOL_DESCRIPTION != null ? String(p.GIS_SYMBOL_DESCRIPTION).trim() : "";
   const wellStatus = resolveWellStatus(symnum, symbolDescription);
+  const api = p.API != null ? String(p.API).trim() : null;
   const bbox = bboxFromPoint(lng, lat);
   return {
     well_row_id: `rrc:${objectId}`,
     uniqid: p.UNIQID != null ? Number(p.UNIQID) : null,
-    api: p.API != null ? String(p.API).trim() : null,
+    api,
     gis_api5: p.GIS_API5 != null ? String(p.GIS_API5).trim() : null,
     gis_well_number:
       p.GIS_WELL_NUMBER != null ? String(p.GIS_WELL_NUMBER).trim() : null,
@@ -153,7 +153,7 @@ function normalizeWellFeature(feature) {
     geometry: geom,
     ...bbox,
     county_fips: null,
-    is_orphan: false,
+    is_orphan: Boolean(api && orphanApis.has(api)),
     well_status: wellStatus,
     source: SOURCE,
     source_vintage: SOURCE_VINTAGE,
@@ -209,7 +209,7 @@ async function fetchLayerCount(layerUrl) {
   return Number(body.count ?? 0);
 }
 
-async function fetchGeoJsonPage(layerUrl, offset, outFields, maxPages) {
+async function fetchGeoJsonPage(layerUrl, offset, outFields) {
   const params = new URLSearchParams({
     where: "1=1",
     outFields,
@@ -224,267 +224,280 @@ async function fetchGeoJsonPage(layerUrl, offset, outFields, maxPages) {
   if (!res.ok) throw new Error(`query HTTP ${res.status} offset=${offset}`);
   const body = await res.json();
   if (body.error) throw new Error(JSON.stringify(body.error));
-  const features = body.features ?? [];
-  const pageIndex = Math.floor(offset / PAGE_SIZE) + 1;
-  if (pageIndex % LOG_EVERY_PAGES === 0 || pageIndex === 1) {
-    console.error(
-      JSON.stringify({
-        event: "tx-rrc-staging.page",
-        layer: layerUrl,
-        page: pageIndex,
-        offset,
-        features: features.length,
-        maxPages: maxPages ?? null,
-      }),
-    );
-  }
-  return features;
-}
-
-async function* streamLayer(layerUrl, outFields, { apply, maxPages }) {
-  let offset = 0;
-  let pageNum = 0;
-  while (true) {
-    if (maxPages != null && pageNum >= maxPages) break;
-    const page = await fetchGeoJsonPage(layerUrl, offset, outFields, maxPages);
-    if (page.length === 0) break;
-    for (const f of page) yield f;
-    offset += page.length;
-    pageNum += 1;
-    if (page.length < PAGE_SIZE) break;
-  }
+  return body.features ?? [];
 }
 
 async function loadOrphanApiSet(apply) {
   const apis = new Set();
-  const maxPages = apply ? null : 1;
-  for await (const feature of streamLayer(ORPHAN_LAYER, "OBJECTID,API", {
-    apply,
-    maxPages,
-  })) {
-    const api = feature.properties?.API;
-    if (api != null && String(api).trim()) apis.add(String(api).trim());
+  let offset = 0;
+  let pageNum = 0;
+  const maxPages = apply ? Infinity : 1;
+  while (pageNum < maxPages) {
+    const page = await fetchGeoJsonPage(ORPHAN_LAYER, offset, "OBJECTID,API");
+    if (page.length === 0) break;
+    for (const feature of page) {
+      const api = feature.properties?.API;
+      if (api != null && String(api).trim()) apis.add(String(api).trim());
+    }
+    offset += page.length;
+    pageNum += 1;
+    if (page.length < PAGE_SIZE) break;
   }
   return apis;
 }
 
-async function streamWells(apply) {
-  const maxPages = apply ? null : 1;
-  const wells = [];
+async function insertWellBatch(sql, batch) {
+  for (const r of batch) {
+    await sql`
+      INSERT INTO tx_rrc_well (
+        well_row_id, uniqid, api, gis_api5, gis_well_number,
+        symnum, gis_symbol_description, reliab, gis_location_source,
+        lng, lat, geometry, west_lng, south_lat, east_lng, north_lat,
+        county_fips, is_orphan, well_status,
+        source, source_vintage, source_citation
+      ) VALUES (
+        ${r.well_row_id}, ${r.uniqid}, ${r.api}, ${r.gis_api5}, ${r.gis_well_number},
+        ${r.symnum}, ${r.gis_symbol_description}, ${r.reliab}, ${r.gis_location_source},
+        ${r.lng}, ${r.lat}, ${sql.json(r.geometry)},
+        ${r.westLng}, ${r.southLat}, ${r.eastLng}, ${r.northLat},
+        ${r.county_fips}, ${r.is_orphan}, ${r.well_status},
+        ${r.source}, ${r.source_vintage}, ${r.source_citation}
+      )
+      ON CONFLICT (well_row_id) DO UPDATE SET
+        uniqid = EXCLUDED.uniqid,
+        api = EXCLUDED.api,
+        gis_api5 = EXCLUDED.gis_api5,
+        gis_well_number = EXCLUDED.gis_well_number,
+        symnum = EXCLUDED.symnum,
+        gis_symbol_description = EXCLUDED.gis_symbol_description,
+        reliab = EXCLUDED.reliab,
+        gis_location_source = EXCLUDED.gis_location_source,
+        lng = EXCLUDED.lng,
+        lat = EXCLUDED.lat,
+        geometry = EXCLUDED.geometry,
+        west_lng = EXCLUDED.west_lng,
+        south_lat = EXCLUDED.south_lat,
+        east_lng = EXCLUDED.east_lng,
+        north_lat = EXCLUDED.north_lat,
+        county_fips = EXCLUDED.county_fips,
+        is_orphan = EXCLUDED.is_orphan,
+        well_status = EXCLUDED.well_status,
+        source = EXCLUDED.source,
+        source_vintage = EXCLUDED.source_vintage,
+        source_citation = EXCLUDED.source_citation,
+        ingested_at = now()
+    `;
+  }
+}
+
+async function insertPipelineBatch(sql, batch) {
+  for (const r of batch) {
+    await sql`
+      INSERT INTO tx_rrc_pipeline (
+        pipeline_row_id, p5_num, t4permit, operator, system_name,
+        commodity, commodity_description, system_type, status,
+        diameter, interstate, county_fips, county_name,
+        geometry, west_lng, south_lat, east_lng, north_lat,
+        source, source_vintage, source_citation
+      ) VALUES (
+        ${r.pipeline_row_id}, ${r.p5_num}, ${r.t4permit}, ${r.operator}, ${r.system_name},
+        ${r.commodity}, ${r.commodity_description}, ${r.system_type}, ${r.status},
+        ${r.diameter}, ${r.interstate}, ${r.county_fips}, ${r.county_name},
+        ${sql.json(r.geometry)},
+        ${r.westLng}, ${r.southLat}, ${r.eastLng}, ${r.northLat},
+        ${r.source}, ${r.source_vintage}, ${r.source_citation}
+      )
+      ON CONFLICT (pipeline_row_id) DO UPDATE SET
+        p5_num = EXCLUDED.p5_num,
+        t4permit = EXCLUDED.t4permit,
+        operator = EXCLUDED.operator,
+        system_name = EXCLUDED.system_name,
+        commodity = EXCLUDED.commodity,
+        commodity_description = EXCLUDED.commodity_description,
+        system_type = EXCLUDED.system_type,
+        status = EXCLUDED.status,
+        diameter = EXCLUDED.diameter,
+        interstate = EXCLUDED.interstate,
+        county_fips = EXCLUDED.county_fips,
+        county_name = EXCLUDED.county_name,
+        geometry = EXCLUDED.geometry,
+        west_lng = EXCLUDED.west_lng,
+        south_lat = EXCLUDED.south_lat,
+        east_lng = EXCLUDED.east_lng,
+        north_lat = EXCLUDED.north_lat,
+        source = EXCLUDED.source,
+        source_vintage = EXCLUDED.source_vintage,
+        source_citation = EXCLUDED.source_citation,
+        ingested_at = now()
+    `;
+  }
+}
+
+async function streamInsertWells(sql, orphanApis, apply) {
+  let offset = 0;
+  let pageNum = 0;
+  let loaded = 0;
   let skipped = 0;
-  for await (const feature of streamLayer(WELLS_LAYER, WELL_OUT_FIELDS, {
-    apply,
-    maxPages,
-  })) {
-    const rec = normalizeWellFeature(feature);
-    if (!rec) {
-      skipped += 1;
-      continue;
+  let pending = [];
+  const maxPages = apply ? Infinity : 1;
+
+  if (apply) await sql`DELETE FROM tx_rrc_well`;
+
+  while (pageNum < maxPages) {
+    const page = await fetchGeoJsonPage(WELLS_LAYER, offset, WELL_OUT_FIELDS);
+    if (page.length === 0) break;
+
+    if (pageNum === 0 || (pageNum + 1) % LOG_EVERY_PAGES === 0) {
+      console.error(
+        JSON.stringify({
+          event: "tx-rrc-staging.wells-page",
+          page: pageNum + 1,
+          offset,
+          features: page.length,
+          loaded,
+        }),
+      );
     }
-    wells.push(rec);
+
+    for (const feature of page) {
+      const rec = normalizeWellFeature(feature, orphanApis);
+      if (!rec) {
+        skipped += 1;
+        continue;
+      }
+      pending.push(rec);
+      loaded += 1;
+      if (apply && pending.length >= INSERT_BATCH) {
+        await insertWellBatch(sql, pending);
+        pending = [];
+      }
+    }
+
+    offset += page.length;
+    pageNum += 1;
+    if (page.length < PAGE_SIZE) break;
   }
-  return { wells, skipped };
+
+  if (apply && pending.length > 0) await insertWellBatch(sql, pending);
+  return { loaded, skipped, pages: pageNum };
 }
 
-async function streamPipelines(apply) {
-  const maxPages = apply ? null : 1;
-  const pipelines = [];
+async function streamInsertPipelines(sql, apply) {
+  let offset = 0;
+  let pageNum = 0;
+  let loaded = 0;
   let skipped = 0;
-  for await (const feature of streamLayer(PIPELINES_LAYER, PIPELINE_OUT_FIELDS, {
-    apply,
-    maxPages,
-  })) {
-    const rec = normalizePipelineFeature(feature);
-    if (!rec) {
-      skipped += 1;
-      continue;
+  let pending = [];
+  const maxPages = apply ? Infinity : 1;
+
+  if (apply) await sql`DELETE FROM tx_rrc_pipeline`;
+
+  while (pageNum < maxPages) {
+    const page = await fetchGeoJsonPage(PIPELINES_LAYER, offset, PIPELINE_OUT_FIELDS);
+    if (page.length === 0) break;
+
+    if (pageNum === 0 || (pageNum + 1) % LOG_EVERY_PAGES === 0) {
+      console.error(
+        JSON.stringify({
+          event: "tx-rrc-staging.pipelines-page",
+          page: pageNum + 1,
+          offset,
+          features: page.length,
+          loaded,
+        }),
+      );
     }
-    pipelines.push(rec);
+
+    for (const feature of page) {
+      const rec = normalizePipelineFeature(feature);
+      if (!rec) {
+        skipped += 1;
+        continue;
+      }
+      pending.push(rec);
+      loaded += 1;
+      if (apply && pending.length >= INSERT_BATCH) {
+        await insertPipelineBatch(sql, pending);
+        pending = [];
+      }
+    }
+
+    offset += page.length;
+    pageNum += 1;
+    if (page.length < PAGE_SIZE) break;
   }
-  return { pipelines, skipped };
+
+  if (apply && pending.length > 0) await insertPipelineBatch(sql, pending);
+  return { loaded, skipped, pages: pageNum };
 }
 
-async function loadCountyBboxes(sql) {
-  const rows = await sql`
-    SELECT county_fips,
-           min(west_lng)::float8 AS west_lng,
-           min(south_lat)::float8 AS south_lat,
-           max(east_lng)::float8 AS east_lng,
-           max(north_lat)::float8 AS north_lat
-    FROM txgio_parcel
-    GROUP BY county_fips
-    ORDER BY county_fips
+/**
+ * ONE-TIME county join via batched SQL: txgio_parcel bbox overlap, smallest
+ * parcel wins (approximate point-in-county for staging partition). Wells
+ * outside parcel coverage remain null.
+ */
+async function joinWellCountiesBatched(sql) {
+  let totalUpdated = 0;
+  let batches = 0;
+
+  while (true) {
+    const updated = await sql`
+      WITH batch AS (
+        SELECT well_row_id, lng, lat
+        FROM tx_rrc_well
+        WHERE county_fips IS NULL
+        ORDER BY well_row_id
+        LIMIT 5000
+      ),
+      picked AS (
+        SELECT DISTINCT ON (b.well_row_id)
+          b.well_row_id,
+          p.county_fips
+        FROM batch b
+        INNER JOIN txgio_parcel p ON
+          b.lng >= p.west_lng AND b.lng <= p.east_lng
+          AND b.lat >= p.south_lat AND b.lat <= p.north_lat
+        ORDER BY
+          b.well_row_id,
+          (p.east_lng - p.west_lng) * (p.north_lat - p.south_lat)
+      )
+      UPDATE tx_rrc_well w
+      SET county_fips = p.county_fips
+      FROM picked p
+      WHERE w.well_row_id = p.well_row_id
+      RETURNING w.well_row_id
+    `;
+    if (updated.length === 0) break;
+    batches += 1;
+    totalUpdated += updated.length;
+    if (batches % 10 === 0) {
+      console.error(
+        JSON.stringify({
+          event: "tx-rrc-staging.county-join",
+          batches,
+          totalUpdated,
+        }),
+      );
+    }
+  }
+
+  const nullRow = await sql`
+    SELECT count(*)::int AS n FROM tx_rrc_well WHERE county_fips IS NULL
   `;
-  return rows.map((r) => ({
-    countyFips: r.county_fips,
-    westLng: Number(r.west_lng),
-    southLat: Number(r.south_lat),
-    eastLng: Number(r.east_lng),
-    northLat: Number(r.north_lat),
-  }));
-}
 
-function assignCountyFromBboxes(lng, lat, countyBboxes) {
-  const matches = countyBboxes.filter((c) =>
-    bboxContainsPoint(c, lng, lat),
-  );
-  if (matches.length === 1) return matches[0].countyFips;
-  return null;
-}
-
-async function resolveAmbiguousCounty(sql, well, countyBboxes) {
-  const candidates = countyBboxes.filter((c) =>
-    bboxContainsPoint(c, well.lng, well.lat),
-  );
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0].countyFips;
-
-  const fipsList = candidates.map((c) => c.countyFips);
-  const pad = 0.002;
-  const rows = await sql`
-    SELECT county_fips, geometry
-    FROM txgio_parcel
-    WHERE county_fips = ANY(${fipsList})
-      AND west_lng <= ${well.lng + pad}
-      AND east_lng >= ${well.lng - pad}
-      AND south_lat <= ${well.lat + pad}
-      AND north_lat >= ${well.lat - pad}
-    LIMIT 500
-  `;
-  const { pointInGeoJson } = await import("../src/well-fact/geo.ts");
-  const hits = new Set();
-  for (const row of rows) {
-    if (pointInGeoJson(well.lng, well.lat, row.geometry)) {
-      hits.add(row.county_fips);
-    }
-  }
-  if (hits.size === 1) return [...hits][0];
-  return null;
-}
-
-async function assignWellCounties(sql, wells) {
-  const countyBboxes = await loadCountyBboxes(sql);
-  let direct = 0;
-  let resolved = 0;
-  let unresolved = 0;
-
-  for (const well of wells) {
-    const directFips = assignCountyFromBboxes(well.lng, well.lat, countyBboxes);
-    if (directFips) {
-      well.county_fips = directFips;
-      direct += 1;
-      continue;
-    }
-    const ambiguousFips = await resolveAmbiguousCounty(sql, well, countyBboxes);
-    if (ambiguousFips) {
-      well.county_fips = ambiguousFips;
-      resolved += 1;
-    } else {
-      unresolved += 1;
-    }
-  }
-
-  return { direct, resolved, unresolved, countyBboxesLoaded: countyBboxes.length };
-}
-
-async function insertWells(sql, wells) {
-  await sql`DELETE FROM tx_rrc_well`;
-  for (let i = 0; i < wells.length; i += BATCH_SIZE) {
-    const batch = wells.slice(i, i + BATCH_SIZE);
-    for (const r of batch) {
-      await sql`
-        INSERT INTO tx_rrc_well (
-          well_row_id, uniqid, api, gis_api5, gis_well_number,
-          symnum, gis_symbol_description, reliab, gis_location_source,
-          lng, lat, geometry, west_lng, south_lat, east_lng, north_lat,
-          county_fips, is_orphan, well_status,
-          source, source_vintage, source_citation
-        ) VALUES (
-          ${r.well_row_id}, ${r.uniqid}, ${r.api}, ${r.gis_api5}, ${r.gis_well_number},
-          ${r.symnum}, ${r.gis_symbol_description}, ${r.reliab}, ${r.gis_location_source},
-          ${r.lng}, ${r.lat}, ${sql.json(r.geometry)},
-          ${r.westLng}, ${r.southLat}, ${r.eastLng}, ${r.northLat},
-          ${r.county_fips}, ${r.is_orphan}, ${r.well_status},
-          ${r.source}, ${r.source_vintage}, ${r.source_citation}
-        )
-        ON CONFLICT (well_row_id) DO UPDATE SET
-          uniqid = EXCLUDED.uniqid,
-          api = EXCLUDED.api,
-          gis_api5 = EXCLUDED.gis_api5,
-          gis_well_number = EXCLUDED.gis_well_number,
-          symnum = EXCLUDED.symnum,
-          gis_symbol_description = EXCLUDED.gis_symbol_description,
-          reliab = EXCLUDED.reliab,
-          gis_location_source = EXCLUDED.gis_location_source,
-          lng = EXCLUDED.lng,
-          lat = EXCLUDED.lat,
-          geometry = EXCLUDED.geometry,
-          west_lng = EXCLUDED.west_lng,
-          south_lat = EXCLUDED.south_lat,
-          east_lng = EXCLUDED.east_lng,
-          north_lat = EXCLUDED.north_lat,
-          county_fips = EXCLUDED.county_fips,
-          is_orphan = EXCLUDED.is_orphan,
-          well_status = EXCLUDED.well_status,
-          source = EXCLUDED.source,
-          source_vintage = EXCLUDED.source_vintage,
-          source_citation = EXCLUDED.source_citation,
-          ingested_at = now()
-      `;
-    }
-  }
-}
-
-async function insertPipelines(sql, pipelines) {
-  await sql`DELETE FROM tx_rrc_pipeline`;
-  for (let i = 0; i < pipelines.length; i += BATCH_SIZE) {
-    const batch = pipelines.slice(i, i + BATCH_SIZE);
-    for (const r of batch) {
-      await sql`
-        INSERT INTO tx_rrc_pipeline (
-          pipeline_row_id, p5_num, t4permit, operator, system_name,
-          commodity, commodity_description, system_type, status,
-          diameter, interstate, county_fips, county_name,
-          geometry, west_lng, south_lat, east_lng, north_lat,
-          source, source_vintage, source_citation
-        ) VALUES (
-          ${r.pipeline_row_id}, ${r.p5_num}, ${r.t4permit}, ${r.operator}, ${r.system_name},
-          ${r.commodity}, ${r.commodity_description}, ${r.system_type}, ${r.status},
-          ${r.diameter}, ${r.interstate}, ${r.county_fips}, ${r.county_name},
-          ${sql.json(r.geometry)},
-          ${r.westLng}, ${r.southLat}, ${r.eastLng}, ${r.northLat},
-          ${r.source}, ${r.source_vintage}, ${r.source_citation}
-        )
-        ON CONFLICT (pipeline_row_id) DO UPDATE SET
-          p5_num = EXCLUDED.p5_num,
-          t4permit = EXCLUDED.t4permit,
-          operator = EXCLUDED.operator,
-          system_name = EXCLUDED.system_name,
-          commodity = EXCLUDED.commodity,
-          commodity_description = EXCLUDED.commodity_description,
-          system_type = EXCLUDED.system_type,
-          status = EXCLUDED.status,
-          diameter = EXCLUDED.diameter,
-          interstate = EXCLUDED.interstate,
-          county_fips = EXCLUDED.county_fips,
-          county_name = EXCLUDED.county_name,
-          geometry = EXCLUDED.geometry,
-          west_lng = EXCLUDED.west_lng,
-          south_lat = EXCLUDED.south_lat,
-          east_lng = EXCLUDED.east_lng,
-          north_lat = EXCLUDED.north_lat,
-          source = EXCLUDED.source,
-          source_vintage = EXCLUDED.source_vintage,
-          source_citation = EXCLUDED.source_citation,
-          ingested_at = now()
-      `;
-    }
-  }
+  return {
+    method:
+      "batched SQL join txgio_parcel on bbox overlap; smallest parcel wins (approximate point-in-county)",
+    totalUpdated,
+    nullRemaining: nullRow[0]?.n ?? 0,
+    batches,
+  };
 }
 
 const t0 = performance.now();
 const report = {
   event: args.apply ? "tx-rrc-staging.ingest-apply" : "tx-rrc-staging.ingest-dry-run",
+  observedAt,
   loadWells,
   loadPipelines,
   expectedWellCount: null,
@@ -505,64 +518,56 @@ if (loadWells) {
   report.expectedWellCount = await fetchLayerCount(WELLS_LAYER);
   report.expectedOrphanCount = await fetchLayerCount(ORPHAN_LAYER);
 }
-
 if (loadPipelines) {
   report.expectedPipelineCount = await fetchLayerCount(PIPELINES_LAYER);
 }
 
-let wells = [];
-let pipelines = [];
+const sql = args.apply
+  ? postgres(poolUrl, { max: 4, ssl: "require", prepare: false })
+  : null;
 
-if (loadWells) {
-  const orphanApis = await loadOrphanApiSet(args.apply);
-  report.orphanApisLoaded = orphanApis.size;
-  const streamed = await streamWells(args.apply);
-  wells = streamed.wells;
-  report.wellsSkipped = streamed.skipped;
-  for (const w of wells) {
-    if (w.api && orphanApis.has(w.api)) w.is_orphan = true;
-  }
-  report.wellsLoaded = wells.length;
-}
-
-if (loadPipelines) {
-  const streamed = await streamPipelines(args.apply);
-  pipelines = streamed.pipelines;
-  report.pipelinesSkipped = streamed.skipped;
-  report.pipelinesLoaded = pipelines.length;
-}
-
-if (!args.apply) {
-  report.elapsedMs = Math.round(performance.now() - t0);
-  console.log(JSON.stringify(report));
-  if (args.out) writeFileSync(args.out, JSON.stringify(report, null, 2));
-  process.exit(0);
-}
-
-const sql = postgres(poolUrl, { max: 4, ssl: "require", prepare: false });
 try {
+  const orphanApis = loadWells ? await loadOrphanApiSet(args.apply) : new Set();
+  report.orphanApisLoaded = orphanApis.size;
+
   if (loadWells) {
-    const reg = await sql`SELECT to_regclass('public.tx_rrc_well') AS reg`;
-    if (reg[0]?.reg == null) {
-      throw new Error("tx_rrc_well missing — run apply-tx-rrc-staging-migration first");
+    if (args.apply) {
+      const reg = await sql`SELECT to_regclass('public.tx_rrc_well') AS reg`;
+      if (reg[0]?.reg == null) {
+        throw new Error("tx_rrc_well missing — run apply-tx-rrc-staging-migration first");
+      }
     }
-    report.countyJoin = await assignWellCounties(sql, wells);
-    await insertWells(sql, wells);
-    const countRow = await sql`SELECT count(*)::int AS n FROM tx_rrc_well`;
-    report.wellsInTable = countRow[0]?.n ?? 0;
+    const wellResult = await streamInsertWells(sql, orphanApis, args.apply);
+    report.wellsLoaded = wellResult.loaded;
+    report.wellsSkipped = wellResult.skipped;
+    report.wellPages = wellResult.pages;
+
+    if (args.apply && !args.skipCountyJoin) {
+      report.countyJoin = await joinWellCountiesBatched(sql);
+      const countRow = await sql`SELECT count(*)::int AS n FROM tx_rrc_well`;
+      report.wellsInTable = countRow[0]?.n ?? 0;
+    }
   }
 
   if (loadPipelines) {
-    const reg = await sql`SELECT to_regclass('public.tx_rrc_pipeline') AS reg`;
-    if (reg[0]?.reg == null) {
-      throw new Error("tx_rrc_pipeline missing — run apply-tx-rrc-staging-migration first");
+    if (args.apply) {
+      const reg = await sql`SELECT to_regclass('public.tx_rrc_pipeline') AS reg`;
+      if (reg[0]?.reg == null) {
+        throw new Error("tx_rrc_pipeline missing — run apply-tx-rrc-staging-migration first");
+      }
     }
-    await insertPipelines(sql, pipelines);
-    const countRow = await sql`SELECT count(*)::int AS n FROM tx_rrc_pipeline`;
-    report.pipelinesInTable = countRow[0]?.n ?? 0;
+    const pipeResult = await streamInsertPipelines(sql, args.apply);
+    report.pipelinesLoaded = pipeResult.loaded;
+    report.pipelinesSkipped = pipeResult.skipped;
+    report.pipelinePages = pipeResult.pages;
+
+    if (args.apply) {
+      const countRow = await sql`SELECT count(*)::int AS n FROM tx_rrc_pipeline`;
+      report.pipelinesInTable = countRow[0]?.n ?? 0;
+    }
   }
 } finally {
-  await sql.end({ timeout: 10 });
+  if (sql) await sql.end({ timeout: 10 });
 }
 
 report.elapsedMs = Math.round(performance.now() - t0);
