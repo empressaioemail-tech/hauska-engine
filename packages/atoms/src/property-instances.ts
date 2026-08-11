@@ -144,13 +144,18 @@ export {
  * and de-conflicted at the contract repo: rail-corridor-fact shipped
  * 1.17.0, well-fact 1.18.0.
  *
+ * 1.19.0 registration wave adds `road-node` (manifest roads rail, ordinal 15).
+ * It is `roadNodeId`-keyed, not `parcelNodeId`-keyed — registration here is for
+ * manifest/engine truth only; it is not a member of `PropertyAtomInstance` and
+ * must not satisfy `isPropertyAtomInstance`.
+ *
  * `owner-fact` is the ONLY entry in this list that is not `public-free`. Its
  * contract schema pins `public-paid` and rejects anything else, so the gate —
  * not this list — is what keeps owner identity off the free tier.
  *
- * All eleven are keyed on `parcelNodeId`, which is what
+ * All entries except `road-node` are keyed on `parcelNodeId`, which is what
  * `listPropertyAtomsByParcelNodeId` and the snapshot partition in
- * `@hauska-engine/storage` assume of anything in this list.
+ * `@hauska-engine/storage` assume of anything in `PropertyAtomInstance`.
  */
 export type PropertyEntityType =
   | "parcel-node"
@@ -166,7 +171,8 @@ export type PropertyEntityType =
   | "owner-fact"
   | "rail-corridor-fact"
   | "well-fact"
-  | "special-district-fact";
+  | "special-district-fact"
+  | "road-node";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "parcel-node",
@@ -183,6 +189,7 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "rail-corridor-fact",
   "well-fact",
   "special-district-fact",
+  "road-node",
 ];
 
 export type PropertyAtomStatus = "active" | "retired";
