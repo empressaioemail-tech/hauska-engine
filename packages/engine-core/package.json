@@ -112,7 +112,10 @@
     "write-special-district-fact-county": "tsx scripts/write-special-district-fact-county.mjs",
     "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs",
     "write-road-node-county": "tsx scripts/write-road-node-county.mjs",
-    "write-utility-easement-county": "tsx scripts/write-utility-easement-county.mjs"
+    "write-utility-easement-county": "tsx scripts/write-utility-easement-county.mjs",
+    "apply-tx-zoning-district-staging-migration": "tsx scripts/apply-tx-zoning-district-staging-migration.mjs",
+    "stage-tx-zoning-district": "tsx scripts/stage-tx-zoning-district.mjs",
+    "drain-tx-zoning-district-staging": "tsx scripts/drain-tx-zoning-district-staging.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
