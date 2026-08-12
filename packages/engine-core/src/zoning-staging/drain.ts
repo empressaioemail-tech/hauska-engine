@@ -58,6 +58,12 @@ export type DrainOptions = {
   baseOnly?: boolean;
   cityKey?: string | null;
   countyFips?: string | null;
+  /**
+   * Opt-in only. County-only drain mixes cities (Elgin C-3 ≠ Smithville C-3).
+   * Without this flag, countyFips alone is refused so a writer cannot silently
+   * treat colliding district codes as one ordinance token (CP2-F1).
+   */
+  allowMultiCity?: boolean;
 };
 
 export type DrainResult = {
@@ -150,10 +156,20 @@ export function drainZoningStagingRows(
   const baseOnly = opts.baseOnly !== false;
   const cityKey = opts.cityKey?.trim().toLowerCase() || null;
   const countyFips = opts.countyFips?.trim() || null;
+  const allowMultiCity = opts.allowMultiCity === true;
 
   if (!cityKey && !countyFips) {
     throw new ZoningStagingContractError(
       "drain requires cityKey and/or countyFips",
+    );
+  }
+  // CP2-F1: district codes collide across cities (live: C-3 in both Elgin and
+  // Smithville). County-only drain without an explicit opt-in would let a
+  // future writer mint wrong zoning answers from mixed ordinance tokens.
+  if (!cityKey && countyFips && !allowMultiCity) {
+    throw new ZoningStagingContractError(
+      `drain by countyFips=${countyFips} without cityKey mixes cities; ` +
+        `pass cityKey (preferred) or allowMultiCity=true (explicit multi-city)`,
     );
   }
 

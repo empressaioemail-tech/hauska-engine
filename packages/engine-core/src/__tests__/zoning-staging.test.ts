@@ -137,6 +137,54 @@ describe("CP1-F1 roster geo_id", () => {
 });
 
 describe("district code collision across cities", () => {
+  it("refuses county-only drain without allowMultiCity (CP2-F1)", () => {
+    expect(() =>
+      drainZoningStagingRows(
+        [
+          toDbRow({
+            staging_row_id: "elgin-tx:1",
+            city_key: "elgin-tx",
+            district_code: "C-3",
+          }),
+          toDbRow({
+            staging_row_id: "smithville-tx:1",
+            city_key: "smithville-tx",
+            city_geo_id: "4868456",
+            city_name: "Smithville",
+            district_code: "C-3",
+            geometry_grain: "district-polygon",
+          }),
+        ],
+        { countyFips: "48021" },
+      ),
+    ).toThrow(/without cityKey mixes cities/);
+  });
+
+  it("allowMultiCity opt-in returns mixed cities but keeps cityKey on each row", () => {
+    const drained = drainZoningStagingRows(
+      [
+        toDbRow({
+          staging_row_id: "elgin-tx:1",
+          city_key: "elgin-tx",
+          district_code: "C-3",
+        }),
+        toDbRow({
+          staging_row_id: "smithville-tx:1",
+          city_key: "smithville-tx",
+          city_geo_id: "4868456",
+          city_name: "Smithville",
+          district_code: "C-3",
+          geometry_grain: "district-polygon",
+        }),
+      ],
+      { countyFips: "48021", allowMultiCity: true },
+    );
+    expect(drained.rows).toHaveLength(2);
+    expect(new Set(drained.rows.map((r) => r.cityKey))).toEqual(
+      new Set(["elgin-tx", "smithville-tx"]),
+    );
+  });
+
   it("same districtCode C-3 yields distinct stagingRowIds; drain filters by cityKey", () => {
     const elgin = resolveZoningStagingCity("elgin-tx");
     const smith = resolveZoningStagingCity("smithville-tx");
