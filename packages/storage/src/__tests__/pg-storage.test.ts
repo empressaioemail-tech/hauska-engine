@@ -148,7 +148,7 @@ class FakePgBackend {
       // in-memory set; production SQL pushes jurisdiction/entityType/q + LIMIT.
       if (
         text.includes("entity_type IN") &&
-        text.includes("body->>'parcelNodeId'")
+        (text.includes("entity_id =") || text.includes("body->>'parcelNodeId'"))
       ) {
         let allowed: string[] | null = null;
         let parcelNodeId: string | null = null;
@@ -159,7 +159,12 @@ class FakePgBackend {
             "__sqlIn" in (param as object)
           ) {
             allowed = (param as { __sqlIn: string[] }).__sqlIn;
-          } else if (typeof param === "string" && param.includes(":")) {
+          } else if (
+            typeof param === "string" &&
+            /^\d{5}:/.test(param) &&
+            !param.endsWith(":%")
+          ) {
+            // Prefer bare parcelNodeId over the LIKE pattern param.
             parcelNodeId = param;
           }
         }
@@ -168,7 +173,14 @@ class FakePgBackend {
             .filter((row) => {
               if (allowed && !allowed.includes(row.entity_type)) return false;
               const body = row.body as { parcelNodeId?: string; status?: string };
-              if (parcelNodeId && body.parcelNodeId !== parcelNodeId) return false;
+              if (parcelNodeId) {
+                const entityId = String(row.entity_id ?? "");
+                const matchesEntity =
+                  entityId === parcelNodeId ||
+                  entityId.startsWith(`${parcelNodeId}:`);
+                const matchesBody = body.parcelNodeId === parcelNodeId;
+                if (!matchesEntity && !matchesBody) return false;
+              }
               const status = body.status ?? "active";
               return status === "active";
             })

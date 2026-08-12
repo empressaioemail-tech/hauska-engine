@@ -282,11 +282,20 @@ export class PgStorage implements StoragePort {
     parcelNodeId: string,
   ): Promise<ReadonlyArray<PropertyAtomInstance>> {
     const parcelKeyedTypes = [...PARCEL_KEYED_PROPERTY_ENTITY_TYPES];
+    // CRITICAL: do NOT filter on body->>'parcelNodeId' for the full
+    // parcel-keyed set. atoms_property_parcel_node_idx is a PARTIAL index over
+    // only zoning/setback/envelope/terrain — widening the IN-list forces a
+    // parallel seq scan (~17s+ on prod). entity_id = parcel OR entity_id LIKE
+    // parcel||':%' hits atoms_entity_composite_unique (~30ms) and covers
+    // taxYear / footprint / well suffixes.
     const rows = await this.sql<AtomBodyRow[]>`
       SELECT body
       FROM atoms
       WHERE entity_type IN ${this.sql(parcelKeyedTypes)}
-        AND body->>'parcelNodeId' = ${parcelNodeId}
+        AND (
+          entity_id = ${parcelNodeId}
+          OR entity_id LIKE ${parcelNodeId + ":%"}
+        )
         AND COALESCE(body->>'status', 'active') = 'active'
       ORDER BY entity_type ASC, updated_at DESC
     `;
@@ -295,6 +304,8 @@ export class PgStorage implements StoragePort {
     for (const row of rows) {
       const inst = parseStoredAtom(row.body);
       if (!inst || !isPropertyAtomInstance(inst)) continue;
+      // Defend against entity_id prefix collisions that are not this parcel.
+      if (inst.parcelNodeId !== parcelNodeId) continue;
       const prior = byType.get(inst.entityType);
       if (!prior) {
         byType.set(inst.entityType, inst);
@@ -488,7 +499,15 @@ export class PgStorage implements StoragePort {
     const q = query.q?.trim() ?? "";
     const qPattern = q.length > 0 ? `%${escapeLikePattern(q)}%` : null;
     const parcelPrefix = `${countyFips}:%`;
-    const parcelTypes = [...PARCEL_KEYED_PROPERTY_ENTITY_TYPES];
+    // Roster must stay on the PARTIAL index atoms_property_parcel_node_idx
+    // (zoning/setback/envelope/terrain). Using PARCEL_KEYED_PROPERTY_ENTITY_TYPES
+    // here forces a county-wide seq scan — same class as the MCP1 list timeout.
+    const parcelTypes = [
+      "zoning-fact",
+      "setback-rule",
+      "buildable-envelope",
+      "parcel-terrain-model",
+    ];
 
     let rows: NodeListAggRow[];
     let countRows: Array<{ total: number }>;
