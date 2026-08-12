@@ -240,7 +240,10 @@ export function findZoneAtPointWithGrid(
   grid: FloodZoneGrid,
   zones: ReadonlyArray<FloodZoneFeature>,
 ): FloodZoneFeature | null {
-  const candidateIndices = gatherGridCandidateIndices(lng, lat, grid);
+  // Preserve linear-scan tie order: zones[] index order governs SFHA preference.
+  const candidateIndices = gatherGridCandidateIndices(lng, lat, grid).sort(
+    (a, b) => a - b,
+  );
   const candidates: FloodZoneFeature[] = [];
   for (const zi of candidateIndices) {
     const z = zones[zi];

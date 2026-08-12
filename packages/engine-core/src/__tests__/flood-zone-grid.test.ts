@@ -217,6 +217,18 @@ describe("buildFloodZoneGrid + findZoneAtPointWithGrid", () => {
     expect(hit?.zoneRowId).toBe("lshape");
   });
 
+  it("matches linear scan when two SFHA zones overlap (array order wins)", () => {
+    const zones: FloodZoneFeature[] = [
+      squareZone("sfha-first", 1, 1, 5, 5, { fldZone: "AE", sfhaTf: "T" }),
+      squareZone("sfha-second", 2, 2, 4, 4, { fldZone: "AH", sfhaTf: "T" }),
+    ];
+    const grid = buildFloodZoneGrid(zones, { westLng: 0, southLat: 0, eastLng: 6, northLat: 6 })!;
+    const linear = findZoneAtPoint(3, 3, zones);
+    const indexed = findZoneAtPointWithGrid(3, 3, grid, zones);
+    expect(indexed?.zoneRowId).toBe(linear?.zoneRowId);
+    expect(indexed?.zoneRowId).toBe("sfha-first");
+  });
+
   it("prefers SFHA zone when multiple zones overlap", () => {
     const zones: FloodZoneFeature[] = [
       squareZone("non-sfha", 1, 1, 5, 5, { fldZone: "X", sfhaTf: "F" }),
