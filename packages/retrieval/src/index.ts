@@ -410,6 +410,9 @@ export class HybridRetrieval {
       ringWgs84: [],
       storage: this.storage,
     });
+    // Prefer the legacy suppressed slots for zoning/setback/envelope so
+    // atomsByType cannot resurrect a Bastrop stale setback the camelCase
+    // fields already nulled. Other parcel-keyed types come from `resolved`.
     const atomsByType: Record<string, StoredAtomInstance | null> = {};
     for (const entityType of PARCEL_KEYED_PROPERTY_ENTITY_TYPES) {
       let slot: StoredAtomInstance | null = null;
@@ -417,23 +420,7 @@ export class HybridRetrieval {
       else if (entityType === "setback-rule") slot = setbackRule;
       else if (entityType === "buildable-envelope") slot = buildableEnvelope;
       else {
-        const row = resolved.find((r) => r.entityType === entityType);
-        if (row) {
-          if (
-            staleSetbackSuppressed &&
-            entityType === "setback-rule"
-          ) {
-            slot = null;
-          } else if (
-            staleSetbackSuppressed &&
-            entityType === "buildable-envelope" &&
-            !envelopeServeIndependentOfStaleSetback(row)
-          ) {
-            slot = null;
-          } else {
-            slot = row;
-          }
-        }
+        slot = resolved.find((r) => r.entityType === entityType) ?? null;
       }
       atomsByType[entityType] = slot ? withGuaranteedAtomDid(slot) : null;
     }
