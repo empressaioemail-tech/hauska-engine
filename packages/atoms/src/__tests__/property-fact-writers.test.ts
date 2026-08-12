@@ -41,7 +41,15 @@ import {
   buildRailCorridorFactAbsenceAtom,
   railCorridorFactClaimContentHash,
 } from "../rail-corridor-fact-writer.js";
-import { railCorridorFactAtomDid } from "../fact-writer-ids.js";
+import {
+  buildPresentRrcPipelineFactAtom,
+  buildRrcPipelineFactAbsenceAtom,
+  rrcPipelineFactClaimContentHash,
+} from "../rrc-pipeline-fact-writer.js";
+import {
+  railCorridorFactAtomDid,
+  rrcPipelineFactAtomDid,
+} from "../fact-writer-ids.js";
 import {
   buildOutsideSourceAbsenceReason,
   buildPresentSpecialDistrictFactAtom,
@@ -467,6 +475,87 @@ describe("rail-corridor-fact writer seam", () => {
       PROVENANCE,
     );
     expect(atom.absence?.kind).toBe("no-parcel-geometry");
+  });
+});
+
+describe("rrc-pipeline-fact writer seam", () => {
+  it("mints stable pipefact_ DIDs including bufferMeters", () => {
+    const did = rrcPipelineFactAtomDid({
+      parcelNodeId: "48329:1001",
+      bufferMeters: 152.4,
+    });
+    expect(did).toMatch(/^pipefact_[0-9a-f]{16}$/);
+  });
+
+  it("builds present-near with t4permit/p5Num and buffer in body; entityId bare parcelNodeId", () => {
+    const atom = buildPresentRrcPipelineFactAtom(
+      {
+        parcelNodeId: "48329:1001",
+        nearPipeline: true,
+        nearestPipelineDistanceMeters: 42.5,
+        t4permit: "T4-NEAR",
+        p5Num: "555",
+        operatorName: "ACME PIPE",
+        systemName: "Permian Main",
+        commodity: "CRUDE",
+      },
+      {
+        ...PROVENANCE,
+        contentHash: rrcPipelineFactClaimContentHash({
+          parcelNodeId: "48329:1001",
+          sourceTier: "rrc-public-gis",
+          bufferMeters: 152.4,
+          nearPipeline: true,
+          nearestPipelineDistanceMeters: 42.5,
+          t4permit: "T4-NEAR",
+          p5Num: "555",
+          operatorName: "ACME PIPE",
+          systemName: "Permian Main",
+          commodity: "CRUDE",
+        }),
+      },
+    );
+    expect(atom.entityType).toBe("rrc-pipeline-fact");
+    expect(atom.entityId).toBe("48329:1001");
+    expect(atom.bufferMeters).toBe(152.4);
+    expect(atom.accessPolicy).toBe("public-free");
+    expect(atom.t4permit).toBe("T4-NEAR");
+    expect(atom.p5Num).toBe("555");
+    expect(atom.atomDid).toMatch(/^pipefact_/);
+  });
+
+  it("builds present-outside with nearPipeline false", () => {
+    const atom = buildPresentRrcPipelineFactAtom(
+      {
+        parcelNodeId: "48329:99999",
+        nearPipeline: false,
+      },
+      {
+        ...PROVENANCE,
+        contentHash: rrcPipelineFactClaimContentHash({
+          parcelNodeId: "48329:99999",
+          sourceTier: "rrc-public-gis",
+          bufferMeters: 152.4,
+          nearPipeline: false,
+        }),
+      },
+    );
+    expect(atom.nearPipeline).toBe(false);
+    expect(atom.t4permit).toBeUndefined();
+    expect(atom.entityId).toBe("48329:99999");
+  });
+
+  it("builds no-parcel-geometry absence", () => {
+    const atom = buildRrcPipelineFactAbsenceAtom(
+      {
+        parcelNodeId: "48329:88888",
+        absenceKind: "no-parcel-geometry",
+        reason: "missing ring",
+      },
+      PROVENANCE,
+    );
+    expect(atom.absence?.kind).toBe("no-parcel-geometry");
+    expect(atom.entityId).toBe("48329:88888");
   });
 });
 

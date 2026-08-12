@@ -26,6 +26,7 @@ import {
 } from "../owner-fact-writer.js";
 import { buildWellFactAbsenceAtom } from "../well-fact-writer.js";
 import { buildRailCorridorFactAbsenceAtom } from "../rail-corridor-fact-writer.js";
+import { buildRrcPipelineFactAbsenceAtom } from "../rrc-pipeline-fact-writer.js";
 import { buildBuildingFootprintPerParcelAbsenceAtom } from "../building-footprint-writer.js";
 import {
   buildOutsideSourceAbsenceReason,
@@ -110,6 +111,18 @@ const CASES: ReadonlyArray<{
     name: "rail-corridor-fact (absence)",
     entityType: "rail-corridor-fact",
     atom: buildRailCorridorFactAbsenceAtom(
+      {
+        parcelNodeId: "48021:27303",
+        absenceKind: "no-parcel-geometry",
+        reason: "parcel geometry unavailable",
+      },
+      PROVENANCE,
+    ),
+  },
+  {
+    name: "rrc-pipeline-fact (absence)",
+    entityType: "rrc-pipeline-fact",
+    atom: buildRrcPipelineFactAbsenceAtom(
       {
         parcelNodeId: "48021:27303",
         absenceKind: "no-parcel-geometry",
