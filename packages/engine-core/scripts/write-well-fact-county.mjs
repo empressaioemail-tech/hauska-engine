@@ -2,9 +2,9 @@
 /**
  * write-well-fact-county.mjs — `well-fact` writer (rrc-wells rail).
  *
- * Joins txgio_parcel geometry against Texas RRC surface wells fetched live
- * from the Harris County mirror ArcGIS layer (statewide coverage). Carries
- * BOTH on-parcel (PIP) and near-parcel (within named radius) associations.
+ * Joins txgio_parcel geometry against Texas RRC surface wells from staged
+ * `tx_rrc_well` (first-party statewide; NOT the Harris County ArcGIS mirror).
+ * Carries BOTH on-parcel (PIP) and near-parcel (within named radius) associations.
  *
  *   WELL_FACT_PATH=1 \
  *   CORTEX_DATABASE_URL=... \
@@ -23,17 +23,21 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import {
+  STAGED_WELL_ADAPTER,
+  STAGED_WELL_SOURCE,
   WELL_FACT_PROXIMITY_RADIUS_METERS,
   buildAtomsForWellFactPlan,
-  fetchRrcWellsForBBox,
+  fetchRrcWellsFromStagedTable,
   geometryCentroid,
   planCountyWellFacts,
+  stagedWellTableExists,
   verifyStoredWellFactAtom,
 } from "../src/well-fact/index.ts";
 
-const SOURCE_ADAPTER = "texas-rrc-wells-v1";
-const SOURCE_URL =
-  "https://www.gis.hctx.net/arcgishcpid/rest/services/TXRRC/Wells/MapServer/0";
+const SOURCE_ADAPTER = STAGED_WELL_ADAPTER;
+const SOURCE_URL = STAGED_WELL_SOURCE;
+const FORBIDDEN_HARRIS_MIRROR =
+  "gis.hctx.net";
 
 function parseArgs(argv) {
   const out = {
@@ -179,13 +183,24 @@ try {
       northLat: row.north_lat,
     };
 
-    const wellFetch = await fetchRrcWellsForBBox(countyBbox);
+    if (String(SOURCE_URL).includes(FORBIDDEN_HARRIS_MIRROR)) {
+      throw new Error(
+        "REFUSING TO RUN: well-fact source still points at Harris mirror (gis.hctx.net). Use staged tx_rrc_well.",
+      );
+    }
+    const hasStaged = await stagedWellTableExists(sql);
+    if (!hasStaged) {
+      throw new Error("tx_rrc_well missing — run P2.3 staging before well-fact apply");
+    }
+    const wellFetch = await fetchRrcWellsFromStagedTable(sql, countyBbox);
     summary.sourceProbe = {
       layerUrl: SOURCE_URL,
+      source: wellFetch.source,
       featureCount: wellFetch.wells.length,
       fieldNames: wellFetch.fieldNames,
       truncated: wellFetch.truncated,
       countyBbox,
+      harrisMirrorForbidden: true,
     };
 
     summary.storeTruth = {
@@ -193,7 +208,7 @@ try {
       parcelFeatures: row.features,
       countyBbox,
       proximityRadiusMeters: WELL_FACT_PROXIMITY_RADIUS_METERS,
-      note: "on-parcel PIP + near-parcel within named radius; one atom per (parcel, well)",
+      note: "staged tx_rrc_well; on-parcel PIP + near-parcel within named radius; one atom per (parcel, well)",
     };
 
     const parcels = [];
@@ -250,7 +265,7 @@ try {
 
     const provenance = {
       sourceAdapter: SOURCE_ADAPTER,
-      sourceCitation: "Texas RRC public GIS (Harris County mirror) surface wells",
+      sourceCitation: "Texas RRC surface wells staged in tx_rrc_well (first-party statewide)",
       sourceUrl: SOURCE_URL,
       observedAt: new Date().toISOString(),
       jurisdictionTenant: `tx_${args.county}`,
