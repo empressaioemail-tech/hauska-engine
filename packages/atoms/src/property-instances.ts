@@ -18,6 +18,7 @@ import type {
   OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
   SpecialDistrictFactAtomInstance as ContractSpecialDistrictFactAtomInstance,
   RailCorridorFactAtomInstance as ContractRailCorridorFactAtomInstance,
+  RrcPipelineFactAtomInstance as ContractRrcPipelineFactAtomInstance,
   WellFactAtomInstance as ContractWellFactAtomInstance,
   ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
@@ -51,8 +52,10 @@ export type {
   OwnerFactAtomInstance as ContractOwnerFactAtomInstance,
   SpecialDistrictFactAtomInstance as ContractSpecialDistrictFactAtomInstance,
   RailCorridorFactAtomInstance as ContractRailCorridorFactAtomInstance,
+  RrcPipelineFactAtomInstance as ContractRrcPipelineFactAtomInstance,
   WellFactAtomInstance as ContractWellFactAtomInstance,
   WellFactAbsence,
+  RrcPipelineAbsence,
   WellStatus,
   WellType,
   WellParcelRelation,
@@ -96,6 +99,7 @@ export {
   createOwnerFact,
   createSpecialDistrictFact,
   createRailCorridorFact,
+  createRrcPipelineFact,
   createWellFact,
   PARCEL_NODE_SCHEMA,
   BUILDING_FOOTPRINT_SCHEMA,
@@ -112,6 +116,8 @@ export {
   RAIL_CORRIDOR_DEFAULT_BUFFER_METERS,
   RAIL_CORRIDOR_STATUS_VALUES,
   RAIL_CORRIDOR_CLASS_VALUES,
+  RRC_PIPELINE_FACT_SCHEMA,
+  RRC_PIPELINE_DEFAULT_BUFFER_METERS,
   parcelNodeAtomDid,
   countyCoverageParcelNodeId,
   PARCEL_NODE_ID_PATTERN,
@@ -149,6 +155,10 @@ export {
  * manifest/engine truth only; it is not a member of `PropertyAtomInstance` and
  * must not satisfy `isPropertyAtomInstance`.
  *
+ * 1.20.0 registration wave adds `rrc-pipeline-fact` (manifest rrc-pipelines rail
+ * — RRC T-4 pipeline LINE proximity from staged `tx_rrc_pipeline`, NOT railroad
+ * tracks / NTAD NARN and NOT PHMSA NPMS). entityId = bare parcelNodeId.
+ *
  * `owner-fact` is the ONLY entry in this list that is not `public-free`. Its
  * contract schema pins `public-paid` and rejects anything else, so the gate —
  * not this list — is what keeps owner identity off the free tier.
@@ -172,7 +182,8 @@ export type PropertyEntityType =
   | "rail-corridor-fact"
   | "well-fact"
   | "special-district-fact"
-  | "road-node";
+  | "road-node"
+  | "rrc-pipeline-fact";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "parcel-node",
@@ -190,6 +201,7 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "well-fact",
   "special-district-fact",
   "road-node",
+  "rrc-pipeline-fact",
 ];
 
 export type PropertyAtomStatus = "active" | "retired";
@@ -478,6 +490,10 @@ export type OwnerFactAtomInstance = ContractOwnerFactAtomInstance &
 export type RailCorridorFactAtomInstance = ContractRailCorridorFactAtomInstance &
   EnginePropertyPersistence;
 
+/** RRC T-4 pipeline LINE proximity as persisted by the engine (contract 1.20.0). */
+export type RrcPipelineFactAtomInstance = ContractRrcPipelineFactAtomInstance &
+  EnginePropertyPersistence;
+
 /** RRC surface well on/near parcel as persisted by the engine (contract 1.18.0). */
 export type WellFactAtomInstance = ContractWellFactAtomInstance &
   EnginePropertyPersistence;
@@ -498,6 +514,7 @@ export type PropertyAtomInstance =
   | LandUseFactAtomInstance
   | OwnerFactAtomInstance
   | RailCorridorFactAtomInstance
+  | RrcPipelineFactAtomInstance
   | WellFactAtomInstance
   | SpecialDistrictFactAtomInstance;
 

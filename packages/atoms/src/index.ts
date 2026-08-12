@@ -43,6 +43,7 @@ export * from "./owner-fact-writer.js";
 export * from "./well-fact-writer.js";
 export * from "./flood-hazard-fact-writer.js";
 export * from "./rail-corridor-fact-writer.js";
+export * from "./rrc-pipeline-fact-writer.js";
 export * from "./road-instances.js";
 export * from "./boundary-instances.js";
 export * from "./pedestrian-way.js";

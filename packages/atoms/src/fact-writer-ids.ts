@@ -118,6 +118,19 @@ export function railCorridorFactAtomDid(identity: {
   )}`;
 }
 
+export function rrcPipelineFactAtomDid(identity: {
+  parcelNodeId: string;
+  bufferMeters: number;
+}): string {
+  return `pipefact_${fnv1a64Hex(
+    JSON.stringify([
+      "rrc-pipeline-fact",
+      identity.parcelNodeId,
+      identity.bufferMeters,
+    ]),
+  )}`;
+}
+
 export function buildingFootprintAtomDid(identity: {
   parcelNodeId: string;
   footprintId: string;
