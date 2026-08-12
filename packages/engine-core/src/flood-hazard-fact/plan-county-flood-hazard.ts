@@ -11,6 +11,11 @@ import {
   type FloodZoneFeature,
   type LngLat,
 } from "./geo.js";
+import {
+  buildFloodZoneGrid,
+  findZoneAtPointWithGrid,
+  type FloodZoneGrid,
+} from "./flood-zone-grid.js";
 
 export interface FloodParcelInput {
   parcelKey: string;
@@ -57,9 +62,19 @@ export interface CountyFloodHazardPlan {
 export function planCountyFloodHazard(
   parcels: ReadonlyArray<FloodParcelInput>,
   zones: ReadonlyArray<FloodZoneFeature>,
-  opts: { countyFips: string },
+  opts: { countyFips: string; grid?: FloodZoneGrid | null },
 ): CountyFloodHazardPlan {
   const emptyZoneIndex = zones.length === 0;
+  const grid =
+    opts.grid !== undefined
+      ? opts.grid
+      : emptyZoneIndex
+        ? null
+        : buildFloodZoneGrid(zones);
+  const zoneAtPoint = (lng: number, lat: number) =>
+    grid
+      ? findZoneAtPointWithGrid(lng, lat, grid, zones)
+      : findZoneAtPoint(lng, lat, zones);
   const planned: PlannedFloodHazard[] = [];
   let skippedUnusableKey = 0;
   let presentInSfha = 0;
@@ -99,10 +114,9 @@ export function planCountyFloodHazard(
       continue;
     }
 
-    const hit = findZoneAtPoint(
+    const hit = zoneAtPoint(
       parcel.centroid[0],
       parcel.centroid[1],
-      zones,
     );
     if (!hit) {
       planned.push({

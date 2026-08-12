@@ -22,6 +22,7 @@ import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/sto
 
 import {
   buildAtomsForFloodHazardPlan,
+  buildFloodZoneGrid,
   filterZonesByBBox,
   geometryCentroid,
   planCountyFloodHazard,
@@ -173,6 +174,12 @@ const summary = {
   verified: 0,
   verifyFailures: [],
   errors: 0,
+  loadParcelsMs: null,
+  zoneLoadMs: null,
+  gridBuildMs: null,
+  planMs: null,
+  writeMs: null,
+  verifyMs: null,
 };
 
 try {
@@ -217,6 +224,7 @@ try {
 
     // Load parcels (distinct features) with geometry for centroids.
     const parcels = [];
+    const tLoadParcels = performance.now();
     let lastFeature = -1;
     while (true) {
       if (args.limit > 0 && parcels.length >= args.limit) break;
@@ -252,9 +260,11 @@ try {
       lastFeature = page[page.length - 1].feature_index;
       if (page.length < pageSize) break;
     }
+    summary.loadParcelsMs = Math.round(performance.now() - tLoadParcels);
 
     // Bbox-filter NFHL zones to the county extent (+ small pad).
     let zones = [];
+    const tZoneLoad = performance.now();
     if (hasNfhl && nfhlRows > 0) {
       const pad = 0.02;
       const west = countyBbox.westLng - pad;
@@ -293,12 +303,26 @@ try {
         northLat: north,
       });
     }
+    summary.zoneLoadMs = Math.round(performance.now() - tZoneLoad);
 
     summary.storeTruth.zonesLoadedForCounty = zones.length;
 
+    const countyZoneBbox = {
+      westLng: countyBbox.westLng - 0.02,
+      southLat: countyBbox.southLat - 0.02,
+      eastLng: countyBbox.eastLng + 0.02,
+      northLat: countyBbox.northLat + 0.02,
+    };
+    const tGridBuild = performance.now();
+    const grid = zones.length > 0 ? buildFloodZoneGrid(zones, countyZoneBbox) : null;
+    summary.gridBuildMs = Math.round(performance.now() - tGridBuild);
+
+    const tPlan = performance.now();
     const plan = planCountyFloodHazard(parcels, zones, {
       countyFips: args.county,
+      grid,
     });
+    summary.planMs = Math.round(performance.now() - tPlan);
     summary.plan = {
       parcelsRead: plan.parcelsRead,
       zonesIndexed: plan.zonesIndexed,
@@ -345,11 +369,16 @@ try {
         }),
       );
     } else {
+      let writeAccum = 0;
+      let verifyAccum = 0;
       for (let i = 0; i < atoms.length; i += args.batch) {
         const slice = atoms.slice(i, i + args.batch);
+        const tWriteBatch = performance.now();
         await handle.storage.writePropertyAtomsBatch(slice);
+        writeAccum += performance.now() - tWriteBatch;
         summary.atomsWritten += slice.length;
 
+        const tVerifyBatch = performance.now();
         const dids = slice.map((a) => `did:hauska:flood-hazard-fact:${a.entityId}`);
         const stored = await handle.sql`
           SELECT body FROM atoms
@@ -372,6 +401,7 @@ try {
           if (verdict.ok) summary.verified += 1;
           else summary.verifyFailures.push(verdict);
         }
+        verifyAccum += performance.now() - tVerifyBatch;
 
         if (summary.verifyFailures.length > 0) {
           throw new Error(
@@ -390,6 +420,8 @@ try {
           }),
         );
       }
+      summary.writeMs = Math.round(writeAccum);
+      summary.verifyMs = Math.round(verifyAccum);
     }
   }
 

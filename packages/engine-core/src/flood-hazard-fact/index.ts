@@ -17,6 +17,16 @@ export {
 } from "./geo.js";
 
 export {
+  bboxFromZones,
+  buildFloodZoneGrid,
+  countGeometryVertices,
+  findZoneAtPointWithGrid,
+  gatherGridCandidateIndices,
+  FLOOD_ZONE_GRID_VERTEX_BUDGET,
+  type FloodZoneGrid,
+} from "./flood-zone-grid.js";
+
+export {
   planCountyFloodHazard,
   type CountyFloodHazardPlan,
   type FloodParcelInput,
