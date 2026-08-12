@@ -146,6 +146,36 @@ class FakePgBackend {
 
       // Bounded search (and any other body SELECT). Fake returns the small
       // in-memory set; production SQL pushes jurisdiction/entityType/q + LIMIT.
+      if (
+        text.includes("entity_type IN") &&
+        text.includes("body->>'parcelNodeId'")
+      ) {
+        let allowed: string[] | null = null;
+        let parcelNodeId: string | null = null;
+        for (const param of params) {
+          if (
+            param &&
+            typeof param === "object" &&
+            "__sqlIn" in (param as object)
+          ) {
+            allowed = (param as { __sqlIn: string[] }).__sqlIn;
+          } else if (typeof param === "string" && param.includes(":")) {
+            parcelNodeId = param;
+          }
+        }
+        return Promise.resolve(
+          [...backend.atoms.values()]
+            .filter((row) => {
+              if (allowed && !allowed.includes(row.entity_type)) return false;
+              const body = row.body as { parcelNodeId?: string; status?: string };
+              if (parcelNodeId && body.parcelNodeId !== parcelNodeId) return false;
+              const status = body.status ?? "active";
+              return status === "active";
+            })
+            .map((row) => ({ body: row.body })),
+        );
+      }
+
       if (text.startsWith("SELECT body FROM atoms")) {
         return Promise.resolve(
           [...backend.atoms.values()].map((row) => ({ body: row.body })),
@@ -319,4 +349,77 @@ describe("PgStorage", () => {
       parcelNodeId,
     });
   });
+
+  it("listPropertyAtomsByParcelNodeId returns parcel-keyed families including flood-hazard-fact and owner-fact", async () => {
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    const parcelNodeId = "48021:CHAIN-WIDEN";
+    const floodBody = {
+      entityType: "flood-hazard-fact",
+      entityId: parcelNodeId,
+      parcelNodeId,
+      accessPolicy: "public-free",
+      status: "active",
+      inFloodplain: false,
+    };
+    const ownerBody = {
+      entityType: "owner-fact",
+      entityId: `${parcelNodeId}:2025`,
+      parcelNodeId,
+      accessPolicy: "public-paid",
+      status: "active",
+      taxYear: 2025,
+      ownerName: "Chain Widen Stub",
+    };
+    backend.atoms.set("did:hauska:flood-hazard-fact:" + parcelNodeId, {
+      atom_did: "did:hauska:flood-hazard-fact:" + parcelNodeId,
+      cid: "cid-flood",
+      content_hash: "hash-flood",
+      entity_type: "flood-hazard-fact",
+      entity_id: parcelNodeId,
+      jurisdiction_tenant: "bastrop_tx",
+      section_number: null,
+      subsection_path: null,
+      source_adapter: "test",
+      source_url: "https://example.invalid/flood",
+      fetched_at: "2026-08-12T00:00:00.000Z",
+      body: floodBody,
+      access_policy: "public-free",
+    });
+    backend.atoms.set("did:hauska:owner-fact:" + parcelNodeId + ":2025", {
+      atom_did: "did:hauska:owner-fact:" + parcelNodeId + ":2025",
+      cid: "cid-owner",
+      content_hash: "hash-owner",
+      entity_type: "owner-fact",
+      entity_id: `${parcelNodeId}:2025`,
+      jurisdiction_tenant: "bastrop_tx",
+      section_number: null,
+      subsection_path: null,
+      source_adapter: "test",
+      source_url: "https://example.invalid/owner",
+      fetched_at: "2026-08-12T00:00:00.000Z",
+      body: ownerBody,
+      access_policy: "public-paid",
+    });
+    backend.atoms.set("did:hauska:code-section:stub", {
+      atom_did: "did:hauska:code-section:stub",
+      cid: "cid-code",
+      content_hash: "hash-code",
+      entity_type: "code-section",
+      entity_id: "stub",
+      jurisdiction_tenant: "bastrop_tx",
+      section_number: "1",
+      subsection_path: null,
+      source_adapter: "test",
+      source_url: "https://example.invalid/code",
+      fetched_at: "2026-08-12T00:00:00.000Z",
+      body: { entityType: "code-section", parcelNodeId },
+      access_policy: "public-free",
+    });
+
+    const listed = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
+    const types = listed.map((r) => r.entityType).sort();
+    expect(types).toEqual(["flood-hazard-fact", "owner-fact"]);
+  });
+
 });
