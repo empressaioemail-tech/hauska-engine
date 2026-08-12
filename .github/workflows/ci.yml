@@ -65,6 +65,37 @@ jobs:
           fi
           echo "geometry lane LLM grep gate: clean"
 
+      - name: Footprint writer staged-only grep (OPS-16 A-004)
+        run: |
+          WRITER=packages/engine-core/scripts/write-building-footprint-county.mjs
+          for code in STAGED_FOOTPRINT_TABLE_MISSING STAGED_FOOTPRINT_COUNTY_EMPTY STAGED_FOOTPRINT_GEOM_UNREADY; do
+            if ! rg -q "$code" "$WRITER"; then
+              echo "FATAL: county writer must emit $code"
+              exit 1
+            fi
+          done
+          if ! rg -q 'assertStagedFootprintCountyReady' "$WRITER"; then
+            echo "FATAL: county writer must call assertStagedFootprintCountyReady"
+            exit 1
+          fi
+          if ! rg -q 'planCountyStagedFootprints' "$WRITER"; then
+            echo "FATAL: county writer must call planCountyStagedFootprints"
+            exit 1
+          fi
+          if ! rg -q 'joinStagedCandidatePairs' packages/engine-core/src/building-footprint/staged-footprint-join.ts; then
+            echo "FATAL: staged-footprint-join must export joinStagedCandidatePairs (geometry-true attach)"
+            exit 1
+          fi
+          if ! rg -q 'function loadMlForFixtureOrProbe' "$WRITER"; then
+            echo "FATAL: loadMlFootprintsForBbox must be wrapped in loadMlForFixtureOrProbe"
+            exit 1
+          fi
+          if rg -n 'await loadMlFootprintsForBbox' "$WRITER"; then
+            echo "FATAL: unconditional await loadMlFootprintsForBbox in county writer"
+            exit 1
+          fi
+          echo "footprint staged-only grep: clean"
+
       - name: Test
         run: pnpm test
         env:
