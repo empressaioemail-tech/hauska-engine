@@ -27,13 +27,35 @@ export {
 } from "./flood-zone-grid.js";
 
 export {
+  assembleCountyFloodHazardPlan,
+  hasUsableCentroid,
   planCountyFloodHazard,
+  selectPlannableParcels,
   type CountyFloodHazardPlan,
   type FloodParcelInput,
+  type PlannableParcel,
+  type PlannableParcelSelection,
   type PlannedAbsentFloodHazard,
   type PlannedFloodHazard,
   type PlannedPresentFloodHazard,
+  type ResolvedFloodZone,
 } from "./plan-county-flood-hazard.js";
+
+export {
+  candidatesSql,
+  containsSql,
+  countZonesInBBox,
+  defaultPlanBatchSize,
+  firstZoneVintageInBBox,
+  planCountyFloodHazardPostgis,
+  probeFloodZoneGeomReadiness,
+  zoneMajorContainsSql,
+  FLOOD_ZONE_TABLE,
+  type FloodPlanBackend,
+  type FloodZoneGeomReadiness,
+  type PostgisPlanOptions,
+  type PostgisPlanResult,
+} from "./postgis-flood-plan.js";
 
 export {
   buildAtomForPlannedFloodHazard,
