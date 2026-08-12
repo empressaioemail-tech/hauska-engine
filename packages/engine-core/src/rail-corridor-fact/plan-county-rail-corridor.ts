@@ -75,6 +75,7 @@ const STATUS_RANK: Record<RailCorridorStatus, number> = {
   active: 0,
   abandoned: 1,
   "rail-trail": 2,
+  unknown: 3,
 };
 
 function filterCorridorsByBbox(
