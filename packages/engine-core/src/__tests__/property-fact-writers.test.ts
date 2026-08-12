@@ -490,14 +490,16 @@ describe("planCountyOwnerFacts", () => {
     expect(plan.planned.some((p) => p.parcelKey.includes(" "))).toBe(false);
     expect(plan.counts.present).toBe(1);
 
-    // Failure mode is row-level skip: constructing the illegal parcelNodeId
-    // would fail the contract alphabet (not a county-wide Zod abort via .map).
+    // Failure mode is row-level skip: a complete createOwnerFact payload with
+    // only the illegal parcelNodeId must fail the alphabet refine — proving
+    // the abort class is Zod on that row, not a missing-field throw that
+    // would also satisfy a bare .toThrow().
     const illegalParcelNodeId = `48439:${badKey}`;
     expect(PARCEL_NODE_ID_PATTERN.test(illegalParcelNodeId)).toBe(false);
     expect(() =>
       createOwnerFact({
         entityType: "owner-fact",
-        atomDid: "owner_aaaaaaaaaaaaaaaa",
+        atomDid: "ownfact_aaaaaaaaaaaaaaaa",
         parcelNodeId: illegalParcelNodeId,
         taxYear: 2026,
         ownerName: "BAD TOKEN OWNER",
@@ -507,8 +509,11 @@ describe("planCountyOwnerFacts", () => {
         sourceCitation: "test",
         extractedAt: "2026-08-09T12:00:00.000Z",
         verificationStatus: "machine",
+        sourceAdapter: "test-adapter",
+        evaluatedAt: "2026-08-09T12:00:00.000Z",
+        atomTier: "data",
       }),
-    ).toThrow();
+    ).toThrow(/parcelNodeId/);
 
     expect(() => buildAtomsForOwnerFactPlan(plan, {
       ...OWN_PROV,
