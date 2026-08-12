@@ -32,6 +32,13 @@ const GAS_SYMNUMS = new Set([
   5, 8, 10, 18, 20, 22, 77, 91, 92, 103, 106, 107, 118, 119,
 ]);
 
+/**
+ * Explicit producing status SYMNUMs only. Do NOT use OIL∪GAS for status —
+ * those sets include shut-in, storage, water-supply, injection, and service
+ * codes that share hydrocarbon type bits but are not producing.
+ */
+const PRODUCING_SYMNUMS = new Set([4, 5, 6]);
+
 function normalizeSymbolDescription(desc: string): string {
   return desc
     .trim()
@@ -130,14 +137,14 @@ export function mapSymbolDescriptionToWellType(
 }
 
 /**
- * SYMNUM-only status map. OIL∪GAS treated as producing only as fallback;
+ * SYMNUM-only status map. Only PRODUCING_SYMNUMS ({4,5,6}) assert producing;
  * unmatched -> unknown. Never default producing.
  */
 export function mapSymnumToWellStatus(symnum: number): WellStatus {
   if (PLUGGED_SYMNUMS.has(symnum)) return "plugged-abandoned";
   if (DRY_SYMNUMS.has(symnum)) return "dry";
   if (PERMITTED_SYMNUMS.has(symnum)) return "permitted";
-  if (OIL_SYMNUMS.has(symnum) || GAS_SYMNUMS.has(symnum)) return "producing";
+  if (PRODUCING_SYMNUMS.has(symnum)) return "producing";
   return "unknown";
 }
 

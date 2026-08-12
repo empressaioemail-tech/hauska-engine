@@ -49,4 +49,11 @@ describe("adversarial symnum fail-closed", () => {
     expect(mapSymbolDescriptionToWellStatus("Oil/Gas Well")).toBe("producing");
     expect(mapSymbolDescriptionToWellType("Oil/Gas Well")).toBe("oil");
   });
+
+  it("SYMNUM oil/gas type bits do not invent producing status", () => {
+    // 19 = Shut-In Oil (in OIL_SYMNUMS); 21 = Injection/Disposal from Oil
+    expect(mapSymnumToWellStatus(19)).toBe("unknown");
+    expect(mapSymnumToWellStatus(21)).toBe("unknown");
+    expect(mapSymnumToWellStatus(6)).toBe("producing");
+  });
 });
