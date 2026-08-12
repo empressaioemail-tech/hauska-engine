@@ -1,0 +1,44 @@
+{
+  "hosts": [
+    {
+      "hostId": "h-gac-rest-root",
+      "kind": "cog-portal",
+      "baseUrl": "https://gis.h-gac.com/arcgis/rest/services",
+      "evidenceUrl": "https://www.arcgis.com/sharing/rest/search?q=Zoning%20H-GAC&f=json",
+      "observedAt": "2026-08-12T21:40:00Z",
+      "notes": "Hub result HGAC_Tax_Increment_Reinvestment_Zones → gis.h-gac.com"
+    },
+    {
+      "hostId": "nctcog-rest-root",
+      "kind": "cog-portal",
+      "baseUrl": "https://geospatial.nctcog.org/map/rest/services",
+      "evidenceUrl": "https://www.arcgis.com/sharing/rest/search?q=Zoning%20NCTCOG&f=json",
+      "observedAt": "2026-08-12T21:40:00Z",
+      "notes": "Hub NCTCOG On-Demand Zones MapServer URL"
+    },
+    {
+      "hostId": "capcog-services3-org",
+      "kind": "agol-org",
+      "baseUrl": "https://services3.arcgis.com/wdTkTU0MdZbNBEZy/arcgis/rest/services",
+      "evidenceUrl": "https://www.arcgis.com/sharing/rest/search?q=orgid:wdTkTU0MdZbNBEZy&f=json",
+      "observedAt": "2026-08-12T21:40:00Z",
+      "notes": "Hub orgid search; Elgin/Smithville H1 layers live here"
+    },
+    {
+      "hostId": "deer-park-municipal-rest",
+      "kind": "municipal-rest-root",
+      "baseUrl": "https://gis.deerparktx.gov/arcgis/rest/services",
+      "evidenceUrl": "live GET 2026-08-12 folders=[Hosted,Utilities,WGS84]",
+      "observedAt": "2026-08-12T21:40:00Z",
+      "notes": "direct REST root probe HTTP 200"
+    },
+    {
+      "hostId": "houston-pubgis02-rest",
+      "kind": "municipal-rest-root",
+      "baseUrl": "https://mycity2.houstontx.gov/pubgis02/rest/services",
+      "evidenceUrl": "live GET Planning_and_Development/MapServer 2026-08-12",
+      "observedAt": "2026-08-12T21:40:00Z",
+      "notes": "planner-verified Houston constraint layers"
+    }
+  ]
+}

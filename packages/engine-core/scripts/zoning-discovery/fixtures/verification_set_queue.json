@@ -1,0 +1,64 @@
+[
+  {
+    "cityKey": "bartonville-tx",
+    "cityName": "Bartonville",
+    "cityGeoId": "4805768",
+    "parentCountyFips": "48121",
+    "jurisdictionKind": "incorporated-city",
+    "bbox4326": {
+      "xmin": -97.142,
+      "ymin": 33.058,
+      "xmax": -97.078,
+      "ymax": 33.112
+    },
+    "seedHostUrls": [
+      "https://services.arcgis.com/oTsZYNubyv7xK5yP/arcgis/rest/services/BartonvilleZoning/FeatureServer"
+    ],
+    "seedEvidence": "ArcGIS Hub search title:BartonvilleZoning 2026-08-12 (directory hit, not hostname synthesis)"
+  },
+  {
+    "cityKey": "deer-park-tx",
+    "cityName": "Deer Park",
+    "cityGeoId": "4819624",
+    "parentCountyFips": "48201",
+    "jurisdictionKind": "incorporated-city",
+    "bbox4326": {
+      "xmin": -95.152,
+      "ymin": 29.662,
+      "xmax": -95.088,
+      "ymax": 29.728
+    },
+    "seedHostUrls": [
+      "https://gis.deerparktx.gov/arcgis/rest/services"
+    ]
+  },
+  {
+    "cityKey": "houston-tx",
+    "cityName": "Houston",
+    "cityGeoId": "4835000",
+    "parentCountyFips": "48201",
+    "jurisdictionKind": "incorporated-city",
+    "bbox4326": {
+      "xmin": -95.791,
+      "ymin": 29.523,
+      "xmax": -95.014,
+      "ymax": 30.110
+    },
+    "seedHostUrls": [
+      "https://mycity2.houstontx.gov/pubgis02/rest/services/HoustonMap/Planning_and_Development/MapServer"
+    ]
+  },
+  {
+    "cityKey": "unincorporated-harris-tx",
+    "cityName": "Unincorporated Harris County",
+    "cityGeoId": "",
+    "parentCountyFips": "48201",
+    "jurisdictionKind": "unincorporated",
+    "bbox4326": {
+      "xmin": -95.823,
+      "ymin": 29.523,
+      "xmax": -94.912,
+      "ymax": 30.171
+    }
+  }
+]
