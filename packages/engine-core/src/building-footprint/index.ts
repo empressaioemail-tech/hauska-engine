@@ -48,6 +48,31 @@ export {
 } from "./spatial-join.js";
 
 export {
+  STAGED_FOOTPRINT_TABLE,
+  STAGED_FOOTPRINT_TABLE_MISSING,
+  STAGED_FOOTPRINT_COUNTY_EMPTY,
+  STAGED_FOOTPRINT_GEOM_UNREADY,
+  StagedFootprintError,
+  assertStagedFootprintCountyReady,
+  candidatePairsFromEnvelopeRows,
+  envelopeOfRing,
+  geometryTrueAttach,
+  haltStagedFootprintOrThrow,
+  joinStagedCandidatePairs,
+  loadStagedEnvelopeCandidates,
+  planCountyFromStagedGeometryTrueJoin,
+  planCountyStagedFootprints,
+  probeStagedFootprintCounty,
+  probeStagedFootprintTable,
+  selectStagedJoinRoster,
+  stagedEnvelopeCandidatesSql,
+  type StagedCandidatePair,
+  type StagedEnvelopeCandidateRow,
+  type StagedFootprintErrorCode,
+  type StagedFootprintHaltInput,
+} from "./staged-footprint-join.js";
+
+export {
   bboxContainsRing,
   geometryOuterRing,
   ringToFootprintGeometry,

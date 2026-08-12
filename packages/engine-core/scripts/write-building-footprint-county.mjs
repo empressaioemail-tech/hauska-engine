@@ -2,9 +2,11 @@
 /**
  * write-building-footprint-county.mjs — `building-footprint` writer (T3 WS4 / ADR-029).
  *
- * Default source: Microsoft Global ML Building Footprints (`ml-derived`,
- * `accessPolicy=public-free`). Statewide-uniform routing — no county-specific
- * hardcoding in shared machinery.
+ * Default matching path (OPS-16 A-004 / P-09): staged `tx_building_footprint`
+ * + geometry-true attach. Envelope ST_Intersects is a GiST candidate prefilter
+ * only; attach is footprintParcelOverlapRatio >=10% / >=50% primary.
+ * Missing table, empty county, or unready geom HALT with named errors — never
+ * fall back to ML zip, never emit absence atoms for an empty staged county.
  *
  *   BUILDING_FOOTPRINT_PATH=1 \
  *   CORTEX_DATABASE_URL=... \
@@ -14,8 +16,7 @@
  *       [--fixture=path/to/ml-footprints.geojson]
  *
  * Dry-run is the default and constructs the same atoms apply would write.
- * Without --fixture the ML loader streams Texas.geojson.zip (bbox-filtered).
- * Use --ml-probe-only for metro-scale stream/RSS probe without accumulating rings.
+ * `--fixture` / `--ml-probe-only` remain for probes; they are not the county path.
  */
 
 import { writeFileSync } from "node:fs";
@@ -29,13 +30,36 @@ import {
   GLOBAL_ML_TEXAS_ZIP_URL,
   ML_FOOTPRINT_SOURCE_CITATION,
   ML_FOOTPRINT_SOURCE_VINTAGE,
+  STAGED_FOOTPRINT_COUNTY_EMPTY,
+  STAGED_FOOTPRINT_GEOM_UNREADY,
+  STAGED_FOOTPRINT_TABLE_MISSING,
+  StagedFootprintError,
+  assertStagedFootprintCountyReady,
   buildAtomsForBuildingFootprintPlan,
+  envelopeOfRing,
   geometryOuterRing,
   loadMlFootprintsForBbox,
-  probeMlFootprintsForBbox,
   planCountyBuildingFootprints,
+  planCountyStagedFootprints,
+  probeMlFootprintsForBbox,
   verifyStoredBuildingFootprintAtom,
 } from "../src/building-footprint/index.ts";
+
+/** Fixture / ml-probe-only only. Default county path must not call this. */
+async function loadMlForFixtureOrProbe(opts) {
+  if (opts.probeOnly) return probeMlFootprintsForBbox(opts);
+  return loadMlFootprintsForBbox(opts);
+}
+
+function failClosedStaged(code, extra) {
+  const payload = {
+    event: "building-footprint-county.fail-closed",
+    code,
+    ...extra,
+  };
+  console.error(JSON.stringify(payload, null, 2));
+  process.exitCode = 1;
+}
 
 function parseArgs(argv) {
   const out = {
@@ -215,7 +239,8 @@ try {
       const pageSize = Math.max(1, Math.min(args.batch, remaining, 2000));
       const page = await sql`
         SELECT DISTINCT ON (feature_index)
-               feature_index, prop_id, geometry
+               feature_index, prop_id, geometry,
+               west_lng, south_lat, east_lng, north_lat
         FROM txgio_parcel
         WHERE county_fips = ${args.county}
           AND feature_index > ${lastFeature}
@@ -225,34 +250,42 @@ try {
       if (page.length === 0) break;
       for (const p of page) {
         if (args.limit > 0 && parcelInputs.length >= args.limit) break;
+        const ring = geometryOuterRing(p.geometry);
+        const hasBbox = [p.west_lng, p.south_lat, p.east_lng, p.north_lat].every(
+          (n) => Number.isFinite(Number(n)),
+        );
         parcelInputs.push({
           parcelKey: p.prop_id ?? `_feature-${p.feature_index}`,
-          ring: geometryOuterRing(p.geometry),
+          ring,
+          envelope: hasBbox
+            ? {
+                westLng: Number(p.west_lng),
+                southLat: Number(p.south_lat),
+                eastLng: Number(p.east_lng),
+                northLat: Number(p.north_lat),
+              }
+            : ring
+              ? envelopeOfRing(ring)
+              : null,
         });
       }
       lastFeature = page[page.length - 1].feature_index;
       if (page.length < pageSize) break;
     }
 
-    const mlLoad = args.mlProbeOnly
-      ? await probeMlFootprintsForBbox({
-          bbox: countyBbox,
-          ...(args.fixture ? { fixturePath: args.fixture } : {}),
-        })
-      : await loadMlFootprintsForBbox({
-          bbox: countyBbox,
-          ...(args.fixture ? { fixturePath: args.fixture } : {}),
-        });
-
-    summary.storeTruth.mlSourceLabel = mlLoad.sourceLabel;
-    summary.storeTruth.mlStream = {
-      partitionsStreamed: mlLoad.partitionsStreamed,
-      featuresScanned: mlLoad.featuresScanned,
-      featuresRead: mlLoad.featuresRead,
-      peakQueueDepth: mlLoad.peakQueueDepth,
-    };
-
     if (args.mlProbeOnly) {
+      const mlLoad = await loadMlForFixtureOrProbe({
+        bbox: countyBbox,
+        probeOnly: true,
+        ...(args.fixture ? { fixturePath: args.fixture } : {}),
+      });
+      summary.storeTruth.mlSourceLabel = mlLoad.sourceLabel;
+      summary.storeTruth.mlStream = {
+        partitionsStreamed: mlLoad.partitionsStreamed,
+        featuresScanned: mlLoad.featuresScanned,
+        featuresRead: mlLoad.featuresRead,
+        peakQueueDepth: mlLoad.peakQueueDepth,
+      };
       summary.footprint = {
         adapterKind: "ml-global-building-footprints",
         sourceTier: "ml-derived",
@@ -267,10 +300,41 @@ try {
       console.log(JSON.stringify(summary, null, 2));
       if (args.out) writeFileSync(args.out, JSON.stringify(summary, null, 2));
     } else {
-    const plan = planCountyBuildingFootprints(parcelInputs, mlLoad.features, {
-      countyFips: args.county,
-      ...(args.adapterKind ? { footprintAdapterKind: args.adapterKind } : {}),
-    });
+    let plan;
+    if (args.fixture) {
+      const mlLoad = await loadMlForFixtureOrProbe({
+        bbox: countyBbox,
+        probeOnly: false,
+        fixturePath: args.fixture,
+      });
+      summary.storeTruth.mlSourceLabel = mlLoad.sourceLabel;
+      summary.storeTruth.mlStream = {
+        partitionsStreamed: mlLoad.partitionsStreamed,
+        featuresScanned: mlLoad.featuresScanned,
+        featuresRead: mlLoad.featuresRead,
+        peakQueueDepth: mlLoad.peakQueueDepth,
+      };
+      plan = planCountyBuildingFootprints(parcelInputs, mlLoad.features, {
+        countyFips: args.county,
+        ...(args.adapterKind ? { footprintAdapterKind: args.adapterKind } : {}),
+      });
+    } else {
+      const ready = await assertStagedFootprintCountyReady(sql, args.county);
+      summary.storeTruth.stagedTable = "tx_building_footprint";
+      summary.storeTruth.stagedCountyRows = ready.countyRowCount;
+      summary.storeTruth.gistIndexName = ready.gistIndexName;
+      summary.storeTruth.join = "geometry-true";
+      summary.storeTruth.prefilter =
+        "ST_Intersects(fp.geom, ST_MakeEnvelope(west,south,east,north,4326))";
+
+      const staged = await planCountyStagedFootprints(sql, parcelInputs, {
+        countyFips: args.county,
+      });
+      summary.storeTruth.envelopeCandidates = staged.envelopeCandidates;
+      summary.storeTruth.uniqueCandidateFootprints =
+        staged.uniqueCandidateFootprints;
+      plan = staged.plan;
+    }
 
     summary.footprint = {
       adapterKind: plan.route.adapterKind,
@@ -399,9 +463,29 @@ try {
   }
 } catch (err) {
   summary.errors += 1;
-  summary.error = String(err?.stack || err);
-  console.error(JSON.stringify(summary, null, 2));
-  process.exitCode = 1;
+  const code =
+    err instanceof StagedFootprintError
+      ? err.code
+      : err?.code &&
+          [
+            STAGED_FOOTPRINT_TABLE_MISSING,
+            STAGED_FOOTPRINT_COUNTY_EMPTY,
+            STAGED_FOOTPRINT_GEOM_UNREADY,
+          ].includes(err.code)
+        ? err.code
+        : null;
+  if (code) {
+    summary.code = code;
+    summary.error = err.message ?? String(err);
+    failClosedStaged(code, {
+      county: args.county,
+      error: summary.error,
+    });
+  } else {
+    summary.error = String(err?.stack || err);
+    console.error(JSON.stringify(summary, null, 2));
+    process.exitCode = 1;
+  }
 } finally {
   await sql.end({ timeout: 5 });
   if (handle) await handle.close();
