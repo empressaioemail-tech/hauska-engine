@@ -6,7 +6,10 @@
  * membership.
  */
 
-import { buildOutsideSourceAbsenceReason } from "./honesty.js";
+import {
+  buildEmptyCountyDistrictAbsenceReason,
+  buildOutsideSourceAbsenceReason,
+} from "./honesty.js";
 
 import type { ComptrollerTaxRateEnrichment } from "./comptroller-registry.js";
 import { buildDistrictSpatialIndex } from "./geo.js";
@@ -81,6 +84,9 @@ export function planCountySpecialDistricts(
   let rateEnrichedCount = 0;
   const seen = new Set<string>();
   const outsideReason = buildOutsideSourceAbsenceReason(opts.countyFips);
+  const emptyCountyReason = buildEmptyCountyDistrictAbsenceReason(
+    opts.countyFips,
+  );
 
   const pushSample = (entry: PlannedSpecialDistrict) => {
     if (retainPlanned) {
@@ -106,7 +112,7 @@ export function planCountySpecialDistricts(
         outcome: "absent",
         parcelKey: key,
         absenceKind: "outside-tceq-source-boundaries",
-        reason: outsideReason,
+        reason: emptyCountyReason,
       });
       parcelsOutside += 1;
       absentOutside += 1;

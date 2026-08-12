@@ -2,13 +2,21 @@
 /**
  * write-special-district-fact-county.mjs — `special-district-fact` writer (mud rail).
  *
- * BINARY point-in-polygon only — no proximity/buffer semantics.
+ * CP1 / SF-6 true-geometry path only:
+ *   membershipMethodId = postgis-zone-major-st-intersects-true-geom
+ *   Predicate: ST_Intersects(district_geom, parcel_geom), district-major.
+ *
+ * Modes:
+ *   --plan-only --out=<path>     PostGIS plan → persist JSON artifact (no atoms)
+ *   --drain --plan=<path> --apply  Load artifact, fail-closed method assert, write atoms
+ *   --apply                        Plan + drain in-process (same true-geom path)
+ *   (neither)                      Dry-run: true-geom plan counts only
  *
  *   SPECIAL_DISTRICT_FACT_PATH=1 \
  *   CORTEX_DATABASE_URL=... \
  *   DATABASE_URL=...hauska_mcp... \
  *     pnpm --filter @hauska-engine/engine-core run write-special-district-fact-county -- \
- *       --county=48201 [--apply] [--batch=500] [--limit=0]
+ *       --county=48201 [--plan-only|--drain|--apply] [--batch=5000] [--limit=0]
  */
 
 import { existsSync } from "node:fs";
@@ -19,14 +27,18 @@ import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import {
+  TRUE_GEOM_MEMBERSHIP_METHOD,
   attachComptrollerTaxRates,
   buildAtomForPlannedSpecialDistrict,
   buildAtomsForSpecialDistrictPlan,
-  filterDistrictsByCounty,
+  buildPlanPayload,
+  drainSpecialDistrictPlanPayload,
   loadComptrollerRegistryFromCsv,
   lookupComptrollerTaxRate,
-  planCountySpecialDistricts,
+  planCountySpecialDistrictsPostgis,
+  readPlanPayload,
   verifyStoredSpecialDistrictFactAtom,
+  writePlanPayload,
 } from "../src/special-district-fact/index.ts";
 
 const SOURCE_ADAPTER = "tceq-water-districts-v1";
@@ -34,12 +46,16 @@ const SOURCE_URL = "tx_special_district";
 const DEFAULT_REGISTRY_CSV =
   process.env.COMPTROLLER_SPDPID_CSV?.trim() ||
   "P:/tmp/mud_recon/spdpid-entity.csv";
+const DEFAULT_BATCH = 5000;
 
 function parseArgs(argv) {
   const out = {
     county: null,
     apply: false,
-    batch: 500,
+    planOnly: false,
+    drain: false,
+    planPath: null,
+    batch: DEFAULT_BATCH,
     limit: 0,
     out: null,
     listCounties: false,
@@ -49,14 +65,19 @@ function parseArgs(argv) {
     if (a === "--county") out.county = String(argv[++i] || "").trim();
     else if (a.startsWith("--county=")) out.county = a.slice("--county=".length).trim();
     else if (a === "--apply") out.apply = true;
+    else if (a === "--plan-only") out.planOnly = true;
+    else if (a === "--drain") out.drain = true;
+    else if (a === "--plan") out.planPath = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--plan=")) out.planPath = a.slice("--plan=".length).trim() || null;
     else if (a === "--list-counties") out.listCounties = true;
-    else if (a === "--batch") out.batch = Number(argv[++i] || 500);
+    else if (a === "--batch") out.batch = Number(argv[++i] || DEFAULT_BATCH);
     else if (a.startsWith("--batch=")) out.batch = Number(a.slice("--batch=".length));
     else if (a === "--limit") out.limit = Number(argv[++i] || 0);
     else if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length));
     else if (a === "--out") out.out = String(argv[++i] || "").trim() || null;
     else if (a.startsWith("--out=")) out.out = a.slice("--out=".length).trim() || null;
   }
+  if (!Number.isFinite(out.batch) || out.batch < 1) out.batch = DEFAULT_BATCH;
   return out;
 }
 
@@ -71,19 +92,13 @@ const poolUrl =
   process.env.CORTEX_DATABASE_URL?.trim() ||
   process.env.TXGIO_DATABASE_URL?.trim() ||
   process.env.DATABASE_URL?.trim();
-if (!poolUrl) {
-  console.error("FATAL: CORTEX_DATABASE_URL required.");
-  process.exit(1);
-}
 
-const sql = postgres(poolUrl, { max: 4, ssl: "require", prepare: false });
-
-async function districtTableExists() {
+async function districtTableExists(sql) {
   const rows = await sql`SELECT to_regclass('public.tx_special_district') AS reg`;
   return rows[0]?.reg != null;
 }
 
-async function readParcelRoster() {
+async function readParcelRoster(sql) {
   return sql`
     SELECT county_fips, count(*)::int AS rows
     FROM txgio_parcel
@@ -92,10 +107,106 @@ async function readParcelRoster() {
   `;
 }
 
+function loadTaxLookup(summary) {
+  if (!existsSync(DEFAULT_REGISTRY_CSV)) {
+    summary.storeTruth.registryCsvMissing = DEFAULT_REGISTRY_CSV;
+    return undefined;
+  }
+  const registry = loadComptrollerRegistryFromCsv(DEFAULT_REGISTRY_CSV);
+  return (countyFips, districtType, districtName) =>
+    lookupComptrollerTaxRate(registry, {
+      countyFips,
+      districtType,
+      districtName,
+    });
+}
+
+function defaultProvenance(countyFips, districtsIndexed, observedAt) {
+  return {
+    sourceAdapter: SOURCE_ADAPTER,
+    sourceCitation: `TCEQ tx_special_district (${districtsIndexed} rows for county ${countyFips})`,
+    sourceUrl: SOURCE_URL,
+    observedAt,
+    jurisdictionTenant: `tx_${countyFips}`,
+    verificationStatus: "machine",
+    sourceVintage: "2026-08-10",
+  };
+}
+
+async function writeAtomsFromPlan(plan, provenance, summary) {
+  const substrateUrl = resolveSubstrateDatabaseUrl();
+  if (!substrateUrl) {
+    throw new Error(
+      "FATAL: --apply requires DATABASE_URL / SUBSTRATE_DATABASE_URL (the ATOMS store).",
+    );
+  }
+  // Match sibling writers: options object, not a bare URL string.
+  // Passing a string made options.databaseUrl undefined and crashed on .includes.
+  const handle = createPgStorage({ databaseUrl: substrateUrl, maxConnections: 8 });
+  const atoms = buildAtomsForSpecialDistrictPlan(plan, provenance);
+  summary.atomsBuilt = atoms.length;
+
+  for (let i = 0; i < atoms.length; i += args.batch) {
+    const slice = atoms.slice(i, i + args.batch);
+    await handle.storage.writePropertyAtomsBatch(slice);
+    summary.atomsWritten += slice.length;
+
+    // Verify by PK atom_did IN kept; use a.entityId (never reconstruct DID shape
+    // from parcel+district by hand beyond the storage-canonical form).
+    const dids = slice.map((a) => `did:hauska:special-district-fact:${a.entityId}`);
+    const stored = await handle.sql`
+        SELECT body FROM atoms
+        WHERE atom_did IN ${handle.sql(dids)}
+      `;
+    const storedByDid = new Map(stored.map((s) => [s.body?.atomDid, s.body]));
+    for (const atom of slice) {
+      const back = storedByDid.get(atom.atomDid);
+      if (!back) {
+        summary.verifyFailures.push({
+          atomDid: atom.atomDid,
+          entityId: atom.entityId,
+          problem: "atom not readable back via atom_did PK after write",
+        });
+        continue;
+      }
+      const verdict = verifyStoredSpecialDistrictFactAtom(back, {
+        parcelNodeId: atom.parcelNodeId,
+        outcome: atom.absence ? "absent" : "present",
+        districtId: atom.districtId,
+      });
+      if (verdict.ok) summary.verified += 1;
+      else summary.verifyFailures.push(verdict);
+    }
+
+    if (summary.verifyFailures.length > 0) {
+      throw new Error(
+        `write-then-verify FAILED on ${summary.verifyFailures.length} atom(s); ` +
+          `first: ${JSON.stringify(summary.verifyFailures[0])}`,
+      );
+    }
+
+    console.log(
+      JSON.stringify({
+        event: "special-district-fact-county.progress",
+        county: summary.county,
+        membershipMethodId: TRUE_GEOM_MEMBERSHIP_METHOD,
+        written: summary.atomsWritten,
+        verified: summary.verified,
+        ofTotal: atoms.length,
+      }),
+    );
+  }
+}
+
 if (args.listCounties) {
+  if (!poolUrl) {
+    console.error("FATAL: CORTEX_DATABASE_URL required.");
+    process.exit(1);
+  }
+  const sql = postgres(poolUrl, { max: 4, ssl: "require", prepare: false });
   try {
-    const roster = await readParcelRoster();
-    const hasTable = await districtTableExists();
+    const roster = await readParcelRoster(sql);
+    const hasTable = await districtTableExists(sql);
     let districtRows = null;
     if (hasTable) {
       const r = await sql`SELECT count(*)::int AS n FROM tx_special_district`;
@@ -115,14 +226,29 @@ if (args.listCounties) {
   process.exit(0);
 }
 
-if (!args.county || !/^\d{5}$/.test(args.county)) {
-  console.error("FATAL: --county=##### required (5-digit FIPS).");
+if (args.planOnly && args.drain) {
+  console.error("FATAL: --plan-only and --drain are mutually exclusive.");
+  process.exit(1);
+}
+if (args.planOnly && args.apply) {
+  console.error("FATAL: --plan-only cannot combine with --apply.");
+  process.exit(1);
+}
+if (args.drain && !args.planPath) {
+  console.error("FATAL: --drain requires --plan=<path>.");
+  process.exit(1);
+}
+if (args.planOnly && !args.out) {
+  console.error("FATAL: --plan-only requires --out=<path>.");
   process.exit(1);
 }
 
 const summary = {
   county: args.county,
   apply: args.apply,
+  planOnly: args.planOnly,
+  drain: args.drain,
+  membershipMethodId: TRUE_GEOM_MEMBERSHIP_METHOD,
   storeTruth: {},
   plan: {},
   atomsBuilt: 0,
@@ -134,98 +260,128 @@ const summary = {
 
 const t0 = performance.now();
 
+// ---------------------------------------------------------------------------
+// Drain-from-artifact path (no PostGIS pool required for the plan step)
+// ---------------------------------------------------------------------------
+if (args.drain) {
+  try {
+    const payload = readPlanPayload(args.planPath);
+    const drained = drainSpecialDistrictPlanPayload(payload);
+    summary.county = drained.countyFips;
+    summary.membershipMethodId = TRUE_GEOM_MEMBERSHIP_METHOD;
+    summary.storeTruth = payload.storeTruth ?? {};
+    summary.plan = {
+      parcelsRead: drained.plan.parcelsRead,
+      districtsIndexed: drained.plan.districtsIndexed,
+      emptyDistrictIndex: drained.plan.emptyDistrictIndex,
+      absenceReasoningRuleId: drained.absenceReasoningRuleId,
+      wouldWriteTotal:
+        drained.plan.counts.presentMemberships + drained.plan.counts.absentOutside,
+      wouldWritePresentMemberships: drained.plan.counts.presentMemberships,
+      wouldWriteAbsentOutside: drained.plan.counts.absentOutside,
+      parcelsInDistrict: drained.plan.counts.parcelsInDistrict,
+      parcelsOutside: drained.plan.counts.parcelsOutside,
+    };
+
+    let plan = drained.plan;
+    const taxLookup = loadTaxLookup(summary);
+    if (args.apply && taxLookup) {
+      plan = attachComptrollerTaxRates(plan, taxLookup);
+    }
+    summary.rateEnrichedCount = plan.counts.rateEnrichedCount;
+
+    const provenance =
+      drained.provenance ??
+      defaultProvenance(
+        drained.countyFips,
+        plan.districtsIndexed,
+        payload.plannedAt || new Date().toISOString(),
+      );
+
+    if (!args.apply) {
+      const sampleEntries = plan.planned.slice(0, 5);
+      const sampleAtoms = sampleEntries.map((entry) =>
+        buildAtomForPlannedSpecialDistrict(entry, plan.countyFips, provenance),
+      );
+      console.log(
+        JSON.stringify({
+          event: "special-district-fact-county.drain-dry-run",
+          county: drained.countyFips,
+          membershipMethodId: TRUE_GEOM_MEMBERSHIP_METHOD,
+          elapsedMs: Math.round(performance.now() - t0),
+          ...summary,
+          sample: sampleAtoms.map((a) => ({
+            atomDid: a.atomDid,
+            parcelNodeId: a.parcelNodeId,
+            entityId: a.entityId,
+            districtType: a.districtType ?? null,
+            districtId: a.districtId ?? null,
+            absenceKind: a.absence?.kind ?? null,
+          })),
+          note: "drain dry-run — pass --apply to write atoms",
+        }),
+      );
+      process.exit(0);
+    }
+
+    await writeAtomsFromPlan(plan, provenance, summary);
+    const donePayload = {
+      event: "special-district-fact-county.done",
+      membershipMethodId: TRUE_GEOM_MEMBERSHIP_METHOD,
+      ...summary,
+    };
+    console.log(JSON.stringify(donePayload));
+    if (args.out) writeFileSync(args.out, JSON.stringify(donePayload, null, 2));
+    process.exit(0);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "special-district-fact-county.error",
+        message: String(err),
+      }),
+    );
+    process.exit(1);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Plan path (PostGIS true-geom) — plan-only, apply-in-process, or dry-run
+// ---------------------------------------------------------------------------
+if (!poolUrl) {
+  console.error("FATAL: CORTEX_DATABASE_URL required.");
+  process.exit(1);
+}
+if (!args.county || !/^\d{5}$/.test(args.county)) {
+  console.error("FATAL: --county=##### required (5-digit FIPS).");
+  process.exit(1);
+}
+
+const sql = postgres(poolUrl, { max: 4, ssl: "require", prepare: false });
+
 try {
-  const hasTable = await districtTableExists();
+  const hasTable = await districtTableExists(sql);
   summary.storeTruth.districtTablePresent = hasTable;
   if (!hasTable) {
     throw new Error("tx_special_district missing — run migration + ingest first");
   }
 
-  const districtCount = await sql`
-    SELECT count(*)::int AS n FROM tx_special_district WHERE county_fips = ${args.county}
-  `;
-  summary.storeTruth.districtRowsInCounty = districtCount[0]?.n ?? 0;
-
-  const districtRows = await sql`
-    SELECT district_row_id, district_id, district_name, district_type, county_fips,
-           status, geometry, west_lng, south_lat, east_lng, north_lat
-    FROM tx_special_district
-    WHERE county_fips = ${args.county}
-  `;
-  const districts = districtRows.map((d) => ({
-    districtRowId: d.district_row_id,
-    districtId: d.district_id,
-    districtName: d.district_name,
-    districtType: d.district_type,
-    countyFips: d.county_fips,
-    status: d.status,
-    geometry: d.geometry,
-    westLng: Number(d.west_lng),
-    southLat: Number(d.south_lat),
-    eastLng: Number(d.east_lng),
-    northLat: Number(d.north_lat),
-  }));
-
-  const parcels = [];
-  const pageSize = 20000;
-  let lastFeature = -1;
-  const limit = args.limit > 0 ? args.limit : Infinity;
-
-  while (parcels.length < limit) {
-    const page = await sql`
-      SELECT prop_id, feature_index, west_lng, south_lat, east_lng, north_lat
-      FROM txgio_parcel
-      WHERE county_fips = ${args.county}
-        AND feature_index > ${lastFeature}
-      ORDER BY feature_index
-      LIMIT ${pageSize}
-    `;
-    if (page.length === 0) break;
-    for (const p of page) {
-      if (parcels.length >= limit) break;
-      const centroid =
-        Number.isFinite(p.west_lng) &&
-        Number.isFinite(p.east_lng) &&
-        Number.isFinite(p.south_lat) &&
-        Number.isFinite(p.north_lat)
-          ? [
-              (Number(p.west_lng) + Number(p.east_lng)) / 2,
-              (Number(p.south_lat) + Number(p.north_lat)) / 2,
-            ]
-          : null;
-      parcels.push({
-        parcelKey: p.prop_id ?? `_feature-${p.feature_index}`,
-        centroid,
-      });
-    }
-    lastFeature = page[page.length - 1].feature_index;
-    if (page.length < pageSize) break;
-  }
-
-  summary.storeTruth.parcelsLoaded = parcels.length;
-
-  let registry = null;
-  let taxLookup = undefined;
-  if (existsSync(DEFAULT_REGISTRY_CSV)) {
-    registry = loadComptrollerRegistryFromCsv(DEFAULT_REGISTRY_CSV);
-    taxLookup = (countyFips, districtType, districtName) =>
-      lookupComptrollerTaxRate(registry, {
-        countyFips,
-        districtType,
-        districtName,
-      });
-  } else {
-    summary.storeTruth.registryCsvMissing = DEFAULT_REGISTRY_CSV;
-  }
-
-  let plan = planCountySpecialDistricts(parcels, districts, {
+  const result = await planCountySpecialDistrictsPostgis(sql, {
     countyFips: args.county,
-    retainPlanned: args.apply,
-    sampleLimit: args.apply ? 0 : 5,
-    taxLookup: args.apply ? undefined : taxLookup,
+    limit: args.limit > 0 ? args.limit : undefined,
   });
 
-  if (args.apply && taxLookup) {
+  let plan = result.plan;
+  summary.storeTruth.districtRowsInCounty = plan.districtsIndexed;
+  summary.storeTruth.parcelsLoaded = plan.parcelsRead;
+  summary.storeTruth.skippedNullGeometry = result.meta.skippedNullGeometry;
+
+  const taxLookup = loadTaxLookup(summary);
+  if ((args.apply || args.planOnly) && taxLookup) {
+    // Enrich before persist so drain resumes with rates when present.
+    if (args.planOnly || args.apply) {
+      plan = attachComptrollerTaxRates(plan, taxLookup);
+    }
+  } else if (!args.apply && !args.planOnly && taxLookup) {
     plan = attachComptrollerTaxRates(plan, taxLookup);
   }
   summary.rateEnrichedCount = plan.counts.rateEnrichedCount;
@@ -237,6 +393,9 @@ try {
     parcelsRead: plan.parcelsRead,
     districtsIndexed: plan.districtsIndexed,
     emptyDistrictIndex: plan.emptyDistrictIndex,
+    absenceReasoningRuleId: result.meta.absenceReasoningRuleId,
+    membershipMethodId: result.meta.membershipMethodId,
+    sqlMs: result.meta.sqlMs,
     wouldWriteTotal,
     wouldWritePresentMemberships: plan.counts.presentMemberships,
     wouldWriteAbsentOutside: plan.counts.absentOutside,
@@ -244,36 +403,53 @@ try {
     parcelsOutside: plan.counts.parcelsOutside,
     inDistrictRatio:
       plan.parcelsRead > 0
-        ? Math.round(
-            (plan.counts.parcelsInDistrict / plan.parcelsRead) * 10000,
-          ) / 10000
+        ? Math.round((plan.counts.parcelsInDistrict / plan.parcelsRead) * 10000) /
+          10000
         : 0,
     skippedUnusableKey: plan.counts.skippedUnusableKey,
+    skippedNullGeometry: result.meta.skippedNullGeometry,
   };
 
-  const provenance = {
-    sourceAdapter: SOURCE_ADAPTER,
-    sourceCitation: `TCEQ tx_special_district (${districts.length} rows for county ${args.county})`,
-    sourceUrl: SOURCE_URL,
-    observedAt: new Date().toISOString(),
-    jurisdictionTenant: `tx_${args.county}`,
-    verificationStatus: "machine",
-    sourceVintage: "2026-08-10",
-  };
+  const provenance = defaultProvenance(
+    args.county,
+    plan.districtsIndexed,
+    result.meta.plannedAt,
+  );
 
-  const atoms = args.apply
-    ? buildAtomsForSpecialDistrictPlan(plan, provenance)
-    : [];
-  summary.atomsBuilt = wouldWriteTotal;
+  const payload = buildPlanPayload(plan, result.meta, {
+    storeTruth: { ...summary.storeTruth },
+    provenance,
+  });
+
+  if (args.planOnly) {
+    writePlanPayload(args.out, payload);
+    console.log(
+      JSON.stringify({
+        event: "special-district-fact-county.plan-only",
+        county: args.county,
+        membershipMethodId: TRUE_GEOM_MEMBERSHIP_METHOD,
+        out: args.out,
+        elapsedMs: Math.round(performance.now() - t0),
+        ...summary,
+      }),
+    );
+    try {
+      await sql.end({ timeout: 2 });
+    } catch {
+      /* ignore hung pooler end */
+    }
+    process.exit(0);
+  }
 
   if (!args.apply) {
     const sampleEntries = plan.planned.slice(0, 5);
     const sampleAtoms = sampleEntries.map((entry) =>
       buildAtomForPlannedSpecialDistrict(entry, plan.countyFips, provenance),
     );
-    const payload = {
+    const dry = {
       event: "special-district-fact-county.dry-run-prediction",
       county: args.county,
+      membershipMethodId: TRUE_GEOM_MEMBERSHIP_METHOD,
       elapsedMs: Math.round(performance.now() - t0),
       ...summary,
       sample: sampleAtoms.map((a) => ({
@@ -285,69 +461,36 @@ try {
         absenceKind: a.absence?.kind ?? null,
         taxRate: a.taxRate ?? null,
       })),
-      note: "BINARY PIP ONLY — no proximity semantics; --apply not run (slot held)",
+      note:
+        "TRUE-GEOM ST_Intersects (zone-major) — no bbox-midpoint; --apply not run",
     };
-    console.log(JSON.stringify(payload));
-    if (args.out) writeFileSync(args.out, JSON.stringify(payload, null, 2));
+    console.log(JSON.stringify(dry));
+    if (args.out) writeFileSync(args.out, JSON.stringify(dry, null, 2));
   } else {
-    const substrateUrl = resolveSubstrateDatabaseUrl(process.env);
-    const handle = await createPgStorage(substrateUrl);
-    for (let i = 0; i < atoms.length; i += args.batch) {
-      const slice = atoms.slice(i, i + args.batch);
-      await handle.storage.writePropertyAtomsBatch(slice);
-      summary.atomsWritten += slice.length;
-
-      // Look rows up by the atoms PRIMARY KEY (`atom_did`), never by the
-      // `body->>'atomDid'` jsonb expression: no index serves the expression, so
-      // every batch seq-scanned the whole atoms table. StoragePort upserts under
-      // the canonical `did:hauska:<entityType>:<entityId>` form (body.atomDid
-      // stays the contract hash token), so the canonical did is what the PK holds.
-      // `a.entityId` is the exact value written to `entity_id`.
-      const dids = slice.map((a) => `did:hauska:special-district-fact:${a.entityId}`);
-      const stored = await handle.sql`
-          SELECT body FROM atoms
-          WHERE atom_did IN ${handle.sql(dids)}
-        `;
-      const storedByDid = new Map(stored.map((s) => [s.body?.atomDid, s.body]));
-      for (const atom of slice) {
-        const back = storedByDid.get(atom.atomDid);
-        if (!back) {
-          summary.verifyFailures.push({
-            atomDid: atom.atomDid,
-            problem: "atom not readable back via body->>'atomDid' after write",
-          });
-          continue;
-        }
-        const verdict = verifyStoredSpecialDistrictFactAtom(back, {
-          parcelNodeId: atom.parcelNodeId,
-          outcome: atom.absence ? "absent" : "present",
-          districtId: atom.districtId,
-        });
-        if (verdict.ok) summary.verified += 1;
-        else summary.verifyFailures.push(verdict);
-      }
-
-      if (summary.verifyFailures.length > 0) {
-        throw new Error(
-          `write-then-verify FAILED on ${summary.verifyFailures.length} atom(s); ` +
-            `first: ${JSON.stringify(summary.verifyFailures[0])}`,
-        );
-      }
-
-      console.log(
-        JSON.stringify({
-          event: "special-district-fact-county.progress",
-          county: args.county,
-          written: summary.atomsWritten,
-          verified: summary.verified,
-          ofTotal: atoms.length,
-        }),
-      );
+    // In-process plan+drain convenience; membershipMethodId always recorded.
+    // Persist the plan artifact when --out is set so a later --drain can resume.
+    if (args.out) writePlanPayload(args.out, payload);
+    await writeAtomsFromPlan(plan, provenance, summary);
+    const donePayload = {
+      event: "special-district-fact-county.done",
+      membershipMethodId: TRUE_GEOM_MEMBERSHIP_METHOD,
+      ...summary,
+    };
+    console.log(JSON.stringify(donePayload));
+    try {
+      await sql.end({ timeout: 2 });
+    } catch {
+      /* ignore hung pooler end */
     }
-    console.log(JSON.stringify({ event: "special-district-fact-county.done", ...summary }));
+    process.exit(0);
   }
 } catch (err) {
-  console.error(JSON.stringify({ event: "special-district-fact-county.error", message: String(err) }));
+  console.error(
+    JSON.stringify({
+      event: "special-district-fact-county.error",
+      message: String(err),
+    }),
+  );
   process.exit(1);
 } finally {
   await sql.end({ timeout: 10 });
