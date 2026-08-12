@@ -381,6 +381,8 @@ try {
       const south = countyZoneBbox.southLat;
       const east = countyZoneBbox.eastLng;
       const north = countyZoneBbox.northLat;
+      // ORDER BY zone_row_id so JS-grid SFHA tie-break (array index order)
+      // matches PostGIS DISTINCT ON (... zone_row_id). Heap order is not stable.
       const zoneRows = await sql`
         SELECT zone_row_id, fld_zone, zone_subty, sfha_tf, static_bfe,
                geometry, west_lng, south_lat, east_lng, north_lat,
@@ -390,6 +392,7 @@ try {
           AND east_lng >= ${west}
           AND south_lat <= ${north}
           AND north_lat >= ${south}
+        ORDER BY zone_row_id
       `;
       const loaded = zoneRows.map((z) => ({
         zoneRowId: z.zone_row_id,
