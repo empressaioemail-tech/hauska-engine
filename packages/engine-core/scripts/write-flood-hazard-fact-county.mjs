@@ -7,13 +7,21 @@
  * 198,240 statewide features for a rural AOI). Outside mapped zones =
  * PRESENT inSFHA=false. Empty zone index = typed absence.
  *
+ * The plan phase runs in PostGIS when the zone table carries a populated
+ * `geom` column behind a GiST index, and in JS otherwise. `--plan-backend`
+ * forces one; an explicit PostGIS request FAILS rather than falling back,
+ * because a silent downgrade to the JS path is the difference between a
+ * two-minute county and a thirty-minute one with no signal either way.
+ *
  *   FLOOD_HAZARD_FACT_PATH=1 \
  *   CORTEX_DATABASE_URL=... \
  *   DATABASE_URL=...hauska_mcp... \
  *     pnpm --filter @hauska-engine/engine-core run write-flood-hazard-fact-county -- \
- *       --county=48261 [--apply] [--batch=500] [--limit=0]
+ *       --county=48261 [--apply] [--batch=500] [--limit=0] \
+ *       [--plan-backend=auto|postgis|hybrid|js] [--plan-batch=2000]
  */
 
+import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
@@ -24,10 +32,52 @@ import {
   buildAtomsForFloodHazardPlan,
   buildFloodZoneGrid,
   filterZonesByBBox,
+  firstZoneVintageInBBox,
   geometryCentroid,
   planCountyFloodHazard,
+  planCountyFloodHazardPostgis,
+  probeFloodZoneGeomReadiness,
   verifyStoredFloodHazardFactAtom,
 } from "../src/flood-hazard-fact/index.ts";
+
+const PLAN_BACKENDS = new Set([
+  "auto",
+  "postgis",
+  "postgis-point",
+  "hybrid",
+  "js",
+]);
+const POSTGIS_BACKENDS = new Set(["postgis", "postgis-point", "hybrid"]);
+
+/**
+ * Stable fingerprint of the planned outcomes. Two backends agree only if this
+ * matches — atom counts and an SFHA split can coincide while individual
+ * parcels disagree.
+ */
+function planDigest(plan) {
+  const lines = plan.planned.map((p) =>
+    p.outcome === "present"
+      ? [
+          p.parcelKey,
+          "present",
+          p.inSpecialFloodHazardArea ? "1" : "0",
+          p.floodZone ?? "",
+          p.zoneSubtype ?? "",
+          p.baseFloodElevation == null ? "" : String(p.baseFloodElevation),
+        ].join("|")
+      : [p.parcelKey, "absent", p.absenceKind, p.reason].join("|"),
+  );
+  lines.sort();
+  const hash = createHash("sha256");
+  for (const line of lines) hash.update(line).update("\n");
+  const byZone = {};
+  for (const p of plan.planned) {
+    if (p.outcome !== "present") continue;
+    const key = p.floodZone ?? "_outside";
+    byZone[key] = (byZone[key] ?? 0) + 1;
+  }
+  return { sha256: hash.digest("hex"), records: lines.length, byZone };
+}
 
 const SOURCE_ADAPTER = "fema-nfhl-bulk-v1";
 const SOURCE_URL = "tx_fema_nfhl_flood_zone";
@@ -42,6 +92,8 @@ function parseArgs(argv) {
     limit: 0,
     out: null,
     listCounties: false,
+    planBackend: "auto",
+    planBatch: 0,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -55,6 +107,12 @@ function parseArgs(argv) {
     else if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length));
     else if (a === "--out") out.out = String(argv[++i] || "").trim() || null;
     else if (a.startsWith("--out=")) out.out = a.slice("--out=".length).trim() || null;
+    else if (a === "--plan-backend") out.planBackend = String(argv[++i] || "").trim();
+    else if (a.startsWith("--plan-backend="))
+      out.planBackend = a.slice("--plan-backend=".length).trim();
+    else if (a === "--plan-batch") out.planBatch = Number(argv[++i] || 0);
+    else if (a.startsWith("--plan-batch="))
+      out.planBatch = Number(a.slice("--plan-batch=".length));
   }
   return out;
 }
@@ -65,6 +123,13 @@ if (process.env.FLOOD_HAZARD_FACT_PATH !== "1") {
 }
 
 const args = parseArgs(process.argv.slice(2));
+
+if (!PLAN_BACKENDS.has(args.planBackend)) {
+  console.error(
+    `FATAL: --plan-backend must be one of ${[...PLAN_BACKENDS].join("|")} (got ${args.planBackend}).`,
+  );
+  process.exit(1);
+}
 
 const poolUrl =
   process.env.CORTEX_DATABASE_URL?.trim() ||
@@ -180,6 +245,17 @@ const summary = {
   planMs: null,
   writeMs: null,
   verifyMs: null,
+  planBackendRequested: args.planBackend,
+  planBackend: null,
+  planBackendReason: null,
+  geomReadiness: null,
+  planSqlMs: null,
+  planBatches: null,
+  planBatchSize: null,
+  planCandidatesFetched: null,
+  planCandidatesRejectedByJs: null,
+  planCandidateLimitHits: null,
+  planDigest: null,
 };
 
 try {
@@ -262,15 +338,51 @@ try {
     }
     summary.loadParcelsMs = Math.round(performance.now() - tLoadParcels);
 
-    // Bbox-filter NFHL zones to the county extent (+ small pad).
+    const pad = 0.02;
+    const countyZoneBbox = {
+      westLng: countyBbox.westLng - pad,
+      southLat: countyBbox.southLat - pad,
+      eastLng: countyBbox.eastLng + pad,
+      northLat: countyBbox.northLat + pad,
+    };
+
+    // Choose the plan backend BEFORE loading zone geometry: the PostGIS path
+    // never needs the polygons in process at all.
+    const geomReadiness = hasNfhl ? await probeFloodZoneGeomReadiness(sql) : null;
+    summary.geomReadiness = geomReadiness;
+    let planBackend;
+    if (args.planBackend === "js") {
+      planBackend = "js";
+      summary.planBackendReason = "forced by --plan-backend=js";
+    } else if (POSTGIS_BACKENDS.has(args.planBackend)) {
+      if (!geomReadiness?.ready) {
+        throw new Error(
+          `--plan-backend=${args.planBackend} requested but the PostGIS path is not available: ` +
+            `${geomReadiness?.reason ?? "tx_fema_nfhl_flood_zone absent"}. ` +
+            "Refusing to fall back silently — re-run with --plan-backend=auto to accept the JS path.",
+        );
+      }
+      planBackend = args.planBackend;
+      summary.planBackendReason = `forced by --plan-backend=${args.planBackend}`;
+    } else if (geomReadiness?.ready) {
+      planBackend = "postgis";
+      summary.planBackendReason = `auto: geom populated ${geomReadiness.geomPopulated}/${geomReadiness.rowsTotal} behind ${geomReadiness.gistIndexName}`;
+    } else {
+      planBackend = "js";
+      summary.planBackendReason = `auto: ${geomReadiness?.reason ?? "tx_fema_nfhl_flood_zone absent"}`;
+    }
+    summary.planBackend = planBackend;
+
+    // Bbox-filter NFHL zones to the county extent (+ small pad). JS path only.
     let zones = [];
     const tZoneLoad = performance.now();
-    if (hasNfhl && nfhlRows > 0) {
-      const pad = 0.02;
-      const west = countyBbox.westLng - pad;
-      const south = countyBbox.southLat - pad;
-      const east = countyBbox.eastLng + pad;
-      const north = countyBbox.northLat + pad;
+    if (planBackend === "js" && hasNfhl && nfhlRows > 0) {
+      const west = countyZoneBbox.westLng;
+      const south = countyZoneBbox.southLat;
+      const east = countyZoneBbox.eastLng;
+      const north = countyZoneBbox.northLat;
+      // ORDER BY zone_row_id so JS-grid SFHA tie-break (array index order)
+      // matches PostGIS DISTINCT ON (... zone_row_id). Heap order is not stable.
       const zoneRows = await sql`
         SELECT zone_row_id, fld_zone, zone_subty, sfha_tf, static_bfe,
                geometry, west_lng, south_lat, east_lng, north_lat,
@@ -280,6 +392,7 @@ try {
           AND east_lng >= ${west}
           AND south_lat <= ${north}
           AND north_lat >= ${south}
+        ORDER BY zone_row_id
       `;
       const loaded = zoneRows.map((z) => ({
         zoneRowId: z.zone_row_id,
@@ -305,24 +418,61 @@ try {
     }
     summary.zoneLoadMs = Math.round(performance.now() - tZoneLoad);
 
-    summary.storeTruth.zonesLoadedForCounty = zones.length;
+    let plan;
+    let zoneVintage;
+    if (planBackend === "js") {
+      summary.storeTruth.zonesLoadedForCounty = zones.length;
+      zoneVintage = zones[0]?.sourceVintage ?? undefined;
 
-    const countyZoneBbox = {
-      westLng: countyBbox.westLng - 0.02,
-      southLat: countyBbox.southLat - 0.02,
-      eastLng: countyBbox.eastLng + 0.02,
-      northLat: countyBbox.northLat + 0.02,
-    };
-    const tGridBuild = performance.now();
-    const grid = zones.length > 0 ? buildFloodZoneGrid(zones, countyZoneBbox) : null;
-    summary.gridBuildMs = Math.round(performance.now() - tGridBuild);
+      const tGridBuild = performance.now();
+      const grid = zones.length > 0 ? buildFloodZoneGrid(zones, countyZoneBbox) : null;
+      summary.gridBuildMs = Math.round(performance.now() - tGridBuild);
 
-    const tPlan = performance.now();
-    const plan = planCountyFloodHazard(parcels, zones, {
-      countyFips: args.county,
-      grid,
-    });
-    summary.planMs = Math.round(performance.now() - tPlan);
+      const tPlan = performance.now();
+      plan = planCountyFloodHazard(parcels, zones, {
+        countyFips: args.county,
+        grid,
+      });
+      summary.planMs = Math.round(performance.now() - tPlan);
+    } else {
+      summary.gridBuildMs = 0;
+      const tPlan = performance.now();
+      const result = await planCountyFloodHazardPostgis(sql, parcels, {
+        countyFips: args.county,
+        bbox: countyZoneBbox,
+        backend: planBackend,
+        ...(args.planBatch > 0 ? { batchSize: args.planBatch } : {}),
+        onBatch: (info) => {
+          console.log(
+            JSON.stringify({
+              event: "flood-hazard-fact-county.plan-progress",
+              county: args.county,
+              backend: planBackend,
+              batch: info.batchIndex + 1,
+              ofBatches: info.batches,
+              pointsResolved: info.pointsResolved,
+              pointsTotal: info.pointsTotal,
+              batchMs: info.batchMs,
+            }),
+          );
+        },
+      });
+      summary.planMs = Math.round(performance.now() - tPlan);
+      plan = result.plan;
+      summary.planSqlMs = result.sqlMs;
+      summary.planBatches = result.batches;
+      summary.planBatchSize = result.batchSize;
+      summary.planCandidatesFetched = result.candidatesFetched;
+      summary.planCandidatesRejectedByJs = result.candidatesRejectedByJs;
+      summary.planCandidateLimitHits = result.candidateLimitHits;
+      summary.storeTruth.zonesLoadedForCounty = result.zonesIndexed;
+      zoneVintage =
+        result.zonesIndexed > 0
+          ? ((await firstZoneVintageInBBox(sql, countyZoneBbox)) ?? undefined)
+          : undefined;
+    }
+
+    summary.planDigest = planDigest(plan);
     summary.plan = {
       parcelsRead: plan.parcelsRead,
       zonesIndexed: plan.zonesIndexed,
@@ -338,13 +488,13 @@ try {
     const provenance = {
       sourceAdapter: SOURCE_ADAPTER,
       sourceCitation: hasNfhl
-        ? `FEMA NFHL tx_fema_nfhl_flood_zone (${nfhlRows}/${NFHL_STATEWIDE_SOURCE_FEATURES} statewide rows; ${zones.length} bbox-filtered for ${args.county})`
+        ? `FEMA NFHL tx_fema_nfhl_flood_zone (${nfhlRows}/${NFHL_STATEWIDE_SOURCE_FEATURES} statewide rows; ${summary.storeTruth.zonesLoadedForCounty} bbox-filtered for ${args.county})`
         : `FEMA NFHL table absent (to_regclass NULL) for county ${args.county}`,
       sourceUrl: SOURCE_URL,
       observedAt: new Date().toISOString(),
       jurisdictionTenant: `tx_${args.county}`,
       verificationStatus: "machine",
-      sourceVintage: zones[0]?.sourceVintage ?? undefined,
+      sourceVintage: zoneVintage,
     };
     const atoms = buildAtomsForFloodHazardPlan(plan, provenance);
     summary.atomsBuilt = atoms.length;
@@ -354,6 +504,9 @@ try {
         JSON.stringify({
           event: "flood-hazard-fact-county.dry-run-prediction",
           county: args.county,
+          planBackend: summary.planBackend,
+          planMs: summary.planMs,
+          planDigest: summary.planDigest,
           storeTruth: summary.storeTruth,
           ...summary.plan,
           atomsBuilt: atoms.length,
