@@ -1,0 +1,61 @@
+# DC-10 / OPS-5: named CI instrument for block13 cert re-earn in the Geometry Law
+# (raw txgio) frame. Offline fixture grades the same primitive as live
+# (gradeAgainstKeyResolved). Fixture rings are dumped from txgio_parcel.
+name: block13-cert-grade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/engine-core/src/registry/cert-grade-core.ts"
+      - "packages/engine-core/src/registry/__fixtures__/block13-offline.json"
+      - "packages/engine-core/src/registry/__tests__/block13-offline-fixture.test.ts"
+      - "packages/engine-core/src/registry/__tests__/cert-frame-txgio-graded.test.ts"
+      - "packages/engine-core/scripts/block13-cert-grade.mjs"
+      - "packages/engine-core/scripts/dump-block13-offline-fixture.mjs"
+      - ".github/workflows/block13-cert-grade.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/engine-core/src/registry/cert-grade-core.ts"
+      - "packages/engine-core/src/registry/__fixtures__/block13-offline.json"
+      - "packages/engine-core/src/registry/__tests__/block13-offline-fixture.test.ts"
+      - "packages/engine-core/src/registry/__tests__/cert-frame-txgio-graded.test.ts"
+      - "packages/engine-core/scripts/block13-cert-grade.mjs"
+      - "packages/engine-core/scripts/dump-block13-offline-fixture.mjs"
+      - ".github/workflows/block13-cert-grade.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: block13-cert-grade-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  block13-cert-grade:
+    name: block13 offline 7/7 (txgio frame)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Cert-frame pin (txgio graded; BCAD never substitutes)
+        working-directory: packages/engine-core
+        run: pnpm exec vitest run src/registry/__tests__/cert-frame-txgio-graded.test.ts
+
+      - name: Block13 offline fixture (7/7)
+        working-directory: packages/engine-core
+        run: pnpm exec vitest run src/registry/__tests__/block13-offline-fixture.test.ts
