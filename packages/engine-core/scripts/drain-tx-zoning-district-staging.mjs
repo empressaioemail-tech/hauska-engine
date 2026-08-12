@@ -22,6 +22,7 @@ function parseArgs(argv) {
     city: null,
     county: null,
     baseOnly: true,
+    allowMultiCity: false,
     out: null,
     limit: 0,
   };
@@ -33,6 +34,7 @@ function parseArgs(argv) {
     else if (a.startsWith("--county=")) out.county = a.slice("--county=".length).trim();
     else if (a === "--base-only") out.baseOnly = true;
     else if (a === "--include-unknown") out.baseOnly = false;
+    else if (a === "--allow-multi-city") out.allowMultiCity = true;
     else if (a === "--limit") out.limit = Number(argv[++i] || 0);
     else if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length));
     else if (a === "--out") out.out = String(argv[++i] || "").trim() || null;
@@ -53,6 +55,13 @@ if (process.env.ZONING_STAGING_DRAIN_PATH !== "1") {
 const args = parseArgs(process.argv.slice(2));
 if (!args.city && !args.county) {
   console.error("FATAL: --city and/or --county required.");
+  process.exit(1);
+}
+if (!args.city && args.county && !args.allowMultiCity) {
+  console.error(
+    "FATAL: --county without --city mixes cities (C-3 collision class). " +
+      "Pass --city=... (preferred) or --allow-multi-city.",
+  );
   process.exit(1);
 }
 
@@ -94,6 +103,7 @@ try {
     cityKey: args.city,
     countyFips: args.county,
     baseOnly: args.baseOnly,
+    allowMultiCity: args.allowMultiCity,
   });
 
   let payloadRows = drained.rows;
@@ -105,11 +115,12 @@ try {
     cityKey: args.city,
     countyFips: args.county,
     baseOnly: args.baseOnly,
+    allowMultiCity: args.allowMultiCity,
     rowsRead: rows.length,
     rowsDrained: payloadRows.length,
     refused: drained.refused,
     note:
-      "Factory 2 zoning writer will consume this drain later — this CLI does not mint atoms or stamp parcels.",
+      "Factory 2 zoning writer will consume this drain later — this CLI does not mint atoms or stamp parcels. District codes are city-scoped; prefer --city.",
     sample: payloadRows.slice(0, 3).map((r) => ({
       stagingRowId: r.stagingRowId,
       cityKey: r.cityKey,
