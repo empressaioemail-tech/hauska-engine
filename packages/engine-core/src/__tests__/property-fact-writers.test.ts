@@ -576,17 +576,27 @@ describe("planCountyFloodHazard", () => {
     ).toEqual({ ok: true });
   });
 
-  it("outside zones is present inSFHA=false", () => {
+  it("outside loaded zones fail-closes to typed absence (never Zone X by omission)", () => {
     expect(pointInGeoJson(-96, 26.5, square.geometry)).toBe(false);
     const plan = planCountyFloodHazard(
       [{ parcelKey: "1", centroid: [-96, 26.5] }],
       [square],
       { countyFips: "48261" },
     );
-    expect(plan.counts.presentOutside).toBe(1);
+    expect(plan.counts.presentOutside).toBe(0);
+    expect(plan.counts.absent).toBe(1);
+    expect(plan.planned[0]).toMatchObject({
+      outcome: "absent",
+      absenceKind: "no-flood-coverage",
+    });
     const [atom] = buildAtomsForFloodHazardPlan(plan, FH_PROV);
-    expect(atom!.inSpecialFloodHazardArea).toBe(false);
-    expect(atom!.floodZone).toBeNull();
+    expect(atom!.absence?.kind).toBe("no-flood-coverage");
+    expect(
+      verifyStoredFloodHazardFactAtom(atom, {
+        parcelNodeId: "48261:1",
+        outcome: "absent",
+      }),
+    ).toEqual({ ok: true });
   });
 
   it("hits SFHA zone as present inSFHA=true", () => {

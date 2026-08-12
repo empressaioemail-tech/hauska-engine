@@ -2,7 +2,9 @@
  * `flood-hazard-fact` COUNTY PLANNER.
  *
  * Empty zone index → typed per-parcel absence (`no-flood-coverage`).
- * Outside every mapped zone → PRESENT with inSFHA=false (Zone X by omission).
+ * Point outside every loaded zone → typed absence (`no-flood-coverage`).
+ * Never manufacture Zone X / inSFHA=false by omission — a miss in a partial
+ * NFHL load is indistinguishable from true Zone X (SF-9 / L5).
  *
  * The parcel-selection and record-assembly halves are exported separately so a
  * PostGIS-backed resolver produces identical plan records to the JS path
@@ -121,7 +123,7 @@ export function hasUsableCentroid(parcel: PlannableParcel): boolean {
  * Turn a selection plus per-parcel resolved zones into the county plan.
  *
  * `resolvedZones` is index-aligned with `selection.items`; a null entry means
- * the point fell outside every mapped zone (Zone X by omission).
+ * the point fell outside every LOADED zone polygon — not proven Zone X.
  */
 export function assembleCountyFloodHazardPlan(
   selection: PlannableParcelSelection,
@@ -159,15 +161,14 @@ export function assembleCountyFloodHazardPlan(
 
     const hit = resolvedZones[i] ?? null;
     if (!hit) {
+      // SF-9: null hit is "outside loaded polygons", not Zone X. Zone X must
+      // arrive as an explicit FLD_ZONE hit when NFHL carries it.
       planned.push({
-        outcome: "present",
+        outcome: "absent",
         parcelKey: key,
-        inSpecialFloodHazardArea: false,
-        floodZone: null,
-        zoneSubtype: null,
-        baseFloodElevation: null,
+        absenceKind: "no-flood-coverage",
+        reason: `point outside every loaded NFHL zone for ${opts.countyFips}:${key} — not proven Zone X (fail-closed; partial load would otherwise manufacture inSFHA=false)`,
       });
-      presentOutside += 1;
       continue;
     }
 

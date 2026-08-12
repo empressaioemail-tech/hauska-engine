@@ -1,9 +1,9 @@
 /**
  * `flood-hazard-fact` writer SEAM.
  *
- * Outside-mapped parcels are PRESENT with `inSpecialFloodHazardArea: false`
- * (Zone X by omission), not typed absence. Absence is for empty zone index /
- * no-geocode. `entityId` = `parcelNodeId` (no tax year).
+ * Point outside every loaded NFHL polygon is typed absence (`no-flood-coverage`),
+ * never Zone X / inSFHA=false by omission (SF-9). Absence also covers empty
+ * zone index / no-geocode. `entityId` = `parcelNodeId` (no tax year).
  */
 
 import {

@@ -7,7 +7,8 @@
  * `assembleCountyFloodHazardPlan`, so these tests pin the rules that a second
  * backend could otherwise silently re-implement differently: unusable-key
  * skipping, first-key-wins dedupe, the empty-zone-index absence, the
- * no-centroid absence, and Zone X by omission.
+ * no-centroid absence, and fail-closed absence when no loaded zone hits
+ * (never Zone X by omission — SF-9).
  */
 import { describe, expect, it } from "vitest";
 
@@ -82,21 +83,23 @@ describe("assembleCountyFloodHazardPlan", () => {
     });
   });
 
-  it("emits Zone X by omission (present, not absent) when no zone contains the point", () => {
+  it("fail-closes to typed absence when no loaded zone contains the point (never Zone X by omission)", () => {
     const sel = selectPlannableParcels([parcel("R1")]);
     const plan = assembleCountyFloodHazardPlan(sel, [null], {
       countyFips: "48099",
       zonesIndexed: 1543,
     });
-    expect(plan.planned[0]).toEqual({
-      outcome: "present",
+    expect(plan.planned[0]).toMatchObject({
+      outcome: "absent",
       parcelKey: "R1",
-      inSpecialFloodHazardArea: false,
-      floodZone: null,
-      zoneSubtype: null,
-      baseFloodElevation: null,
+      absenceKind: "no-flood-coverage",
     });
-    expect(plan.counts.presentOutside).toBe(1);
+    expect(String((plan.planned[0] as { reason?: string }).reason)).toMatch(
+      /not proven Zone X/i,
+    );
+    expect(plan.counts.present).toBe(0);
+    expect(plan.counts.presentOutside).toBe(0);
+    expect(plan.counts.absent).toBe(1);
   });
 
   it("carries zone attributes and the SFHA flag onto the record", () => {
