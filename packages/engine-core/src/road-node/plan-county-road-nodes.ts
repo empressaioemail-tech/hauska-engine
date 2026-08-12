@@ -7,10 +7,8 @@
 
 import { roadNodeIdFromParts } from "@hauska-engine/atoms";
 
-import { isCaldwellCadSyntheticWayId } from "../road-intake/classify-caldwell-cad.js";
 import {
-  isCountyRoadwaySyntheticWayId,
-  isLegacyCountySyntheticWayId,
+  isReservedPositiveSyntheticMintWindow,
 } from "../road-intake/classify-county-street.js";
 import type { OsmRoadObservation } from "../road-intake/types.js";
 
@@ -52,13 +50,9 @@ export interface StoredRoadNodePriorRow {
   status: "active" | "retired";
 }
 
-/** Positive OSM id bands that overlap legacy Bastrop synthetic minting (F5 H4). */
+/** Positive OSM ids in the narrow legacy synthetic mint windows (F5 H4). */
 export function isPositiveLegacySyntheticBand(osmWayId: number): boolean {
-  return (
-    isLegacyCountySyntheticWayId(osmWayId) ||
-    isCountyRoadwaySyntheticWayId(osmWayId) ||
-    isCaldwellCadSyntheticWayId(osmWayId)
-  );
+  return isReservedPositiveSyntheticMintWindow(osmWayId);
 }
 
 /**

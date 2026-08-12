@@ -411,17 +411,33 @@ try {
     };
 
     if (plan.collisionCandidates.length > 0) {
-      console.error(
-        JSON.stringify({
-          event: "road-node-county.collision-fail-closed",
-          county: args.county,
-          collisionCount: plan.collisionCandidates.length,
-          sample: plan.collisionCandidates.slice(0, 5),
-          message:
-            "legacy synthetic band / prior-adapter collisions block apply until migration (48021 first)",
-        }),
+      const blocking = plan.collisionCandidates.filter((c) =>
+        c.reason.includes("protected/non-PBF adapter"),
       );
-      process.exitCode = 1;
+      const legacyBandOnly =
+        args.county === "48021"
+          ? plan.collisionCandidates.filter((c) =>
+              c.reason.includes("positive legacy synthetic band"),
+            )
+          : [];
+      const blockers = [...blocking, ...legacyBandOnly];
+      if (blockers.length > 0) {
+        console.error(
+          JSON.stringify({
+            event: "road-node-county.collision-fail-closed",
+            county: args.county,
+            collisionCount: blockers.length,
+            legacyBandAdvisory:
+              args.county !== "48021"
+                ? plan.counts.positiveLegacyBand
+                : undefined,
+            sample: blockers.slice(0, 5),
+            message:
+              "prior-adapter collisions always block; legacy positive-band block applies on 48021 until migration",
+          }),
+        );
+        process.exitCode = 1;
+      }
     }
 
     const descriptor = descriptorForCountyRoadRun(

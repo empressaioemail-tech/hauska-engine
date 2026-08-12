@@ -135,6 +135,20 @@ export const COUNTY_ROADWAY_ID_OFFSET = -800_000_000;
 /** Legacy positive bands — live Bastrop rows minted before F5 partition. */
 export const LEGACY_COUNTY_ROAD_ID_OFFSET = 900_000_000;
 export const LEGACY_COUNTY_ROADWAY_ID_OFFSET = 800_000_000;
+/** Live Bastrop county-roadway mint window (pre-F5 positive band). */
+export const LEGACY_COUNTY_ROADWAY_ID_MIN = 800_000_001;
+export const LEGACY_COUNTY_ROADWAY_ID_MAX = 800_011_351;
+/** Live Bastrop StreetsSurveyed2016 mint window (pre-F5 positive band). */
+export const LEGACY_COUNTY_SURVEYED_ID_MIN = 900_000_001;
+export const LEGACY_COUNTY_SURVEYED_ID_MAX = 900_001_307;
+
+/** Reserved positive windows where county adapters minted synthetic ids (not all OSM ids >= 700M). */
+export function isReservedPositiveSyntheticMintWindow(wayId: number): boolean {
+  return (
+    (wayId >= LEGACY_COUNTY_ROADWAY_ID_MIN && wayId <= LEGACY_COUNTY_ROADWAY_ID_MAX) ||
+    (wayId >= LEGACY_COUNTY_SURVEYED_ID_MIN && wayId <= LEGACY_COUNTY_SURVEYED_ID_MAX)
+  );
+}
 
 export function countyRoadSyntheticWayId(objectId: number): number {
   return COUNTY_ROAD_ID_OFFSET - objectId;
