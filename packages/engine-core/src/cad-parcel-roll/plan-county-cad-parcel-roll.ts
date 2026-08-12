@@ -1,12 +1,16 @@
 /**
  * `cad-parcel-roll` COUNTY PLANNER — pure, no database access.
  *
- * HOLD counties (CROSSWALK_HOLD_FIPS) → join-hold absences for every usable
- * CAD row. Else → present atoms from cad_property claim fields.
+ * HOLD counties (CROSSWALK_HOLD_FIPS ∪ LANDUSE_JOIN_HOLD_FIPS) → join-hold
+ * absences for every usable CAD row. Else → present atoms from cad_property
+ * claim fields. Both hold sets share the same root cause: the prop_id join
+ * to TxGIO / parcel-node is unsafe, so promoting CAD attributes onto a
+ * parcelNodeId would assert continuity the key cannot support.
  */
 
 import {
   isCrosswalkHoldCounty,
+  isLandUseJoinHoldCounty,
   isUsablePropId,
   normalizeForJoin,
   type ParcelKeyKind,
@@ -129,7 +133,12 @@ export function planCountyCadParcelRoll(
   rows: ReadonlyArray<CadPropertyRowInput>,
   opts: { countyFips: string; keyKind?: ParcelKeyKind },
 ): CountyCadParcelRollPlan {
-  const hold = isCrosswalkHoldCounty(opts.countyFips);
+  const hold =
+    isCrosswalkHoldCounty(opts.countyFips) ||
+    isLandUseJoinHoldCounty(opts.countyFips);
+  const holdReason = isCrosswalkHoldCounty(opts.countyFips)
+    ? `CROSSWALK_HOLD county ${opts.countyFips} — prop_id join unsafe; CAD attributes withheld`
+    : `LANDUSE_JOIN_HOLD county ${opts.countyFips} — TxGIO prop_id does not join CAD roll; CAD attributes withheld`;
   const keyKind = opts.keyKind ?? "prop_id";
   const planned: PlannedCadParcelRoll[] = [];
   let skippedUnusableKey = 0;
@@ -153,7 +162,7 @@ export function planCountyCadParcelRoll(
         taxYear: row.taxYear,
         keyKind,
         absenceKind: "join-hold",
-        reason: `CROSSWALK_HOLD county ${opts.countyFips} — prop_id join unsafe; CAD attributes withheld`,
+        reason: holdReason,
         sourceFile: row.sourceFile,
         sourceVintage: row.sourceVintage,
       });

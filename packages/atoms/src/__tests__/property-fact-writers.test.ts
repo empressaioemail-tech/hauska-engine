@@ -90,6 +90,12 @@ describe("fact-writer-ids", () => {
     expect(isUsablePropId("27303")).toBe(true);
   });
 
+  it("isUsablePropId rejects tokens outside parcelNodeId alphabet (Tarrant spaces)", () => {
+    expect(isUsablePropId("A 101-1J03A")).toBe(false);
+    expect(isUsablePropId("10-1-1A")).toBe(true);
+    expect(isUsablePropId("A/101")).toBe(false);
+  });
+
   it("mints stable prefixed DIDs", () => {
     const cad = cadParcelRollAtomDid({
       parcelNodeId: "48021:27303",

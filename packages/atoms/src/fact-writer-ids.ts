@@ -8,7 +8,7 @@
  * the contract form and is what write-then-verify reads back.
  *
  * The HOLD sets below are join-policy metadata for known-bad prop_id
- * crosswalks — not county allowlists for who may run. Store roster still
+ * crosswalks - not county allowlists for who may run. Store roster still
  * comes from `cad_property` / `txgio_parcel` / NFHL at execution time.
  */
 
@@ -24,13 +24,13 @@ export const CROSSWALK_HOLD_FIPS: ReadonlySet<string> = new Set([
   "48295", // Lipscomb
 ]);
 
-/** Hays + Williamson — TxGIO prop_id does not correspond to CAD roll. */
+/** Hays + Williamson - TxGIO prop_id does not correspond to CAD roll. */
 export const LANDUSE_JOIN_HOLD_FIPS: ReadonlySet<string> = new Set([
   "48209", // Hays
   "48491", // Williamson
 ]);
 
-/** FNV-1a 64-bit → lowercase 16-hex (no `0x` prefix). */
+/** FNV-1a 64-bit -> lowercase 16-hex (no `0x` prefix). */
 export function fnv1a64Hex(canonical: string): string {
   let hash = 0xcbf29ce484222325n;
   for (let i = 0; i < canonical.length; i++) {
@@ -169,14 +169,26 @@ export function normalizeForJoin(value: string): string {
 }
 
 /**
+ * Second token of `parcelNodeId` (`{county_fips}:{token}`) must match the
+ * contract alphabet. Same gate the parcel-node planner applies via
+ * KEY_TOKEN_PATTERN - spaces/slashes in a CAD account id are real (Tarrant
+ * carries ~20k) but must not reach createOwnerFact / createLandUseFact and
+ * kill a whole county mid-build.
+ */
+const PROP_ID_TOKEN_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+/**
  * A prop_id that is present but carries no identity (null / blank / all-zero
- * StratMap placeholders). Same unusable-token rule as the parcel-node planner.
+ * StratMap placeholders), OR that cannot form a contract-legal parcelNodeId.
+ * Same unusable-token rule as the parcel-node planner.
  */
 export function isUsablePropId(value: string | null | undefined): value is string {
   if (value === null || value === undefined) return false;
   const trimmed = value.trim();
   if (trimmed.length === 0) return false;
   if (/^0+$/.test(trimmed)) return false;
+  const normalized = normalizeForJoin(trimmed);
+  if (!PROP_ID_TOKEN_PATTERN.test(normalized)) return false;
   return true;
 }
 

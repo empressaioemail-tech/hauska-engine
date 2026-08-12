@@ -4,6 +4,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createOwnerFact,
+  PARCEL_NODE_ID_PATTERN,
+} from "@hauska-engine/atoms";
+
+import {
   buildAtomsForCadParcelRollPlan,
   planCountyCadParcelRoll,
   verifyStoredCadParcelRollAtom,
@@ -119,6 +124,42 @@ describe("planCountyCadParcelRoll", () => {
     expect(atom!.parcelNodeId).toBe("48453:207310401");
   });
 
+
+  it("Hays LANDUSE_JOIN_HOLD emits join-hold absences (not present atoms)", () => {
+    const plan = planCountyCadParcelRoll(
+      [
+        {
+          countyFips: "48209",
+          propId: "R12345",
+          taxYear: 2026,
+          sourceFile: "hays.txt",
+          sourceVintage: "2026-01-15",
+          ownerName: "SHOULD WITHHOLD",
+          marketValue: 250000,
+          propertyUseCode: "A1",
+        },
+      ],
+      { countyFips: "48209" },
+    );
+    expect(plan.hold).toBe(true);
+    expect(plan.counts.present).toBe(0);
+    expect(plan.counts.absentByKind["join-hold"]).toBe(1);
+    const [row] = plan.planned;
+    expect(row!.outcome).toBe("absent");
+    if (row!.outcome === "absent") {
+      expect(row.absenceKind).toBe("join-hold");
+      expect(row.reason).toContain("LANDUSE_JOIN");
+      expect(row.reason).not.toContain("CROSSWALK");
+    }
+    const atoms = buildAtomsForCadParcelRollPlan(plan, {
+      ...CAD_PROV,
+      jurisdictionTenant: "tx_48209",
+    });
+    expect(atoms).toHaveLength(1);
+    expect(atoms[0]!.absence?.kind).toBe("join-hold");
+    expect(atoms[0]!.ownerName).toBeUndefined();
+  });
+
   it("rejects stored bodies that embed geometry", () => {
     const bad = {
       entityType: "cad-parcel-roll",
@@ -196,6 +237,43 @@ describe("planCountyLandUseFacts", () => {
       { countyFips: "48021", taxYear: 2026 },
     );
     expect(blank.counts.absentByKind["no-land-use-code"]).toBe(1);
+  });
+  it("Tarrant-shaped space prop_id skips at plan time; land-use build does not abort", () => {
+    const badKey = "A 101-1J03A";
+    const goodKey = "27303";
+    const plan = planCountyLandUseFacts(
+      [{ parcelKey: badKey }, { parcelKey: goodKey }],
+      [
+        {
+          propId: badKey,
+          taxYear: 2026,
+          propertyUseCode: "A1",
+          sourceVintage: "2026-01-15",
+        },
+        {
+          propId: goodKey,
+          taxYear: 2026,
+          propertyUseCode: "A1",
+          sourceVintage: "2026-01-15",
+        },
+      ],
+      { countyFips: "48439", taxYear: 2026 },
+    );
+    expect(plan.counts.skippedUnusableKey).toBeGreaterThanOrEqual(1);
+    expect(plan.planned.some((p) => p.parcelKey.includes(" "))).toBe(false);
+    expect(plan.counts.present).toBe(1);
+    expect(() =>
+      buildAtomsForLandUseFactPlan(plan, {
+        ...LU_PROV,
+        jurisdictionTenant: "tx_48439",
+      }),
+    ).not.toThrow();
+    const atoms = buildAtomsForLandUseFactPlan(plan, {
+      ...LU_PROV,
+      jurisdictionTenant: "tx_48439",
+    });
+    expect(atoms.some((a) => a.parcelNodeId === "48439:27303")).toBe(true);
+    expect(atoms.some((a) => String(a.parcelNodeId).includes(" "))).toBe(false);
   });
 });
 
@@ -382,6 +460,75 @@ describe("planCountyOwnerFacts", () => {
     );
     expect(plan.planned.length).toBe(1);
   });
+
+  it("Tarrant-shaped space prop_id skips at plan time; county build does not abort", () => {
+    const badKey = "A 101-1J03A";
+    const goodKey = "27303";
+    const plan = planCountyOwnerFacts(
+      [{ parcelKey: badKey }, { parcelKey: goodKey }],
+      [
+        {
+          propId: badKey,
+          taxYear: 2026,
+          ownerName: "BAD TOKEN OWNER",
+          ownerMailingAddress: null,
+          exemptionCodes: null,
+          sourceVintage: "2026-01-15",
+        },
+        {
+          propId: goodKey,
+          taxYear: 2026,
+          ownerName: "GOOD TOKEN OWNER",
+          ownerMailingAddress: "PO BOX 1",
+          exemptionCodes: ["HS"],
+          sourceVintage: "2026-01-15",
+        },
+      ],
+      { countyFips: "48439", taxYear: 2026 },
+    );
+    expect(plan.counts.skippedUnusableKey).toBeGreaterThanOrEqual(1);
+    expect(plan.planned.some((p) => p.parcelKey.includes(" "))).toBe(false);
+    expect(plan.counts.present).toBe(1);
+
+    // Failure mode is row-level skip: a complete createOwnerFact payload with
+    // only the illegal parcelNodeId must fail the alphabet refine — proving
+    // the abort class is Zod on that row, not a missing-field throw that
+    // would also satisfy a bare .toThrow().
+    const illegalParcelNodeId = `48439:${badKey}`;
+    expect(PARCEL_NODE_ID_PATTERN.test(illegalParcelNodeId)).toBe(false);
+    expect(() =>
+      createOwnerFact({
+        entityType: "owner-fact",
+        atomDid: "ownfact_aaaaaaaaaaaaaaaa",
+        parcelNodeId: illegalParcelNodeId,
+        taxYear: 2026,
+        ownerName: "BAD TOKEN OWNER",
+        accessPolicy: "public-paid",
+        reasoningChain: { reasoningKind: "observed" },
+        sourceTier: "cad-authoritative",
+        sourceCitation: "test",
+        extractedAt: "2026-08-09T12:00:00.000Z",
+        verificationStatus: "machine",
+        sourceAdapter: "test-adapter",
+        evaluatedAt: "2026-08-09T12:00:00.000Z",
+        atomTier: "data",
+      }),
+    ).toThrow(/parcelNodeId/);
+
+    expect(() => buildAtomsForOwnerFactPlan(plan, {
+      ...OWN_PROV,
+      jurisdictionTenant: "tx_48439",
+    })).not.toThrow();
+    const atoms = buildAtomsForOwnerFactPlan(plan, {
+      ...OWN_PROV,
+      jurisdictionTenant: "tx_48439",
+    });
+    const good = atoms.find((a) => a.ownerName === "GOOD TOKEN OWNER");
+    expect(good).toBeDefined();
+    expect(good!.parcelNodeId).toBe("48439:27303");
+    expect(atoms.some((a) => String(a.parcelNodeId).includes(" "))).toBe(false);
+  });
+
 });
 
 describe("planCountyFloodHazard", () => {
