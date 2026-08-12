@@ -42,6 +42,12 @@ import {
   retireRoadNodeInstance,
   type WriteRoadAtomsBatchOptions,
 } from "./road-ingest-supersede.js";
+import {
+  matchesAtomQuery,
+  rankSearchResults,
+  scoreAtomSearch,
+  tokenize,
+} from "./search-scoring.js";
 
 /**
  * Hard cap on bodies materialized per search. The live substrate table is
