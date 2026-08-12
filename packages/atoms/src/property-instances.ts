@@ -204,6 +204,14 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "rrc-pipeline-fact",
 ];
 
+/**
+ * Parcel-keyed property entity types: everything in {@link PROPERTY_ENTITY_TYPES}
+ * except `road-node` (road atoms anchor on `roadNodeId`, not parcel chain reads).
+ * Single source for storage listPropertyAtomsByParcelNodeId and retrieval atom-chain.
+ */
+export const PARCEL_KEYED_PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> =
+  PROPERTY_ENTITY_TYPES.filter((entityType) => entityType !== "road-node");
+
 export type PropertyAtomStatus = "active" | "retired";
 
 /** Alias kept for emitter call sites. */

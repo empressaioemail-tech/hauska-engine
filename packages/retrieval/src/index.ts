@@ -9,7 +9,12 @@
  * the same interface once pgvector + embedding pipeline are wired.
  */
 
-import { isPropertyAtomInstance, buildAtomDid, isPedestrianOsmHighwayTag } from "@hauska-engine/atoms";
+import {
+  isPropertyAtomInstance,
+  buildAtomDid,
+  isPedestrianOsmHighwayTag,
+  PARCEL_KEYED_PROPERTY_ENTITY_TYPES,
+} from "@hauska-engine/atoms";
 import type {
   AtomLink,
   CodeAtomEntityType,
@@ -96,6 +101,12 @@ export interface PropertyAtomChainWire {
   zoningFact: StoredAtomInstance | null;
   setbackRule: StoredAtomInstance | null;
   buildableEnvelope: StoredAtomInstance | null;
+  /**
+   * One served slot per parcel-keyed property entity type (derived from
+   * {@link PARCEL_KEYED_PROPERTY_ENTITY_TYPES}; `road-node` excluded).
+   * Honest null when no active row exists for that type on this parcel.
+   */
+  atomsByType: Record<string, StoredAtomInstance | null>;
   /**
    * Road-node atoms attaching to this parcel (Track B1). Empty when none attach.
    * Resolved from boundary-edge facingRoad (and proximity when a ring is supplied
@@ -399,6 +410,21 @@ export class HybridRetrieval {
       ringWgs84: [],
       storage: this.storage,
     });
+    // Prefer the legacy suppressed slots for zoning/setback/envelope so
+    // atomsByType cannot resurrect a Bastrop stale setback the camelCase
+    // fields already nulled. Other parcel-keyed types come from `resolved`.
+    const atomsByType: Record<string, StoredAtomInstance | null> = {};
+    for (const entityType of PARCEL_KEYED_PROPERTY_ENTITY_TYPES) {
+      let slot: StoredAtomInstance | null = null;
+      if (entityType === "zoning-fact") slot = zoningFact;
+      else if (entityType === "setback-rule") slot = setbackRule;
+      else if (entityType === "buildable-envelope") slot = buildableEnvelope;
+      else {
+        slot = resolved.find((r) => r.entityType === entityType) ?? null;
+      }
+      atomsByType[entityType] = slot ? withGuaranteedAtomDid(slot) : null;
+    }
+
     return {
       parcelNodeId,
       zoningFact: zoningFact ? withGuaranteedAtomDid(zoningFact) : null,
@@ -406,6 +432,7 @@ export class HybridRetrieval {
       buildableEnvelope: buildableEnvelope
         ? withGuaranteedAtomDid(buildableEnvelope)
         : null,
+      atomsByType,
       attachingRoads: attaching.roads,
       atoms,
     };

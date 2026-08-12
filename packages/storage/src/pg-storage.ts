@@ -17,6 +17,7 @@ import {
   isBoundaryEdgeAtomInstance,
   isPropertyAtomInstance,
   isRoadNodeAtomInstance,
+  PARCEL_KEYED_PROPERTY_ENTITY_TYPES,
   type PropertyAtomInstance,
   type RoadNodeAtomInstance,
   type StoredAtomInstance,
@@ -123,18 +124,6 @@ function toIsoString(value: Date | string | null | undefined): string | null {
   if (value instanceof Date) return value.toISOString();
   return value;
 }
-
-/**
- * Property atom entity_types that anchor a parcel node via body.parcelNodeId.
- * Mirrors listPropertyAtomsByParcelNodeId — parcels exist implicitly as
- * DISTINCT body->>'parcelNodeId' over these families.
- */
-const PARCEL_ANCHOR_ENTITY_TYPES = [
-  "zoning-fact",
-  "setback-rule",
-  "buildable-envelope",
-  "parcel-terrain-model",
-] as const;
 
 /**
  * Count-scan bound for listGraphNodes. When a filtered county roster has
@@ -292,17 +281,11 @@ export class PgStorage implements StoragePort {
   async listPropertyAtomsByParcelNodeId(
     parcelNodeId: string,
   ): Promise<ReadonlyArray<PropertyAtomInstance>> {
+    const parcelKeyedTypes = [...PARCEL_KEYED_PROPERTY_ENTITY_TYPES];
     const rows = await this.sql<AtomBodyRow[]>`
       SELECT body
       FROM atoms
-      WHERE entity_type IN (
-          'zoning-fact',
-          'setback-rule',
-          'buildable-envelope',
-          -- Site-plan / terrain export persists artifacts on this entity.
-          -- Omitting it made refresh succeed while GET/download always 404'd.
-          'parcel-terrain-model'
-        )
+      WHERE entity_type IN ${this.sql(parcelKeyedTypes)}
         AND body->>'parcelNodeId' = ${parcelNodeId}
         AND COALESCE(body->>'status', 'active') = 'active'
       ORDER BY entity_type ASC, updated_at DESC
@@ -505,7 +488,7 @@ export class PgStorage implements StoragePort {
     const q = query.q?.trim() ?? "";
     const qPattern = q.length > 0 ? `%${escapeLikePattern(q)}%` : null;
     const parcelPrefix = `${countyFips}:%`;
-    const parcelTypes = [...PARCEL_ANCHOR_ENTITY_TYPES];
+    const parcelTypes = [...PARCEL_KEYED_PROPERTY_ENTITY_TYPES];
 
     let rows: NodeListAggRow[];
     let countRows: Array<{ total: number }>;
