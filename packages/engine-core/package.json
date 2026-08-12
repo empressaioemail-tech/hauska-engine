@@ -115,7 +115,8 @@
     "write-utility-easement-county": "tsx scripts/write-utility-easement-county.mjs",
     "apply-tx-zoning-district-staging-migration": "tsx scripts/apply-tx-zoning-district-staging-migration.mjs",
     "stage-tx-zoning-district": "tsx scripts/stage-tx-zoning-district.mjs",
-    "drain-tx-zoning-district-staging": "tsx scripts/drain-tx-zoning-district-staging.mjs"
+    "drain-tx-zoning-district-staging": "tsx scripts/drain-tx-zoning-district-staging.mjs",
+    "run-zoning-discovery": "tsx scripts/zoning-discovery/run_zoning_discovery.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
