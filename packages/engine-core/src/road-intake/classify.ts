@@ -23,6 +23,16 @@ const OSM_TO_CLASS: Record<string, RoadClassification> = {
   path: "gravel",
 };
 
+/** OSM lifecycle tags that must not mint pavement-asserting road atoms. */
+export const NON_PAVEMENT_OSM_HIGHWAY_TAGS = new Set([
+  "proposed",
+  "construction",
+]);
+
+export function isNonPavementOsmHighwayTag(highwayTag: string | undefined): boolean {
+  return NON_PAVEMENT_OSM_HIGHWAY_TAGS.has((highwayTag ?? "").trim().toLowerCase());
+}
+
 export function classifyOsmHighwayTag(
   highwayTag: string | undefined,
   tags?: Record<string, string>,

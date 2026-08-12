@@ -38,6 +38,11 @@ import type {
   StoragePort,
 } from "./port.js";
 import {
+  decideRoadSupersede,
+  retireRoadNodeInstance,
+  type WriteRoadAtomsBatchOptions,
+} from "./road-ingest-supersede.js";
+import {
   matchesAtomQuery,
   rankSearchResults,
   scoreAtomSearch,
@@ -63,6 +68,11 @@ const CODE_SEARCH_ENTITY_TYPES = [
 ] as const;
 
 interface AtomBodyRow {
+  body: unknown;
+}
+
+interface AtomDidBodyRow {
+  atom_did: string;
   body: unknown;
 }
 
@@ -322,10 +332,71 @@ export class PgStorage implements StoragePort {
 
   async writeRoadAtomsBatch(
     instances: ReadonlyArray<RoadNodeAtomInstance>,
+    opts?: WriteRoadAtomsBatchOptions,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
-    return this.writePropertyAtomsBatch(
-      instances as unknown as ReadonlyArray<PropertyAtomInstance>,
+    if (instances.length === 0) return [];
+
+    const atomDids = instances.map((inst) =>
+      typeof inst.atomDid === "string" && inst.atomDid.startsWith("did:hauska:")
+        ? inst.atomDid
+        : buildAtomDid(inst.entityType, inst.entityId).raw,
     );
+
+    const existingRows = await this.sql<AtomDidBodyRow[]>`
+      SELECT atom_did, body
+      FROM atoms
+      WHERE atom_did = ANY(${atomDids})
+    `;
+    const existingByDid = new Map<
+      string,
+      {
+        atomDid: string;
+        sourceAdapter: string;
+        versionStamp?: string;
+        status?: string;
+        body: RoadNodeAtomInstance;
+      }
+    >();
+    for (const row of existingRows) {
+      const inst = parseStoredAtom(row.body);
+      if (!inst || !isRoadNodeAtomInstance(inst)) continue;
+      existingByDid.set(row.atom_did as string, {
+        atomDid: row.atom_did as string,
+        sourceAdapter: inst.sourceAdapter,
+        versionStamp: inst.versionStamp,
+        status: inst.status,
+        body: inst,
+      });
+    }
+
+    const toWrite: PropertyAtomInstance[] = [];
+    const incomingWritten: RoadNodeAtomInstance[] = [];
+    const retiredAt = new Date().toISOString();
+
+    for (let i = 0; i < instances.length; i++) {
+      const incoming = instances[i]!;
+      const atomDid = atomDids[i]!;
+      const existing = existingByDid.get(atomDid) ?? null;
+      const action = decideRoadSupersede(incoming, existing, opts);
+      if (action === "skip-protected") continue;
+      if (action === "supersede-retire" && existing) {
+        toWrite.push(
+          retireRoadNodeInstance(
+            existing.body,
+            `superseded-by:${incoming.sourceAdapter}`,
+            retiredAt,
+          ) as unknown as PropertyAtomInstance,
+        );
+      }
+      toWrite.push(incoming as unknown as PropertyAtomInstance);
+      incomingWritten.push(incoming);
+    }
+
+    if (toWrite.length === 0) return [];
+    const written = await this.writePropertyAtomsBatch(toWrite);
+    // Last N writes correspond to incoming instances (retire rows precede each).
+    const start = written.length - incomingWritten.length;
+    return written.slice(start);
   }
 
   async listRoadAtomsByRoadNodeId(

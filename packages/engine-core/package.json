@@ -109,7 +109,8 @@
     "write-rail-corridor-fact-county": "tsx scripts/write-rail-corridor-fact-county.mjs",
     "write-building-footprint-county": "tsx scripts/write-building-footprint-county.mjs",
     "write-special-district-fact-county": "tsx scripts/write-special-district-fact-county.mjs",
-    "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs"
+    "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs",
+    "write-road-node-county": "tsx scripts/write-road-node-county.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

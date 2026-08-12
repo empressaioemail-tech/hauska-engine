@@ -132,7 +132,7 @@ export type RoadEntityType = "road-node";
 
 export const ROAD_ENTITY_TYPES: ReadonlyArray<RoadEntityType> = ["road-node"];
 
-export const ROAD_NODE_ID_PATTERN = /^\d{5}:road:\d+$/;
+export const ROAD_NODE_ID_PATTERN = /^\d{5}:road:-?\d+$/;
 
 export function roadNodeIdFromParts(countyFips: string, osmWayId: number): string {
   return `${countyFips}:road:${osmWayId}`;

@@ -162,6 +162,7 @@ export interface StoragePort {
 
   writeRoadAtomsBatch(
     instances: ReadonlyArray<RoadNodeAtomInstance>,
+    opts?: import("./road-ingest-supersede.js").WriteRoadAtomsBatchOptions,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>>;
 
   listRoadAtomsByRoadNodeId(

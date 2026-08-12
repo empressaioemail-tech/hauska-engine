@@ -17,6 +17,10 @@ import {
   parseBastropRoadwayFeature,
   bastropCountyRoadwayDescriptor,
 } from "../emit-county-roadway-node.js";
+import {
+  countyRoadSyntheticWayId,
+  countyRoadwaySyntheticWayId,
+} from "../classify-county-street.js";
 
 describe("county-vs-osm labeling priority (S2-U1 U1.2)", () => {
   it("county gravel surface flag → classification gravel (not OSM service alone)", () => {
@@ -271,7 +275,9 @@ describe("emit county roadway road-node (S2-F F.1)", () => {
       expect(atom.row.provenance.countySurface).toContain("Gravel");
       expect(atom.row.provenance.surfaceWidthFt).toBe(24);
     }
-    expect(atom.roadNodeId).toBe("48021:road:800000104");
+    expect(atom.roadNodeId).toBe(
+      `48021:road:${countyRoadwaySyntheticWayId(104)}`,
+    );
   });
 
   it("emits county-roadway-undefined when surface is Undefined (no fabrication)", () => {
@@ -301,7 +307,9 @@ describe("emit county roadway road-node (S2-F F.1)", () => {
       expect(atom.row.provenance.countySurface).toBe("Undefined");
       expect(atom.row.provenance.countyOwner).toBe("City");
     }
-    expect(atom.roadNodeId).toBe("48021:road:800000015");
+    expect(atom.roadNodeId).toBe(
+      `48021:road:${countyRoadwaySyntheticWayId(15)}`,
+    );
   });
 });
 
@@ -330,6 +338,8 @@ describe("emit county road-node (S2-U1 U1.1)", () => {
       expect(atom.row.provenance.countySegmentObjectId).toBe(401);
       expect(atom.row.provenance.countySurface).toContain("Gravel");
     }
-    expect(atom.roadNodeId).toBe("48021:road:900000401");
+    expect(atom.roadNodeId).toBe(
+      `48021:road:${countyRoadSyntheticWayId(401)}`,
+    );
   });
 });
