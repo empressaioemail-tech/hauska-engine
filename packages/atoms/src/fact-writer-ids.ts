@@ -84,6 +84,19 @@ export function wellFactAtomDid(identity: {
   )}`;
 }
 
+export function utilityEasementAtomDid(identity: {
+  parcelNodeId: string;
+  easementId: string;
+}): string {
+  return `ueasm_${fnv1a64Hex(
+    JSON.stringify([
+      "utility-easement",
+      identity.parcelNodeId,
+      identity.easementId,
+    ]),
+  )}`;
+}
+
 export function floodHazardFactAtomDid(identity: {
   parcelNodeId: string;
 }): string {
