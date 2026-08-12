@@ -59,7 +59,21 @@ describe("rail-corridor NET mapping", () => {
   it("maps class from NET", () => {
     expect(mapNetToClass("M")).toBe("mainline");
     expect(mapNetToClass("Y")).toBe("yard");
-    expect(mapNetToClass("O")).toBe("spur");
+  });
+
+  it("does not map unmapped NET O or null to spur/active", () => {
+    expect(mapNetToClass("O")).not.toBe("spur");
+    expect(mapNetToClass("O")).toBe("unknown");
+    expect(mapNetToClass(null)).not.toBe("spur");
+    expect(mapNetToClass(null)).toBe("unknown");
+    expect(mapNetToClass("")).not.toBe("spur");
+    expect(mapNetToClass("")).toBe("unknown");
+    expect(mapNetToStatus(null)).not.toBe("active");
+    expect(mapNetToStatus(null)).toBe("unknown");
+    expect(mapNetToStatus("O")).not.toBe("active");
+    expect(mapNetToStatus("O")).toBe("unknown");
+    expect(mapNetToStatus("")).not.toBe("active");
+    expect(mapNetToStatus("")).toBe("unknown");
   });
 });
 

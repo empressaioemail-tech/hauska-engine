@@ -42,14 +42,15 @@ export function mapNetToStatus(net: string | null | undefined): RailCorridorStat
   const code = (net ?? "").trim().toUpperCase();
   if (code === "A" || code === "R") return "abandoned";
   if (code === "T") return "rail-trail";
-  return "active";
+  if (code === "M") return "active";
+  return "unknown";
 }
 
 export function mapNetToClass(net: string | null | undefined): RailCorridorClass {
   const code = (net ?? "").trim().toUpperCase();
   if (code === "M") return "mainline";
   if (code === "Y") return "yard";
-  return "spur";
+  return "unknown";
 }
 
 function segmentBbox(geometry: unknown): BBox | null {
