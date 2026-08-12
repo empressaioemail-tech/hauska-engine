@@ -16,6 +16,10 @@ export interface RrcWellFeature {
   lng: number;
   lat: number;
   reliab: string | null;
+  /** Present on statewide Public Viewer; Harris mirror may omit. */
+  gisSymbolDescription?: string | null;
+  /** Present on statewide Public Viewer; Harris mirror may omit. */
+  gisLocationSource?: string | null;
 }
 
 export interface CountyWellFetchResult {
@@ -48,6 +52,12 @@ function parseWellFeature(raw: unknown): RrcWellFeature | null {
     }
   }
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+
+  const descRaw =
+    attrs.GIS_SYMBOL_DESCRIPTION ?? attrs.gis_symbol_description ?? null;
+  const srcRaw =
+    attrs.GIS_LOCATION_SOURCE ?? attrs.gis_location_source ?? null;
+
   return {
     surfaceId: Number(attrs.SURFACE_ID ?? 0),
     symnum: Number(attrs.SYMNUM ?? 0),
@@ -56,6 +66,14 @@ function parseWellFeature(raw: unknown): RrcWellFeature | null {
     lng,
     lat,
     reliab: attrs.RELIAB != null ? String(attrs.RELIAB) : null,
+    gisSymbolDescription:
+      descRaw != null && String(descRaw).trim() !== ""
+        ? String(descRaw)
+        : null,
+    gisLocationSource:
+      srcRaw != null && String(srcRaw).trim() !== ""
+        ? String(srcRaw)
+        : null,
   };
 }
 

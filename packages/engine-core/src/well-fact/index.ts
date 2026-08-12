@@ -28,8 +28,12 @@ export {
 export {
   buildApiNumber14,
   deriveOrphanedFlag,
+  mapSymbolDescriptionToWellStatus,
+  mapSymbolDescriptionToWellType,
   mapSymnumToWellStatus,
   mapSymnumToWellType,
+  resolveWellStatus,
+  resolveWellType,
 } from "./symnum.js";
 
 export {

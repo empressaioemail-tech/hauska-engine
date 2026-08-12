@@ -18,8 +18,8 @@ describe("well-fact symnum mapping", () => {
     expect(mapSymnumToWellType(8)).toBe("gas");
   });
 
-  it("maps injection/disposal SYMNUM 11", () => {
-    expect(mapSymnumToWellStatus(11)).toBe("producing");
+  it("maps injection/disposal SYMNUM 11 without confident producing status", () => {
+    expect(mapSymnumToWellStatus(11)).toBe("unknown");
     expect(mapSymnumToWellType(11)).toBe("disposal");
   });
 });
@@ -93,7 +93,33 @@ describe("well-fact county planner", () => {
     if (hit?.outcome === "present") {
       expect(hit.parcelRelation).toBe("near-parcel");
       expect(hit.wellType).toBe("disposal");
+      expect(hit.wellStatus).toBe("unknown");
       expect(hit.proximityDistanceMeters).toBeGreaterThan(0);
+    }
+  });
+
+  it("prefers GIS_SYMBOL_DESCRIPTION over SYMNUM when present", () => {
+    const plan = planCountyWellFacts(
+      [squareParcel],
+      [
+        {
+          surfaceId: 3,
+          symnum: 4,
+          api: "20109999",
+          wellId: "09999",
+          lng: -96.9995,
+          lat: 30.0005,
+          reliab: "15",
+          gisSymbolDescription: "Canceled / Abandoned Location",
+        },
+      ],
+      { countyFips: "48021" },
+    );
+    const hit = plan.planned.find((p) => p.outcome === "present");
+    expect(hit?.outcome).toBe("present");
+    if (hit?.outcome === "present") {
+      expect(hit.wellStatus).toBe("unknown");
+      expect(hit.wellType).toBe("unknown");
     }
   });
 

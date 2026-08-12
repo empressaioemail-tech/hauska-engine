@@ -1,5 +1,5 @@
 /**
- * `well-fact` COUNTY PLANNER — RRC surface wells on or near parcels.
+ * `well-fact` COUNTY PLANNER â€” RRC surface wells on or near parcels.
  *
  * THE LOAD-BEARING SEMANTIC: the buyer question is whether a well is ON or
  * NEAR the property, not whether a centroid falls inside the polygon. Each
@@ -19,8 +19,8 @@ import {
 import {
   buildApiNumber14,
   deriveOrphanedFlag,
-  mapSymnumToWellStatus,
-  mapSymnumToWellType,
+  resolveWellStatus,
+  resolveWellType,
 } from "./symnum.js";
 import type { RrcWellFeature } from "./fetch-wells.js";
 
@@ -40,8 +40,8 @@ export interface PlannedPresentWellFact {
   parcelKey: string;
   wellKey: string;
   apiNumber14: string;
-  wellStatus: ReturnType<typeof mapSymnumToWellStatus>;
-  wellType: ReturnType<typeof mapSymnumToWellType>;
+  wellStatus: ReturnType<typeof resolveWellStatus>;
+  wellType: ReturnType<typeof resolveWellType>;
   orphaned: boolean;
   surfaceLocation: { lng: number; lat: number };
   parcelRelation: "on-parcel" | "near-parcel";
@@ -142,14 +142,17 @@ export function planCountyWellFacts(
 
       const apiNumber14 = buildApiNumber14(well.api);
       const wellKey = apiNumber14;
-      const wellStatus = mapSymnumToWellStatus(well.symnum);
+      const wellStatus = resolveWellStatus(
+        well.symnum,
+        well.gisSymbolDescription,
+      );
       hits.push({
         outcome: "present",
         parcelKey: key,
         wellKey,
         apiNumber14,
         wellStatus,
-        wellType: mapSymnumToWellType(well.symnum),
+        wellType: resolveWellType(well.symnum, well.gisSymbolDescription),
         orphaned: deriveOrphanedFlag(well.symnum, wellStatus),
         surfaceLocation: { lng: well.lng, lat: well.lat },
         parcelRelation: on ? "on-parcel" : "near-parcel",
@@ -208,3 +211,4 @@ export function wellParcelDistanceMeters(
 }
 
 export { haversineMeters };
+
