@@ -55,6 +55,23 @@ describe("special-district-fact planner", () => {
       expect(entry.absenceKind).toBe("outside-tceq-source-boundaries");
       expect(entry.reason.toLowerCase()).not.toContain("no special district");
       expect(entry.reason).toContain("tx_special_district");
+      expect(entry.reason).toContain("Parcel geometry does not intersect");
+    }
+  });
+
+  it("empty district index uses positive TCEQ empty-county absence reason", () => {
+    const plan = planCountySpecialDistricts(
+      [{ parcelKey: "200", centroid: [-97.45, 30.05] }],
+      [],
+      { countyFips: "48021" },
+    );
+    expect(plan.emptyDistrictIndex).toBe(true);
+    const entry = plan.planned[0];
+    expect(entry?.outcome).toBe("absent");
+    if (entry?.outcome === "absent") {
+      expect(entry.absenceKind).toBe("outside-tceq-source-boundaries");
+      expect(entry.reason).toContain("zero districts");
+      expect(entry.reason).toContain("48021");
     }
   });
 

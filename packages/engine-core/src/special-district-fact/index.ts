@@ -1,5 +1,9 @@
 /**
- * County special-district-fact writer — TCEQ water-district PIP evaluation.
+ * County special-district-fact writer — TCEQ water-district membership.
+ *
+ * Production path: PostGIS true-geometry zone-major ST_Intersects
+ * (`postgis-zone-major-st-intersects-true-geom`). The JS centroid planner
+ * remains as a unit-test / straddler oracle only.
  */
 
 export {
@@ -25,7 +29,18 @@ export {
   type ComptrollerTaxRateEnrichment,
 } from "./comptroller-registry.js";
 
-export { buildOutsideSourceAbsenceReason } from "./honesty.js";
+export {
+  buildEmptyCountyDistrictAbsenceReason,
+  buildOutsideSourceAbsenceReason,
+  EMPTY_COUNTY_DISTRICT_ABSENCE_RULE,
+  OUTSIDE_TRUE_GEOM_ABSENCE_RULE,
+} from "./honesty.js";
+
+export {
+  TRUE_GEOM_MEMBERSHIP_METHOD,
+  assertTrueGeomMembershipMethod,
+  type TrueGeomMembershipMethod,
+} from "./membership-method.js";
 
 export {
   attachComptrollerTaxRates,
@@ -36,6 +51,22 @@ export {
   type PlannedSpecialDistrict,
   type SpecialDistrictParcelInput,
 } from "./plan-county-special-districts.js";
+
+export {
+  planCountySpecialDistrictsPostgis,
+  type PostgisSpecialDistrictPlanMeta,
+  type PostgisSpecialDistrictPlanOptions,
+  type PostgisSpecialDistrictPlanResult,
+} from "./postgis-special-district-plan.js";
+
+export {
+  buildPlanPayload,
+  drainSpecialDistrictPlanPayload,
+  readPlanPayload,
+  writePlanPayload,
+  type SpecialDistrictPlanPayload,
+  type SpecialDistrictPlanStoreTruth,
+} from "./plan-payload.js";
 
 export {
   buildAtomForPlannedSpecialDistrict,
