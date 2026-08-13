@@ -12,9 +12,12 @@
  * correct rows.
  *
  * Bad-geometry policy: rows with NULL geometry are excluded
- * (`WHERE geometry IS NOT NULL`) and counted as skippedNullGeometry. If
- * ST_GeomFromGeoJSON throws at SQL level for a non-null but unparseable
- * payload, the plan FAILS LOUD for the county (no silent empty membership).
+ * (`WHERE geometry IS NOT NULL`) and counted as skippedNullGeometry. Parsed
+ * geometries are passed through ST_MakeValid before ST_Intersects — TCEQ and
+ * parcel JSONB rings are not always GEOS-valid, and bare Intersects throws
+ * TopologyException (side location conflict) on those counties. If
+ * ST_GeomFromGeoJSON itself throws for a non-null but unparseable payload,
+ * the plan FAILS LOUD for the county (no silent empty membership).
  */
 
 import type { Sql } from "postgres";
@@ -66,7 +69,7 @@ function trueGeomPlanSql(limit: number | undefined): string {
   return `
   WITH districts AS MATERIALIZED (
     SELECT district_id, district_name, district_type, county_fips,
-           ST_SetSRID(ST_GeomFromGeoJSON(geometry::text), 4326) AS geom,
+           ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(geometry::text), 4326)) AS geom,
            west_lng, south_lat, east_lng, north_lat
     FROM tx_special_district
     WHERE county_fips = $1
@@ -75,7 +78,7 @@ function trueGeomPlanSql(limit: number | undefined): string {
   parcels AS MATERIALIZED (
     SELECT feature_index,
            COALESCE(NULLIF(trim(prop_id), ''), '_feature-' || feature_index::text) AS parcel_key,
-           ST_SetSRID(ST_GeomFromGeoJSON(geometry::text), 4326) AS geom,
+           ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(geometry::text), 4326)) AS geom,
            west_lng, south_lat, east_lng, north_lat
     FROM txgio_parcel
     WHERE county_fips = $1
