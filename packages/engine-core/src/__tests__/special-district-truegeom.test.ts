@@ -17,8 +17,14 @@ import {
 } from "../special-district-fact/membership-method.js";
 import {
   drainSpecialDistrictPlanPayload,
+  readPlanPayload,
+  writePlanPayload,
+  SD_PLAN_NDJSON_FORMAT,
   type SpecialDistrictPlanPayload,
 } from "../special-district-fact/plan-payload.js";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 function bboxMidpoint(bbox: BBox): LngLat {
   return [
@@ -220,5 +226,57 @@ describe("special-district true-geom (CP1)", () => {
         membershipMethodId: undefined,
       }),
     ).toThrow(/missing/);
+  });
+
+  it("T3: NDJSON plan write/read round-trip (Harris string-length fix)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sd-plan-ndjson-"));
+    const path = join(dir, "48021.plan.json");
+    try {
+      const payload: SpecialDistrictPlanPayload = {
+        countyFips: "48021",
+        membershipMethodId: TRUE_GEOM_MEMBERSHIP_METHOD,
+        plannedAt: "2026-08-13T00:00:00.000Z",
+        districtsIndexed: 2,
+        emptyDistrictIndex: false,
+        absenceReasoningRuleId: "outside-tceq-source-true-geom-no-intersect",
+        planned: [
+          {
+            outcome: "present",
+            parcelKey: "1",
+            districtId: "d1",
+            districtName: "Test MUD",
+            districtType: "mud",
+          },
+          {
+            outcome: "absent",
+            parcelKey: "2",
+            absenceKind: "outside-tceq-source-boundaries",
+            reason: "test",
+          },
+        ],
+        counts: {
+          presentMemberships: 1,
+          absentOutside: 1,
+          parcelsInDistrict: 1,
+          parcelsOutside: 1,
+          skippedUnusableKey: 0,
+          rateEnrichedCount: 0,
+        },
+        parcelsRead: 2,
+      };
+      writePlanPayload(path, payload);
+      const head = readFileSync(path, "utf8").split("\n")[0]!;
+      expect(head).toContain(SD_PLAN_NDJSON_FORMAT);
+      expect(head).not.toContain('"planned":[');
+      const back = readPlanPayload(path);
+      expect(back.format).toBe(SD_PLAN_NDJSON_FORMAT);
+      expect(back.planned).toHaveLength(2);
+      expect(back.planned[0]?.parcelKey).toBe("1");
+      expect(back.membershipMethodId).toBe(TRUE_GEOM_MEMBERSHIP_METHOD);
+      const drained = drainSpecialDistrictPlanPayload(back);
+      expect(drained.planned).toHaveLength(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

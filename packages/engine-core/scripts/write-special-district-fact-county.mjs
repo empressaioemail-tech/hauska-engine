@@ -30,7 +30,6 @@ import {
   TRUE_GEOM_MEMBERSHIP_METHOD,
   attachComptrollerTaxRates,
   buildAtomForPlannedSpecialDistrict,
-  buildAtomsForSpecialDistrictPlan,
   buildPlanPayload,
   drainSpecialDistrictPlanPayload,
   loadComptrollerRegistryFromCsv,
@@ -143,11 +142,15 @@ async function writeAtomsFromPlan(plan, provenance, summary) {
   // Match sibling writers: options object, not a bare URL string.
   // Passing a string made options.databaseUrl undefined and crashed on .includes.
   const handle = createPgStorage({ databaseUrl: substrateUrl, maxConnections: 8 });
-  const atoms = buildAtomsForSpecialDistrictPlan(plan, provenance);
-  summary.atomsBuilt = atoms.length;
+  // Batch-build atoms — never materialize the full atom array (Harris OOM).
+  const total = plan.planned.length;
+  summary.atomsBuilt = total;
 
-  for (let i = 0; i < atoms.length; i += args.batch) {
-    const slice = atoms.slice(i, i + args.batch);
+  for (let i = 0; i < total; i += args.batch) {
+    const entries = plan.planned.slice(i, i + args.batch);
+    const slice = entries.map((entry) =>
+      buildAtomForPlannedSpecialDistrict(entry, plan.countyFips, provenance),
+    );
     await handle.storage.writePropertyAtomsBatch(slice);
     summary.atomsWritten += slice.length;
 
@@ -192,7 +195,7 @@ async function writeAtomsFromPlan(plan, provenance, summary) {
         membershipMethodId: TRUE_GEOM_MEMBERSHIP_METHOD,
         written: summary.atomsWritten,
         verified: summary.verified,
-        ofTotal: atoms.length,
+        ofTotal: total,
       }),
     );
   }
