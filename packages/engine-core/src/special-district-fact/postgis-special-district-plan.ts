@@ -86,12 +86,16 @@ function trueGeomPlanBatchSql(): string {
   ),
   parcels AS MATERIALIZED (
     SELECT feature_index,
-           COALESCE(NULLIF(trim(prop_id), ''), '_feature-' || feature_index::text) AS parcel_key,
+           trim(prop_id) AS parcel_key,
            ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(geometry::text), 4326)) AS geom,
            west_lng, south_lat, east_lng, north_lat
     FROM txgio_parcel
     WHERE county_fips = $1
       AND geometry IS NOT NULL
+      AND prop_id IS NOT NULL
+      AND trim(prop_id) <> ''
+      AND trim(prop_id) !~ '^0+$'
+      AND trim(prop_id) ~ '^[A-Za-z0-9.-]+$'
       AND feature_index > $2
     ORDER BY feature_index
     LIMIT $3
@@ -244,7 +248,9 @@ export async function planCountySpecialDistrictsPostgis(
         take,
       ]);
       if (batch.length === 0) break;
-      rows.push(...batch);
+      // Do NOT rows.push(...batch) — spread blows the call stack on large batches
+      // (48039: Maximum call stack size exceeded).
+      for (const r of batch) rows.push(r);
       let maxFi = afterFeature;
       const seenKeys = new Set<string>();
       for (const r of batch) {
