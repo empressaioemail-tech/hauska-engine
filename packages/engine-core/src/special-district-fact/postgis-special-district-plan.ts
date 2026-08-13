@@ -180,9 +180,10 @@ function assemblePlanFromRows(
         parcelKey: key,
         districtId: String(row.district_id),
         districtName:
-          row.district_name != null ? String(row.district_name) : undefined,
+          row.district_name != null ? String(row.district_name) : "",
         districtType:
-          row.district_type != null ? String(row.district_type) : undefined,
+          row.district_type != null ? String(row.district_type) : "",
+        countyFips,
       });
     }
   }
