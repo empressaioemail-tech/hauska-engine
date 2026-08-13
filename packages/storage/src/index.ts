@@ -19,6 +19,7 @@ export * from "./layered-storage.js";
 export * from "./storage-port-proof.js";
 export * from "./property-atom-proof.js";
 export * from "./search-scoring.js";
+export * from "./atoms-writer-lease.js";
 
 // Re-export AccessPolicy so consumers of the storage port (retrieval,
 // retrieval-api, MCP server type-mirrors) don't need a transitive

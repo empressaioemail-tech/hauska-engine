@@ -66,7 +66,7 @@ try {
     SELECT table_name
     FROM information_schema.tables
     WHERE table_schema = 'public'
-      AND table_name IN ('atoms', 'atom_links', 'jurisdiction_status')
+      AND table_name IN ('atoms', 'atom_links', 'jurisdiction_status', 'atoms_bulk_writer_lease')
     ORDER BY table_name
   `;
   console.log("\nStoragePort tables present:");

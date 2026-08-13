@@ -24,6 +24,7 @@ import {
 } from "@hauska-engine/atoms";
 import postgres from "postgres";
 
+import { assertAndHeartbeatWriterLease } from "./atoms-writer-lease.js";
 import { InProcessIpfsPin } from "./in-process-cache.js";
 import {
   preparePropertyAtomRows,
@@ -271,6 +272,9 @@ export class PgStorage implements StoragePort {
     instances: ReadonlyArray<PropertyAtomInstance>,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
     if (instances.length === 0) return [];
+    // OPS-16 A-012: fail closed without the live DB lease. Named error
+    // ATOMS_WRITER_LEASE_NOT_HELD. Holder from ATOMS_WRITER_LEASE_HOLDER.
+    await assertAndHeartbeatWriterLease(this.sql);
     const { rows, out } = await preparePropertyAtomRows(instances, this.ipfs, {
       dedupe: true,
     });
