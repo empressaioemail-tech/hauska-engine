@@ -34,10 +34,15 @@ import type {
   PlannedSpecialDistrict,
 } from "./plan-county-special-districts.js";
 
+/** Parcel rows per SQL round-trip. Bounds Neon temp-disk for GeomFromGeoJSON. */
+export const DEFAULT_TRUE_GEOM_PARCEL_BATCH = 15_000;
+
 export interface PostgisSpecialDistrictPlanOptions {
   countyFips: string;
-  /** Optional parcel row cap (feature_index order is not guaranteed here). */
+  /** Optional parcel row cap across all batches (feature_index ascending). */
   limit?: number;
+  /** Parcel rows per MATERIALIZED batch (default 15000). */
+  parcelBatchSize?: number;
 }
 
 export interface PostgisSpecialDistrictPlanMeta {
@@ -56,6 +61,7 @@ export interface PostgisSpecialDistrictPlanResult {
 }
 
 interface HitRow {
+  feature_index?: number;
   parcel_key: string;
   district_id: string | null;
   district_name: string | null;
@@ -63,9 +69,12 @@ interface HitRow {
   county_fips: string | null;
 }
 
-function trueGeomPlanSql(limit: number | undefined): string {
-  const limitClause =
-    limit != null && limit > 0 ? `\n       LIMIT ${Math.floor(limit)}` : "";
+/**
+ * Params: $1 countyFips, $2 afterFeatureIndex (exclusive), $3 batchLimit.
+ * Batches by feature_index so MATERIALIZED GeomFromGeoJSON never holds a full
+ * metro county in temp files (Neon disk-quota class on 48039).
+ */
+function trueGeomPlanBatchSql(): string {
   return `
   WITH districts AS MATERIALIZED (
     SELECT district_id, district_name, district_type, county_fips,
@@ -82,7 +91,10 @@ function trueGeomPlanSql(limit: number | undefined): string {
            west_lng, south_lat, east_lng, north_lat
     FROM txgio_parcel
     WHERE county_fips = $1
-      AND geometry IS NOT NULL${limitClause}
+      AND geometry IS NOT NULL
+      AND feature_index > $2
+    ORDER BY feature_index
+    LIMIT $3
   ),
   hits AS (
     SELECT h.parcel_key, d.district_id, d.district_name, d.district_type, d.county_fips
@@ -95,14 +107,15 @@ function trueGeomPlanSql(limit: number | undefined): string {
         AND ST_Intersects(d.geom, p.geom)
     ) h
   )
-  SELECT p.parcel_key,
+  SELECT p.feature_index,
+         p.parcel_key,
          h.district_id,
          h.district_name,
          h.district_type,
          h.county_fips
   FROM parcels p
   LEFT JOIN hits h ON h.parcel_key = p.parcel_key
-  ORDER BY p.parcel_key, h.district_id
+  ORDER BY p.feature_index, h.district_id
 `;
 }
 
@@ -210,11 +223,39 @@ export async function planCountySpecialDistrictsPostgis(
   `;
   const skippedNullGeometry = nullGeomRow?.n ?? 0;
 
-  const queryText = trueGeomPlanSql(opts.limit);
+  const batchSize = Math.max(
+    1,
+    Math.floor(opts.parcelBatchSize ?? DEFAULT_TRUE_GEOM_PARCEL_BATCH),
+  );
+  const hardLimit =
+    opts.limit != null && opts.limit > 0 ? Math.floor(opts.limit) : Infinity;
+
+  const queryText = trueGeomPlanBatchSql();
   const t0 = Date.now();
-  let rows: HitRow[];
+  const rows: HitRow[] = [];
+  let afterFeature = -1;
+  let parcelsFetched = 0;
   try {
-    rows = await sql.unsafe<HitRow[]>(queryText, [countyFips]);
+    while (parcelsFetched < hardLimit) {
+      const take = Math.min(batchSize, hardLimit - parcelsFetched);
+      const batch = await sql.unsafe<HitRow[]>(queryText, [
+        countyFips,
+        afterFeature,
+        take,
+      ]);
+      if (batch.length === 0) break;
+      rows.push(...batch);
+      let maxFi = afterFeature;
+      const seenKeys = new Set<string>();
+      for (const r of batch) {
+        const fi = Number(r.feature_index);
+        if (Number.isFinite(fi) && fi > maxFi) maxFi = fi;
+        if (r.parcel_key) seenKeys.add(r.parcel_key);
+      }
+      parcelsFetched += seenKeys.size;
+      afterFeature = maxFi;
+      if (seenKeys.size < take) break;
+    }
   } catch (err) {
     // Fail loud: unparseable GeoJSON must not become silent empty membership.
     throw new Error(
