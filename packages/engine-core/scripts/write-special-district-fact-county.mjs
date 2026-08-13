@@ -359,7 +359,9 @@ if (!args.county || !/^\d{5}$/.test(args.county)) {
   process.exit(1);
 }
 
-const sql = postgres(poolUrl, { max: 4, ssl: "require", prepare: false });
+// max:1 is load-bearing for the metro TEMP+GiST path — TEMP tables are
+// connection-local; a pool >1 drops/creates on conn A and inserts on conn B.
+const sql = postgres(poolUrl, { max: 1, ssl: "require", prepare: false });
 
 try {
   const hasTable = await districtTableExists(sql);
