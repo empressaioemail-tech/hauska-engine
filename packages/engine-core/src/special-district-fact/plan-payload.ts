@@ -78,7 +78,9 @@ export function writePlanPayload(
   path: string,
   payload: SpecialDistrictPlanPayload,
 ): void {
-  writeFileSync(path, JSON.stringify(payload, null, 2));
+  // Compact JSON — pretty-print doubles memory on metro counties and OOMs
+  // the Node heap while stringifying (48039 @ 8GB).
+  writeFileSync(path, JSON.stringify(payload));
 }
 
 export function readPlanPayload(path: string): SpecialDistrictPlanPayload {
