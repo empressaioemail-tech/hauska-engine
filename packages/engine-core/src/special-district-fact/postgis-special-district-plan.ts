@@ -63,6 +63,7 @@ export interface PostgisSpecialDistrictPlanResult {
 interface HitRow {
   feature_index?: number;
   parcel_key: string;
+  parcel_ctid?: string;
   district_id: string | null;
   district_name: string | null;
   district_type: string | null;
@@ -70,10 +71,11 @@ interface HitRow {
 }
 
 /**
- * Params: $1 countyFips, $2 afterFeatureIndex, $3 afterParcelKey, $4 batchLimit.
- * Keyset on (feature_index, prop_id) — feature_index is NOT unique in metros
- * (Harris 48201: 15k rows only advance max_fi to 14379; paging by feature_index
- * alone silently skipped ~1.59M parcels).
+ * Params: $1 countyFips, $2 offset, $3 batchLimit.
+ *
+ * OFFSET paging. Harris feature_index is non-unique AND prop_id has duplicates
+ * (first 15k rows → 14380 distinct keys). Terminate on unique parcel_ctid count
+ * < LIMIT — never on distinct prop_id count (false EOF).
  */
 function trueGeomPlanBatchSql(): string {
   return `
@@ -88,6 +90,7 @@ function trueGeomPlanBatchSql(): string {
   parcels AS MATERIALIZED (
     SELECT feature_index,
            trim(prop_id) AS parcel_key,
+           ctid AS parcel_ctid,
            ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(geometry::text), 4326)) AS geom,
            west_lng, south_lat, east_lng, north_lat
     FROM txgio_parcel
@@ -97,18 +100,15 @@ function trueGeomPlanBatchSql(): string {
       AND trim(prop_id) <> ''
       AND trim(prop_id) !~ '^0+$'
       AND trim(prop_id) ~ '^[A-Za-z0-9.-]+$'
-      AND (
-        feature_index > $2
-        OR (feature_index = $2 AND trim(prop_id) > $3)
-      )
-    ORDER BY feature_index, trim(prop_id)
-    LIMIT $4
+    ORDER BY feature_index, trim(prop_id), ctid
+    OFFSET $2
+    LIMIT $3
   ),
   hits AS (
-    SELECT h.parcel_key, d.district_id, d.district_name, d.district_type, d.county_fips
+    SELECT h.parcel_key, h.parcel_ctid, d.district_id, d.district_name, d.district_type, d.county_fips
     FROM districts d
     CROSS JOIN LATERAL (
-      SELECT p.parcel_key
+      SELECT p.parcel_key, p.parcel_ctid
       FROM parcels p
       WHERE p.west_lng <= d.east_lng AND p.east_lng >= d.west_lng
         AND p.south_lat <= d.north_lat AND p.north_lat >= d.south_lat
@@ -117,13 +117,15 @@ function trueGeomPlanBatchSql(): string {
   )
   SELECT p.feature_index,
          p.parcel_key,
+         p.parcel_ctid::text AS parcel_ctid,
          h.district_id,
          h.district_name,
          h.district_type,
          h.county_fips
   FROM parcels p
-  LEFT JOIN hits h ON h.parcel_key = p.parcel_key
-  ORDER BY p.feature_index, p.parcel_key, h.district_id
+  LEFT JOIN hits h
+    ON h.parcel_key = p.parcel_key AND h.parcel_ctid = p.parcel_ctid
+  ORDER BY p.feature_index, p.parcel_key, p.parcel_ctid, h.district_id
 `;
 }
 
@@ -241,40 +243,28 @@ export async function planCountySpecialDistrictsPostgis(
   const queryText = trueGeomPlanBatchSql();
   const t0 = Date.now();
   const rows: HitRow[] = [];
-  let afterFeature = -1;
-  let afterParcelKey = "";
+  let offset = 0;
   let parcelsFetched = 0;
   try {
     while (parcelsFetched < hardLimit) {
       const take = Math.min(batchSize, hardLimit - parcelsFetched);
       const batch = await sql.unsafe<HitRow[]>(queryText, [
         countyFips,
-        afterFeature,
-        afterParcelKey,
+        offset,
         take,
       ]);
       if (batch.length === 0) break;
       // Do NOT rows.push(...batch) — spread blows the call stack on large batches
       // (48039: Maximum call stack size exceeded).
       for (const r of batch) rows.push(r);
-      const seenKeys = new Set<string>();
-      let lastFi = afterFeature;
-      let lastKey = afterParcelKey;
+      const parcelCtids = new Set<string>();
       for (const r of batch) {
-        const fi = Number(r.feature_index);
-        const key = String(r.parcel_key ?? "");
-        if (key) seenKeys.add(key);
-        if (Number.isFinite(fi) && key) {
-          if (fi > lastFi || (fi === lastFi && key > lastKey)) {
-            lastFi = fi;
-            lastKey = key;
-          }
-        }
+        if (r.parcel_ctid) parcelCtids.add(String(r.parcel_ctid));
       }
-      parcelsFetched += seenKeys.size;
-      afterFeature = lastFi;
-      afterParcelKey = lastKey;
-      if (seenKeys.size < take) break;
+      const parcelRows = parcelCtids.size;
+      parcelsFetched += parcelRows;
+      offset += parcelRows;
+      if (parcelRows < take) break;
     }
   } catch (err) {
     // Fail loud: unparseable GeoJSON must not become silent empty membership.
