@@ -71,11 +71,12 @@ interface HitRow {
 }
 
 /**
- * Params: $1 countyFips, $2 offset, $3 batchLimit.
+ * Params: $1 countyFips, $2 last_feature_index, $3 last_parcel_key,
+ *         $4 last_parcel_ctid (text tid), $5 batchLimit.
  *
- * OFFSET paging. Harris feature_index is non-unique AND prop_id has duplicates
- * (first 15k rows → 14380 distinct keys). Terminate on unique parcel_ctid count
- * < LIMIT — never on distinct prop_id count (false EOF).
+ * Keyset on (feature_index, prop_id, ctid). OFFSET was O(n²) on metros and
+ * prop_id-count EOF falsely truncated Harris at 14380. Terminate on unique
+ * parcel_ctid count < LIMIT. Seed cursor: feature_index=-1, key='', ctid=(0,0).
  */
 function trueGeomPlanBatchSql(): string {
   return `
@@ -100,9 +101,20 @@ function trueGeomPlanBatchSql(): string {
       AND trim(prop_id) <> ''
       AND trim(prop_id) !~ '^0+$'
       AND trim(prop_id) ~ '^[A-Za-z0-9.-]+$'
-    ORDER BY feature_index, trim(prop_id), ctid
-    OFFSET $2
-    LIMIT $3
+      AND (
+        COALESCE(feature_index, -1) > $2::bigint
+        OR (
+          COALESCE(feature_index, -1) = $2::bigint
+          AND trim(prop_id) > $3::text
+        )
+        OR (
+          COALESCE(feature_index, -1) = $2::bigint
+          AND trim(prop_id) = $3::text
+          AND ctid > $4::tid
+        )
+      )
+    ORDER BY COALESCE(feature_index, -1), trim(prop_id), ctid
+    LIMIT $5
   ),
   hits AS (
     SELECT h.parcel_key, h.parcel_ctid, d.district_id, d.district_name, d.district_type, d.county_fips
@@ -125,7 +137,7 @@ function trueGeomPlanBatchSql(): string {
   FROM parcels p
   LEFT JOIN hits h
     ON h.parcel_key = p.parcel_key AND h.parcel_ctid = p.parcel_ctid
-  ORDER BY p.feature_index, p.parcel_key, p.parcel_ctid, h.district_id
+  ORDER BY COALESCE(p.feature_index, -1), p.parcel_key, p.parcel_ctid, h.district_id
 `;
 }
 
@@ -243,14 +255,18 @@ export async function planCountySpecialDistrictsPostgis(
   const queryText = trueGeomPlanBatchSql();
   const t0 = Date.now();
   const rows: HitRow[] = [];
-  let offset = 0;
   let parcelsFetched = 0;
+  let cursorFeatureIndex = -1;
+  let cursorParcelKey = "";
+  let cursorCtid = "(0,0)";
   try {
     while (parcelsFetched < hardLimit) {
       const take = Math.min(batchSize, hardLimit - parcelsFetched);
       const batch = await sql.unsafe<HitRow[]>(queryText, [
         countyFips,
-        offset,
+        cursorFeatureIndex,
+        cursorParcelKey,
+        cursorCtid,
         take,
       ]);
       if (batch.length === 0) break;
@@ -258,12 +274,18 @@ export async function planCountySpecialDistrictsPostgis(
       // (48039: Maximum call stack size exceeded).
       for (const r of batch) rows.push(r);
       const parcelCtids = new Set<string>();
+      let last: HitRow | undefined;
       for (const r of batch) {
         if (r.parcel_ctid) parcelCtids.add(String(r.parcel_ctid));
+        last = r;
       }
       const parcelRows = parcelCtids.size;
       parcelsFetched += parcelRows;
-      offset += parcelRows;
+      if (last?.parcel_ctid) {
+        cursorFeatureIndex = Number(last.feature_index ?? -1);
+        cursorParcelKey = String(last.parcel_key ?? "");
+        cursorCtid = String(last.parcel_ctid);
+      }
       if (parcelRows < take) break;
     }
   } catch (err) {
