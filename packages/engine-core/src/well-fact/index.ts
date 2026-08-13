@@ -6,6 +6,13 @@ export {
 } from "./fetch-wells.js";
 
 export {
+  STAGED_WELL_ADAPTER,
+  STAGED_WELL_SOURCE,
+  fetchRrcWellsFromStagedTable,
+  stagedWellTableExists,
+} from "./fetch-wells-staged.js";
+
+export {
   bboxContainsPoint,
   distancePointToPolygonMeters,
   expandBBox,
@@ -28,12 +35,8 @@ export {
 export {
   buildApiNumber14,
   deriveOrphanedFlag,
-  mapSymbolDescriptionToWellStatus,
-  mapSymbolDescriptionToWellType,
   mapSymnumToWellStatus,
   mapSymnumToWellType,
-  resolveWellStatus,
-  resolveWellType,
 } from "./symnum.js";
 
 export {
