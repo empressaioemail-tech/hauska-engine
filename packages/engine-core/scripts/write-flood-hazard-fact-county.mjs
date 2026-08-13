@@ -19,25 +19,34 @@
  *     pnpm --filter @hauska-engine/engine-core run write-flood-hazard-fact-county -- \
  *       --county=48261 [--apply] [--batch=500] [--limit=0] \
  *       [--plan-backend=auto|postgis|hybrid|js] [--plan-batch=2000]
+ *       [--plan-only --out=<ndjson>] [--from-plan=<ndjson> [--expect-digest=sha256]]
+ *
+ * --from-plan drains a flood-plan-ndjson-v1 artifact (eng #334 mirror) and
+ * MUST NOT open a PostGIS plan scan. --plan-only persists that artifact.
  */
 
-import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
 import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
 import {
+  buildAtomForPlannedFloodHazard,
   buildAtomsForFloodHazardPlan,
+  buildFloodPlanPayload,
   buildFloodZoneGrid,
+  digestFloodPlan,
+  drainFloodPlanPayload,
   filterZonesByBBox,
   firstZoneVintageInBBox,
   geometryCentroid,
   planCountyFloodHazard,
   planCountyFloodHazardPostgis,
   probeFloodZoneGeomReadiness,
+  readFloodPlanPayload,
   verifyStoredFloodHazardFactAtom,
+  writeFloodPlanPayload,
 } from "../src/flood-hazard-fact/index.ts";
 
 const PLAN_BACKENDS = new Set([
@@ -48,36 +57,6 @@ const PLAN_BACKENDS = new Set([
   "js",
 ]);
 const POSTGIS_BACKENDS = new Set(["postgis", "postgis-point", "hybrid"]);
-
-/**
- * Stable fingerprint of the planned outcomes. Two backends agree only if this
- * matches — atom counts and an SFHA split can coincide while individual
- * parcels disagree.
- */
-function planDigest(plan) {
-  const lines = plan.planned.map((p) =>
-    p.outcome === "present"
-      ? [
-          p.parcelKey,
-          "present",
-          p.inSpecialFloodHazardArea ? "1" : "0",
-          p.floodZone ?? "",
-          p.zoneSubtype ?? "",
-          p.baseFloodElevation == null ? "" : String(p.baseFloodElevation),
-        ].join("|")
-      : [p.parcelKey, "absent", p.absenceKind, p.reason].join("|"),
-  );
-  lines.sort();
-  const hash = createHash("sha256");
-  for (const line of lines) hash.update(line).update("\n");
-  const byZone = {};
-  for (const p of plan.planned) {
-    if (p.outcome !== "present") continue;
-    const key = p.floodZone ?? "_outside";
-    byZone[key] = (byZone[key] ?? 0) + 1;
-  }
-  return { sha256: hash.digest("hex"), records: lines.length, byZone };
-}
 
 const SOURCE_ADAPTER = "fema-nfhl-bulk-v1";
 const SOURCE_URL = "tx_fema_nfhl_flood_zone";
@@ -94,6 +73,9 @@ function parseArgs(argv) {
     listCounties: false,
     planBackend: "auto",
     planBatch: 0,
+    planOnly: false,
+    fromPlan: null,
+    expectDigest: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -101,6 +83,14 @@ function parseArgs(argv) {
     else if (a.startsWith("--county=")) out.county = a.slice("--county=".length).trim();
     else if (a === "--apply") out.apply = true;
     else if (a === "--list-counties") out.listCounties = true;
+    else if (a === "--plan-only") out.planOnly = true;
+    else if (a === "--from-plan") out.fromPlan = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--from-plan="))
+      out.fromPlan = a.slice("--from-plan=".length).trim() || null;
+    else if (a === "--expect-digest")
+      out.expectDigest = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--expect-digest="))
+      out.expectDigest = a.slice("--expect-digest=".length).trim() || null;
     else if (a === "--batch") out.batch = Number(argv[++i] || 500);
     else if (a.startsWith("--batch=")) out.batch = Number(a.slice("--batch=".length));
     else if (a === "--limit") out.limit = Number(argv[++i] || 0);
@@ -123,6 +113,196 @@ if (process.env.FLOOD_HAZARD_FACT_PATH !== "1") {
 }
 
 const args = parseArgs(process.argv.slice(2));
+
+if (args.fromPlan && args.planOnly) {
+  console.error("FATAL: --from-plan and --plan-only are mutually exclusive.");
+  process.exit(1);
+}
+if (args.planOnly && args.apply) {
+  console.error("FATAL: --plan-only cannot combine with --apply.");
+  process.exit(1);
+}
+if (args.planOnly && !args.out) {
+  console.error("FATAL: --plan-only requires --out=<path>.");
+  process.exit(1);
+}
+if (args.fromPlan && args.listCounties) {
+  console.error("FATAL: --from-plan cannot combine with --list-counties.");
+  process.exit(1);
+}
+
+function defaultFloodProvenance(countyFips, zonesIndexed, observedAt) {
+  return {
+    sourceAdapter: SOURCE_ADAPTER,
+    sourceCitation: `FEMA NFHL tx_fema_nfhl_flood_zone (from-plan drain; zonesIndexed=${zonesIndexed})`,
+    sourceUrl: SOURCE_URL,
+    observedAt,
+    jurisdictionTenant: `tx_${countyFips}`,
+    verificationStatus: "machine",
+  };
+}
+
+async function writeAtomsFromFloodPlan(plan, provenance, summary) {
+  const substrateUrl = resolveSubstrateDatabaseUrl();
+  if (!substrateUrl) {
+    throw new Error(
+      "FATAL: --apply requires DATABASE_URL / SUBSTRATE_DATABASE_URL (the ATOMS store).",
+    );
+  }
+  const handle = createPgStorage({ databaseUrl: substrateUrl, maxConnections: 8 });
+  const total = plan.planned.length;
+  summary.atomsBuilt = total;
+  let writeAccum = 0;
+  let verifyAccum = 0;
+  try {
+    for (let i = 0; i < total; i += args.batch) {
+      const entries = plan.planned.slice(i, i + args.batch);
+      const slice = entries.map((entry) =>
+        buildAtomForPlannedFloodHazard(entry, plan.countyFips, provenance),
+      );
+      const tWriteBatch = performance.now();
+      await handle.storage.writePropertyAtomsBatch(slice);
+      writeAccum += performance.now() - tWriteBatch;
+      summary.atomsWritten += slice.length;
+
+      const tVerifyBatch = performance.now();
+      const dids = slice.map((a) => `did:hauska:flood-hazard-fact:${a.entityId}`);
+      const stored = await handle.sql`
+        SELECT body FROM atoms
+        WHERE atom_did IN ${handle.sql(dids)}
+      `;
+      const storedByDid = new Map(stored.map((s) => [s.body?.atomDid, s.body]));
+      for (const atom of slice) {
+        const back = storedByDid.get(atom.atomDid);
+        if (!back) {
+          summary.verifyFailures.push({
+            atomDid: atom.atomDid,
+            problem: "atom not readable back via atom_did column after write",
+          });
+          continue;
+        }
+        const verdict = verifyStoredFloodHazardFactAtom(back, {
+          parcelNodeId: atom.parcelNodeId,
+          outcome: atom.absence || atom.sourceTier === "absent" ? "absent" : "present",
+        });
+        if (verdict.ok) summary.verified += 1;
+        else summary.verifyFailures.push(verdict);
+      }
+      verifyAccum += performance.now() - tVerifyBatch;
+
+      if (summary.verifyFailures.length > 0) {
+        throw new Error(
+          `write-then-verify FAILED on ${summary.verifyFailures.length} atom(s); ` +
+            `first: ${JSON.stringify(summary.verifyFailures[0])}`,
+        );
+      }
+
+      console.log(
+        JSON.stringify({
+          event: "flood-hazard-fact-county.progress",
+          county: summary.county,
+          fromPlan: true,
+          written: summary.atomsWritten,
+          verified: summary.verified,
+          ofTotal: total,
+        }),
+      );
+    }
+  } finally {
+    await handle.close();
+  }
+  summary.writeMs = Math.round(writeAccum);
+  summary.verifyMs = Math.round(verifyAccum);
+}
+
+if (args.fromPlan) {
+  if (!existsSync(args.fromPlan)) {
+    console.error(`FATAL: --from-plan file missing: ${args.fromPlan}`);
+    process.exit(1);
+  }
+  if (!args.county || !/^\d{5}$/.test(args.county)) {
+    console.error("FATAL: --from-plan requires --county=<5-digit FIPS>.");
+    process.exit(1);
+  }
+  const t0 = performance.now();
+  const summary = {
+    event: "flood-hazard-fact-county.done",
+    county: args.county,
+    mode: args.apply ? "from-plan-apply" : "from-plan-dry-run",
+    fromPlan: args.fromPlan,
+    plan: null,
+    atomsBuilt: 0,
+    atomsWritten: 0,
+    verified: 0,
+    verifyFailures: [],
+    errors: 0,
+    writeMs: null,
+    verifyMs: null,
+    planDigest: null,
+    planBackend: "from-plan",
+    planBackendReason: "consumed flood-plan-ndjson-v1; no PostGIS plan scan",
+  };
+  try {
+    const payload = readFloodPlanPayload(args.fromPlan);
+    const drained = drainFloodPlanPayload(payload, {
+      countyFips: args.county,
+      ...(args.expectDigest ? { expectDigest: args.expectDigest } : {}),
+    });
+    summary.planDigest = drained.planDigest;
+    summary.plan = {
+      parcelsRead: drained.plan.parcelsRead,
+      zonesIndexed: drained.plan.zonesIndexed,
+      emptyZoneIndex: drained.plan.emptyZoneIndex,
+      wouldWriteTotal: drained.plan.planned.length,
+      wouldWritePresent: drained.plan.counts.present,
+      wouldWritePresentInSfha: drained.plan.counts.presentInSfha,
+      wouldWritePresentOutside: drained.plan.counts.presentOutside,
+      wouldWriteAbsent: drained.plan.counts.absent,
+      skippedUnusableKey: drained.plan.counts.skippedUnusableKey,
+    };
+    const provenance =
+      drained.provenance ??
+      defaultFloodProvenance(
+        drained.countyFips,
+        drained.plan.zonesIndexed,
+        payload.plannedAt || new Date().toISOString(),
+      );
+    if (!args.apply) {
+      const sampleEntries = drained.plan.planned.slice(0, 5);
+      const sampleAtoms = sampleEntries.map((entry) =>
+        buildAtomForPlannedFloodHazard(entry, drained.plan.countyFips, provenance),
+      );
+      console.log(
+        JSON.stringify({
+          event: "flood-hazard-fact-county.from-plan-dry-run",
+          county: drained.countyFips,
+          elapsedMs: Math.round(performance.now() - t0),
+          ...summary,
+          sample: sampleAtoms.map((a) => ({
+            atomDid: a.atomDid,
+            parcelNodeId: a.parcelNodeId,
+            entityId: a.entityId,
+            inSfha: a.inSpecialFloodHazardArea ?? null,
+            floodZone: a.floodZone ?? null,
+            absenceKind: a.absence?.kind ?? null,
+          })),
+          note: "from-plan dry-run — pass --apply to write atoms; no PostGIS plan scan ran",
+        }),
+      );
+      process.exit(0);
+    }
+    await writeAtomsFromFloodPlan(drained.plan, provenance, summary);
+    summary.wallMs = Math.round(performance.now() - t0);
+    console.log(JSON.stringify(summary, null, 2));
+    if (args.out) writeFileSync(args.out, JSON.stringify(summary, null, 2));
+    process.exit(0);
+  } catch (err) {
+    summary.errors += 1;
+    summary.error = String(err?.stack || err);
+    console.error(JSON.stringify(summary, null, 2));
+    process.exit(1);
+  }
+}
 
 if (!PLAN_BACKENDS.has(args.planBackend)) {
   console.error(
@@ -472,7 +652,7 @@ try {
           : undefined;
     }
 
-    summary.planDigest = planDigest(plan);
+    summary.planDigest = digestFloodPlan(plan);
     summary.plan = {
       parcelsRead: plan.parcelsRead,
       zonesIndexed: plan.zonesIndexed,
@@ -496,6 +676,30 @@ try {
       verificationStatus: "machine",
       sourceVintage: zoneVintage,
     };
+
+    if (args.planOnly) {
+      const payload = buildFloodPlanPayload(plan, {
+        plannedAt: provenance.observedAt,
+        planBackend: summary.planBackend,
+        provenance,
+      });
+      writeFloodPlanPayload(args.out, payload);
+      summary.mode = "plan-only";
+      summary.planArtifact = args.out;
+      summary.atomsBuilt = plan.planned.length;
+      console.log(
+        JSON.stringify({
+          event: "flood-hazard-fact-county.plan-only",
+          county: args.county,
+          planBackend: summary.planBackend,
+          planMs: summary.planMs,
+          planDigest: summary.planDigest,
+          planArtifact: args.out,
+          ...summary.plan,
+          note: "NDJSON plan persisted; drain with --from-plan --apply (no in-slot re-plan)",
+        }),
+      );
+    } else {
     const atoms = buildAtomsForFloodHazardPlan(plan, provenance);
     summary.atomsBuilt = atoms.length;
 
@@ -576,11 +780,12 @@ try {
       summary.writeMs = Math.round(writeAccum);
       summary.verifyMs = Math.round(verifyAccum);
     }
+    }
   }
 
   summary.wallMs = Math.round(performance.now() - t0);
   console.log(JSON.stringify(summary, null, 2));
-  if (args.out) writeFileSync(args.out, JSON.stringify(summary, null, 2));
+  if (args.out && !args.planOnly) writeFileSync(args.out, JSON.stringify(summary, null, 2));
 } catch (err) {
   summary.errors += 1;
   summary.error = String(err?.stack || err);
