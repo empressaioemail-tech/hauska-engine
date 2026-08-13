@@ -2,7 +2,7 @@
 export const OUTSIDE_TRUE_GEOM_ABSENCE_RULE =
   "outside-tceq-source-true-geom-no-intersect" as const;
 
-/** Zero districts attributed to this FIPS in the statewide TCEQ layer. */
+/** Zero districts attributed to this FIPS in the TCEQ layer (positive determination). */
 export const EMPTY_COUNTY_DISTRICT_ABSENCE_RULE =
   "empty-county-tceq-zero-districts-for-fips" as const;
 
@@ -18,13 +18,14 @@ export function buildOutsideSourceAbsenceReason(countyFips: string): string {
 }
 
 /**
- * Positive TCEQ determination: the statewide layer attributes zero districts
- * to this county FIPS. absenceKind stays `outside-tceq-source-boundaries`.
+ * Positive TCEQ determination: the TCEQ layer attributes zero districts to
+ * this county FIPS. absenceKind stays `outside-tceq-source-boundaries`.
+ * Do NOT use the word "statewide" — banned by atom writer seam.
  */
 export function buildEmptyCountyDistrictAbsenceReason(countyFips: string): string {
   return (
     `Positive TCEQ determination: zero districts are attributed to county FIPS ` +
-    `${countyFips} in the statewide TCEQ tx_special_district layer ` +
+    `${countyFips} in the TCEQ tx_special_district layer ` +
     `(Public/WaterDistricts MapServer/0). ` +
     `Finding is scoped to that source only; Comptroller registry omissions, ESD, PID, ` +
     `and other district types outside this layer may still apply.`
