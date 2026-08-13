@@ -70,9 +70,10 @@ interface HitRow {
 }
 
 /**
- * Params: $1 countyFips, $2 afterFeatureIndex (exclusive), $3 batchLimit.
- * Batches by feature_index so MATERIALIZED GeomFromGeoJSON never holds a full
- * metro county in temp files (Neon disk-quota class on 48039).
+ * Params: $1 countyFips, $2 afterFeatureIndex, $3 afterParcelKey, $4 batchLimit.
+ * Keyset on (feature_index, prop_id) — feature_index is NOT unique in metros
+ * (Harris 48201: 15k rows only advance max_fi to 14379; paging by feature_index
+ * alone silently skipped ~1.59M parcels).
  */
 function trueGeomPlanBatchSql(): string {
   return `
@@ -96,9 +97,12 @@ function trueGeomPlanBatchSql(): string {
       AND trim(prop_id) <> ''
       AND trim(prop_id) !~ '^0+$'
       AND trim(prop_id) ~ '^[A-Za-z0-9.-]+$'
-      AND feature_index > $2
-    ORDER BY feature_index
-    LIMIT $3
+      AND (
+        feature_index > $2
+        OR (feature_index = $2 AND trim(prop_id) > $3)
+      )
+    ORDER BY feature_index, trim(prop_id)
+    LIMIT $4
   ),
   hits AS (
     SELECT h.parcel_key, d.district_id, d.district_name, d.district_type, d.county_fips
@@ -119,7 +123,7 @@ function trueGeomPlanBatchSql(): string {
          h.county_fips
   FROM parcels p
   LEFT JOIN hits h ON h.parcel_key = p.parcel_key
-  ORDER BY p.feature_index, h.district_id
+  ORDER BY p.feature_index, p.parcel_key, h.district_id
 `;
 }
 
@@ -238,6 +242,7 @@ export async function planCountySpecialDistrictsPostgis(
   const t0 = Date.now();
   const rows: HitRow[] = [];
   let afterFeature = -1;
+  let afterParcelKey = "";
   let parcelsFetched = 0;
   try {
     while (parcelsFetched < hardLimit) {
@@ -245,21 +250,30 @@ export async function planCountySpecialDistrictsPostgis(
       const batch = await sql.unsafe<HitRow[]>(queryText, [
         countyFips,
         afterFeature,
+        afterParcelKey,
         take,
       ]);
       if (batch.length === 0) break;
       // Do NOT rows.push(...batch) — spread blows the call stack on large batches
       // (48039: Maximum call stack size exceeded).
       for (const r of batch) rows.push(r);
-      let maxFi = afterFeature;
       const seenKeys = new Set<string>();
+      let lastFi = afterFeature;
+      let lastKey = afterParcelKey;
       for (const r of batch) {
         const fi = Number(r.feature_index);
-        if (Number.isFinite(fi) && fi > maxFi) maxFi = fi;
-        if (r.parcel_key) seenKeys.add(r.parcel_key);
+        const key = String(r.parcel_key ?? "");
+        if (key) seenKeys.add(key);
+        if (Number.isFinite(fi) && key) {
+          if (fi > lastFi || (fi === lastFi && key > lastKey)) {
+            lastFi = fi;
+            lastKey = key;
+          }
+        }
       }
       parcelsFetched += seenKeys.size;
-      afterFeature = maxFi;
+      afterFeature = lastFi;
+      afterParcelKey = lastKey;
       if (seenKeys.size < take) break;
     }
   } catch (err) {
