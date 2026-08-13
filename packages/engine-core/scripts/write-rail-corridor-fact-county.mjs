@@ -9,7 +9,12 @@
  *   CORTEX_DATABASE_URL=... \
  *   DATABASE_URL=...hauska_mcp... \
  *     pnpm --filter @hauska-engine/engine-core run write-rail-corridor-fact-county -- \
- *       --county=48021 [--apply] [--batch=500] [--limit=0] [--probe-only]
+ *       --county=48021 [--apply] [--batch=500] [--limit=0] [--probe-only] \
+ *       [--narn-json=path] [--crossings-json=path]
+ *
+ * --narn-json fails closed if the file is missing (no live ArcGIS fallback).
+ * Unusable CAD prop_id tokens are skipped (named skippedUnusablePropId), never
+ * rewritten as _feature-${feature_index}.
  */
 
 import { writeFileSync } from "node:fs";
@@ -18,11 +23,14 @@ import { performance } from "node:perf_hooks";
 import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 import { RAIL_CORRIDOR_DEFAULT_BUFFER_METERS } from "@empressaio/atom-contract/property";
+import { isUsablePropId } from "@hauska-engine/atoms";
 
 import {
   buildAtomsForRailCorridorPlan,
   fetchNtadGradeCrossingsForCounty,
   fetchNtadRailCorridorsForCounty,
+  loadStagedNtadCorridors,
+  loadStagedNtadCrossings,
   NTAD_GRADE_CROSSINGS_URL,
   NTAD_NARN_LINES_URL,
   NTAD_NARN_SOURCE_VINTAGE,
@@ -43,6 +51,8 @@ function parseArgs(argv) {
     out: null,
     listCounties: false,
     probeOnly: false,
+    narnJson: null,
+    crossingsJson: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -57,6 +67,12 @@ function parseArgs(argv) {
     else if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length));
     else if (a === "--out") out.out = String(argv[++i] || "").trim() || null;
     else if (a.startsWith("--out=")) out.out = a.slice("--out=".length).trim() || null;
+    else if (a === "--narn-json") out.narnJson = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--narn-json=")) out.narnJson = a.slice("--narn-json=".length).trim() || null;
+    else if (a === "--crossings-json") out.crossingsJson = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--crossings-json=")) {
+      out.crossingsJson = a.slice("--crossings-json=".length).trim() || null;
+    }
   }
   return out;
 }
@@ -187,16 +203,33 @@ try {
     let crossings = [];
     let sourceFetchFailed = false;
     try {
-      summary.sourceProbe = await probeNtadRailSource(args.county);
-      [corridors, crossings] = await Promise.all([
-        fetchNtadRailCorridorsForCounty(args.county),
-        fetchNtadGradeCrossingsForCounty(args.county),
-      ]);
+      if (args.narnJson) {
+        corridors = loadStagedNtadCorridors(args.narnJson);
+        crossings = args.crossingsJson ? loadStagedNtadCrossings(args.crossingsJson) : [];
+        summary.sourceProbe = {
+          countyFips: args.county,
+          mode: "staged-narn",
+          narnJson: args.narnJson,
+          crossingsJson: args.crossingsJson,
+          corridorsLoaded: corridors.length,
+          crossingsLoaded: crossings.length,
+        };
+      } else {
+        summary.sourceProbe = await probeNtadRailSource(args.county);
+        [corridors, crossings] = await Promise.all([
+          fetchNtadRailCorridorsForCounty(args.county),
+          fetchNtadGradeCrossingsForCounty(args.county),
+        ]);
+      }
     } catch (err) {
+      if (args.narnJson) {
+        throw err;
+      }
       sourceFetchFailed = true;
       summary.sourceProbe = {
         error: String(err?.message ?? err),
         countyFips: args.county,
+        staged: Boolean(args.narnJson),
       };
     }
 
@@ -211,6 +244,7 @@ try {
     };
 
     const parcels = [];
+    let skippedUnusablePropId = 0;
     let lastFeature = -1;
     while (true) {
       if (args.limit > 0 && parcels.length >= args.limit) break;
@@ -229,8 +263,13 @@ try {
       if (page.length === 0) break;
       for (const p of page) {
         if (args.limit > 0 && parcels.length >= args.limit) break;
+        const key = typeof p.prop_id === "string" ? p.prop_id.trim() : "";
+        if (!isUsablePropId(key)) {
+          skippedUnusablePropId += 1;
+          continue;
+        }
         parcels.push({
-          parcelKey: p.prop_id ?? `_feature-${p.feature_index}`,
+          parcelKey: key,
           geometry: p.geometry,
         });
       }
@@ -252,6 +291,7 @@ try {
       wouldWritePresentNear: plan.counts.presentNear,
       wouldWritePresentOutside: plan.counts.presentOutside,
       wouldWriteAbsent: plan.counts.absent,
+      skippedUnusablePropId,
       limitApplied: args.limit > 0 ? args.limit : null,
     };
 

@@ -23,6 +23,11 @@ export {
 } from "./ntad-source.js";
 
 export {
+  loadStagedNtadCorridors,
+  loadStagedNtadCrossings,
+} from "./staged-narn.js";
+
+export {
   planCountyRailCorridor,
   type RailParcelInput,
   type CountyRailCorridorPlan,
