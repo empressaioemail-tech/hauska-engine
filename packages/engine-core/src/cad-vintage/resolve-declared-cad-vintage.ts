@@ -29,7 +29,7 @@ export const DECLARED_CAD_VINTAGES: Readonly<
   "48055": { taxYear: 2026, tier: "cad-export" },
   "48085": { taxYear: 2025, tier: "stratmap-roll" },
   "48091": { taxYear: 2025, tier: "stratmap-roll" },
-  "48113": { taxYear: 2025, tier: "stratmap-roll" },
+  "48113": { taxYear: 2026, tier: "cad-export" }, // flipped 2026-08-14 per L21 followup5 (named 2025-fallback live, ldt #429)
   "48121": { taxYear: 2025, tier: "stratmap-roll" },
   "48187": { taxYear: 2025, tier: "stratmap-roll" },
   "48209": { taxYear: 2026, tier: "cad-export" },
