@@ -19,8 +19,11 @@ describe("resolveDeclaredCadVintage (engine mirror)", () => {
     expect(DECLARED_CAD_VINTAGES).toEqual(fixture);
   });
 
-  it("Tarrant stays 2025 not pilot 2026", () => {
-    expect(resolveDeclaredCadVintage("48439").taxYear).toBe(2025);
+  it("Tarrant declared 2026/cad-export after the ruled flip (named 2025-fallback live, ldt #428)", () => {
+    // The prior guard ("stays 2025 not pilot 2026") expired 2026-08-14 when the flip was
+    // RULED with the named-fallback list loaded (35,156 keys). This now pins the ruled state.
+    expect(resolveDeclaredCadVintage("48439").taxYear).toBe(2026);
+    expect(resolveDeclaredCadVintage("48439").tier).toBe("cad-export");
   });
 
   it("failing-first: other-vintage-only → vintage-gap", () => {

@@ -1,17 +1,62 @@
 {
-  "48021": { "taxYear": 2025, "tier": "cad-export" },
-  "48027": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48029": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48055": { "taxYear": 2026, "tier": "cad-export" },
-  "48085": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48091": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48113": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48121": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48187": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48209": { "taxYear": 2026, "tier": "cad-export" },
-  "48257": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48309": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48439": { "taxYear": 2025, "tier": "stratmap-roll" },
-  "48453": { "taxYear": 2026, "tier": "cad-export" },
-  "48491": { "taxYear": 2026, "tier": "cad-export" }
+  "48021": {
+    "taxYear": 2025,
+    "tier": "cad-export"
+  },
+  "48027": {
+    "taxYear": 2025,
+    "tier": "stratmap-roll"
+  },
+  "48029": {
+    "taxYear": 2025,
+    "tier": "stratmap-roll"
+  },
+  "48055": {
+    "taxYear": 2026,
+    "tier": "cad-export"
+  },
+  "48085": {
+    "taxYear": 2025,
+    "tier": "stratmap-roll"
+  },
+  "48091": {
+    "taxYear": 2025,
+    "tier": "stratmap-roll"
+  },
+  "48113": {
+    "taxYear": 2025,
+    "tier": "stratmap-roll"
+  },
+  "48121": {
+    "taxYear": 2025,
+    "tier": "stratmap-roll"
+  },
+  "48187": {
+    "taxYear": 2025,
+    "tier": "stratmap-roll"
+  },
+  "48209": {
+    "taxYear": 2026,
+    "tier": "cad-export"
+  },
+  "48257": {
+    "taxYear": 2025,
+    "tier": "stratmap-roll"
+  },
+  "48309": {
+    "taxYear": 2025,
+    "tier": "stratmap-roll"
+  },
+  "48439": {
+    "taxYear": 2026,
+    "tier": "cad-export"
+  },
+  "48453": {
+    "taxYear": 2026,
+    "tier": "cad-export"
+  },
+  "48491": {
+    "taxYear": 2026,
+    "tier": "cad-export"
+  }
 }
