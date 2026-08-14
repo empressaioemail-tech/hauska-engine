@@ -10,6 +10,8 @@
 
 import postgres from "postgres";
 
+import { resolveDeclaredCadVintage } from "../src/cad-vintage/resolve-declared-cad-vintage.ts";
+
 function parseArgs(argv) {
   const out = { county: null, sample: 200, join: "prop_id" };
   for (let i = 0; i < argv.length; i++) {
@@ -64,6 +66,8 @@ if (!args.county || !cortexUrl) {
 }
 
 const sql = postgres(cortexUrl, { max: 1, ssl: "require", prepare: false });
+const declared = resolveDeclaredCadVintage(args.county);
+const taxYear = declared.taxYear;
 
 try {
   const pairs =
@@ -77,6 +81,7 @@ try {
             on c.county_fips = t.county_fips
            and upper(regexp_replace(coalesce(c.situs_address,''), '[^A-Za-z0-9 ]', ' ', 'g'))
              = upper(regexp_replace(coalesce(t.situs_address,''), '[^A-Za-z0-9 ]', ' ', 'g'))
+           and c.tax_year = ${taxYear}
           where t.county_fips = ${args.county}
             and coalesce(t.owner_name, '') <> ''
             and coalesce(c.owner_name, '') <> ''
@@ -92,6 +97,7 @@ try {
           join cad_property c
             on c.county_fips = t.county_fips
            and c.prop_id = t.prop_id
+           and c.tax_year = ${taxYear}
           where t.county_fips = ${args.county}
             and coalesce(t.owner_name, '') <> ''
             and coalesce(c.owner_name, '') <> ''

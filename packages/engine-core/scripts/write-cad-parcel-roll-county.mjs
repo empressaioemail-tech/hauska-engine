@@ -31,6 +31,7 @@ import {
   planCountyCadParcelRoll,
   verifyStoredCadParcelRollAtom,
 } from "../src/cad-parcel-roll/index.ts";
+import { resolveDeclaredCadVintage } from "../src/cad-vintage/resolve-declared-cad-vintage.ts";
 
 const SOURCE_ADAPTER = "cad-property-ingest-v1";
 const SOURCE_URL = "cad_property";
@@ -85,6 +86,7 @@ if (!cortexUrl) {
 const cadSql = postgres(cortexUrl, { max: 4, ssl: "require", prepare: false });
 
 async function readCountyRosterFromStore() {
+  // CAD_PROPERTY_MULTI_YEAR_INVENTORY — intentional; not a single-vintage derivation
   return cadSql`
     SELECT county_fips,
            count(*)::int AS rows,
@@ -174,6 +176,24 @@ try {
     );
     process.exitCode = 1;
   } else {
+    const declared = resolveDeclaredCadVintage(args.county);
+    if (args.taxYear != null && Number(args.taxYear) !== declared.taxYear) {
+      console.error(
+        JSON.stringify({
+          event: "cad-parcel-roll-county.tax-year-mismatch",
+          county: args.county,
+          declaredTaxYear: declared.taxYear,
+          requestedTaxYear: args.taxYear,
+          message:
+            "FAIL CLOSED: --taxYear must match resolveDeclaredCadVintage (no silent cross-vintage)",
+        }),
+      );
+      process.exitCode = 1;
+      await cadSql.end({ timeout: 5 });
+      process.exit(1);
+    }
+    const taxYear = declared.taxYear;
+
     summary.storeTruth = {
       rows: row.rows,
       props: row.props,
@@ -181,7 +201,8 @@ try {
         row.min_year === row.max_year
           ? String(row.min_year)
           : `${row.min_year}..${row.max_year}`,
-      note: "read from cad_property at execution time",
+      chosenTaxYear: taxYear,
+      note: "read from cad_property at execution time; always filtered to declared taxYear",
     };
 
     const rows = [];
@@ -192,32 +213,19 @@ try {
       const remaining =
         args.limit > 0 ? args.limit - rows.length : Math.min(args.batch, 2000);
       const pageSize = Math.max(1, Math.min(args.batch, remaining, 2000));
-      const page = args.taxYear
-        ? await cadSql`
-            SELECT county_fips, prop_id, tax_year, owner_name, owner_mailing_address,
-                   situs_address, situs_city, situs_zip, legal_description,
-                   exemption_codes, land_value, improvement_value, market_value,
-                   assessed_value, year_built, living_area_sqft, land_acres,
-                   property_use_code, source_file, source_vintage
-            FROM cad_property
-            WHERE county_fips = ${args.county}
-              AND tax_year = ${args.taxYear}
-              AND (prop_id, tax_year) > (${lastProp}, ${lastYear})
-            ORDER BY prop_id, tax_year
-            LIMIT ${pageSize}
-          `
-        : await cadSql`
-            SELECT county_fips, prop_id, tax_year, owner_name, owner_mailing_address,
-                   situs_address, situs_city, situs_zip, legal_description,
-                   exemption_codes, land_value, improvement_value, market_value,
-                   assessed_value, year_built, living_area_sqft, land_acres,
-                   property_use_code, source_file, source_vintage
-            FROM cad_property
-            WHERE county_fips = ${args.county}
-              AND (prop_id, tax_year) > (${lastProp}, ${lastYear})
-            ORDER BY prop_id, tax_year
-            LIMIT ${pageSize}
-          `;
+      const page = await cadSql`
+        SELECT county_fips, prop_id, tax_year, owner_name, owner_mailing_address,
+               situs_address, situs_city, situs_zip, legal_description,
+               exemption_codes, land_value, improvement_value, market_value,
+               assessed_value, year_built, living_area_sqft, land_acres,
+               property_use_code, source_file, source_vintage
+        FROM cad_property
+        WHERE county_fips = ${args.county}
+          AND tax_year = ${taxYear}
+          AND (prop_id, tax_year) > (${lastProp}, ${lastYear})
+        ORDER BY prop_id, tax_year
+        LIMIT ${pageSize}
+      `;
       if (page.length === 0) break;
       for (const p of page) {
         if (args.limit > 0 && rows.length >= args.limit) break;
@@ -264,7 +272,7 @@ try {
 
     const provenance = {
       sourceAdapter: SOURCE_ADAPTER,
-      sourceCitation: `cad_property county ${args.county}, taxYears ${summary.storeTruth.taxYears}`,
+      sourceCitation: `cad_property county ${args.county} taxYear=${taxYear}`,
       sourceUrl: SOURCE_URL,
       observedAt: new Date().toISOString(),
       jurisdictionTenant: `tx_${args.county}`,

@@ -37,6 +37,8 @@ import {
   planCountyOwnerFacts,
   verifyStoredOwnerFactAtom,
 } from "../src/owner-fact/index.ts";
+import { resolveDeclaredCadVintage } from "../src/cad-vintage/resolve-declared-cad-vintage.ts";
+import { isUsablePropId, normalizeForJoin } from "@hauska-engine/atoms";
 
 const SOURCE_ADAPTER = "cad-property-owner-v1";
 const SOURCE_URL = "cad_property.owner_name";
@@ -102,6 +104,7 @@ async function readParcelRoster() {
 }
 
 async function readCadRoster() {
+  // CAD_PROPERTY_MULTI_YEAR_INVENTORY — intentional; not a single-vintage derivation
   return sql`
     SELECT county_fips,
            count(*)::int AS rows,
@@ -195,6 +198,8 @@ try {
     );
     process.exitCode = 1;
   } else {
+    const declared = resolveDeclaredCadVintage(args.county);
+    // CAD_PROPERTY_MULTI_YEAR_INVENTORY — intentional; not a single-vintage derivation
     const yearRows = await sql`
       SELECT tax_year, count(*)::int AS n, count(owner_name)::int AS with_owner
       FROM cad_property
@@ -202,8 +207,22 @@ try {
       GROUP BY tax_year
       ORDER BY tax_year DESC
     `;
-    const taxYear =
-      args.taxYear ?? (yearRows.length > 0 ? yearRows[0].tax_year : new Date().getUTCFullYear());
+    if (args.taxYear != null && Number(args.taxYear) !== declared.taxYear) {
+      console.error(
+        JSON.stringify({
+          event: "owner-fact-county.tax-year-mismatch",
+          county: args.county,
+          declaredTaxYear: declared.taxYear,
+          requestedTaxYear: args.taxYear,
+          message:
+            "FAIL CLOSED: --taxYear must match resolveDeclaredCadVintage (no silent cross-vintage)",
+        }),
+      );
+      process.exitCode = 1;
+      await sql.end({ timeout: 5 });
+      process.exit(1);
+    }
+    const taxYear = declared.taxYear;
 
     summary.storeTruth = {
       parcelRows: parcelRow.rows,
@@ -275,9 +294,34 @@ try {
       if (page.length < cadPageSize) break;
     }
 
+    const otherVintageKeys = new Set();
+    {
+      let lastOther = "";
+      while (true) {
+        const page = await sql`
+          SELECT DISTINCT prop_id
+          FROM cad_property
+          WHERE county_fips = ${args.county}
+            AND tax_year <> ${taxYear}
+            AND prop_id > ${lastOther}
+          ORDER BY prop_id
+          LIMIT ${cadPageSize}
+        `;
+        if (page.length === 0) break;
+        for (const p of page) {
+          if (isUsablePropId(p.prop_id)) {
+            otherVintageKeys.add(normalizeForJoin(p.prop_id));
+          }
+        }
+        lastOther = page[page.length - 1].prop_id;
+        if (page.length < cadPageSize) break;
+      }
+    }
+
     let plan = planCountyOwnerFacts(parcels, cadRows, {
       countyFips: args.county,
       taxYear,
+      otherVintageKeys,
     });
     if (args.limit > 0 && plan.planned.length > args.limit) {
       const sliced = plan.planned.slice(0, args.limit);
@@ -285,6 +329,7 @@ try {
         "no-owner-name": 0,
         "owner-withheld": 0,
         "no-cad-row": 0,
+        "vintage-gap": 0,
         "join-hold": 0,
       };
       let present = 0;

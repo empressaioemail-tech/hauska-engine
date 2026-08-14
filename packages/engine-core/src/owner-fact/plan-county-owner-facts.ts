@@ -44,6 +44,7 @@ export type OwnerAbsenceKind =
   | "no-owner-name"
   | "owner-withheld"
   | "no-cad-row"
+  | "vintage-gap"
   | "join-hold";
 
 export interface PlannedPresentOwnerFact {
@@ -112,11 +113,18 @@ export function planCountyOwnerFacts(
      * election. Only supply from a district's PUBLISHED list — never infer.
      */
     withheldKeys?: ReadonlySet<string>;
+    /**
+     * Normalized join keys that exist in cad_property at a NON-declared
+     * tax_year. When declared-year miss hits one of these → vintage-gap
+     * (never silent cross-vintage read).
+     */
+    otherVintageKeys?: ReadonlySet<string>;
   },
 ): CountyOwnerFactPlan {
   const hold = isLandUseJoinHoldCounty(opts.countyFips);
   const cadByKey = indexOwnerCadRowsByJoinKey(cadRows);
   const withheld = opts.withheldKeys ?? new Set<string>();
+  const otherVintage = opts.otherVintageKeys ?? new Set<string>();
   const planned: PlannedOwnerFact[] = [];
   let skippedUnusableKey = 0;
   let withMailingAddress = 0;
@@ -124,6 +132,7 @@ export function planCountyOwnerFacts(
     "no-owner-name": 0,
     "owner-withheld": 0,
     "no-cad-row": 0,
+    "vintage-gap": 0,
     "join-hold": 0,
   };
 
@@ -152,6 +161,19 @@ export function planCountyOwnerFacts(
 
     const cad = cadByKey.get(parcelKey);
     if (!cad) {
+      if (otherVintage.has(parcelKey)) {
+        planned.push({
+          outcome: "absent",
+          parcelKey,
+          taxYear: opts.taxYear,
+          absenceKind: "vintage-gap",
+          reason:
+            `cad_property has ${opts.countyFips}:${parcelKey} in another tax_year ` +
+            `but not at declared taxYear=${opts.taxYear} (vintage-gap; no silent cross-vintage read)`,
+        });
+        absentByKind["vintage-gap"] += 1;
+        continue;
+      }
       planned.push({
         outcome: "absent",
         parcelKey,
