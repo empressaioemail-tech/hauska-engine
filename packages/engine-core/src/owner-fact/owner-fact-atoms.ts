@@ -61,11 +61,16 @@ export function buildAtomForPlannedOwnerFact(
     );
   }
 
+  const atomAbsenceKind =
+    entry.absenceKind === "vintage-gap" ? "no-cad-row" : entry.absenceKind;
+
   return buildOwnerFactAbsenceAtom(
     {
       parcelNodeId,
       taxYear: entry.taxYear,
-      absenceKind: entry.absenceKind,
+      // Contract OwnerFactAbsenceKind does not yet include vintage-gap;
+      // kind stays no-cad-row while basis travels in reason (L17 open: contract bump).
+      absenceKind: atomAbsenceKind,
       reason: entry.reason,
     },
     {

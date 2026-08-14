@@ -49,11 +49,16 @@ export function buildAtomForPlannedLandUseFact(
     );
   }
 
+  const atomAbsenceKind =
+    entry.absenceKind === "vintage-gap" ? "no-cad-row" : entry.absenceKind;
+
   return buildLandUseFactAbsenceAtom(
     {
       parcelNodeId,
       taxYear: entry.taxYear,
-      absenceKind: entry.absenceKind,
+      // Contract LandUseAbsenceKind does not yet include vintage-gap;
+      // kind stays no-cad-row while basis travels in reason (L17 open: contract bump).
+      absenceKind: atomAbsenceKind,
       reason: entry.reason,
     },
     {
