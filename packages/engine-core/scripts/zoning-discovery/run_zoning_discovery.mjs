@@ -83,6 +83,42 @@ function loadQueue() {
   return items;
 }
 
+function verificationFailure(item, verdict) {
+  if (item.expectedStatus && verdict.status !== item.expectedStatus) {
+    return `expected status ${item.expectedStatus}, got ${verdict.status}`;
+  }
+  if (item.expectedLayerUrl && verdict.layerUrl !== item.expectedLayerUrl) {
+    return `expected layer ${item.expectedLayerUrl}, got ${verdict.layerUrl ?? "null"}`;
+  }
+  if (
+    Array.isArray(item.expectedLayerUrls) &&
+    item.expectedLayerUrls.length > 0 &&
+    !item.expectedLayerUrls.includes(verdict.layerUrl)
+  ) {
+    return `expected one of ${item.expectedLayerUrls.join(" | ")}, got ${verdict.layerUrl ?? "null"}`;
+  }
+  if (
+    Array.isArray(item.forbiddenLayerUrls) &&
+    verdict.layerUrl &&
+    item.forbiddenLayerUrls.includes(verdict.layerUrl)
+  ) {
+    return `selected forbidden layer ${verdict.layerUrl}`;
+  }
+  return null;
+}
+
+const CITY_BUDGET_MS = Number(process.env.ZONING_DISCOVERY_CITY_BUDGET_MS ?? 8 * 60_000);
+
+function withCityBudget(promise, cityKey, budgetMs) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`city-budget-exceeded:${cityKey}:${budgetMs}ms`));
+    }, budgetMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
   mkdirSync(verdictsDir, { recursive: true });
@@ -108,6 +144,7 @@ async function main() {
     queuePath: config.queue,
     outDir: OUT_DIR,
     stageApply: config.stageApply,
+    cityBudgetMs: CITY_BUDGET_MS,
     verdicts: [],
   };
 
@@ -116,16 +153,59 @@ async function main() {
     progress.attempted.push({ cityKey: item.cityKey, at: new Date().toISOString() });
     saveProgress(progress);
 
-    const evidence = await discoverZoningForCity(item);
-    const verdict = classifyDiscoveryEvidence(item, evidence);
+    let evidence;
+    let verdict;
+    let budgetExceeded = false;
+    try {
+      evidence = await withCityBudget(discoverZoningForCity(item), item.cityKey, CITY_BUDGET_MS);
+      verdict = classifyDiscoveryEvidence(item, evidence);
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (!msg.startsWith("city-budget-exceeded:")) throw err;
+      budgetExceeded = true;
+      evidence = {
+        cityKey: item.cityKey,
+        searchPaths: [],
+        layers: [],
+        bestEuclidean: null,
+        constraintLayers: [],
+        emptySearch: true,
+        allPathsTransportFailed: false,
+        anyAuthBlocked: false,
+      };
+      verdict = {
+        cityKey: item.cityKey,
+        status: "NOT-FOUND-UNKNOWN-WHY",
+        layerUrl: null,
+        layer: null,
+        searchPaths: [],
+        classifiedAt: new Date().toISOString(),
+        notes: [`city-budget-exceeded:${CITY_BUDGET_MS}ms`],
+      };
+    }
+
     const verdictPath = join(verdictsDir, `${item.cityKey}.json`);
     const verdictArtifact = {
       ...verdict,
+      probedLayers: evidence.layers,
       searchPathCount: verdict.searchPaths.length,
       everySearchPath: verdict.searchPaths,
       elapsedMs: Math.round(performance.now() - t0),
+      budgetExceeded,
     };
     writeFileSync(verdictPath, JSON.stringify(verdictArtifact, null, 2));
+
+    const failedExpectation = verificationFailure(item, verdict);
+    if (failedExpectation) {
+      progress.halted = {
+        cityKey: item.cityKey,
+        reason: `verification-failed: ${failedExpectation}`,
+        at: new Date().toISOString(),
+        artifact: verdictPath,
+      };
+      saveProgress(progress);
+      throw new Error(`${item.cityKey}: ${failedExpectation}`);
+    }
 
     let stageReport = null;
     if (verdict.status === "LAYER-FOUND" && config.stageApply) {
@@ -143,10 +223,28 @@ async function main() {
           applied: false,
         };
         console.error(JSON.stringify(stageReport));
+        progress.halted = {
+          cityKey: item.cityKey,
+          reason: `stage-failed: ${stageReport.error}`,
+          at: new Date().toISOString(),
+          artifact: verdictPath,
+        };
+        saveProgress(progress);
+        throw err;
+      }
+      if (!stageReport.applied || stageReport.featuresStaged < 1) {
+        progress.halted = {
+          cityKey: item.cityKey,
+          reason: "stage-failed: LAYER-FOUND produced no applied staging rows",
+          at: new Date().toISOString(),
+          artifact: verdictPath,
+        };
+        saveProgress(progress);
+        throw new Error(`${item.cityKey}: LAYER-FOUND produced no applied staging rows`);
       }
     }
 
-    if (isLandedStatus(verdict.status)) {
+    if (isLandedStatus(verdict.status) || budgetExceeded) {
       progress.landed.push({
         cityKey: item.cityKey,
         status: verdict.status,
@@ -155,7 +253,9 @@ async function main() {
         searchPathCount: verdict.searchPaths.length,
         artifact: verdictPath,
         stageReport,
+        budgetExceeded: budgetExceeded || undefined,
       });
+      progress.halted = null;
     }
 
     runClose.verdicts.push({
@@ -164,6 +264,7 @@ async function main() {
       layerUrl: verdict.layerUrl,
       artifact: verdictPath,
       stageReport,
+      budgetExceeded: budgetExceeded || undefined,
     });
 
     saveProgress(progress);
@@ -174,6 +275,7 @@ async function main() {
         status: verdict.status,
         layerUrl: verdict.layerUrl,
         searchPathCount: verdict.searchPaths.length,
+        budgetExceeded: budgetExceeded || undefined,
       }),
     );
   }

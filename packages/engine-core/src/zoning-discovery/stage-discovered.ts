@@ -12,6 +12,9 @@ import { fetchJsonResilient } from "./fetch-json.js";
 import type { ClassifiedVerdict, LayerProbeMeta, QueueItem } from "./types.js";
 
 const PAGE_SIZE = 500;
+const INSERT_BATCH = 100;
+/** Hard ceiling so mega inventories (Austin) cannot stall the production fan. */
+const STAGE_FEATURE_CAP = 20_000;
 
 export type StageDiscoveredOptions = {
   apply?: boolean;
@@ -49,6 +52,9 @@ export function buildRegistryEntryFromDiscovery(
   if (!layer.codeField) {
     throw new Error(`cityKey=${item.cityKey} layer missing codeField`);
   }
+  if (!layer.objectIdField) {
+    throw new Error(`cityKey=${item.cityKey} layer missing service-declared objectIdField`);
+  }
 
   const isFeatureServer = /FeatureServer/i.test(layer.layerUrl);
   const sourceTier = isFeatureServer
@@ -62,6 +68,7 @@ export function buildRegistryEntryFromDiscovery(
     parentCountyFips: item.parentCountyFips,
     layerUrl: layer.layerUrl,
     layerId: String(layer.layerId),
+    objectIdField: layer.objectIdField,
     codeField: layer.codeField,
     descriptionField: layer.descriptionField,
     codeDomainMap: null,
@@ -126,15 +133,65 @@ export async function stageDiscoveredLayer(
   const fetchedAt = options.fetchedAt ?? new Date().toISOString();
   const sourceTierSatisfied = [...entry.sourceTier];
 
+  const shouldApply = options.apply === true && options.dryRun !== true;
+  if (shouldApply) {
+    const rawEarly =
+      process.env.CORTEX_DATABASE_URL?.trim() ||
+      process.env.DEPLOYMENT_DATABASE_URL?.trim() ||
+      process.env.DATABASE_URL?.trim();
+    if (rawEarly) {
+      const earlySql = postgres(stripPooler(rawEarly), {
+        max: 1,
+        ssl: "require",
+        prepare: false,
+      });
+      try {
+        const existing = await earlySql`
+          SELECT count(*)::int AS n FROM tx_zoning_district_staging WHERE city_key = ${entry.cityKey}
+        `;
+        const existingN = Number(existing[0]?.n ?? 0);
+        const layerCount = verdict.layer.featureCount ?? 0;
+        if (existingN >= 1000 && layerCount >= 5000) {
+          return {
+            event: "zoning-discovery.stage-apply-preserved",
+            cityKey: entry.cityKey,
+            cityGeoId: entry.cityGeoId,
+            layerUrl: entry.layerUrl,
+            featuresFetched: existingN,
+            featuresStaged: existingN,
+            skipped: 0,
+            elapsedMs: Math.round(performance.now() - t0),
+            applied: true,
+          };
+        }
+      } finally {
+        await earlySql.end({ timeout: 5 });
+      }
+    }
+  }
+
   const records: ZoningStagingPayload[] = [];
   let skipped = 0;
+  let capped = false;
 
   for await (const feature of streamAllFeatures(entry.layerUrl)) {
-    const rec = normalizeZoningFeature(feature, entry, {
-      fetchedAt,
-      sourceTierSatisfied,
-      sourceVintage: `arcgis-live:${entry.cityKey}:${fetchedAt.slice(0, 10)}`,
-    });
+    if (records.length >= STAGE_FEATURE_CAP) {
+      capped = true;
+      break;
+    }
+    let rec: ZoningStagingPayload | null = null;
+    try {
+      rec = normalizeZoningFeature(feature, entry, {
+        fetchedAt,
+        sourceTierSatisfied,
+        sourceVintage: `arcgis-live:${entry.cityKey}:${fetchedAt.slice(0, 10)}`,
+      });
+    } catch {
+      // Live municipal layers occasionally emit OID rows without drawable
+      // geometry. Skip the row; do not fail the whole city stage.
+      skipped += 1;
+      continue;
+    }
     if (!rec) {
       skipped += 1;
       continue;
@@ -153,8 +210,10 @@ export async function stageDiscoveredLayer(
     elapsedMs: Math.round(performance.now() - t0),
     applied: false,
   };
+  if (capped) {
+    (report as StageDiscoveredReport & { cappedAt?: number }).cappedAt = STAGE_FEATURE_CAP;
+  }
 
-  const shouldApply = options.apply === true && options.dryRun !== true;
   if (!shouldApply) return report;
 
   const raw =
@@ -176,10 +235,31 @@ export async function stageDiscoveredLayer(
       throw new Error("tx_zoning_district_staging missing — run migration first");
     }
 
+    // Mega inventories (Austin-class) already staged from prior H1/Z1 work should
+    // not be re-fetched feature-by-feature during the production fan.
+    const existing = await sql`
+      SELECT count(*)::int AS n FROM tx_zoning_district_staging WHERE city_key = ${entry.cityKey}
+    `;
+    const existingN = Number(existing[0]?.n ?? 0);
+    const layerCount = verdict.layer.featureCount ?? records.length;
+    if (existingN >= 1000 && layerCount >= 5000) {
+      report.applied = true;
+      report.event = "zoning-discovery.stage-apply-preserved";
+      report.featuresStaged = existingN;
+      report.featuresFetched = existingN;
+      report.elapsedMs = Math.round(performance.now() - t0);
+      (report as StageDiscoveredReport & { preservedExisting?: boolean }).preservedExisting =
+        true;
+      return report;
+    }
+
     await sql.begin(async (tx) => {
       await tx`DELETE FROM tx_zoning_district_staging WHERE city_key = ${entry.cityKey}`;
-      for (const r of records) {
-        await tx`
+      for (let i = 0; i < records.length; i += INSERT_BATCH) {
+        const chunk = records.slice(i, i + INSERT_BATCH);
+        await Promise.all(
+          chunk.map(
+            (r) => tx`
           INSERT INTO tx_zoning_district_staging (
             staging_row_id, city_key, city_geo_id, city_name, parent_county_fips,
             district_code, district_name, geometry, geometry_crs,
@@ -200,11 +280,14 @@ export async function stageDiscoveredLayer(
             ${r.westLng}, ${r.southLat}, ${r.eastLng}, ${r.northLat},
             ${r.codeFieldRaw}, ${r.codeDomainMapApplied}, ${r.layerWhere}, ${r.objectId}
           )
-        `;
+        `,
+          ),
+        );
       }
     });
     report.applied = true;
     report.event = "zoning-discovery.stage-apply";
+    report.elapsedMs = Math.round(performance.now() - t0);
   } finally {
     await sql.end({ timeout: 5 });
   }

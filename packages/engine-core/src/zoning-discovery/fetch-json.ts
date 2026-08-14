@@ -16,7 +16,7 @@ function curlJson(url: string): Promise<FetchJsonResult> {
   return new Promise((resolve) => {
     const child = spawn(
       "curl.exe",
-      ["-sS", "-L", "--max-time", "60", "-w", "\n__HTTP_STATUS__:%{http_code}", url],
+      ["-sS", "-L", "--max-time", "25", "-w", "\n__HTTP_STATUS__:%{http_code}", url],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
     let stdout = "";
@@ -55,7 +55,7 @@ function curlJson(url: string): Promise<FetchJsonResult> {
 
 export async function fetchJsonResilient(url: string): Promise<FetchJsonResult> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(25_000) });
     const body = await res.json();
     return { status: res.status, body };
   } catch (err) {

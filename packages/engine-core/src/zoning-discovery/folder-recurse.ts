@@ -16,12 +16,15 @@ export type ArcGisLayerJson = {
   id?: number;
   name?: string;
   geometryType?: string;
+  objectIdField?: string;
+  objectIdFieldName?: string;
   fields?: Array<{ name: string; type: string; alias?: string }>;
   extent?: {
     xmin?: number;
     ymin?: number;
     xmax?: number;
     ymax?: number;
+    spatialReference?: { wkid?: number; latestWkid?: number };
   };
   error?: { code?: number; message?: string };
 };

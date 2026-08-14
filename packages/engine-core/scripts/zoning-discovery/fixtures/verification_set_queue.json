@@ -14,7 +14,8 @@
     "seedHostUrls": [
       "https://services.arcgis.com/oTsZYNubyv7xK5yP/arcgis/rest/services/BartonvilleZoning/FeatureServer"
     ],
-    "seedEvidence": "ArcGIS Hub search title:BartonvilleZoning 2026-08-12 (directory hit, not hostname synthesis)"
+    "seedEvidence": "ArcGIS Hub search title:BartonvilleZoning 2026-08-12 (directory hit, not hostname synthesis)",
+    "expectedStatus": "LAYER-FOUND"
   },
   {
     "cityKey": "deer-park-tx",
@@ -30,7 +31,8 @@
     },
     "seedHostUrls": [
       "https://gis.deerparktx.gov/arcgis/rest/services"
-    ]
+    ],
+    "expectedStatus": "LAYER-FOUND"
   },
   {
     "cityKey": "houston-tx",
@@ -46,7 +48,68 @@
     },
     "seedHostUrls": [
       "https://mycity2.houstontx.gov/pubgis02/rest/services/HoustonMap/Planning_and_Development/MapServer"
+    ],
+    "expectedStatus": "NO-EUCLIDEAN-REGIME"
+  },
+  {
+    "cityKey": "elgin-tx",
+    "cityName": "Elgin",
+    "cityGeoId": "4823044",
+    "parentCountyFips": "48021",
+    "jurisdictionKind": "incorporated-city",
+    "bbox4326": {
+      "xmin": -97.45145000030398,
+      "ymin": 30.31423499984475,
+      "xmax": -97.35711900017842,
+      "ymax": 30.38512699967357
+    },
+    "seedHostUrls": [
+      "https://services3.arcgis.com/wdTkTU0MdZbNBEZy/arcgis/rest/services/Elgin_Zoning/FeatureServer"
+    ],
+    "expectedStatus": "LAYER-FOUND",
+    "expectedLayerUrls": [
+      "https://services3.arcgis.com/wdTkTU0MdZbNBEZy/arcgis/rest/services/Elgin_Zoning/FeatureServer/0",
+      "https://services3.arcgis.com/wdTkTU0MdZbNBEZy/arcgis/rest/services/Elgin_Zoning/FeatureServer/1"
     ]
+  },
+  {
+    "cityKey": "georgetown-tx",
+    "cityName": "Georgetown",
+    "cityGeoId": "4829336",
+    "parentCountyFips": "48491",
+    "jurisdictionKind": "incorporated-city",
+    "bbox4326": {
+      "xmin": -97.83272499983501,
+      "ymin": 30.570766000371787,
+      "xmax": -97.58517400042221,
+      "ymax": 30.752531000233546
+    },
+    "seedHostUrls": [
+      "https://gis.georgetowntexas.gov/arcgis/rest/services/Planning/PlanningDevelopmentNew_WebMap/MapServer"
+    ],
+    "expectedStatus": "LAYER-FOUND",
+    "expectedLayerUrl": "https://gis.georgetowntexas.gov/arcgis/rest/services/Planning/PlanningDevelopmentNew_WebMap/MapServer/20"
+  },
+  {
+    "cityKey": "frisco-tx",
+    "cityName": "Frisco",
+    "cityGeoId": "4827684",
+    "parentCountyFips": "48085",
+    "jurisdictionKind": "incorporated-city",
+    "bbox4326": {
+      "xmin": -96.92283800000948,
+      "ymin": 33.08113099982081,
+      "xmax": -96.73275800009918,
+      "ymax": 33.21939200032355
+    },
+    "seedHostUrls": [
+      "https://services7.arcgis.com/uFAr0LUPy14bDaLg/arcgis/rest/services/Denton_060326_WFL1/FeatureServer"
+    ],
+    "forbiddenLayerUrls": [
+      "https://services7.arcgis.com/uFAr0LUPy14bDaLg/arcgis/rest/services/Denton_060326_WFL1/FeatureServer/15",
+      "https://services7.arcgis.com/uFAr0LUPy14bDaLg/arcgis/rest/services/Denton_060326_WFL1/FeatureServer/27"
+    ],
+    "expectedStatus": "NOT-FOUND-UNKNOWN-WHY"
   },
   {
     "cityKey": "unincorporated-harris-tx",
@@ -59,6 +122,7 @@
       "ymin": 29.523,
       "xmax": -94.912,
       "ymax": 30.171
-    }
+    },
+    "expectedStatus": "NO-ZONING-AUTHORITY"
   }
 ]

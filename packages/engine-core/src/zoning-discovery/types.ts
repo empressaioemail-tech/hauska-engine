@@ -17,6 +17,10 @@ export type QueueItem = {
   jurisdictionKind: JurisdictionKind;
   bbox4326: Bbox4326;
   seedHostUrls?: string[];
+  expectedStatus?: OutcomeStatus;
+  expectedLayerUrl?: string;
+  expectedLayerUrls?: string[];
+  forbiddenLayerUrls?: string[];
 };
 
 export type HostCatalogueEntry = {
@@ -58,9 +62,18 @@ export type LayerProbeMeta = {
   geometryType: string | null;
   featureCount: number | null;
   fields: LayerFieldMeta[];
+  objectIdField: string | null;
   codeField: string | null;
   descriptionField: string | null;
   extent: Bbox4326 | null;
+  codeDistribution: {
+    distinctCount: number;
+    medianLength: number | null;
+    p90Length: number | null;
+    strongCodeRatio: number;
+    strongDistinctCount: number;
+  } | null;
+  cityCoverageRatio: number | null;
   euclideanScore: number;
   isConstraintLayer: boolean;
   isEuclideanCandidate: boolean;
@@ -88,4 +101,4 @@ export type ClassifiedVerdict = {
   notes: string[];
 };
 
-export const RUNNER_VERSION = "0.1.0";
+export const RUNNER_VERSION = "0.2.1";

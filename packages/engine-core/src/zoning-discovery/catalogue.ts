@@ -88,7 +88,7 @@ export function resolveCatalogueHostUrls(): ResolvedHost[] {
 export async function searchArcGisHubForCity(item: QueueItem): Promise<ResolvedHost[]> {
   // City-name primary; TX qualifier; keep result count small to bound fan-out.
   const q = `title:Zoning ("${item.cityName}" OR "${item.cityName}, TX") Texas`;
-  const url = `https://www.arcgis.com/sharing/rest/search?q=${encodeURIComponent(q)}&f=json&num=8`;
+  const url = `https://www.arcgis.com/sharing/rest/search?q=${encodeURIComponent(q)}&f=json&num=3`;
   try {
     const res = await fetchJsonResilient(url);
     if (res.transportError || res.status >= 400) return [];
@@ -100,6 +100,7 @@ export async function searchArcGisHubForCity(item: QueueItem): Promise<ResolvedH
       if (!/Feature Service|Map Service/i.test(t)) continue;
       const norm = normalizeArcGisRestUrl(r.url);
       if (norm) out.push({ url: norm, source: "agol-hub" });
+      if (out.length >= 3) break;
     }
     return out;
   } catch {
@@ -173,12 +174,17 @@ export async function resolveHostUrlsForQueueItem(
     }
   }
 
-  const needCatalogueFallback =
-    opts.includeCatalogue === true ||
-    (opts.includeCatalogue !== false && seeds.length === 0 && hub.length === 0);
+  const needCatalogueFallback = opts.includeCatalogue === true;
 
   if (needCatalogueFallback) {
     for (const h of resolveCatalogueHostUrls()) add(h);
+  }
+
+  // Bound unseeded Hub/CKAN fan-out. A single hung rest-root recurse must not
+  // block the production sweep (Alamo Heights hung >20m on Hub discovery).
+  const seedsCount = seeds.length;
+  if (seedsCount === 0 && merged.length > 3) {
+    return merged.slice(0, 3);
   }
 
   return merged;
