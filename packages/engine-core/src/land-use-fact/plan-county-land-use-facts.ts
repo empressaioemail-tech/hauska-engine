@@ -34,7 +34,7 @@ export interface PlannedAbsentLandUseFact {
   outcome: "absent";
   parcelKey: string;
   taxYear: number;
-  absenceKind: "no-land-use-code" | "no-cad-row" | "join-hold";
+  absenceKind: "no-land-use-code" | "no-cad-row" | "vintage-gap" | "join-hold";
   reason: string;
   sourceVintage?: string;
 }
@@ -55,7 +55,7 @@ export interface CountyLandUseFactPlan {
     absent: number;
     skippedUnusableKey: number;
     absentByKind: Record<
-      "no-land-use-code" | "no-cad-row" | "join-hold",
+      "no-land-use-code" | "no-cad-row" | "vintage-gap" | "join-hold",
       number
     >;
   };
@@ -81,18 +81,25 @@ export function indexCadRowsByJoinKey(
 export function planCountyLandUseFacts(
   parcels: ReadonlyArray<LandUseParcelInput>,
   cadRows: ReadonlyArray<LandUseCadRowInput>,
-  opts: { countyFips: string; taxYear: number },
+  opts: {
+    countyFips: string;
+    taxYear: number;
+    /** Normalized keys present in a non-declared tax_year → vintage-gap. */
+    otherVintageKeys?: ReadonlySet<string>;
+  },
 ): CountyLandUseFactPlan {
   const hold = isLandUseJoinHoldCounty(opts.countyFips);
   const cadByKey = indexCadRowsByJoinKey(cadRows);
+  const otherVintage = opts.otherVintageKeys ?? new Set<string>();
   const planned: PlannedLandUseFact[] = [];
   let skippedUnusableKey = 0;
   const absentByKind: Record<
-    "no-land-use-code" | "no-cad-row" | "join-hold",
+    "no-land-use-code" | "no-cad-row" | "vintage-gap" | "join-hold",
     number
   > = {
     "no-land-use-code": 0,
     "no-cad-row": 0,
+    "vintage-gap": 0,
     "join-hold": 0,
   };
 
@@ -121,6 +128,19 @@ export function planCountyLandUseFacts(
 
     const cad = cadByKey.get(parcelKey);
     if (!cad) {
+      if (otherVintage.has(parcelKey)) {
+        planned.push({
+          outcome: "absent",
+          parcelKey,
+          taxYear: opts.taxYear,
+          absenceKind: "vintage-gap",
+          reason:
+            `cad_property has ${opts.countyFips}:${parcelKey} in another tax_year ` +
+            `but not at declared taxYear=${opts.taxYear} (vintage-gap; no silent cross-vintage read)`,
+        });
+        absentByKind["vintage-gap"] += 1;
+        continue;
+      }
       planned.push({
         outcome: "absent",
         parcelKey,
