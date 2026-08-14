@@ -21,6 +21,8 @@ export type ZoningCityRegistryEntry = {
   allCountyFips?: string[];
   layerUrl: string;
   layerId: string;
+  /** ArcGIS layer-metadata declaration. Never infer from attribute names. */
+  objectIdField: string;
   codeField: string;
   descriptionField: string | null;
   codeDomainMap: Record<string, string> | null;
@@ -56,6 +58,7 @@ export const ZONING_STAGING_REGISTRY: Record<string, ZoningCityRegistryEntry> = 
     layerUrl:
       "https://services3.arcgis.com/wdTkTU0MdZbNBEZy/arcgis/rest/services/Elgin_Zoning/FeatureServer/0",
     layerId: "0",
+    objectIdField: "OBJECTID",
     codeField: "Zone_Code",
     descriptionField: "Zoning",
     // Elgin A (legacy multifamily letter) → ordinance R-4.
@@ -92,6 +95,7 @@ export const ZONING_STAGING_REGISTRY: Record<string, ZoningCityRegistryEntry> = 
     layerUrl:
       "https://services3.arcgis.com/wdTkTU0MdZbNBEZy/arcgis/rest/services/Smithville_Zoning/FeatureServer/0",
     layerId: "0",
+    objectIdField: "OBJECTID",
     codeField: "ZONING",
     descriptionField: null,
     codeDomainMap: null,

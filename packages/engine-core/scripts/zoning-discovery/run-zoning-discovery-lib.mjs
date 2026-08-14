@@ -32,7 +32,7 @@ export function buildQueue(inputQueue, progress) {
   return queue;
 }
 
-export const RUNNER_VERSION = "0.1.0";
+export const RUNNER_VERSION = "0.2.1";
 
 /** Landed statuses for progress tracking (HOST-BROKEN is landed per CP1). */
 export const LANDED_STATUSES = new Set([
@@ -42,6 +42,10 @@ export const LANDED_STATUSES = new Set([
   "AUTH-WALLED",
   "HOST-BROKEN",
   "LAYER-FOUND",
+  // Production sweeps record NFUW as processed for this outDir so resume does
+  // not re-probe the same empty-search cities forever. A later sweep can still
+  // re-queue them by starting a fresh outDir.
+  "NOT-FOUND-UNKNOWN-WHY",
 ]);
 
 export function isLandedStatus(status) {

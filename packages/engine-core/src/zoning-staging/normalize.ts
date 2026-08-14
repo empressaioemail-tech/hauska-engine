@@ -144,10 +144,10 @@ export function normalizeZoningFeature(
   opts: NormalizeOptions = {},
 ): ZoningStagingPayload | null {
   const attrs = feature.attributes ?? {};
-  const objectIdRaw = attrs.OBJECTID ?? attrs.objectid ?? attrs.FID;
+  const objectIdRaw = attrs[entry.objectIdField];
   if (objectIdRaw == null || String(objectIdRaw).trim() === "") {
     throw new ZoningStagingContractError(
-      `${entry.cityKey}: feature missing OBJECTID`,
+      `${entry.cityKey}: feature missing declared objectIdField=${entry.objectIdField}`,
     );
   }
   const objectId = String(objectIdRaw).trim();

@@ -29,9 +29,11 @@ describe("layer signature — constraint rejection", () => {
       geometryType: "esriGeometryPolygon",
       featureCount: 722,
       fields,
+      objectIdField: "OBJECTID",
       sampleValues,
       extent: cityBbox,
       cityBbox,
+      cityCoverageRatio: 0.9,
     });
     expect(result.isEuclideanCandidate).toBe(false);
     expect(result.isConstraintLayer).toBe(true);
@@ -57,9 +59,11 @@ describe("layer signature — constraint rejection", () => {
       geometryType: "esriGeometryPolygon",
       featureCount: 195,
       fields,
+      objectIdField: "OBJECTID",
       sampleValues,
       extent: cityBbox,
       cityBbox,
+      cityCoverageRatio: 0.9,
     });
     expect(result.isEuclideanCandidate).toBe(false);
     expect(result.isConstraintLayer).toBe(true);
@@ -79,12 +83,14 @@ describe("layer signature — constraint rejection", () => {
       geometryType: "esriGeometryPolygon",
       featureCount: 36,
       fields,
+      objectIdField: "OBJECTID",
       sampleValues,
       extent: cityBbox,
       cityBbox,
+      cityCoverageRatio: 0.9,
     });
     expect(result.isEuclideanCandidate).toBe(false);
-    expect(result.rejectReason).toMatch(/no-strong-euclidean|no-code-field/);
+    expect(result.rejectReason).toMatch(/strong-code-ratio|no-code-field/);
   });
 
   it("accepts polygon layer with Euclidean district codes", () => {
@@ -104,11 +110,99 @@ describe("layer signature — constraint rejection", () => {
       geometryType: "esriGeometryPolygon",
       featureCount: 301,
       fields,
+      objectIdField: "OBJECTID",
       sampleValues,
       extent: cityBbox,
       cityBbox,
+      cityCoverageRatio: 0.9,
     });
     expect(result.isEuclideanCandidate).toBe(true);
     expect(result.codeField).toBe("Code");
+  });
+
+  it("rejects park-name distributions even when two names share zoning-like prefixes", () => {
+    const fields: LayerFieldMeta[] = [
+      { name: "NAME", type: "esriFieldTypeString" },
+      { name: "Class", type: "esriFieldTypeString" },
+    ];
+    const sampleValues = {
+      NAME: [
+        "Independence Park",
+        "Residential Commons Park",
+        "Northwest Community Park",
+        "Frisco Commons",
+        "Central Park",
+      ],
+      Class: ["Neighborhood Park", "Community Park"],
+    };
+    const result = classifyLayerSignature({
+      layerUrl: "https://example.gov/rest/services/Denton/FeatureServer/15",
+      servicePath: "Denton",
+      layerId: 15,
+      name: "Parks",
+      geometryType: "esriGeometryPolygon",
+      featureCount: 18,
+      fields,
+      objectIdField: "OBJECTID_1",
+      sampleValues,
+      extent: cityBbox,
+      cityBbox,
+      cityCoverageRatio: 0.04,
+    });
+    expect(result.isEuclideanCandidate).toBe(false);
+    expect(result.rejectReason).toMatch(
+      /no-code-field-shape|code-length-distribution|strong-code-ratio/,
+    );
+  });
+
+  it("rejects a code-shaped polygon layer that covers too little of the city", () => {
+    const fields: LayerFieldMeta[] = [
+      { name: "ZONE", type: "esriFieldTypeString" },
+    ];
+    const result = classifyLayerSignature({
+      layerUrl: "https://example.gov/rest/services/partial/MapServer/0",
+      servicePath: "partial",
+      layerId: 0,
+      name: "Partial polygons",
+      geometryType: "esriGeometryPolygon",
+      featureCount: 5,
+      fields,
+      objectIdField: "OID",
+      sampleValues: { ZONE: ["R-1", "C-1", "SF2"] },
+      extent: cityBbox,
+      cityBbox,
+      cityCoverageRatio: 0.2,
+    });
+    expect(result.isEuclideanCandidate).toBe(false);
+    expect(result.rejectReason).toBe("city-coverage-ratio=0.200");
+  });
+
+  it("rejects county city-limits CityCode abbreviations as zoning districts", () => {
+    const fields: LayerFieldMeta[] = [
+      { name: "CityCode", type: "esriFieldTypeString" },
+      { name: "NAME", type: "esriFieldTypeString" },
+    ];
+    const sampleValues = {
+      CityCode: ["FRIS", "DENT", "PLAN", "LEWI", "PROS"],
+      NAME: ["Frisco", "Denton", "Plano", "Lewisville", "Prosper"],
+    };
+    const result = classifyLayerSignature({
+      layerUrl: "https://example.gov/rest/services/Denton/FeatureServer/27",
+      servicePath: "Denton",
+      layerId: 27,
+      name: "City Limits",
+      geometryType: "esriGeometryPolygon",
+      featureCount: 117,
+      fields,
+      objectIdField: "OBJECTID_1",
+      sampleValues,
+      extent: { xmin: -97.45, ymin: 32.94, xmax: -96.78, ymax: 33.47 },
+      cityBbox,
+      cityCoverageRatio: 0.74,
+    });
+    expect(result.isEuclideanCandidate).toBe(false);
+    expect(result.rejectReason).toMatch(
+      /no-code-field-shape|strong-code-ratio|extent-to-city-area-ratio/,
+    );
   });
 });
