@@ -22,7 +22,7 @@ import {
 
 describe("rrc-pipeline PostGIS plan SQL contract", () => {
   it("uses geography ST_DWithin at buffer meters, not geometry degrees", () => {
-    const pred = rrcPipelineNearPredicateSql("p.geom", "pl.geom", "$4");
+    const pred = rrcPipelineNearPredicateSql("p.geom", "pl.geom", "$6");
     expect(pred).toContain("::geography");
     expect(pred).toContain("ST_DWithin");
     expect(pred).not.toContain("ST_DWithin(p.geom, pl.geom");
@@ -33,6 +33,11 @@ describe("rrc-pipeline PostGIS plan SQL contract", () => {
     expect(batchSql).not.toMatch(
       /ST_DWithin\(\s*p\.geom\s*,\s*pl\.geom\s*,/,
     );
+  });
+
+  it("keysetParcelBatchPlanSql does not DISTINCT ON (feature_index)", () => {
+    const batchSql = keysetParcelBatchPlanSql();
+    expect(batchSql).not.toMatch(/DISTINCT ON\s*\(\s*feature_index\s*\)/i);
   });
 
   it("plan rows assembled from hit metadata carry no geometry field", () => {

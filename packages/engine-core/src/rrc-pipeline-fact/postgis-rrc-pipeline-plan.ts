@@ -12,6 +12,7 @@
 
 import type { Sql } from "postgres";
 
+import { isUsablePropId } from "@hauska-engine/atoms";
 import { RRC_PIPELINE_DEFAULT_BUFFER_METERS } from "@empressaio/atom-contract/property";
 
 import {
@@ -80,6 +81,7 @@ export interface RrcPipelinePostgisReadiness {
 interface HitRow {
   feature_index?: number;
   parcel_key: string;
+  parcel_ctid?: string;
   parcel_uid?: string;
   dist_m?: number | null;
   t4permit?: string | null;
@@ -135,16 +137,17 @@ function pipelinesCteSql(): string {
 }
 
 /**
- * Small-county path. Params: $1 county, $2 last_fi, $3 limit, $4 buffer meters.
+ * Small-county path. Params: $1 county, $2 last_fi, $3 last_key, $4 last_ctid,
+ * $5 limit, $6 buffer meters.
  */
 export function keysetParcelBatchPlanSql(): string {
-  const near = rrcPipelineNearPredicateSql("p.geom", "pl.geom", "$4");
+  const near = rrcPipelineNearPredicateSql("p.geom", "pl.geom", "$6");
   return `
   WITH ${pipelinesCteSql()},
   parcels AS MATERIALIZED (
-    SELECT DISTINCT ON (feature_index)
-           feature_index,
+    SELECT feature_index,
            trim(prop_id) AS parcel_key,
+           ctid AS parcel_ctid,
            (tile_key || ':' || feature_index::text) AS parcel_uid,
            geometry IS NOT NULL AS has_geometry,
            CASE
@@ -158,12 +161,28 @@ export function keysetParcelBatchPlanSql(): string {
            north_lat
     FROM txgio_parcel
     WHERE county_fips = $1
-      AND feature_index > $2::bigint
-    ORDER BY feature_index
-    LIMIT $3
+      AND prop_id IS NOT NULL
+      AND trim(prop_id) <> ''
+      AND trim(prop_id) !~ '^0+$'
+      AND trim(prop_id) ~ '^[A-Za-z0-9.-]+$'
+      AND (
+        COALESCE(feature_index, -1) > $2::bigint
+        OR (
+          COALESCE(feature_index, -1) = $2::bigint
+          AND trim(prop_id) > $3::text
+        )
+        OR (
+          COALESCE(feature_index, -1) = $2::bigint
+          AND trim(prop_id) = $3::text
+          AND ctid > $4::tid
+        )
+      )
+    ORDER BY COALESCE(feature_index, -1), trim(prop_id), ctid
+    LIMIT $5
   ),
   candidates AS (
     SELECT p.parcel_key,
+           p.parcel_ctid,
            p.parcel_uid,
            p.feature_index,
            p.has_geometry,
@@ -190,8 +209,9 @@ export function keysetParcelBatchPlanSql(): string {
      AND ${near}
   ),
   deduped AS (
-    SELECT DISTINCT ON (parcel_uid, dedupe_key)
+    SELECT DISTINCT ON (parcel_key, parcel_ctid, dedupe_key)
            parcel_key,
+           parcel_ctid,
            parcel_uid,
            feature_index,
            has_geometry,
@@ -207,11 +227,12 @@ export function keysetParcelBatchPlanSql(): string {
            interstate,
            dist_m
     FROM candidates
-    ORDER BY parcel_uid, dedupe_key, dist_m
+    ORDER BY parcel_key, parcel_ctid, dedupe_key, dist_m
   ),
   nearest AS (
-    SELECT DISTINCT ON (parcel_uid)
+    SELECT DISTINCT ON (parcel_key, parcel_ctid)
            parcel_key,
+           parcel_ctid,
            parcel_uid,
            feature_index,
            has_geometry,
@@ -227,10 +248,11 @@ export function keysetParcelBatchPlanSql(): string {
            interstate,
            dist_m
     FROM deduped
-    ORDER BY parcel_uid, dist_m
+    ORDER BY parcel_key, parcel_ctid, dist_m
   )
   SELECT p.feature_index,
          p.parcel_key,
+         p.parcel_ctid::text AS parcel_ctid,
          p.parcel_uid,
          p.has_geometry,
          n.dist_m,
@@ -245,8 +267,9 @@ export function keysetParcelBatchPlanSql(): string {
          n.diameter,
          n.interstate
   FROM parcels p
-  LEFT JOIN nearest n ON n.parcel_uid = p.parcel_uid
-  ORDER BY p.feature_index
+  LEFT JOIN nearest n
+    ON n.parcel_key = p.parcel_key AND n.parcel_ctid = p.parcel_ctid
+  ORDER BY COALESCE(p.feature_index, -1), p.parcel_key, p.parcel_ctid
 `;
 }
 
@@ -272,7 +295,7 @@ function assemblePlanFromRows(
 
   for (const row of opts.rows) {
     const key = String(row.parcel_key ?? "").trim();
-    if (!key || /^0+$/.test(key)) {
+    if (!isUsablePropId(key)) {
       skippedUnusableKey += 1;
       continue;
     }
@@ -621,18 +644,27 @@ async function planViaKeyset(
   const rows: HitRow[] = [];
   let parcelsFetched = 0;
   let cursorFeatureIndex = -1;
+  let cursorParcelKey = "";
+  let cursorCtid = "(0,0)";
   while (parcelsFetched < hardLimit) {
     const take = Math.min(batchSize, hardLimit - parcelsFetched);
     const batch = await sql.unsafe<HitRow[]>(queryText, [
       countyFips,
       cursorFeatureIndex,
+      cursorParcelKey,
+      cursorCtid,
       take,
       opts.bufferMeters,
     ]);
     if (batch.length === 0) break;
     for (const r of batch) rows.push(r);
     parcelsFetched += batch.length;
-    cursorFeatureIndex = Number(batch[batch.length - 1]?.feature_index ?? cursorFeatureIndex);
+    const last = batch[batch.length - 1];
+    if (last?.parcel_ctid) {
+      cursorFeatureIndex = Number(last.feature_index ?? -1);
+      cursorParcelKey = String(last.parcel_key ?? "");
+      cursorCtid = String(last.parcel_ctid);
+    }
     if (batch.length < take) break;
   }
   return { rows, sqlMs: Date.now() - t0 };

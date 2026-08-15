@@ -22,6 +22,7 @@ import { performance } from "node:perf_hooks";
 
 import postgres from "postgres";
 import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
+import { isUsablePropId } from "@hauska-engine/atoms";
 import { RRC_PIPELINE_DEFAULT_BUFFER_METERS } from "@empressaio/atom-contract/property";
 
 import {
@@ -193,6 +194,7 @@ async function loadPipelineSourceMeta(countyFips) {
 
 async function loadParcelsJs(countyFips, limit, batch) {
   const parcels = [];
+  let lastTile = "";
   let lastFeature = -1;
   const tLoad = performance.now();
   while (true) {
@@ -200,22 +202,27 @@ async function loadParcelsJs(countyFips, limit, batch) {
     const remaining = limit > 0 ? limit - parcels.length : Math.min(batch, 2000);
     const pageSize = Math.max(1, Math.min(batch, remaining, 2000));
     const page = await sql`
-      SELECT DISTINCT ON (feature_index)
-             feature_index, prop_id, geometry
-      FROM txgio_parcel
-      WHERE county_fips = ${countyFips}
-        AND feature_index > ${lastFeature}
-      ORDER BY feature_index
+      SELECT p.tile_key,
+             p.feature_index,
+             trim(p.prop_id) AS prop_id,
+             p.geometry
+      FROM txgio_parcel p
+      WHERE p.county_fips = ${countyFips}
+        AND (p.tile_key, p.feature_index) > (${lastTile}::text, ${lastFeature}::bigint)
+      ORDER BY p.tile_key, p.feature_index
       LIMIT ${pageSize}
     `;
     if (page.length === 0) break;
     for (const p of page) {
       if (limit > 0 && parcels.length >= limit) break;
+      const key = p.prop_id?.trim() ?? "";
+      if (!isUsablePropId(key)) continue;
       parcels.push({
-        parcelKey: p.prop_id ?? `_feature-${p.feature_index}`,
+        parcelKey: key,
         geometry: p.geometry,
       });
     }
+    lastTile = page[page.length - 1].tile_key;
     lastFeature = page[page.length - 1].feature_index;
     if (page.length < pageSize) break;
   }
@@ -225,7 +232,10 @@ async function loadParcelsJs(countyFips, limit, batch) {
 async function resolvePlanBackend(requested) {
   const readiness = await probeRrcPipelinePostgisReadiness(sql);
   if (requested === "js") {
-    return { planBackend: "js", readiness, reason: "forced by --plan-backend=js" };
+    throw new Error(
+      "--plan-backend=js requested but the JS apply path is disabled for rrc-pipeline-fact " +
+        "(DISTINCT ON parcel hang removed; use --plan-backend=postgis or auto).",
+    );
   }
   if (POSTGIS_BACKENDS.has(requested)) {
     if (!readiness.ready) {
