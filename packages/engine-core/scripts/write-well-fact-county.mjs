@@ -39,6 +39,16 @@ const SOURCE_URL = STAGED_WELL_SOURCE;
 const FORBIDDEN_HARRIS_MIRROR =
   "gis.hctx.net";
 
+/** Fail-closed neondb session bounds (WDLL item 7/8). Not 0 — unbounded statements hide hangs. */
+const NEONDB_STATEMENT_TIMEOUT_MS = Number.parseInt(
+  process.env.NEONDB_WRITER_STATEMENT_TIMEOUT_MS ?? "120000",
+  10,
+);
+const NEONDB_LOCK_TIMEOUT_MS = Number.parseInt(
+  process.env.NEONDB_WRITER_LOCK_TIMEOUT_MS ?? "30000",
+  10,
+);
+
 function parseArgs(argv) {
   const out = {
     county: null,
@@ -82,7 +92,15 @@ if (!poolUrl) {
   process.exit(1);
 }
 
-const sql = postgres(poolUrl, { max: 4, ssl: "require", prepare: false });
+const sql = postgres(poolUrl, {
+  max: 4,
+  ssl: "require",
+  prepare: false,
+  connection: {
+    statement_timeout: String(NEONDB_STATEMENT_TIMEOUT_MS),
+    lock_timeout: String(NEONDB_LOCK_TIMEOUT_MS),
+  },
+});
 
 async function readParcelRoster() {
   return sql`
@@ -161,6 +179,11 @@ const summary = {
   verified: 0,
   verifyFailures: [],
   errors: 0,
+  loadParcelsMs: null,
+  sourceLoadMs: null,
+  planMs: null,
+  writeMs: null,
+  verifyMs: null,
 };
 
 try {
@@ -188,11 +211,13 @@ try {
         "REFUSING TO RUN: well-fact source still points at Harris mirror (gis.hctx.net). Use staged tx_rrc_well.",
       );
     }
+    const tSourceLoad = performance.now();
     const hasStaged = await stagedWellTableExists(sql);
     if (!hasStaged) {
       throw new Error("tx_rrc_well missing — run P2.3 staging before well-fact apply");
     }
     const wellFetch = await fetchRrcWellsFromStagedTable(sql, countyBbox);
+    summary.sourceLoadMs = Math.round(performance.now() - tSourceLoad);
     summary.sourceProbe = {
       layerUrl: SOURCE_URL,
       source: wellFetch.source,
@@ -212,6 +237,7 @@ try {
     };
 
     const parcels = [];
+    const tLoadParcels = performance.now();
     let lastFeature = -1;
     while (true) {
       if (args.limit > 0 && parcels.length >= args.limit) break;
@@ -243,11 +269,14 @@ try {
       lastFeature = page[page.length - 1].feature_index;
       if (page.length < pageSize) break;
     }
+    summary.loadParcelsMs = Math.round(performance.now() - tLoadParcels);
 
+    const tPlan = performance.now();
     let plan = planCountyWellFacts(parcels, wellFetch.wells, {
       countyFips: args.county,
       proximityRadiusMeters: WELL_FACT_PROXIMITY_RADIUS_METERS,
     });
+    summary.planMs = Math.round(performance.now() - tPlan);
 
     summary.plan = {
       parcelsRead: plan.parcelsRead,
@@ -286,6 +315,9 @@ try {
         JSON.stringify({
           event: "well-fact-county.dry-run-prediction",
           county: args.county,
+          loadParcelsMs: summary.loadParcelsMs,
+          sourceLoadMs: summary.sourceLoadMs,
+          planMs: summary.planMs,
           ...summary.plan,
           sourceProbe: summary.sourceProbe,
           atomsBuilt: atoms.length,
@@ -305,11 +337,16 @@ try {
         }),
       );
     } else {
+      let writeAccum = 0;
+      let verifyAccum = 0;
       for (let i = 0; i < atoms.length; i += args.batch) {
         const slice = atoms.slice(i, i + args.batch);
+        const tWriteBatch = performance.now();
         await handle.storage.writePropertyAtomsBatch(slice);
+        writeAccum += performance.now() - tWriteBatch;
         summary.atomsWritten += slice.length;
 
+        const tVerifyBatch = performance.now();
         // Look rows up by the atoms PRIMARY KEY (`atom_did`), never by the
         // `body->>'atomDid'` jsonb expression: no index serves the expression, so
         // every batch seq-scanned the whole atoms table. StoragePort upserts under
@@ -339,6 +376,7 @@ try {
           if (verdict.ok) summary.verified += 1;
           else summary.verifyFailures.push(verdict);
         }
+        verifyAccum += performance.now() - tVerifyBatch;
 
         if (summary.verifyFailures.length > 0) {
           throw new Error(
@@ -357,6 +395,8 @@ try {
           }),
         );
       }
+      summary.writeMs = Math.round(writeAccum);
+      summary.verifyMs = Math.round(verifyAccum);
     }
   }
 

@@ -45,6 +45,16 @@ import {
   verifyStoredBuildingFootprintAtom,
 } from "../src/building-footprint/index.ts";
 
+/** Fail-closed neondb session bounds (WDLL item 7/8). Not 0 — unbounded statements hide hangs. */
+const NEONDB_STATEMENT_TIMEOUT_MS = Number.parseInt(
+  process.env.NEONDB_WRITER_STATEMENT_TIMEOUT_MS ?? "120000",
+  10,
+);
+const NEONDB_LOCK_TIMEOUT_MS = Number.parseInt(
+  process.env.NEONDB_WRITER_LOCK_TIMEOUT_MS ?? "30000",
+  10,
+);
+
 /** Fixture / ml-probe-only only. Default county path must not call this. */
 async function loadMlForFixtureOrProbe(opts) {
   if (opts.probeOnly) return probeMlFootprintsForBbox(opts);
@@ -116,7 +126,15 @@ if (!poolUrl) {
   process.exit(1);
 }
 
-const sql = postgres(poolUrl, { max: 4, ssl: "require", prepare: false });
+const sql = postgres(poolUrl, {
+  max: 4,
+  ssl: "require",
+  prepare: false,
+  connection: {
+    statement_timeout: String(NEONDB_STATEMENT_TIMEOUT_MS),
+    lock_timeout: String(NEONDB_LOCK_TIMEOUT_MS),
+  },
+});
 
 async function readParcelRoster() {
   return sql`
@@ -197,6 +215,11 @@ const summary = {
   verified: 0,
   verifyFailures: [],
   errors: 0,
+  loadParcelsMs: null,
+  sourceLoadMs: null,
+  planMs: null,
+  writeMs: null,
+  verifyMs: null,
 };
 
 try {
@@ -231,6 +254,7 @@ try {
     };
 
     const parcelInputs = [];
+    const tLoadParcels = performance.now();
     let lastFeature = -1;
     while (true) {
       if (args.limit > 0 && parcelInputs.length >= args.limit) break;
@@ -272,13 +296,16 @@ try {
       lastFeature = page[page.length - 1].feature_index;
       if (page.length < pageSize) break;
     }
+    summary.loadParcelsMs = Math.round(performance.now() - tLoadParcels);
 
     if (args.mlProbeOnly) {
+      const tSourceLoad = performance.now();
       const mlLoad = await loadMlForFixtureOrProbe({
         bbox: countyBbox,
         probeOnly: true,
         ...(args.fixture ? { fixturePath: args.fixture } : {}),
       });
+      summary.sourceLoadMs = Math.round(performance.now() - tSourceLoad);
       summary.storeTruth.mlSourceLabel = mlLoad.sourceLabel;
       summary.storeTruth.mlStream = {
         partitionsStreamed: mlLoad.partitionsStreamed,
@@ -302,11 +329,13 @@ try {
     } else {
     let plan;
     if (args.fixture) {
+      const tSourceLoad = performance.now();
       const mlLoad = await loadMlForFixtureOrProbe({
         bbox: countyBbox,
         probeOnly: false,
         fixturePath: args.fixture,
       });
+      summary.sourceLoadMs = Math.round(performance.now() - tSourceLoad);
       summary.storeTruth.mlSourceLabel = mlLoad.sourceLabel;
       summary.storeTruth.mlStream = {
         partitionsStreamed: mlLoad.partitionsStreamed,
@@ -314,12 +343,16 @@ try {
         featuresRead: mlLoad.featuresRead,
         peakQueueDepth: mlLoad.peakQueueDepth,
       };
+      const tPlan = performance.now();
       plan = planCountyBuildingFootprints(parcelInputs, mlLoad.features, {
         countyFips: args.county,
         ...(args.adapterKind ? { footprintAdapterKind: args.adapterKind } : {}),
       });
+      summary.planMs = Math.round(performance.now() - tPlan);
     } else {
+      const tSourceLoad = performance.now();
       const ready = await assertStagedFootprintCountyReady(sql, args.county);
+      summary.sourceLoadMs = Math.round(performance.now() - tSourceLoad);
       summary.storeTruth.stagedTable = "tx_building_footprint";
       summary.storeTruth.stagedCountyRows = ready.countyRowCount;
       summary.storeTruth.gistIndexName = ready.gistIndexName;
@@ -327,9 +360,11 @@ try {
       summary.storeTruth.prefilter =
         "ST_Intersects(fp.geom, ST_MakeEnvelope(west,south,east,north,4326))";
 
+      const tPlan = performance.now();
       const staged = await planCountyStagedFootprints(sql, parcelInputs, {
         countyFips: args.county,
       });
+      summary.planMs = Math.round(performance.now() - tPlan);
       summary.storeTruth.envelopeCandidates = staged.envelopeCandidates;
       summary.storeTruth.uniqueCandidateFootprints =
         staged.uniqueCandidateFootprints;
@@ -377,6 +412,9 @@ try {
           event: "building-footprint-county.dry-run-prediction",
           county: args.county,
           mode: "dry-run",
+          loadParcelsMs: summary.loadParcelsMs,
+          sourceLoadMs: summary.sourceLoadMs,
+          planMs: summary.planMs,
           storeTruth: summary.storeTruth,
           footprint: summary.footprint,
           ...summary.plan,
@@ -394,11 +432,16 @@ try {
         }),
       );
     } else {
+      let writeAccum = 0;
+      let verifyAccum = 0;
       for (let i = 0; i < atoms.length; i += args.batch) {
         const slice = atoms.slice(i, i + args.batch);
+        const tWriteBatch = performance.now();
         await handle.storage.writePropertyAtomsBatch(slice);
+        writeAccum += performance.now() - tWriteBatch;
         summary.atomsWritten += slice.length;
 
+        const tVerifyBatch = performance.now();
         // Look rows up by the atoms PRIMARY KEY (`atom_did`), never by the
         // `body->>'atomDid'` jsonb expression: no index serves the expression, so
         // every batch seq-scanned the whole atoms table. StoragePort upserts under
@@ -432,6 +475,7 @@ try {
           if (verdict.ok) summary.verified += 1;
           else summary.verifyFailures.push(verdict);
         }
+        verifyAccum += performance.now() - tVerifyBatch;
 
         if (summary.verifyFailures.length > 0) {
           throw new Error(
@@ -450,6 +494,8 @@ try {
           }),
         );
       }
+      summary.writeMs = Math.round(writeAccum);
+      summary.verifyMs = Math.round(verifyAccum);
     }
     }
   }
