@@ -100,6 +100,14 @@ export interface CodeSectionAtomInstance extends BaseAtomInstance {
    * Consequence stratum is derived at read; no severity scalar stored.
    */
   consequenceInputs?: ConsequenceClassificationInputs;
+  /**
+   * ADR-017. ICC model-code sections are platform-internal until G-50
+   * public-paid. Omitted still means public-free at some consumers, so
+   * ICC ingest must set this explicitly.
+   */
+  accessPolicy?: AccessPolicy;
+  /** G-17 hard actor reference. ICC rows: did:hauska:actor:org:icc */
+  sourceActorDid?: string;
 }
 
 /**

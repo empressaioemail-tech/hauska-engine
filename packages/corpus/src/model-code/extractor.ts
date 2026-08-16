@@ -429,6 +429,12 @@ export async function extractModelCodeAtoms(
           bodyText,
           deepLink,
         ),
+        ...(tenant === ICC_MODEL_CODE_TENANT
+          ? {
+              accessPolicy: "platform-internal" as const,
+              sourceActorDid: "did:hauska:actor:org:icc",
+            }
+          : {}),
       };
       sections.push(sectionAtom);
       links.push({
