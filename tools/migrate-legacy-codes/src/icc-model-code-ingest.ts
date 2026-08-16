@@ -107,7 +107,7 @@ export async function runIccModelCodeIngest(
     sourceAdapter: "icc-code-connect",
     sourceUrl: "https://codes.iccsafe.org",
     contentHash: "",
-    accessPolicy: "public-free" as const,
+    accessPolicy: "platform-internal" as const,
   };
   
   await storage.writeAtoms([jurisdictionCorpus]);
@@ -124,7 +124,7 @@ export async function runIccModelCodeIngest(
     atomCount: totalSections,
     lastRefreshedAt: new Date().toISOString(),
     driftStatus: "clean",
-    accessPolicy: "public-free",
+    accessPolicy: "platform-internal",
   });
 
   return {

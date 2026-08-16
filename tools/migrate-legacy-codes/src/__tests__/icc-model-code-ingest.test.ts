@@ -3,7 +3,7 @@
  *
  * Uses the adapter's mock mode with existing fixtures to verify:
  *   - code-edition + code-section + code-cross-reference atoms written
- *   - jurisdiction-corpus atom exists with accessPolicy public-free
+ *   - jurisdiction-corpus atom exists with accessPolicy platform-internal
  *   - links written
  *   - unconfigured adapter -> no-op skip without throwing
  */
@@ -86,7 +86,7 @@ describe("runIccModelCodeIngest", () => {
     expect(corpus).toBeDefined();
     expect(corpus?.jurisdictionTenant).toBe("icc-model-code");
     expect(corpus?.jurisdictionName).toBe("ICC model codes (Layer 1)");
-    expect(corpus?.accessPolicy).toBe("public-free");
+    expect(corpus?.accessPolicy).toBe("platform-internal");
 
     // Verify code-edition atoms written
     const snapshot = storage.exportSnapshot(["test"]);
@@ -120,8 +120,12 @@ describe("runIccModelCodeIngest", () => {
     expect(iccStatus).toBeDefined();
     expect(iccStatus?.jurisdictionName).toBe("ICC model codes (Layer 1)");
     expect(iccStatus?.qualityBar).toBe("not-evaluated");
-    expect(iccStatus?.accessPolicy).toBe("public-free");
+    expect(iccStatus?.accessPolicy).toBe("platform-internal");
     expect(iccStatus?.atomCount).toBe(result.sections);
+
+    const corpusJson = JSON.stringify(corpus);
+    expect(corpusJson).not.toContain("public-free");
+    expect(iccStatus?.accessPolicy).not.toBe("public-free");
 
     // Verify links written
     const allLinks = snapshot.links;
