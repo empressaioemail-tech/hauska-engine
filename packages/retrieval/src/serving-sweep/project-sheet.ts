@@ -85,6 +85,31 @@ export function isLegibleText(v: unknown): boolean {
 }
 
 /**
+ * A served address must carry a STREET SEGMENT, not merely an alphanumeric.
+ *
+ * SELF-CORRECTION, and it is the same defect this lane was sent to expose,
+ * committed by this instrument. The first pass tested `isLegibleText`, which
+ * passes the Travis-shaped stub `", TX 78754"` — a state and a zip with no
+ * street at all — exactly as `IS NOT NULL` passes Bastrop's `", ,"`. Each
+ * successive predicate found a further class of non-address that the previous
+ * one had counted as an address:
+ *
+ *   IS NOT NULL              -> passes `", ,"`            (Bastrop, 16,104 parcels)
+ *   contains an alphanumeric -> passes `", TX 78754"`     (Travis-shaped)
+ *   first comma-segment has an alphanumeric  <- this rule
+ *
+ * The rule is therefore stated as what it TESTS rather than as "legible": the
+ * text before the first comma must carry a letter or a digit. A future class of
+ * non-address that satisfies that is possible and this comment is the warning
+ * that the ladder has three rungs so far and no proof that it has only three.
+ */
+export function hasStreetSegment(v: unknown): boolean {
+  if (typeof v !== "string") return false;
+  const street = v.split(",")[0] ?? "";
+  return /[A-Za-z0-9]/.test(street.trim());
+}
+
+/**
  * Single-family classification. Texas CAD state codes: `A` is single-family
  * residential (A1 improved, A2 mobile home, ...). The sweep uses the SERVED
  * land-use code, not the CAD roll's, because the class breakout is about what
@@ -109,15 +134,21 @@ export function projectSheet(input: SheetInputs): ParcelObservation {
 
   // ---------------------------------------------------------------- identity
   const cadSitus = input.cadRoll ? str(input.cadRoll.situsAddress) : null;
-  const cadHasLegibleSitus = isLegibleText(cadSitus);
+  const cadHasLegibleSitus = hasStreetSegment(cadSitus);
   const servedSitus = base.situsAddress;
   const servedCardCallsSitusPresent = card.situsAddress.state === "present";
   let situs: FieldObservation;
-  if (isLegibleText(servedSitus)) {
+  if (hasStreetSegment(servedSitus)) {
     situs = { state: "present", reason: "served" };
   } else if (typeof servedSitus === "string" && servedSitus.trim().length > 0) {
-    // Non-empty but illegible — the `", ,"` class. The card calls this present.
-    situs = { state: "absentCovered", reason: "served-punctuation-sentinel" };
+    // Non-empty but carrying no street segment. Two observed shapes: Bastrop's
+    // `", ,"` and Travis's `", TX 78660"`. The card calls both present.
+    situs = {
+      state: "absentCovered",
+      reason: isLegibleText(servedSitus)
+        ? "served-no-street-segment"
+        : "served-punctuation-sentinel",
+    };
     if (cadHasLegibleSitus) contradictions.push("address-absent-but-on-cad-roll");
   } else if (cadHasLegibleSitus) {
     situs = { state: "absentUncovered", reason: "absent-on-sheet-present-on-cad-roll" };

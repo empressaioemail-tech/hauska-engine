@@ -130,6 +130,30 @@ describe("contradiction detectors can fire", () => {
     expect(obs.servedCardCallsSitusPresent).toBe(true);
   });
 
+  it("the Travis-shaped stub is NOT an address either", () => {
+    // `", TX 78660"` passes an alphanumeric test and carries no street. The
+    // instrument's first predicate counted it as an address; this asserts the
+    // corrected rule rejects it, in both directions.
+    const obs = projectSheet(
+      inputs({
+        servedBody: servedBody({ baseFacts: { apn: "280168", situsAddress: ", TX 78660" } }),
+        cadRoll: null,
+      }),
+    );
+    expect(obs.fields.situsAddress.state).toBe("absentCovered");
+    expect(obs.fields.situsAddress.reason).toBe("served-no-street-segment");
+    expect(obs.servedCardCallsSitusPresent).toBe(true);
+
+    const real = projectSheet(
+      inputs({
+        servedBody: servedBody({
+          baseFacts: { apn: "280168", situsAddress: "17002 SIMSBROOK DR , TX 78660" },
+        }),
+      }),
+    );
+    expect(real.fields.situsAddress.state).toBe("present");
+  });
+
   it("a legible address is present, and no contradiction is invented", () => {
     const obs = projectSheet(
       inputs({
