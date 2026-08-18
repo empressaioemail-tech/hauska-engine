@@ -164,14 +164,17 @@ async function sweepCounty({ atoms, cortex, countyFips, batchSize, limit, onProg
 
   // ---------------------------------------- CAD roll situs (the upstream)
   // One county-scoped read returning ONLY the parcels whose appraisal-roll
-  // record carries a legible situs. This is the evidence behind the
+  // record carries a STREET SEGMENT. The predicate is deliberately the SQL twin
+  // of `hasStreetSegment` in project-sheet.ts — the same rule on both sides of
+  // the comparison, or the contradiction count measures the predicate rather
+  // than the data. This is the evidence behind the
   // `address-absent-but-on-cad-roll` contradiction.
   const cadRows = await atoms`
     SELECT DISTINCT body->>'parcelNodeId' AS pnid
     FROM atoms
     WHERE entity_type = 'cad-parcel-roll'
       AND entity_id LIKE ${countyFips + ":%"}
-      AND body->>'situsAddress' ~ '[A-Za-z0-9]'
+      AND btrim(split_part(body->>'situsAddress', ',', 1)) ~ '[A-Za-z0-9]'
   `;
   const cadLegibleSitus = new Set(cadRows.map((r) => r.pnid).filter(Boolean));
 
