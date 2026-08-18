@@ -1,0 +1,3842 @@
+{
+  "capturedAt": "2026-08-18T23:29:42.050Z",
+  "endpoint": "https://property-explorer-xi.vercel.app/api/spine/property-atoms",
+  "cases": [
+    {
+      "parcelNodeId": "48021:36521",
+      "liveReadPath": "atom-chain-warm",
+      "live": {
+        "parcelNodeId": "48021:36521",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": "2026-08-08T10:01:44.416Z",
+        "readPath": "atom-chain-warm",
+        "facets": {
+          "parcelNodeId": "48021:36521",
+          "countyFips": "48021",
+          "baseFacts": {
+            "apn": "36521",
+            "situsAddress": ", ,",
+            "situsCity": null,
+            "situsState": null,
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "acreage": {
+              "sqft": 10926,
+              "value": 0.2508,
+              "method": "shoelace-wgs84"
+            }
+          },
+          "zoning": {
+            "district": "GC",
+            "jurisdictionKey": "bastrop-city-tx"
+          },
+          "envelope": {
+            "status": "ok",
+            "district": "GC",
+            "setbacks": {
+              "front_ft": 20,
+              "side_ft": 5,
+              "rear_ft": 20
+            },
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "Depth-warm verified envelope from promoted ledger — no live re-derive (27c WDLL 8).",
+            "buildableAreaSqFt": 6325,
+            "geojson": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          -97.30877409940827,
+                          30.112763786271547
+                        ],
+                        [
+                          -97.30876788681368,
+                          30.112545383000114
+                        ],
+                        [
+                          -97.3085170807435,
+                          30.112550756226707
+                        ],
+                        [
+                          -97.30852329486002,
+                          30.112769180024014
+                        ],
+                        [
+                          -97.30877409940827,
+                          30.112763786271547
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "kind": "buildable-envelope",
+                    "depthWarm": "depth-warm-promoted-v1",
+                    "recipeVersion": "1.0.0"
+                  }
+                }
+              ]
+            },
+            "maxHeightFt": 55,
+            "maxImperviousPct": 65,
+            "minLotSize": "0.25",
+            "secondSource": {
+              "note": "Drawn from OnClick (layer 23). The city's Revisions layer (83) specifies corner side 10 for GC; the two city schedules conflict — verify which is in effect with the city.",
+              "source": "City of Bastrop GIS layer 83 (Zoned_Parcels Revisions)",
+              "citationUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/83"
+            }
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": true,
+            "acreage": true,
+            "zoning": true,
+            "envelope": true
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseSource": "cad-roll",
+            "landUseGateBlocked": false,
+            "depthWarmPromoted": true
+          },
+          "bakedAt": "2026-08-08T10:01:44.416Z",
+          "countyName": "Bastrop"
+        },
+        "baseFactsMerged": true
+      },
+      "store": {
+        "atoms": [
+          {
+            "status": "active",
+            "atomDid": "did:hauska:buildable-envelope:48021:36521",
+            "geojson": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          -97.30877409940827,
+                          30.112763786271547
+                        ],
+                        [
+                          -97.30876788681368,
+                          30.112545383000114
+                        ],
+                        [
+                          -97.3085170807435,
+                          30.112550756226707
+                        ],
+                        [
+                          -97.30852329486002,
+                          30.112769180024014
+                        ],
+                        [
+                          -97.30877409940827,
+                          30.112763786271547
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "kind": "buildable-envelope",
+                    "depthWarm": "depth-warm-promoted-v1",
+                    "recipeVersion": "1.0.0"
+                  }
+                }
+              ]
+            },
+            "outcome": {
+              "kind": "buildable",
+              "areaSqFt": 6325
+            },
+            "atomTier": "data",
+            "entityId": "48021:36521",
+            "fetchedAt": "2026-08-08T10:01:44.416Z",
+            "sourceUrl": "https://hauska.dev/internal/depth-warm/promote",
+            "entityType": "buildable-envelope",
+            "contentHash": "9ab4595ba8992a5a4ef9b6973d070926e19a3ad22e6b081be59d588dfb491b6a",
+            "extractedAt": "2026-08-08T10:01:44.416Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:36521",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "envelope-geometry-derivation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-08T10:01:44.416Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.85,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.15
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.85,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.15
+                }
+              },
+              "assembledAt": "2026-08-08T10:01:44.416Z"
+            },
+            "versionStamp": "48021:36521:buildable-envelope:1:2026-08-08T10:01:44.416Z",
+            "recipeVersion": "1.0.0",
+            "sourceAdapter": "depth-warm-verify-promote",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "fact",
+                  "atomDid": "did:hauska:zoning-fact:48021:36521",
+                  "entityType": "zoning-fact"
+                },
+                {
+                  "role": "rule",
+                  "atomDid": "did:hauska:setback-rule:48021:36521",
+                  "entityType": "setback-rule"
+                },
+                {
+                  "role": "reference-field",
+                  "atomDid": "48021:36521/geometry",
+                  "citationLabel": "parcel-geometry-ring"
+                },
+                {
+                  "role": "reference-field",
+                  "atomDid": "48021:36521/front-edge",
+                  "citationLabel": "front-edge-anchor"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "buildable-envelope-inset-v1"
+            },
+            "sourceCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6)",
+            "depthWarmPromotion": "depth-warm-promoted-v1",
+            "jurisdictionTenant": "breadth_48021_bastrop",
+            "depthWarmVerifiedAt": "2026-08-08T10:01:44.416Z"
+          },
+          {
+            "status": "active",
+            "atomDid": "fhfact_c6a9cac1f0c2e9fb",
+            "atomTier": "data",
+            "entityId": "48021:36521",
+            "fetchedAt": "2026-08-11T23:13:43.774Z",
+            "floodZone": "AE",
+            "sourceUrl": "tx_fema_nfhl_flood_zone",
+            "entityType": "flood-hazard-fact",
+            "sourceTier": "fema-nfhl",
+            "contentHash": "fnv1a64:5152b0f4fbaca206",
+            "evaluatedAt": "2026-08-11T23:13:43.774Z",
+            "extractedAt": "2026-08-11T23:13:43.774Z",
+            "zoneSubtype": null,
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:36521",
+            "sourceAdapter": "fema-nfhl-bulk-v1",
+            "sourceVintage": "NFHL_48_20260101",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "FEMA NFHL tx_fema_nfhl_flood_zone (198178/198240 statewide rows; 3557 bbox-filtered for 48021)",
+            "baseFloodElevation": null,
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine",
+            "inSpecialFloodHazardArea": true
+          },
+          {
+            "status": "retired",
+            "atomDid": "did:hauska:parcel-node:48021:36521",
+            "keyKind": "prop_id",
+            "atomTier": "data",
+            "entityId": "48021:36521",
+            "fetchedAt": "2026-08-10T12:51:25.588Z",
+            "retiredAt": "2026-08-11T12:14:06.746Z",
+            "sourceUrl": "https://data.geographic.texas.gov/",
+            "countyFips": "48021",
+            "entityType": "parcel-node",
+            "contentHash": "fnv1a64:b910da4c255fd141",
+            "evaluatedAt": "2026-08-10T12:51:25.588Z",
+            "extractedAt": "2026-08-10T12:51:25.588Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:36521",
+            "retiredReason": "parcel is absent from the stratmap25-landparcels_48021_bastrop_202503 plan for county 48021 (previously observed under vintage stratmap25-landparcels_48021_bastrop_202503); the source no longer publishes this account and no successor evidence exists",
+            "sourceAdapter": "txgio-stratmap-bulk-v1",
+            "sourceVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "geometryLoaded": true,
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "TxGIO StratMap Land Parcels, county 48021, vintage stratmap25-landparcels_48021_bastrop_202503",
+            "geometryStoreRef": {
+              "store": "txgio_parcel",
+              "propId": "36521",
+              "countyFips": "48021"
+            },
+            "geometrySourceTier": "txgio-stratmap",
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine"
+          },
+          {
+            "status": "active",
+            "atomDid": "pterrain_dossier_48021_36521_1787018954183",
+            "atomTier": "data",
+            "coverage": {
+              "totalCells": 1089,
+              "nodataCount": 0,
+              "touchesNodata": false,
+              "coverageFraction": 1,
+              "resolutionMetersActual": null,
+              "resolutionMetersAdapted": 1,
+              "resolutionMetersRequested": 1
+            },
+            "entityId": "48021:36521",
+            "artifacts": {
+              "pdf-dossier": {
+                "ref": "gcs://hauska-prod-497015-terrain-exports/terrain/48021_36521/pdf-dossier/77ba6962f2a02d49c004d742a213c3c9628133c5eaaa08845048ce911ee44980",
+                "format": "pdf-dossier",
+                "byteCount": 548762,
+                "pageCount": 5,
+                "notesIncluded": false,
+                "briefFactCount": 5,
+                "verdictIncluded": true,
+                "dossierPageCount": 2,
+                "sitePlanAppended": true,
+                "briefSectionCount": 3,
+                "setbackDegenerate": false,
+                "chatSummaryIncluded": false,
+                "streetHonestAbsence": false,
+                "zoningHonestAbsence": false,
+                "setbackHonestAbsence": false,
+                "floodZoneHonestUnavailable": false
+              }
+            },
+            "fetchedAt": "2026-08-18T02:09:14.183Z",
+            "sourceUrl": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage?bbox=-97.30883894199997%2C30.112530341000024%2C-97.30850086999999%2C30.11282426500003&bboxSR=4326&imageSR=4326&size=33%2C33&format=tiff&pixelType=F32&interpolation=RSP_BilinearInterpolation&f=image",
+            "confidence": {
+              "n": 0,
+              "kind": "asserted",
+              "value": 0.6,
+              "provenance": "USGS 3DEP DEM field; calibration pending",
+              "intervalWidth": 1
+            },
+            "entityType": "parcel-terrain-model",
+            "contentHash": "",
+            "extractedAt": "2026-08-18T02:09:14.183Z",
+            "accessPolicy": "public-paid",
+            "parcelNodeId": "48021:36521",
+            "sourceAdapter": "usgs:3dep-dem",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "reference-field",
+                  "atomDid": "txgio-parcel:48021:36521:stratmap25-landparcels_48021_bastrop_202503",
+                  "citationLabel": "usgs-3dep-dem"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "parcel-terrain-mesh-ifc-v1"
+            },
+            "sourceCitation": "USGS 3DEP",
+            "jurisdictionTenant": "property-spine"
+          },
+          {
+            "rear": 20,
+            "side": 5,
+            "front": 20,
+            "status": "active",
+            "atomDid": "did:hauska:setback-rule:48021:36521",
+            "atomTier": "data",
+            "entityId": "48021:36521",
+            "fetchedAt": "2026-08-08T10:01:44.416Z",
+            "sourceUrl": "https://www.cityofbastrop.org/page/open/6743/0/ORDINANCE%20NO.%202019-51%20BASTROP%20BUILDING%20BLOCK%20B3%20-%202.pdf",
+            "entityType": "setback-rule",
+            "matchBasis": "exact",
+            "minLotSize": "0.25",
+            "contentHash": "8d3a7d8786575347386bc1f2b893253f939f8e807f85d89bd7cb65bae356822f",
+            "displayMeta": {
+              "minLotSize": "0.25",
+              "secondSource": {
+                "note": "Drawn from OnClick (layer 23). The city's Revisions layer (83) specifies corner side 10 for GC; the two city schedules conflict — verify which is in effect with the city.",
+                "source": "City of Bastrop GIS layer 83 (Zoned_Parcels Revisions)",
+                "citationUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/83"
+              },
+              "resolvedDistrictCode": "GC"
+            },
+            "extractedAt": "2026-08-08T10:01:44.416Z",
+            "maxHeightFt": 55,
+            "accessPolicy": "public-free",
+            "districtCode": "GC",
+            "parcelNodeId": "48021:36521",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "setback-rule-citation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-08T10:01:44.416Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-08-08T10:01:44.416Z"
+            },
+            "sideCornerFt": 5,
+            "versionStamp": "48021:36521:setback-rule:1:2026-08-08T10:01:44.416Z",
+            "sourceAdapter": "bastrop-per-parcel-record-layer-23",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sideInteriorFt": 5,
+            "sourceCitation": "Setback rule for GC cited to bastrop-per-parcel/36521/front",
+            "fieldProvenance": {
+              "rear": {
+                "atomDid": "bastrop-per-parcel/36521/front",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.92,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              },
+              "side": {
+                "atomDid": "bastrop-per-parcel/36521/front",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.92,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              },
+              "front": {
+                "atomDid": "bastrop-per-parcel/36521/front",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.92,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              }
+            },
+            "maxImperviousPct": 65,
+            "maxLotCoveragePct": 0,
+            "sourceCodeAtomRef": {
+              "role": "rule",
+              "atomDid": "bastrop-per-parcel/36521/front",
+              "entityType": "code-section"
+            },
+            "jurisdictionTenant": "breadth_48021_bastrop"
+          },
+          {
+            "status": "active",
+            "atomDid": "did:hauska:zoning-fact:48021:36521",
+            "atomTier": "data",
+            "district": "GC",
+            "entityId": "48021:36521",
+            "fetchedAt": "2026-08-04T12:24:40.869Z",
+            "sourceUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+            "entityType": "zoning-fact",
+            "matchBasis": "exact",
+            "contentHash": "c295894f45633a4bcce4a23564258ba3e0dbab5779bedc5679ee238d17a5abca",
+            "extractedAt": "2026-08-04T12:24:40.869Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:36521",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "zoning-fact-observation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-04T12:24:40.869Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-08-04T12:24:40.869Z"
+            },
+            "versionStamp": "48021:36521:zoning-fact:1:2026-08-04T12:24:40.869Z",
+            "sourceAdapter": "txgio-zoning-stamp:bastrop-city-tx",
+            "reasoningChain": {
+              "reasoningKind": "observed",
+              "transformSteps": [
+                {
+                  "kind": "TRANSFORM",
+                  "note": "Breadth bake projected GIS stamp from cortex tier1 snapshot; not the district origin",
+                  "adapter": "cortex-tier1-snapshot-breadth-bake",
+                  "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot"
+                }
+              ]
+            },
+            "sourceCitation": "GIS Zoned_Parcels field ZoneTypeClass cityKey=bastrop-city-tx vintage=2026-08-04T12:24:40.869Z district=GC parcel=48021:36521 (PIP stamp; breadth bake is TRANSFORM only)",
+            "codeSectionRefs": {
+              "permittedUseTable": {
+                "role": "rule",
+                "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-008",
+                "entityType": "code-section"
+              },
+              "districtRequirements": {
+                "role": "rule",
+                "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+                "entityType": "code-section"
+              }
+            },
+            "sourceCodeAtomRef": {
+              "role": "rule",
+              "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+              "entityType": "code-section"
+            },
+            "jurisdictionTenant": "breadth_48021_bastrop-city-tx"
+          }
+        ],
+        "tier1": {
+          "tier": 1,
+          "zoning": {
+            "district": "GC",
+            "provenance": {
+              "cityKey": "bastrop-city-tx",
+              "codeField": "ZoneTypeClass",
+              "layerName": "Zoned_Parcels",
+              "sourceUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+              "stampedAt": "2026-08-04T12:24:40.869Z"
+            },
+            "jurisdictionKey": "bastrop_city_tx"
+          },
+          "bakedAt": "2026-08-04T12:24:40.869Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": null,
+            "disclosure": "Tier-1 bake no longer authors product envelope confidence (anti-zombie). Read buildable-envelope from the property atom chain, or honest-decline.",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": true,
+            "declineReason": "atom_path_pending",
+            "jurisdictionKey": "bastrop_city_tx"
+          },
+          "baseFacts": {
+            "apn": "36521",
+            "acreage": {
+              "sqft": 10926,
+              "value": 0.2508,
+              "method": "shoelace-wgs84"
+            },
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "situsCity": null,
+            "situsState": null,
+            "situsAddress": ", ,"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 1 (deterministic). Buildable envelope product path retired (anti-zombie / atom_path_pending) — read envelope from property atom chain. Tier 2 may still carry flood overlay.",
+            "parcelSource": "txgio",
+            "roadsPending": true,
+            "zoningSource": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+            "landUseSource": "cad-roll",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseGateBlocked": false,
+            "landUseAddressRecovered": false
+          },
+          "parcelNodeId": "48021:36521",
+          "facetCoverage": {
+            "zoning": true,
+            "acreage": true,
+            "landUse": true,
+            "envelope": false,
+            "baseFacts": true
+          },
+          "facetSchemaVersion": "node-facets-tier1-v1"
+        },
+        "tier1SnapshotAt": "2026-08-04T12:25:23.967Z",
+        "tier2": {
+          "tier": 2,
+          "flood": {
+            "status": "in-sfha",
+            "floodZone": "AO",
+            "provenance": {
+              "layer": "flood-hazard-zones",
+              "source": "fema-nfhl",
+              "vintage": "2026-07-21T16:59:52.146Z",
+              "adapterKey": "fema:nfhl-flood-zone"
+            },
+            "zoneSubtype": null,
+            "baseFloodElevation": null,
+            "inSpecialFloodHazardArea": true
+          },
+          "bakedAt": "2026-07-21T16:59:52.146Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": 0,
+            "edgeSignal": "shape",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": false,
+            "declineReason": "no-jurisdiction-key",
+            "roadProvenance": {
+              "source": "osm-overpass",
+              "candidateCount": 0,
+              "fetchAttempted": false,
+              "roadSignalUsed": false
+            },
+            "jurisdictionKey": null
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 2 (live-dep). Buildable envelope upgraded with OSM road-based front-edge labeling; FEMA NFHL flood zone per node. Honest absence on any live-dep failure (never a fabricated value).",
+            "roadSource": "osm-overpass",
+            "floodSource": "fema-nfhl",
+            "roadsPending": false
+          },
+          "parcelNodeId": "48021:36521",
+          "facetSchemaVersion": "node-facets-tier2-v1"
+        },
+        "tier2SnapshotAt": "2026-07-21T17:08:37.309Z"
+      }
+    },
+    {
+      "parcelNodeId": "48021:34137",
+      "liveReadPath": "atom-chain-warm",
+      "live": {
+        "parcelNodeId": "48021:34137",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": "2026-07-31T15:13:47.773Z",
+        "readPath": "atom-chain-warm",
+        "facets": {
+          "parcelNodeId": "48021:34137",
+          "countyFips": "48021",
+          "baseFacts": {
+            "apn": "34137",
+            "situsAddress": "908 PINE , BASTROP, TX 78602",
+            "situsCity": "BASTROP",
+            "situsState": "TX",
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "acreage": {
+              "sqft": 16673,
+              "value": 0.3827,
+              "method": "shoelace-wgs84"
+            }
+          },
+          "zoning": {
+            "district": "SF-1",
+            "jurisdictionKey": "bastrop-city-tx"
+          },
+          "envelope": {
+            "status": "ok",
+            "district": "SF-1",
+            "setbacks": {
+              "front_ft": 25,
+              "side_ft": 5,
+              "rear_ft": 25,
+              "side_interior_ft": 5,
+              "side_corner_ft": 15
+            },
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "Depth-warm verified envelope from promoted ledger — no live re-derive (27c WDLL 8).",
+            "buildableAreaSqFt": 9350,
+            "geojson": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          -97.31667837203561,
+                          30.109968721203103
+                        ],
+                        [
+                          -97.31667547896944,
+                          30.109645755083747
+                        ],
+                        [
+                          -97.31642298960233,
+                          30.1096477633846
+                        ],
+                        [
+                          -97.31642795658927,
+                          30.109969246105962
+                        ],
+                        [
+                          -97.31667837203561,
+                          30.109968721203103
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "kind": "buildable-envelope",
+                    "depthWarm": "depth-warm-promoted-v1"
+                  }
+                }
+              ]
+            },
+            "maxHeightFt": 35,
+            "maxImperviousPct": 50,
+            "minLotSize": "0.33",
+            "secondSource": {
+              "note": "Drawn from OnClick (layer 23). The city's Revisions layer (83) specifies front 30 / interior side 10 / corner side 20 / rear 30 for SF-1; the two city schedules conflict — verify which is in effect with the city.",
+              "source": "City of Bastrop GIS layer 83 (Zoned_Parcels Revisions)",
+              "citationUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/83"
+            }
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": true,
+            "acreage": true,
+            "zoning": true,
+            "envelope": true
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseSource": "cad-roll",
+            "landUseGateBlocked": false,
+            "depthWarmPromoted": true
+          },
+          "bakedAt": "2026-07-31T15:13:47.773Z",
+          "countyName": "Bastrop"
+        },
+        "baseFactsMerged": true
+      },
+      "store": {
+        "atoms": [
+          {
+            "status": "active",
+            "atomDid": "did:hauska:buildable-envelope:48021:34137",
+            "geojson": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          -97.31667837203561,
+                          30.109968721203103
+                        ],
+                        [
+                          -97.31667547896944,
+                          30.109645755083747
+                        ],
+                        [
+                          -97.31642298960233,
+                          30.1096477633846
+                        ],
+                        [
+                          -97.31642795658927,
+                          30.109969246105962
+                        ],
+                        [
+                          -97.31667837203561,
+                          30.109968721203103
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "kind": "buildable-envelope",
+                    "depthWarm": "depth-warm-promoted-v1"
+                  }
+                }
+              ]
+            },
+            "outcome": {
+              "kind": "buildable",
+              "areaSqFt": 9350
+            },
+            "atomTier": "data",
+            "entityId": "48021:34137",
+            "fetchedAt": "2026-07-31T15:13:47.773Z",
+            "sourceUrl": "https://hauska.dev/internal/depth-warm/promote",
+            "entityType": "buildable-envelope",
+            "contentHash": "47065a64717baebc125ea6afa653c57d4a0d6366560de40138f6ed00a347f42b",
+            "extractedAt": "2026-07-31T15:13:47.773Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:34137",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "envelope-geometry-derivation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-07-31T15:13:47.773Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.85,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.15
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.85,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.15
+                }
+              },
+              "assembledAt": "2026-07-31T15:13:47.773Z"
+            },
+            "versionStamp": "48021:34137:buildable-envelope:1:2026-07-31T15:13:47.773Z",
+            "sourceAdapter": "depth-warm-verify-promote",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "fact",
+                  "atomDid": "did:hauska:zoning-fact:48021:34137",
+                  "entityType": "zoning-fact"
+                },
+                {
+                  "role": "rule",
+                  "atomDid": "did:hauska:setback-rule:48021:34137",
+                  "entityType": "setback-rule"
+                },
+                {
+                  "role": "reference-field",
+                  "atomDid": "48021:34137/geometry",
+                  "citationLabel": "parcel-geometry-ring"
+                },
+                {
+                  "role": "reference-field",
+                  "atomDid": "48021:34137/front-edge",
+                  "citationLabel": "front-edge-anchor"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "buildable-envelope-inset-v1"
+            },
+            "sourceCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6)",
+            "depthWarmPromotion": "depth-warm-promoted-v1",
+            "jurisdictionTenant": "breadth_48021_bastrop",
+            "depthWarmVerifiedAt": "2026-07-31T15:13:47.773Z"
+          },
+          {
+            "status": "active",
+            "atomDid": "fhfact_c62a733883d31642",
+            "atomTier": "data",
+            "entityId": "48021:34137",
+            "fetchedAt": "2026-08-11T23:13:43.774Z",
+            "floodZone": "X",
+            "sourceUrl": "tx_fema_nfhl_flood_zone",
+            "entityType": "flood-hazard-fact",
+            "sourceTier": "fema-nfhl",
+            "contentHash": "fnv1a64:6323354fa9c2dc50",
+            "evaluatedAt": "2026-08-11T23:13:43.774Z",
+            "extractedAt": "2026-08-11T23:13:43.774Z",
+            "zoneSubtype": "0.2 PCT ANNUAL CHANCE FLOOD HAZARD",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:34137",
+            "sourceAdapter": "fema-nfhl-bulk-v1",
+            "sourceVintage": "NFHL_48_20260101",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "FEMA NFHL tx_fema_nfhl_flood_zone (198178/198240 statewide rows; 3557 bbox-filtered for 48021)",
+            "baseFloodElevation": null,
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine",
+            "inSpecialFloodHazardArea": false
+          },
+          {
+            "status": "retired",
+            "atomDid": "did:hauska:parcel-node:48021:34137",
+            "keyKind": "prop_id",
+            "atomTier": "data",
+            "entityId": "48021:34137",
+            "fetchedAt": "2026-08-10T12:51:25.588Z",
+            "retiredAt": "2026-08-11T12:14:06.746Z",
+            "sourceUrl": "https://data.geographic.texas.gov/",
+            "countyFips": "48021",
+            "entityType": "parcel-node",
+            "contentHash": "fnv1a64:81cf3f1d764090c8",
+            "evaluatedAt": "2026-08-10T12:51:25.588Z",
+            "extractedAt": "2026-08-10T12:51:25.588Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:34137",
+            "retiredReason": "parcel is absent from the stratmap25-landparcels_48021_bastrop_202503 plan for county 48021 (previously observed under vintage stratmap25-landparcels_48021_bastrop_202503); the source no longer publishes this account and no successor evidence exists",
+            "sourceAdapter": "txgio-stratmap-bulk-v1",
+            "sourceVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "geometryLoaded": true,
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "TxGIO StratMap Land Parcels, county 48021, vintage stratmap25-landparcels_48021_bastrop_202503",
+            "geometryStoreRef": {
+              "store": "txgio_parcel",
+              "propId": "34137",
+              "countyFips": "48021"
+            },
+            "geometrySourceTier": "txgio-stratmap",
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine"
+          },
+          {
+            "status": "active",
+            "atomDid": "pterrain_siteplan_48021_34137_1785248381084",
+            "atomTier": "data",
+            "coverage": {
+              "totalCells": 1612,
+              "nodataCount": 0,
+              "contourSource": {
+                "tier": "authoritative-1ft",
+                "source": "bastrop-county:Contour1Ft2017",
+                "vintage": "2017 StratMap LiDAR",
+                "intervalLabel": "1-ft vertical interval",
+                "polylineCount": 2
+              },
+              "touchesNodata": false,
+              "coverageFraction": 1,
+              "resolutionMetersActual": null,
+              "resolutionMetersAdapted": 1,
+              "resolutionMetersRequested": 1
+            },
+            "entityId": "48021:34137",
+            "artifacts": {
+              "dxf-site-plan": {
+                "ref": "gcs://hauska-prod-497015-terrain-exports/terrain/48021_34137/dxf-site-plan/3dacaee74597bc0b1a10393b6edbba6128cacc3a96526f4233fea25a6bab37f5",
+                "format": "dxf-site-plan",
+                "byteCount": 80740,
+                "setbackDegenerate": false,
+                "streetHonestAbsence": false,
+                "setbackHonestAbsence": false,
+                "contourIntervalMeters": 1
+              },
+              "ifc-site-plan": {
+                "ref": "gcs://hauska-prod-497015-terrain-exports/terrain/48021_34137/ifc-site-plan/b2c1f048d0913e79e9c0283d1f70dd110ed6ff0765ff11235893c963cd707b0f",
+                "format": "ifc-site-plan",
+                "byteCount": 188475,
+                "vertexCount": 1774,
+                "triangleCount": 3386,
+                "annotationCount": 10,
+                "setbackDegenerate": false,
+                "streetHonestAbsence": false,
+                "setbackHonestAbsence": false
+              },
+              "pdf-site-plan": {
+                "ref": "gcs://hauska-prod-497015-terrain-exports/terrain/48021_34137/pdf-site-plan/eddb027a203616ae312ba4ae9a58cc050b5191bab1b6a14eea30b6bf53806e66",
+                "format": "pdf-site-plan",
+                "byteCount": 543703,
+                "pageCount": 3,
+                "setbackDegenerate": false,
+                "streetHonestAbsence": false,
+                "zoningHonestAbsence": false,
+                "setbackHonestAbsence": false,
+                "aerialImageryEmbedded": true,
+                "floodZoneHonestUnavailable": false
+              },
+              "pdf-flood-drainage": {
+                "ref": "gcs://hauska-prod-497015-terrain-exports/terrain/48021_34137/pdf-flood-drainage/7e3704e74fcc2d3ca220215cfcef6110fcdfe16e4a4065727691c5bc4d505959",
+                "format": "pdf-flood-drainage",
+                "byteCount": 501286,
+                "pageCount": 2,
+                "flowExitCount": 0,
+                "rainfallSource": "default",
+                "gradientIncluded": true,
+                "computationLibrary": "pysheds",
+                "rainfallDepthInches": 9.5,
+                "aerialImageryEmbedded": true
+              },
+              "json-flood-drainage-study": {
+                "ref": "gcs://hauska-prod-497015-terrain-exports/terrain/48021_34137/json-flood-drainage-study/92f763ec892d90d2d54e241c334298ca7044e9eb8bf8a5c898c0ce7b3a2d3879",
+                "format": "json-flood-drainage-study",
+                "byteCount": 72940,
+                "flowExitCount": 0,
+                "rainfallSource": "default",
+                "gradientIncluded": true,
+                "computationLibrary": "pysheds",
+                "rainfallDepthInches": 9.5
+              }
+            },
+            "fetchedAt": "2026-07-28T14:19:41.084Z",
+            "sourceUrl": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage?bbox=-97.31669481099999%2C30.10957718000003%2C-97.31637445599995%2C30.11003779500004&bboxSR=4326&imageSR=4326&size=31%2C52&format=tiff&pixelType=F32&interpolation=RSP_BilinearInterpolation&f=image",
+            "confidence": {
+              "n": 0,
+              "kind": "asserted",
+              "value": 0.6,
+              "provenance": "USGS 3DEP DEM field; Z=NAVD88 orthometric metres (USGS 3DEP; not ellipsoidal height); calibration pending",
+              "intervalWidth": 1
+            },
+            "entityType": "parcel-terrain-model",
+            "contentHash": "",
+            "extractedAt": "2026-07-28T14:19:41.084Z",
+            "accessPolicy": "public-paid",
+            "parcelNodeId": "48021:34137",
+            "sourceAdapter": "usgs:3dep-dem",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "reference-field",
+                  "atomDid": "txgio-parcel:48021:34137:stratmap25-landparcels_48021_bastrop_202503",
+                  "citationLabel": "usgs-3dep-dem"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "parcel-terrain-mesh-ifc-v1"
+            },
+            "sourceCitation": "USGS 3DEP",
+            "jurisdictionTenant": "property-spine"
+          },
+          {
+            "rear": 25,
+            "side": 5,
+            "front": 25,
+            "status": "active",
+            "atomDid": "did:hauska:setback-rule:48021:34137",
+            "atomTier": "data",
+            "entityId": "48021:34137",
+            "fetchedAt": "2026-07-31T15:13:47.774Z",
+            "sourceUrl": "https://www.cityofbastrop.org/page/open/6743/0/ORDINANCE%20NO.%202019-51%20BASTROP%20BUILDING%20BLOCK%20B3%20-%202.pdf",
+            "entityType": "setback-rule",
+            "matchBasis": "exact",
+            "minLotSize": "0.33",
+            "contentHash": "3ff0a95ddc150fb36f25d3e36a6b8d400865c98b4657c1e8cca633bf85b60b6e",
+            "displayMeta": {
+              "minLotSize": "0.33",
+              "secondSource": {
+                "note": "Drawn from OnClick (layer 23). The city's Revisions layer (83) specifies front 30 / interior side 10 / corner side 20 / rear 30 for SF-1; the two city schedules conflict — verify which is in effect with the city.",
+                "source": "City of Bastrop GIS layer 83 (Zoned_Parcels Revisions)",
+                "citationUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/83"
+              },
+              "resolvedDistrictCode": "SF-1"
+            },
+            "extractedAt": "2026-07-31T15:13:47.774Z",
+            "maxHeightFt": 35,
+            "accessPolicy": "public-free",
+            "districtCode": "SF-1",
+            "parcelNodeId": "48021:34137",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "setback-rule-citation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-07-31T15:13:47.774Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-07-31T15:13:47.774Z"
+            },
+            "sideCornerFt": 15,
+            "versionStamp": "48021:34137:setback-rule:1:2026-07-31T15:13:47.774Z",
+            "sourceAdapter": "bastrop-per-parcel-record-layer-23",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sideInteriorFt": 5,
+            "sourceCitation": "Setback rule for SF-1 cited to bastrop-per-parcel/34137/front",
+            "fieldProvenance": {
+              "rear": {
+                "atomDid": "bastrop-per-parcel/34137/front",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.92,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              },
+              "side": {
+                "atomDid": "bastrop-per-parcel/34137/front",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.92,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              },
+              "front": {
+                "atomDid": "bastrop-per-parcel/34137/front",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.92,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              }
+            },
+            "maxImperviousPct": 50,
+            "maxLotCoveragePct": 0,
+            "sourceCodeAtomRef": {
+              "role": "rule",
+              "atomDid": "bastrop-per-parcel/34137/front",
+              "entityType": "code-section"
+            },
+            "jurisdictionTenant": "breadth_48021_bastrop"
+          },
+          {
+            "status": "active",
+            "atomDid": "did:hauska:zoning-fact:48021:34137",
+            "atomTier": "data",
+            "district": "SF-1",
+            "entityId": "48021:34137",
+            "fetchedAt": "2026-08-04T12:24:40.869Z",
+            "sourceUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+            "entityType": "zoning-fact",
+            "matchBasis": "exact",
+            "contentHash": "f966ebf1927ffe1241405776b759095887eb81c18a691abc875215ecc531a8ca",
+            "extractedAt": "2026-08-04T12:24:40.869Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:34137",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "zoning-fact-observation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-04T12:24:40.869Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-08-04T12:24:40.869Z"
+            },
+            "versionStamp": "48021:34137:zoning-fact:1:2026-08-04T12:24:40.869Z",
+            "sourceAdapter": "txgio-zoning-stamp:bastrop-city-tx",
+            "reasoningChain": {
+              "reasoningKind": "observed",
+              "transformSteps": [
+                {
+                  "kind": "TRANSFORM",
+                  "note": "Breadth bake projected GIS stamp from cortex tier1 snapshot; not the district origin",
+                  "adapter": "cortex-tier1-snapshot-breadth-bake",
+                  "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot"
+                }
+              ]
+            },
+            "sourceCitation": "GIS Zoned_Parcels field ZoneTypeClass cityKey=bastrop-city-tx vintage=2026-08-04T12:24:40.869Z district=SF-1 parcel=48021:34137 (PIP stamp; breadth bake is TRANSFORM only)",
+            "codeSectionRefs": {
+              "permittedUseTable": {
+                "role": "rule",
+                "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-008",
+                "entityType": "code-section"
+              },
+              "districtRequirements": {
+                "role": "rule",
+                "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+                "entityType": "code-section"
+              }
+            },
+            "sourceCodeAtomRef": {
+              "role": "rule",
+              "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+              "entityType": "code-section"
+            },
+            "jurisdictionTenant": "breadth_48021_bastrop-city-tx"
+          }
+        ],
+        "tier1": {
+          "tier": 1,
+          "zoning": {
+            "district": "SF-1",
+            "provenance": {
+              "cityKey": "bastrop-city-tx",
+              "codeField": "ZoneTypeClass",
+              "layerName": "Zoned_Parcels",
+              "sourceUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+              "stampedAt": "2026-08-04T12:24:40.869Z"
+            },
+            "jurisdictionKey": "bastrop_city_tx"
+          },
+          "bakedAt": "2026-08-04T12:24:40.869Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": null,
+            "disclosure": "Tier-1 bake no longer authors product envelope confidence (anti-zombie). Read buildable-envelope from the property atom chain, or honest-decline.",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": true,
+            "declineReason": "atom_path_pending",
+            "jurisdictionKey": "bastrop_city_tx"
+          },
+          "baseFacts": {
+            "apn": "34137",
+            "acreage": {
+              "sqft": 16673,
+              "value": 0.3827,
+              "method": "shoelace-wgs84"
+            },
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "situsCity": "BASTROP",
+            "situsState": "TX",
+            "situsAddress": "908 PINE , BASTROP, TX 78602"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 1 (deterministic). Buildable envelope product path retired (anti-zombie / atom_path_pending) — read envelope from property atom chain. Tier 2 may still carry flood overlay.",
+            "parcelSource": "txgio",
+            "roadsPending": true,
+            "zoningSource": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+            "landUseSource": "cad-roll",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseGateBlocked": false,
+            "landUseAddressRecovered": false
+          },
+          "parcelNodeId": "48021:34137",
+          "facetCoverage": {
+            "zoning": true,
+            "acreage": true,
+            "landUse": true,
+            "envelope": false,
+            "baseFacts": true
+          },
+          "facetSchemaVersion": "node-facets-tier1-v1"
+        },
+        "tier1SnapshotAt": "2026-08-04T12:25:17.548Z",
+        "tier2": {
+          "tier": 2,
+          "flood": {
+            "status": "flood-zone",
+            "floodZone": "X",
+            "provenance": {
+              "layer": "flood-hazard-zones",
+              "source": "fema-nfhl",
+              "vintage": "2026-07-21T16:59:52.146Z",
+              "adapterKey": "fema:nfhl-flood-zone"
+            },
+            "zoneSubtype": "0.2 PCT ANNUAL CHANCE FLOOD HAZARD",
+            "baseFloodElevation": null,
+            "inSpecialFloodHazardArea": false
+          },
+          "bakedAt": "2026-07-21T16:59:52.146Z",
+          "envelope": {
+            "status": "ok",
+            "geojson": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          -97.31644420610944,
+                          30.109996592669933
+                        ],
+                        [
+                          -97.31661531339968,
+                          30.109996234372385
+                        ],
+                        [
+                          -97.31661193330739,
+                          30.109618879066147
+                        ],
+                        [
+                          -97.31643839146624,
+                          30.109620259235108
+                        ],
+                        [
+                          -97.31644420610944,
+                          30.109996592669933
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "kind": "buildable-envelope",
+                    "edgeNote": "Front edge inferred from the geocoded address point (approximate — not the surveyed frontage).",
+                    "setbacks": {
+                      "rear_ft": 20,
+                      "side_ft": 15,
+                      "district": "P Public/Institutional",
+                      "front_ft": 25
+                    },
+                    "disclosure": "Approximate buildable area. Front edge inferred from the geocoded address point (approximate — not the surveyed frontage). Zoning \"P-3\" mapped to district P Public/Institutional by code prefix. Not survey grade — front/side/rear orientation and district are inferred; verify with a survey and the city before relying on it.",
+                    "edgeSignal": "point",
+                    "approximate": true,
+                    "citationUrl": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances",
+                    "maxHeightFt": 45,
+                    "districtNote": "Zoning \"P-3\" mapped to district P Public/Institutional by code prefix.",
+                    "notSurveyGrade": true,
+                    "parcelAreaSqFt": 16673,
+                    "buildableAreaPct": 44.9,
+                    "maxFootprintSqFt": 7494,
+                    "buildableAreaSqFt": 7494,
+                    "maxLotCoveragePct": 50
+                  }
+                }
+              ]
+            },
+            "district": "P Public/Institutional",
+            "setbacks": {
+              "rear_ft": 20,
+              "side_ft": 15,
+              "front_ft": 25
+            },
+            "confidence": 0.385,
+            "disclosure": "Approximate buildable area. Front edge inferred from the geocoded address point (approximate — not the surveyed frontage). Zoning \"P-3\" mapped to district P Public/Institutional by code prefix. Not survey grade — front/side/rear orientation and district are inferred; verify with a survey and the city before relying on it.",
+            "edgeSignal": "point",
+            "approximate": true,
+            "citationUrl": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances",
+            "maxHeightFt": 45,
+            "provisional": false,
+            "roadsPending": false,
+            "parcelAreaSqFt": 16673,
+            "roadProvenance": {
+              "source": "osm-overpass",
+              "candidateCount": 0,
+              "fetchAttempted": false,
+              "roadSignalUsed": false
+            },
+            "jurisdictionKey": "bastrop_tx",
+            "buildableAreaPct": 44.9,
+            "maxFootprintSqFt": 7494,
+            "buildableAreaSqFt": 7494,
+            "maxLotCoveragePct": 50
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 2 (live-dep). Buildable envelope upgraded with OSM road-based front-edge labeling; FEMA NFHL flood zone per node. Honest absence on any live-dep failure (never a fabricated value).",
+            "roadSource": "osm-overpass",
+            "floodSource": "fema-nfhl",
+            "roadsPending": false
+          },
+          "parcelNodeId": "48021:34137",
+          "facetSchemaVersion": "node-facets-tier2-v1"
+        },
+        "tier2SnapshotAt": "2026-07-21T17:08:37.309Z"
+      }
+    },
+    {
+      "parcelNodeId": "48021:0",
+      "liveReadPath": "atom-chain",
+      "live": {
+        "parcelNodeId": "48021:0",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": "2026-08-08T09:32:18.746Z",
+        "readPath": "atom-chain",
+        "facets": {
+          "parcelNodeId": "48021:0",
+          "countyFips": "48021",
+          "baseFacts": {
+            "apn": "0",
+            "situsAddress": ", ,",
+            "situsCity": null,
+            "situsState": null,
+            "landUse": null,
+            "acreage": {
+              "sqft": 252007,
+              "value": 5.7853,
+              "method": "shoelace-wgs84"
+            }
+          },
+          "zoning": {
+            "district": "SF-1",
+            "jurisdictionKey": "bastrop-city-tx"
+          },
+          "envelope": {
+            "status": "declined",
+            "declineReason": "superseded-prop-id",
+            "district": "SF-1",
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "prop_id 0 absent from county cadastral — superseded; re-key manifest to successor parcel(s)"
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": false,
+            "acreage": true,
+            "zoning": true,
+            "envelope": false
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseSource": null,
+            "landUseGateBlocked": false
+          },
+          "bakedAt": "2026-08-08T09:32:18.746Z",
+          "countyName": "Bastrop"
+        },
+        "baseFactsMerged": true
+      },
+      "store": {
+        "atoms": [
+          {
+            "status": "active",
+            "atomDid": "did:hauska:buildable-envelope:48021:0",
+            "outcome": {
+              "kind": "no-buildable-area",
+              "reason": "prop_id 0 absent from county cadastral — superseded; re-key manifest to successor parcel(s)"
+            },
+            "atomTier": "data",
+            "entityId": "48021:0",
+            "fetchedAt": "2026-08-08T09:32:18.746Z",
+            "sourceUrl": "https://www.cityofbastrop.org/page/open/18744/0/ORDINANCE%20NO.%202026-06%20B3%20Code%20Repeal%20and%20Bastrop%20Development%20Code%20Adoption.pdf",
+            "entityType": "buildable-envelope",
+            "contentHash": "fa098a266189c96eb8322d939c3f4591bcb317af51de54a3fa2cbb9f1a2cdbc1",
+            "extractedAt": "2026-08-08T09:32:18.746Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:0",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "property-risk",
+                  "basis": "no-buildable-area",
+                  "stratum": "elevated",
+                  "assertedAt": "2026-08-08T09:32:18.746Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                }
+              },
+              "assembledAt": "2026-08-08T09:32:18.746Z"
+            },
+            "versionStamp": "48021:0:buildable-envelope-decline:1:2026-08-08T09:32:18.746Z",
+            "recipeVersion": "1.0.0",
+            "sourceAdapter": "bastrop-per-parcel-record-layer-23",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "fact",
+                  "atomDid": "did:hauska:zoning-fact:48021:0",
+                  "entityType": "zoning-fact"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "buildable-envelope-inset-v1"
+            },
+            "sourceCitation": "depth-warm-verify-decline",
+            "warmVerifyDecline": "prop_id 0 absent from county cadastral — superseded; re-key manifest to successor parcel(s)",
+            "jurisdictionTenant": "breadth_48021_bastrop",
+            "warmVerifyDeclineCode": "superseded-prop-id"
+          },
+          {
+            "status": "active",
+            "absence": {
+              "kind": "conditional-district-no-scalar-row",
+              "reason": "BDC CORRECTION C: district has conditional/contextual setback standards; flat scalar model honest-declines (no fabricated numbers). Prior B3/phase-1a scalars retired 2026-07-30. district=GC"
+            },
+            "atomDid": "did:hauska:setback-rule:48021:0",
+            "atomTier": "data",
+            "entityId": "48021:0",
+            "fetchedAt": "2026-07-30T03:24:13.615108Z",
+            "sourceUrl": "https://www.cityofbastrop.org/page/open/18744/0/ORDINANCE%20NO.%202026-06%20B3%20Code%20Repeal%20and%20Bastrop%20Development%20Code%20Adoption.pdf",
+            "entityType": "setback-rule",
+            "contentHash": "7d0bef6df9dcf8af3753c32fed4aea1aa55dab1653e2ec2d6c4c0a8866735e8d",
+            "extractedAt": "2026-07-30T03:24:13.615108Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:0",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "setback-rule-citation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-07-24T01:03:35.442Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-07-24T01:03:35.442Z"
+            },
+            "versionStamp": "48021:0:setback-rule:1:2026-07-24T01:03:35.442Z",
+            "sourceAdapter": "cortex-tier1-snapshot-breadth-bake",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "fieldProvenance": {
+              "rear": {
+                "atomDid": "did:hauska:code-section:storage-port-proof/phase-1a",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.85,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              },
+              "side": {
+                "atomDid": "did:hauska:code-section:storage-port-proof/phase-1a",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.85,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              },
+              "front": {
+                "atomDid": "did:hauska:code-section:storage-port-proof/phase-1a",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.85,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              }
+            },
+            "sourceCodeAtomRef": {
+              "role": "rule",
+              "atomDid": "did:hauska:code-section:storage-port-proof/phase-1a",
+              "entityType": "code-section"
+            },
+            "jurisdictionTenant": "breadth_48021_unknown"
+          },
+          {
+            "status": "active",
+            "atomDid": "did:hauska:zoning-fact:48021:0",
+            "atomTier": "data",
+            "district": "SF-1",
+            "entityId": "48021:0",
+            "fetchedAt": "2026-08-04T12:24:40.869Z",
+            "sourceUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+            "entityType": "zoning-fact",
+            "matchBasis": "exact",
+            "contentHash": "52aa501c2fb29e1e526e1b367c3f77ebe67eb23efae687ec3423d18335539a3d",
+            "extractedAt": "2026-08-04T12:24:40.869Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:0",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "zoning-fact-observation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-04T12:24:40.869Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-08-04T12:24:40.869Z"
+            },
+            "versionStamp": "48021:0:zoning-fact:1:2026-08-04T12:24:40.869Z",
+            "sourceAdapter": "txgio-zoning-stamp:bastrop-city-tx",
+            "reasoningChain": {
+              "reasoningKind": "observed",
+              "transformSteps": [
+                {
+                  "kind": "TRANSFORM",
+                  "note": "Breadth bake projected GIS stamp from cortex tier1 snapshot; not the district origin",
+                  "adapter": "cortex-tier1-snapshot-breadth-bake",
+                  "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot"
+                }
+              ]
+            },
+            "sourceCitation": "GIS Zoned_Parcels field ZoneTypeClass cityKey=bastrop-city-tx vintage=2026-08-04T12:24:40.869Z district=SF-1 parcel=48021:0 (PIP stamp; breadth bake is TRANSFORM only)",
+            "codeSectionRefs": {
+              "permittedUseTable": {
+                "role": "rule",
+                "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-008",
+                "entityType": "code-section"
+              },
+              "districtRequirements": {
+                "role": "rule",
+                "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+                "entityType": "code-section"
+              }
+            },
+            "sourceCodeAtomRef": {
+              "role": "rule",
+              "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+              "entityType": "code-section"
+            },
+            "jurisdictionTenant": "breadth_48021_bastrop-city-tx"
+          }
+        ],
+        "tier1": {
+          "tier": 1,
+          "zoning": {
+            "district": "SF-1",
+            "provenance": {
+              "cityKey": "bastrop-city-tx",
+              "codeField": "ZoneTypeClass",
+              "layerName": "Zoned_Parcels",
+              "sourceUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+              "stampedAt": "2026-08-04T12:24:40.869Z"
+            },
+            "jurisdictionKey": "bastrop_city_tx"
+          },
+          "bakedAt": "2026-08-04T12:24:40.869Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": null,
+            "disclosure": "Tier-1 bake no longer authors product envelope confidence (anti-zombie). Read buildable-envelope from the property atom chain, or honest-decline.",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": true,
+            "declineReason": "atom_path_pending",
+            "jurisdictionKey": "bastrop_city_tx"
+          },
+          "baseFacts": {
+            "apn": "0",
+            "acreage": {
+              "sqft": 252007,
+              "value": 5.7853,
+              "method": "shoelace-wgs84"
+            },
+            "landUse": null,
+            "situsCity": null,
+            "situsState": null,
+            "situsAddress": ", ,"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 1 (deterministic). Buildable envelope product path retired (anti-zombie / atom_path_pending) — read envelope from property atom chain. Tier 2 may still carry flood overlay.",
+            "parcelSource": "txgio",
+            "roadsPending": true,
+            "zoningSource": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+            "landUseSource": null,
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseGateBlocked": false,
+            "landUseAddressRecovered": false
+          },
+          "parcelNodeId": "48021:0",
+          "facetCoverage": {
+            "zoning": true,
+            "acreage": true,
+            "landUse": false,
+            "envelope": false,
+            "baseFacts": true
+          },
+          "facetSchemaVersion": "node-facets-tier1-v1"
+        },
+        "tier1SnapshotAt": "2026-08-04T12:24:41.976Z",
+        "tier2": {
+          "tier": 2,
+          "flood": {
+            "status": "in-sfha",
+            "floodZone": "A",
+            "provenance": {
+              "layer": "flood-hazard-zones",
+              "source": "fema-nfhl",
+              "vintage": "2026-07-22T17:07:07.388Z",
+              "adapterKey": "fema:nfhl-flood-zone"
+            },
+            "zoneSubtype": null,
+            "baseFloodElevation": null,
+            "inSpecialFloodHazardArea": true
+          },
+          "bakedAt": "2026-07-22T17:07:07.388Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": 0,
+            "edgeSignal": "shape",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": false,
+            "declineReason": "no-jurisdiction-key",
+            "roadProvenance": {
+              "source": "osm-overpass",
+              "candidateCount": 0,
+              "fetchAttempted": true,
+              "roadSignalUsed": false
+            },
+            "jurisdictionKey": null
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 2 (live-dep). Buildable envelope upgraded with OSM road-based front-edge labeling; FEMA NFHL flood zone per node. Honest absence on any live-dep failure (never a fabricated value).",
+            "roadSource": "osm-overpass",
+            "floodSource": "fema-nfhl",
+            "roadsPending": false
+          },
+          "parcelNodeId": "48021:0",
+          "facetSchemaVersion": "node-facets-tier2-v1"
+        },
+        "tier2SnapshotAt": "2026-07-22T17:10:21.749Z"
+      }
+    },
+    {
+      "parcelNodeId": "48021:10001",
+      "liveReadPath": "atom-chain",
+      "live": {
+        "parcelNodeId": "48021:10001",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": "2026-08-04T02:30:13.055Z",
+        "readPath": "atom-chain",
+        "facets": {
+          "parcelNodeId": "48021:10001",
+          "countyFips": "48021",
+          "baseFacts": {
+            "apn": "10001",
+            "situsAddress": "296 COUNTRY LN , MCDADE, TX 78650",
+            "situsCity": "MCDADE",
+            "situsState": "TX",
+            "landUse": {
+              "code": "D1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Agricultural / qualified open-space land"
+            },
+            "acreage": {
+              "sqft": 3815829,
+              "value": 87.5994,
+              "method": "shoelace-wgs84"
+            }
+          },
+          "zoning": null,
+          "envelope": {
+            "status": "declined",
+            "declineReason": "no-zoning-stamp",
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "No zoning district observed for parcel — honest absence, no fallback district invented."
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": true,
+            "acreage": true,
+            "zoning": false,
+            "envelope": false
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseSource": "cad-roll",
+            "landUseGateBlocked": false
+          },
+          "bakedAt": "2026-08-04T02:30:13.055Z",
+          "countyName": "Bastrop"
+        },
+        "baseFactsMerged": true
+      },
+      "store": {
+        "atoms": [
+          {
+            "status": "active",
+            "atomDid": "did:hauska:buildable-envelope:48021:10001",
+            "outcome": {
+              "kind": "no-buildable-area",
+              "reason": "unzoned jurisdiction — no district basis for setbacks or envelope"
+            },
+            "atomTier": "data",
+            "entityId": "48021:10001",
+            "fetchedAt": "2026-08-04T02:30:13.055Z",
+            "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot",
+            "entityType": "buildable-envelope",
+            "contentHash": "71616cbe4586f6ee003821bc7d6148d703ab62ffc8cf7a0b845aed231384ea0d",
+            "extractedAt": "2026-08-04T02:30:13.055Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:10001",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "property-risk",
+                  "basis": "no-buildable-area",
+                  "stratum": "elevated",
+                  "assertedAt": "2026-08-04T02:30:13.055Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                }
+              },
+              "assembledAt": "2026-08-04T02:30:13.055Z"
+            },
+            "versionStamp": "48021:10001:buildable-envelope-decline:1:2026-08-04T02:30:13.055Z",
+            "recipeVersion": "1.0.0",
+            "sourceAdapter": "cortex-tier1-snapshot-breadth-bake",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "fact",
+                  "atomDid": "did:hauska:zoning-fact:48021:10001",
+                  "entityType": "zoning-fact"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "buildable-envelope-inset-v1"
+            },
+            "sourceCitation": "depth-warm-verify-decline",
+            "warmVerifyDecline": "unzoned jurisdiction — no district basis for setbacks or envelope",
+            "jurisdictionTenant": "breadth_48021_unknown",
+            "warmVerifyDeclineCode": "unzoned-no-district-basis"
+          },
+          {
+            "status": "active",
+            "atomDid": "fhfact_e76300d3b4cdac0e",
+            "atomTier": "data",
+            "entityId": "48021:10001",
+            "fetchedAt": "2026-08-11T23:13:57.245Z",
+            "floodZone": "X",
+            "sourceUrl": "tx_fema_nfhl_flood_zone",
+            "entityType": "flood-hazard-fact",
+            "sourceTier": "fema-nfhl",
+            "contentHash": "fnv1a64:51ae6ca72e9f1d24",
+            "evaluatedAt": "2026-08-11T23:13:57.245Z",
+            "extractedAt": "2026-08-11T23:13:57.245Z",
+            "zoneSubtype": "AREA OF MINIMAL FLOOD HAZARD",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:10001",
+            "sourceAdapter": "fema-nfhl-bulk-v1",
+            "sourceVintage": "NFHL_48_20260101",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "FEMA NFHL tx_fema_nfhl_flood_zone (198178/198240 statewide rows; 3557 bbox-filtered for 48021)",
+            "baseFloodElevation": null,
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine",
+            "inSpecialFloodHazardArea": false
+          },
+          {
+            "status": "retired",
+            "atomDid": "did:hauska:parcel-node:48021:10001",
+            "keyKind": "prop_id",
+            "atomTier": "data",
+            "entityId": "48021:10001",
+            "fetchedAt": "2026-08-10T12:51:25.588Z",
+            "retiredAt": "2026-08-11T12:14:06.746Z",
+            "sourceUrl": "https://data.geographic.texas.gov/",
+            "countyFips": "48021",
+            "entityType": "parcel-node",
+            "contentHash": "fnv1a64:78e3ae7275e6c1dc",
+            "evaluatedAt": "2026-08-10T12:51:25.588Z",
+            "extractedAt": "2026-08-10T12:51:25.588Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:10001",
+            "retiredReason": "parcel is absent from the stratmap25-landparcels_48021_bastrop_202503 plan for county 48021 (previously observed under vintage stratmap25-landparcels_48021_bastrop_202503); the source no longer publishes this account and no successor evidence exists",
+            "sourceAdapter": "txgio-stratmap-bulk-v1",
+            "sourceVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "geometryLoaded": true,
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "TxGIO StratMap Land Parcels, county 48021, vintage stratmap25-landparcels_48021_bastrop_202503",
+            "geometryStoreRef": {
+              "store": "txgio_parcel",
+              "propId": "10001",
+              "countyFips": "48021"
+            },
+            "geometrySourceTier": "txgio-stratmap",
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine"
+          },
+          {
+            "status": "active",
+            "absence": {
+              "kind": "no-zoning-stamp",
+              "reason": "No zoning district observed for parcel — honest absence, no fallback district invented."
+            },
+            "atomDid": "did:hauska:zoning-fact:48021:10001",
+            "atomTier": "data",
+            "entityId": "48021:10001",
+            "fetchedAt": "2026-08-04T12:24:40.869Z",
+            "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot",
+            "entityType": "zoning-fact",
+            "matchBasis": "exact",
+            "contentHash": "e35e011e005389d87a86dceb8727872143c6d05b1ff1b8982474f48798880465",
+            "extractedAt": "2026-08-04T12:24:40.869Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:10001",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "zoning-fact-honest-absence-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-04T12:24:40.869Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-08-04T12:24:40.869Z"
+            },
+            "versionStamp": "48021:10001:zoning-fact:1:2026-08-04T12:24:40.869Z",
+            "sourceAdapter": "cortex-tier1-snapshot-breadth-bake",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "Breadth bake honest-absence from cortex tier1 snapshot (48021:10001)",
+            "jurisdictionTenant": "breadth_48021_mcdade"
+          }
+        ],
+        "tier1": {
+          "tier": 1,
+          "zoning": null,
+          "bakedAt": "2026-08-04T12:24:40.869Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": null,
+            "disclosure": "No zoning stamp on this parcel - honest absence; envelope via atom path when present.",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": true,
+            "declineReason": "no-zoning-stamp",
+            "jurisdictionKey": null
+          },
+          "baseFacts": {
+            "apn": "10001",
+            "acreage": {
+              "sqft": 3815829,
+              "value": 87.5994,
+              "method": "shoelace-wgs84"
+            },
+            "landUse": {
+              "code": "D1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Agricultural / qualified open-space land"
+            },
+            "situsCity": "MCDADE",
+            "situsState": "TX",
+            "situsAddress": "296 COUNTRY LN , MCDADE, TX 78650"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 1 (deterministic). Buildable envelope product path retired (anti-zombie / atom_path_pending) — read envelope from property atom chain. Tier 2 may still carry flood overlay.",
+            "parcelSource": "txgio",
+            "roadsPending": true,
+            "zoningSource": null,
+            "landUseSource": "cad-roll",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseGateBlocked": false,
+            "landUseAddressRecovered": false
+          },
+          "parcelNodeId": "48021:10001",
+          "facetCoverage": {
+            "zoning": false,
+            "acreage": true,
+            "landUse": true,
+            "envelope": false,
+            "baseFacts": true
+          },
+          "facetSchemaVersion": "node-facets-tier1-v1"
+        },
+        "tier1SnapshotAt": "2026-08-04T12:24:51.879Z",
+        "tier2": {
+          "tier": 2,
+          "flood": {
+            "status": "flood-zone",
+            "floodZone": "X",
+            "provenance": {
+              "layer": "flood-hazard-zones",
+              "source": "fema-nfhl",
+              "vintage": "2026-07-21T16:59:52.146Z",
+              "adapterKey": "fema:nfhl-flood-zone"
+            },
+            "zoneSubtype": "AREA OF MINIMAL FLOOD HAZARD",
+            "baseFloodElevation": null,
+            "inSpecialFloodHazardArea": false
+          },
+          "bakedAt": "2026-07-21T16:59:52.146Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": 0,
+            "edgeSignal": "shape",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": false,
+            "declineReason": "no-setback-table",
+            "roadProvenance": {
+              "source": "osm-overpass",
+              "candidateCount": 0,
+              "fetchAttempted": false,
+              "roadSignalUsed": false
+            },
+            "jurisdictionKey": "mcdade_tx"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 2 (live-dep). Buildable envelope upgraded with OSM road-based front-edge labeling; FEMA NFHL flood zone per node. Honest absence on any live-dep failure (never a fabricated value).",
+            "roadSource": "osm-overpass",
+            "floodSource": "fema-nfhl",
+            "roadsPending": false
+          },
+          "parcelNodeId": "48021:10001",
+          "facetSchemaVersion": "node-facets-tier2-v1"
+        },
+        "tier2SnapshotAt": "2026-07-21T17:02:47.864Z"
+      }
+    },
+    {
+      "parcelNodeId": "48021:102717",
+      "liveReadPath": "atom-chain",
+      "live": {
+        "parcelNodeId": "48021:102717",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": "2026-08-04T02:30:13.055Z",
+        "readPath": "atom-chain",
+        "facets": {
+          "parcelNodeId": "48021:102717",
+          "countyFips": "48021",
+          "baseFacts": {
+            "apn": "102717",
+            "situsAddress": "347 CEDAR LN , CEDAR CREEK, TX 78612",
+            "situsCity": "CEDAR CREEK",
+            "situsState": "TX",
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "acreage": {
+              "sqft": 83800,
+              "value": 1.9238,
+              "method": "shoelace-wgs84"
+            }
+          },
+          "zoning": null,
+          "envelope": {
+            "status": "declined",
+            "declineReason": "no-zoning-stamp",
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "No zoning district observed for parcel — honest absence, no fallback district invented."
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": true,
+            "acreage": true,
+            "zoning": false,
+            "envelope": false
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseSource": "cad-roll",
+            "landUseGateBlocked": false
+          },
+          "bakedAt": "2026-08-04T02:30:13.055Z",
+          "countyName": "Bastrop"
+        },
+        "baseFactsMerged": true
+      },
+      "store": {
+        "atoms": [
+          {
+            "status": "active",
+            "atomDid": "did:hauska:buildable-envelope:48021:102717",
+            "outcome": {
+              "kind": "no-buildable-area",
+              "reason": "unzoned jurisdiction — no district basis for setbacks or envelope"
+            },
+            "atomTier": "data",
+            "entityId": "48021:102717",
+            "fetchedAt": "2026-08-04T02:30:13.055Z",
+            "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot",
+            "entityType": "buildable-envelope",
+            "contentHash": "5406c8caf7d824c1f687acf921fed91aee27594e4aa05fe515c166a4f4602ced",
+            "extractedAt": "2026-08-04T02:30:13.055Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:102717",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "property-risk",
+                  "basis": "no-buildable-area",
+                  "stratum": "elevated",
+                  "assertedAt": "2026-08-04T02:30:13.055Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                }
+              },
+              "assembledAt": "2026-08-04T02:30:13.055Z"
+            },
+            "versionStamp": "48021:102717:buildable-envelope-decline:1:2026-08-04T02:30:13.055Z",
+            "recipeVersion": "1.0.0",
+            "sourceAdapter": "cortex-tier1-snapshot-breadth-bake",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "fact",
+                  "atomDid": "did:hauska:zoning-fact:48021:102717",
+                  "entityType": "zoning-fact"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "buildable-envelope-inset-v1"
+            },
+            "sourceCitation": "depth-warm-verify-decline",
+            "warmVerifyDecline": "unzoned jurisdiction — no district basis for setbacks or envelope",
+            "jurisdictionTenant": "breadth_48021_unknown",
+            "warmVerifyDeclineCode": "unzoned-no-district-basis"
+          },
+          {
+            "status": "active",
+            "atomDid": "fhfact_bc8dd0dfb8af22e6",
+            "atomTier": "data",
+            "entityId": "48021:102717",
+            "fetchedAt": "2026-08-11T23:13:57.245Z",
+            "floodZone": "X",
+            "sourceUrl": "tx_fema_nfhl_flood_zone",
+            "entityType": "flood-hazard-fact",
+            "sourceTier": "fema-nfhl",
+            "contentHash": "fnv1a64:c5fe9a31ccddd964",
+            "evaluatedAt": "2026-08-11T23:13:57.245Z",
+            "extractedAt": "2026-08-11T23:13:57.245Z",
+            "zoneSubtype": "AREA OF MINIMAL FLOOD HAZARD",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:102717",
+            "sourceAdapter": "fema-nfhl-bulk-v1",
+            "sourceVintage": "NFHL_48_20260101",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "FEMA NFHL tx_fema_nfhl_flood_zone (198178/198240 statewide rows; 3557 bbox-filtered for 48021)",
+            "baseFloodElevation": null,
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine",
+            "inSpecialFloodHazardArea": false
+          },
+          {
+            "status": "active",
+            "atomDid": "did:hauska:parcel-node:48021:102717",
+            "keyKind": "prop_id",
+            "atomTier": "data",
+            "entityId": "48021:102717",
+            "fetchedAt": "2026-08-11T12:22:48.818Z",
+            "sourceUrl": "https://data.geographic.texas.gov/",
+            "countyFips": "48021",
+            "entityType": "parcel-node",
+            "contentHash": "fnv1a64:bb32a03196defe1c",
+            "evaluatedAt": "2026-08-11T12:22:48.818Z",
+            "extractedAt": "2026-08-11T12:22:48.818Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:102717",
+            "sourceAdapter": "txgio-stratmap-bulk-v1",
+            "sourceVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "geometryLoaded": true,
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "TxGIO StratMap Land Parcels, county 48021, vintage stratmap25-landparcels_48021_bastrop_202503",
+            "geometryStoreRef": {
+              "store": "txgio_parcel",
+              "propId": "102717",
+              "countyFips": "48021"
+            },
+            "geometrySourceTier": "txgio-stratmap",
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine"
+          },
+          {
+            "status": "active",
+            "absence": {
+              "kind": "no-zoning-stamp",
+              "reason": "No zoning district observed for parcel — honest absence, no fallback district invented."
+            },
+            "atomDid": "did:hauska:zoning-fact:48021:102717",
+            "atomTier": "data",
+            "entityId": "48021:102717",
+            "fetchedAt": "2026-08-04T12:24:40.869Z",
+            "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot",
+            "entityType": "zoning-fact",
+            "matchBasis": "exact",
+            "contentHash": "005269095b8730cb1283fa036441be14488ed84fa8fb2948b51b27cb6e40aec5",
+            "extractedAt": "2026-08-04T12:24:40.869Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:102717",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "zoning-fact-honest-absence-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-04T12:24:40.869Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-08-04T12:24:40.869Z"
+            },
+            "versionStamp": "48021:102717:zoning-fact:1:2026-08-04T12:24:40.869Z",
+            "sourceAdapter": "cortex-tier1-snapshot-breadth-bake",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "Breadth bake honest-absence from cortex tier1 snapshot (48021:102717)",
+            "jurisdictionTenant": "breadth_48021_cedar_creek"
+          }
+        ],
+        "tier1": {
+          "tier": 1,
+          "zoning": null,
+          "bakedAt": "2026-08-04T12:24:40.869Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": null,
+            "disclosure": "No zoning stamp on this parcel - honest absence; envelope via atom path when present.",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": true,
+            "declineReason": "no-zoning-stamp",
+            "jurisdictionKey": null
+          },
+          "baseFacts": {
+            "apn": "102717",
+            "acreage": {
+              "sqft": 83800,
+              "value": 1.9238,
+              "method": "shoelace-wgs84"
+            },
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "situsCity": "CEDAR CREEK",
+            "situsState": "TX",
+            "situsAddress": "347 CEDAR LN , CEDAR CREEK, TX 78612"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 1 (deterministic). Buildable envelope product path retired (anti-zombie / atom_path_pending) — read envelope from property atom chain. Tier 2 may still carry flood overlay.",
+            "parcelSource": "txgio",
+            "roadsPending": true,
+            "zoningSource": null,
+            "landUseSource": "cad-roll",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseGateBlocked": false,
+            "landUseAddressRecovered": false
+          },
+          "parcelNodeId": "48021:102717",
+          "facetCoverage": {
+            "zoning": false,
+            "acreage": true,
+            "landUse": true,
+            "envelope": false,
+            "baseFacts": true
+          },
+          "facetSchemaVersion": "node-facets-tier1-v1"
+        },
+        "tier1SnapshotAt": "2026-08-04T12:24:41.976Z",
+        "tier2": {
+          "tier": 2,
+          "flood": {
+            "status": "flood-zone",
+            "floodZone": "X",
+            "provenance": {
+              "layer": "flood-hazard-zones",
+              "source": "fema-nfhl",
+              "vintage": "2026-07-22T17:07:07.388Z",
+              "adapterKey": "fema:nfhl-flood-zone"
+            },
+            "zoneSubtype": "AREA OF MINIMAL FLOOD HAZARD",
+            "baseFloodElevation": null,
+            "inSpecialFloodHazardArea": false
+          },
+          "bakedAt": "2026-07-22T17:07:07.388Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": 0,
+            "edgeSignal": "shape",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": false,
+            "declineReason": "no-setback-table",
+            "roadProvenance": {
+              "source": "osm-overpass",
+              "candidateCount": 2,
+              "fetchAttempted": true,
+              "roadSignalUsed": false
+            },
+            "jurisdictionKey": "cedar_creek_tx"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 2 (live-dep). Buildable envelope upgraded with OSM road-based front-edge labeling; FEMA NFHL flood zone per node. Honest absence on any live-dep failure (never a fabricated value).",
+            "roadSource": "osm-overpass",
+            "floodSource": "fema-nfhl",
+            "roadsPending": false
+          },
+          "parcelNodeId": "48021:102717",
+          "facetSchemaVersion": "node-facets-tier2-v1"
+        },
+        "tier2SnapshotAt": "2026-07-22T17:10:21.749Z"
+      }
+    },
+    {
+      "parcelNodeId": "48021:56517",
+      "liveReadPath": "atom-chain",
+      "live": {
+        "parcelNodeId": "48021:56517",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": "2026-08-04T02:39:38.824Z",
+        "readPath": "atom-chain",
+        "facets": {
+          "parcelNodeId": "48021:56517",
+          "countyFips": "48021",
+          "baseFacts": {
+            "apn": "56517",
+            "situsAddress": "114 CHRISTINA DR , ELGIN, TX 78621",
+            "situsCity": "ELGIN",
+            "situsState": "TX",
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "acreage": {
+              "sqft": 87466,
+              "value": 2.0079,
+              "method": "shoelace-wgs84"
+            }
+          },
+          "zoning": null,
+          "envelope": {
+            "status": "declined",
+            "declineReason": "no-zoning-stamp",
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "No zoning district observed for parcel — honest absence, no fallback district invented."
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": true,
+            "acreage": true,
+            "zoning": false,
+            "envelope": false
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseSource": "cad-roll",
+            "landUseGateBlocked": false
+          },
+          "bakedAt": "2026-08-04T02:39:38.824Z",
+          "countyName": "Bastrop"
+        },
+        "baseFactsMerged": true
+      },
+      "store": {
+        "atoms": [
+          {
+            "status": "active",
+            "atomDid": "did:hauska:buildable-envelope:48021:56517",
+            "outcome": {
+              "kind": "no-buildable-area",
+              "reason": "unzoned jurisdiction — no district basis for setbacks or envelope"
+            },
+            "atomTier": "data",
+            "entityId": "48021:56517",
+            "fetchedAt": "2026-08-04T02:39:38.824Z",
+            "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot",
+            "entityType": "buildable-envelope",
+            "contentHash": "4d67a31e6f377ee0e7bb6e914ab8e8455a75274b3e619f41d22947e63a2084dd",
+            "extractedAt": "2026-08-04T02:39:38.824Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:56517",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "property-risk",
+                  "basis": "no-buildable-area",
+                  "stratum": "elevated",
+                  "assertedAt": "2026-08-04T02:39:38.824Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                }
+              },
+              "assembledAt": "2026-08-04T02:39:38.824Z"
+            },
+            "versionStamp": "48021:56517:buildable-envelope-decline:1:2026-08-04T02:39:38.824Z",
+            "recipeVersion": "1.0.0",
+            "sourceAdapter": "cortex-tier1-snapshot-breadth-bake",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "fact",
+                  "atomDid": "did:hauska:zoning-fact:48021:56517",
+                  "entityType": "zoning-fact"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "buildable-envelope-inset-v1"
+            },
+            "sourceCitation": "depth-warm-verify-decline",
+            "warmVerifyDecline": "unzoned jurisdiction — no district basis for setbacks or envelope",
+            "jurisdictionTenant": "breadth_48021_unknown",
+            "warmVerifyDeclineCode": "unzoned-no-district-basis"
+          },
+          {
+            "status": "active",
+            "atomDid": "fhfact_df39e56292cd4ecc",
+            "atomTier": "data",
+            "entityId": "48021:56517",
+            "fetchedAt": "2026-08-11T23:13:43.774Z",
+            "floodZone": "X",
+            "sourceUrl": "tx_fema_nfhl_flood_zone",
+            "entityType": "flood-hazard-fact",
+            "sourceTier": "fema-nfhl",
+            "contentHash": "fnv1a64:7186aeed4e2d7e8e",
+            "evaluatedAt": "2026-08-11T23:13:43.774Z",
+            "extractedAt": "2026-08-11T23:13:43.774Z",
+            "zoneSubtype": "AREA OF MINIMAL FLOOD HAZARD",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:56517",
+            "sourceAdapter": "fema-nfhl-bulk-v1",
+            "sourceVintage": "NFHL_48_20260101",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "FEMA NFHL tx_fema_nfhl_flood_zone (198178/198240 statewide rows; 3557 bbox-filtered for 48021)",
+            "baseFloodElevation": null,
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine",
+            "inSpecialFloodHazardArea": false
+          },
+          {
+            "status": "retired",
+            "atomDid": "did:hauska:parcel-node:48021:56517",
+            "keyKind": "prop_id",
+            "atomTier": "data",
+            "entityId": "48021:56517",
+            "fetchedAt": "2026-08-10T12:51:25.588Z",
+            "retiredAt": "2026-08-11T12:14:06.746Z",
+            "sourceUrl": "https://data.geographic.texas.gov/",
+            "countyFips": "48021",
+            "entityType": "parcel-node",
+            "contentHash": "fnv1a64:1809f353522a071a",
+            "evaluatedAt": "2026-08-10T12:51:25.588Z",
+            "extractedAt": "2026-08-10T12:51:25.588Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:56517",
+            "retiredReason": "parcel is absent from the stratmap25-landparcels_48021_bastrop_202503 plan for county 48021 (previously observed under vintage stratmap25-landparcels_48021_bastrop_202503); the source no longer publishes this account and no successor evidence exists",
+            "sourceAdapter": "txgio-stratmap-bulk-v1",
+            "sourceVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "geometryLoaded": true,
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "TxGIO StratMap Land Parcels, county 48021, vintage stratmap25-landparcels_48021_bastrop_202503",
+            "geometryStoreRef": {
+              "store": "txgio_parcel",
+              "propId": "56517",
+              "countyFips": "48021"
+            },
+            "geometrySourceTier": "txgio-stratmap",
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine"
+          },
+          {
+            "status": "active",
+            "absence": {
+              "kind": "no-zoning-stamp",
+              "reason": "No zoning district observed for parcel — honest absence, no fallback district invented."
+            },
+            "atomDid": "did:hauska:zoning-fact:48021:56517",
+            "atomTier": "data",
+            "entityId": "48021:56517",
+            "fetchedAt": "2026-08-04T12:24:40.869Z",
+            "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot",
+            "entityType": "zoning-fact",
+            "matchBasis": "exact",
+            "contentHash": "17e96a85e6ec7c95de76b0f84b2b74a8bee7368441d1a3ba4b47b99ec5fe1075",
+            "extractedAt": "2026-08-04T12:24:40.869Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:56517",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "zoning-fact-honest-absence-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-04T12:24:40.869Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-08-04T12:24:40.869Z"
+            },
+            "versionStamp": "48021:56517:zoning-fact:1:2026-08-04T12:24:40.869Z",
+            "sourceAdapter": "cortex-tier1-snapshot-breadth-bake",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "Breadth bake honest-absence from cortex tier1 snapshot (48021:56517)",
+            "jurisdictionTenant": "breadth_48021_elgin"
+          }
+        ],
+        "tier1": {
+          "tier": 1,
+          "zoning": null,
+          "bakedAt": "2026-08-04T12:24:40.869Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": null,
+            "disclosure": "No zoning stamp on this parcel - honest absence; envelope via atom path when present.",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": true,
+            "declineReason": "no-zoning-stamp",
+            "jurisdictionKey": null
+          },
+          "baseFacts": {
+            "apn": "56517",
+            "acreage": {
+              "sqft": 87466,
+              "value": 2.0079,
+              "method": "shoelace-wgs84"
+            },
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "situsCity": "ELGIN",
+            "situsState": "TX",
+            "situsAddress": "114 CHRISTINA DR , ELGIN, TX 78621"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 1 (deterministic). Buildable envelope product path retired (anti-zombie / atom_path_pending) — read envelope from property atom chain. Tier 2 may still carry flood overlay.",
+            "parcelSource": "txgio",
+            "roadsPending": true,
+            "zoningSource": null,
+            "landUseSource": "cad-roll",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseGateBlocked": false,
+            "landUseAddressRecovered": false
+          },
+          "parcelNodeId": "48021:56517",
+          "facetCoverage": {
+            "zoning": false,
+            "acreage": true,
+            "landUse": true,
+            "envelope": false,
+            "baseFacts": true
+          },
+          "facetSchemaVersion": "node-facets-tier1-v1"
+        },
+        "tier1SnapshotAt": "2026-08-04T12:25:29.581Z",
+        "tier2": {
+          "tier": 2,
+          "flood": {
+            "status": "flood-zone",
+            "floodZone": "X",
+            "provenance": {
+              "layer": "flood-hazard-zones",
+              "source": "fema-nfhl",
+              "vintage": "2026-07-21T16:59:52.146Z",
+              "adapterKey": "fema:nfhl-flood-zone"
+            },
+            "zoneSubtype": "AREA OF MINIMAL FLOOD HAZARD",
+            "baseFloodElevation": null,
+            "inSpecialFloodHazardArea": false
+          },
+          "bakedAt": "2026-07-21T16:59:52.146Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": 0,
+            "edgeSignal": "shape",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": false,
+            "declineReason": "no-setback-table",
+            "roadProvenance": {
+              "source": "osm-overpass",
+              "candidateCount": 0,
+              "fetchAttempted": false,
+              "roadSignalUsed": false
+            },
+            "jurisdictionKey": "elgin_tx"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 2 (live-dep). Buildable envelope upgraded with OSM road-based front-edge labeling; FEMA NFHL flood zone per node. Honest absence on any live-dep failure (never a fabricated value).",
+            "roadSource": "osm-overpass",
+            "floodSource": "fema-nfhl",
+            "roadsPending": false
+          },
+          "parcelNodeId": "48021:56517",
+          "facetSchemaVersion": "node-facets-tier2-v1"
+        },
+        "tier2SnapshotAt": "2026-07-21T17:12:17.645Z"
+      }
+    },
+    {
+      "parcelNodeId": "48021:28286",
+      "liveReadPath": "atom-chain-warm",
+      "live": {
+        "parcelNodeId": "48021:28286",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": "2026-08-08T09:40:18.027Z",
+        "readPath": "atom-chain-warm",
+        "facets": {
+          "parcelNodeId": "48021:28286",
+          "countyFips": "48021",
+          "baseFacts": {
+            "apn": "28286",
+            "situsAddress": "201 MAYNARD ST , BASTROP, TX 78602",
+            "situsCity": "BASTROP",
+            "situsState": "TX",
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "acreage": {
+              "sqft": 8216,
+              "value": 0.1886,
+              "method": "shoelace-wgs84"
+            }
+          },
+          "zoning": {
+            "district": "SF-1",
+            "jurisdictionKey": "bastrop-city-tx"
+          },
+          "envelope": {
+            "status": "ok",
+            "district": "SF-1",
+            "setbacks": {
+              "front_ft": 25,
+              "side_ft": 5,
+              "rear_ft": 25,
+              "side_interior_ft": 5,
+              "side_corner_ft": 15
+            },
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "Depth-warm verified envelope from promoted ledger — no live re-derive (27c WDLL 8).",
+            "buildableAreaSqFt": 3477,
+            "geojson": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          -97.32736219802008,
+                          30.102996666633754
+                        ],
+                        [
+                          -97.32748863503295,
+                          30.102996688624415
+                        ],
+                        [
+                          -97.3274886896558,
+                          30.10275836087103
+                        ],
+                        [
+                          -97.32736225391322,
+                          30.102758338880317
+                        ],
+                        [
+                          -97.32736219802008,
+                          30.102996666633754
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "kind": "buildable-envelope",
+                    "depthWarm": "depth-warm-promoted-v1",
+                    "recipeVersion": "1.0.0"
+                  }
+                }
+              ]
+            },
+            "maxHeightFt": 35,
+            "maxImperviousPct": 50,
+            "minLotSize": "0.33",
+            "secondSource": {
+              "note": "Drawn from OnClick (layer 23). The city's Revisions layer (83) specifies front 30 / interior side 10 / corner side 20 / rear 30 for SF-1; the two city schedules conflict — verify which is in effect with the city.",
+              "source": "City of Bastrop GIS layer 83 (Zoned_Parcels Revisions)",
+              "citationUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/83"
+            }
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": true,
+            "acreage": true,
+            "zoning": true,
+            "envelope": true
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseSource": "cad-roll",
+            "landUseGateBlocked": false,
+            "depthWarmPromoted": true
+          },
+          "bakedAt": "2026-08-08T09:40:18.027Z",
+          "countyName": "Bastrop"
+        },
+        "baseFactsMerged": true
+      },
+      "store": {
+        "atoms": [
+          {
+            "status": "active",
+            "atomDid": "did:hauska:buildable-envelope:48021:28286",
+            "geojson": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          -97.32736219802008,
+                          30.102996666633754
+                        ],
+                        [
+                          -97.32748863503295,
+                          30.102996688624415
+                        ],
+                        [
+                          -97.3274886896558,
+                          30.10275836087103
+                        ],
+                        [
+                          -97.32736225391322,
+                          30.102758338880317
+                        ],
+                        [
+                          -97.32736219802008,
+                          30.102996666633754
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "kind": "buildable-envelope",
+                    "depthWarm": "depth-warm-promoted-v1",
+                    "recipeVersion": "1.0.0"
+                  }
+                }
+              ]
+            },
+            "outcome": {
+              "kind": "buildable",
+              "areaSqFt": 3477
+            },
+            "atomTier": "data",
+            "entityId": "48021:28286",
+            "fetchedAt": "2026-08-08T09:40:18.027Z",
+            "sourceUrl": "https://hauska.dev/internal/depth-warm/promote",
+            "entityType": "buildable-envelope",
+            "contentHash": "c34ceaeb976ac08d5a47bf44ff10ff9e7a91a92a692128aae7d5769e83a24720",
+            "extractedAt": "2026-08-08T09:40:18.027Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:28286",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "envelope-geometry-derivation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-08T09:40:18.027Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.85,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.15
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.85,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.15
+                }
+              },
+              "assembledAt": "2026-08-08T09:40:18.027Z"
+            },
+            "versionStamp": "48021:28286:buildable-envelope:1:2026-08-08T09:40:18.027Z",
+            "recipeVersion": "1.0.0",
+            "sourceAdapter": "depth-warm-verify-promote",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "fact",
+                  "atomDid": "did:hauska:zoning-fact:48021:28286",
+                  "entityType": "zoning-fact"
+                },
+                {
+                  "role": "rule",
+                  "atomDid": "did:hauska:setback-rule:48021:28286",
+                  "entityType": "setback-rule"
+                },
+                {
+                  "role": "reference-field",
+                  "atomDid": "48021:28286/geometry",
+                  "citationLabel": "parcel-geometry-ring"
+                },
+                {
+                  "role": "reference-field",
+                  "atomDid": "48021:28286/front-edge",
+                  "citationLabel": "front-edge-anchor"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "buildable-envelope-inset-v1"
+            },
+            "sourceCitation": "depth-warm-verified mechanical promote (27c R3 WDLL 6)",
+            "depthWarmPromotion": "depth-warm-promoted-v1",
+            "jurisdictionTenant": "breadth_48021_bastrop",
+            "depthWarmVerifiedAt": "2026-08-08T09:40:18.027Z"
+          },
+          {
+            "status": "active",
+            "atomDid": "fhfact_77cec4de30a9b2f4",
+            "atomTier": "data",
+            "entityId": "48021:28286",
+            "fetchedAt": "2026-08-11T23:13:43.774Z",
+            "floodZone": "X",
+            "sourceUrl": "tx_fema_nfhl_flood_zone",
+            "entityType": "flood-hazard-fact",
+            "sourceTier": "fema-nfhl",
+            "contentHash": "fnv1a64:765f6185ee275f0e",
+            "evaluatedAt": "2026-08-11T23:13:43.774Z",
+            "extractedAt": "2026-08-11T23:13:43.774Z",
+            "zoneSubtype": "0.2 PCT ANNUAL CHANCE FLOOD HAZARD",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:28286",
+            "sourceAdapter": "fema-nfhl-bulk-v1",
+            "sourceVintage": "NFHL_48_20260101",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "FEMA NFHL tx_fema_nfhl_flood_zone (198178/198240 statewide rows; 3557 bbox-filtered for 48021)",
+            "baseFloodElevation": null,
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine",
+            "inSpecialFloodHazardArea": false
+          },
+          {
+            "status": "retired",
+            "atomDid": "did:hauska:parcel-node:48021:28286",
+            "keyKind": "prop_id",
+            "atomTier": "data",
+            "entityId": "48021:28286",
+            "fetchedAt": "2026-08-10T12:51:25.588Z",
+            "retiredAt": "2026-08-11T12:14:06.746Z",
+            "sourceUrl": "https://data.geographic.texas.gov/",
+            "countyFips": "48021",
+            "entityType": "parcel-node",
+            "contentHash": "fnv1a64:327c49a48517cc9a",
+            "evaluatedAt": "2026-08-10T12:51:25.588Z",
+            "extractedAt": "2026-08-10T12:51:25.588Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:28286",
+            "retiredReason": "parcel is absent from the stratmap25-landparcels_48021_bastrop_202503 plan for county 48021 (previously observed under vintage stratmap25-landparcels_48021_bastrop_202503); the source no longer publishes this account and no successor evidence exists",
+            "sourceAdapter": "txgio-stratmap-bulk-v1",
+            "sourceVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "geometryLoaded": true,
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "TxGIO StratMap Land Parcels, county 48021, vintage stratmap25-landparcels_48021_bastrop_202503",
+            "geometryStoreRef": {
+              "store": "txgio_parcel",
+              "propId": "28286",
+              "countyFips": "48021"
+            },
+            "geometrySourceTier": "txgio-stratmap",
+            "jurisdictionTenant": "tx_48021",
+            "verificationStatus": "machine"
+          },
+          {
+            "status": "active",
+            "atomDid": "pterrain_siteplan_48021_28286_1785164459329",
+            "atomTier": "data",
+            "coverage": {
+              "totalCells": 798,
+              "nodataCount": 0,
+              "contourSource": {
+                "tier": "authoritative-1ft",
+                "source": "bastrop-county:Contour1Ft2017",
+                "vintage": "2017 StratMap LiDAR",
+                "intervalLabel": "1-ft vertical interval",
+                "polylineCount": 2
+              },
+              "touchesNodata": false,
+              "coverageFraction": 1,
+              "resolutionMetersActual": null,
+              "resolutionMetersRequested": 10
+            },
+            "entityId": "48021:28286",
+            "artifacts": {
+              "dxf-site-plan": {
+                "ref": "gcs://hauska-prod-497015-terrain-exports/terrain/48021_28286/dxf-site-plan/614c536d7a0ba6ad9574ee72788c9a521bb3e194266019e456eee49d3b02fc88",
+                "format": "dxf-site-plan",
+                "byteCount": 77016,
+                "setbackDegenerate": false,
+                "streetHonestAbsence": false,
+                "setbackHonestAbsence": false,
+                "contourIntervalMeters": 1
+              },
+              "ifc-site-plan": {
+                "ref": "gcs://hauska-prod-497015-terrain-exports/terrain/48021_28286/ifc-site-plan/477337d066e9888a837e8fcdc8bb2ff555079136ea0deb8fcfc0fc297868d574",
+                "format": "ifc-site-plan",
+                "byteCount": 107820,
+                "vertexCount": 916,
+                "triangleCount": 1714,
+                "annotationCount": 7,
+                "setbackDegenerate": false,
+                "streetHonestAbsence": false,
+                "setbackHonestAbsence": false
+              },
+              "pdf-site-plan": {
+                "ref": "gcs://hauska-prod-497015-terrain-exports/terrain/48021_28286/pdf-site-plan/becd8033f5caa20c1d0dec10e5b1af0bb3f91983df6ea8ccb4f54f9a63d3390e",
+                "format": "pdf-site-plan",
+                "byteCount": 322977,
+                "pageCount": 3,
+                "setbackDegenerate": false,
+                "streetHonestAbsence": false,
+                "zoningHonestAbsence": false,
+                "setbackHonestAbsence": false,
+                "aerialImageryEmbedded": true,
+                "floodZoneHonestUnavailable": false
+              }
+            },
+            "fetchedAt": "2026-07-27T15:00:59.329Z",
+            "sourceUrl": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage?bbox=-97.32750452999994%2C30.102689879000025%2C-97.32731470799996%2C30.103065143000038&bboxSR=4326&imageSR=4326&size=19%2C42&format=tiff&pixelType=F32&interpolation=RSP_BilinearInterpolation&f=image",
+            "confidence": {
+              "n": 0,
+              "kind": "asserted",
+              "value": 0.6,
+              "provenance": "USGS 3DEP DEM field; Z=NAVD88 orthometric metres (USGS 3DEP; not ellipsoidal height); calibration pending",
+              "intervalWidth": 1
+            },
+            "entityType": "parcel-terrain-model",
+            "contentHash": "",
+            "extractedAt": "2026-07-27T15:00:59.329Z",
+            "accessPolicy": "public-paid",
+            "parcelNodeId": "48021:28286",
+            "sourceAdapter": "usgs:3dep-dem",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "reference-field",
+                  "atomDid": "txgio-parcel:48021:28286:stratmap25-landparcels_48021_bastrop_202503",
+                  "citationLabel": "usgs-3dep-dem"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "parcel-terrain-mesh-ifc-v1"
+            },
+            "sourceCitation": "USGS 3DEP",
+            "jurisdictionTenant": "property-spine"
+          },
+          {
+            "rear": 25,
+            "side": 5,
+            "front": 25,
+            "status": "active",
+            "atomDid": "did:hauska:setback-rule:48021:28286",
+            "atomTier": "data",
+            "entityId": "48021:28286",
+            "fetchedAt": "2026-08-08T09:40:18.027Z",
+            "sourceUrl": "https://www.cityofbastrop.org/page/open/6743/0/ORDINANCE%20NO.%202019-51%20BASTROP%20BUILDING%20BLOCK%20B3%20-%202.pdf",
+            "entityType": "setback-rule",
+            "matchBasis": "exact",
+            "minLotSize": "0.33",
+            "contentHash": "674713d5b506a9896c5d90f896a15fb3d01116b804aae49f033ffe90489e6050",
+            "displayMeta": {
+              "minLotSize": "0.33",
+              "secondSource": {
+                "note": "Drawn from OnClick (layer 23). The city's Revisions layer (83) specifies front 30 / interior side 10 / corner side 20 / rear 30 for SF-1; the two city schedules conflict — verify which is in effect with the city.",
+                "source": "City of Bastrop GIS layer 83 (Zoned_Parcels Revisions)",
+                "citationUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/83"
+              },
+              "resolvedDistrictCode": "SF-1"
+            },
+            "extractedAt": "2026-08-08T09:40:18.027Z",
+            "maxHeightFt": 35,
+            "accessPolicy": "public-free",
+            "districtCode": "SF-1",
+            "parcelNodeId": "48021:28286",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "setback-rule-citation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-08T09:40:18.027Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-08-08T09:40:18.027Z"
+            },
+            "sideCornerFt": 15,
+            "versionStamp": "48021:28286:setback-rule:1:2026-08-08T09:40:18.027Z",
+            "sourceAdapter": "bastrop-per-parcel-record-layer-23",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sideInteriorFt": 5,
+            "sourceCitation": "Setback rule for SF-1 cited to bastrop-per-parcel/28286/front",
+            "fieldProvenance": {
+              "rear": {
+                "atomDid": "bastrop-per-parcel/28286/front",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.92,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              },
+              "side": {
+                "atomDid": "bastrop-per-parcel/28286/front",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.92,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              },
+              "front": {
+                "atomDid": "bastrop-per-parcel/28286/front",
+                "confidence": {
+                  "n": 1,
+                  "estimate": 0.92,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                }
+              }
+            },
+            "maxImperviousPct": 50,
+            "maxLotCoveragePct": 0,
+            "sourceCodeAtomRef": {
+              "role": "rule",
+              "atomDid": "bastrop-per-parcel/28286/front",
+              "entityType": "code-section"
+            },
+            "jurisdictionTenant": "breadth_48021_bastrop"
+          },
+          {
+            "status": "active",
+            "atomDid": "did:hauska:zoning-fact:48021:28286",
+            "atomTier": "data",
+            "district": "SF-1",
+            "entityId": "48021:28286",
+            "fetchedAt": "2026-08-04T12:24:40.869Z",
+            "sourceUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+            "entityType": "zoning-fact",
+            "matchBasis": "exact",
+            "contentHash": "e7943bb7847a242749708d0c577f57bc5898d9ff25942ca616b8fdb12897805a",
+            "extractedAt": "2026-08-04T12:24:40.869Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48021:28286",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "zoning-fact-observation-has-no-life-safety-stratum",
+                  "assertedAt": "2026-08-04T12:24:40.869Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-08-04T12:24:40.869Z"
+            },
+            "versionStamp": "48021:28286:zoning-fact:1:2026-08-04T12:24:40.869Z",
+            "sourceAdapter": "txgio-zoning-stamp:bastrop-city-tx",
+            "reasoningChain": {
+              "reasoningKind": "observed",
+              "transformSteps": [
+                {
+                  "kind": "TRANSFORM",
+                  "note": "Breadth bake projected GIS stamp from cortex tier1 snapshot; not the district origin",
+                  "adapter": "cortex-tier1-snapshot-breadth-bake",
+                  "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot"
+                }
+              ]
+            },
+            "sourceCitation": "GIS Zoned_Parcels field ZoneTypeClass cityKey=bastrop-city-tx vintage=2026-08-04T12:24:40.869Z district=SF-1 parcel=48021:28286 (PIP stamp; breadth bake is TRANSFORM only)",
+            "codeSectionRefs": {
+              "permittedUseTable": {
+                "role": "rule",
+                "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-008",
+                "entityType": "code-section"
+              },
+              "districtRequirements": {
+                "role": "rule",
+                "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+                "entityType": "code-section"
+              }
+            },
+            "sourceCodeAtomRef": {
+              "role": "rule",
+              "atomDid": "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003",
+              "entityType": "code-section"
+            },
+            "jurisdictionTenant": "breadth_48021_bastrop-city-tx"
+          }
+        ],
+        "tier1": {
+          "tier": 1,
+          "zoning": {
+            "district": "SF-1",
+            "provenance": {
+              "cityKey": "bastrop-city-tx",
+              "codeField": "ZoneTypeClass",
+              "layerName": "Zoned_Parcels",
+              "sourceUrl": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+              "stampedAt": "2026-08-04T12:24:40.869Z"
+            },
+            "jurisdictionKey": "bastrop_city_tx"
+          },
+          "bakedAt": "2026-08-04T12:24:40.869Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": null,
+            "disclosure": "Tier-1 bake no longer authors product envelope confidence (anti-zombie). Read buildable-envelope from the property atom chain, or honest-decline.",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": true,
+            "declineReason": "atom_path_pending",
+            "jurisdictionKey": "bastrop_city_tx"
+          },
+          "baseFacts": {
+            "apn": "28286",
+            "acreage": {
+              "sqft": 8216,
+              "value": 0.1886,
+              "method": "shoelace-wgs84"
+            },
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "data-export-01.14.2026",
+              "description": "Single-family residential"
+            },
+            "situsCity": "BASTROP",
+            "situsState": "TX",
+            "situsAddress": "201 MAYNARD ST , BASTROP, TX 78602"
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 1 (deterministic). Buildable envelope product path retired (anti-zombie / atom_path_pending) — read envelope from property atom chain. Tier 2 may still carry flood overlay.",
+            "parcelSource": "txgio",
+            "roadsPending": true,
+            "zoningSource": "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83",
+            "landUseSource": "cad-roll",
+            "parcelVintage": "stratmap25-landparcels_48021_bastrop_202503",
+            "landUseGateBlocked": false,
+            "landUseAddressRecovered": false
+          },
+          "parcelNodeId": "48021:28286",
+          "facetCoverage": {
+            "zoning": true,
+            "acreage": true,
+            "landUse": true,
+            "envelope": false,
+            "baseFacts": true
+          },
+          "facetSchemaVersion": "node-facets-tier1-v1"
+        },
+        "tier1SnapshotAt": "2026-08-04T12:25:00.216Z",
+        "tier2": {
+          "tier": 2,
+          "flood": {
+            "status": "flood-zone",
+            "floodZone": "X",
+            "provenance": {
+              "layer": "flood-hazard-zones",
+              "source": "fema-nfhl",
+              "vintage": "2026-07-21T16:59:52.146Z",
+              "adapterKey": "fema:nfhl-flood-zone"
+            },
+            "zoneSubtype": "0.2 PCT ANNUAL CHANCE FLOOD HAZARD",
+            "baseFloodElevation": null,
+            "inSpecialFloodHazardArea": false
+          },
+          "bakedAt": "2026-07-21T16:59:52.146Z",
+          "envelope": {
+            "status": "ok",
+            "geojson": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          -97.32737801625429,
+                          30.103024050035366
+                        ],
+                        [
+                          -97.32742533013524,
+                          30.103024058264474
+                        ],
+                        [
+                          -97.32742539730896,
+                          30.102730969212306
+                        ],
+                        [
+                          -97.32737808499016,
+                          30.10273096098337
+                        ],
+                        [
+                          -97.32737801625429,
+                          30.103024050035366
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "kind": "buildable-envelope",
+                    "edgeNote": "Front edge inferred from the geocoded address point (approximate — not the surveyed frontage).",
+                    "setbacks": {
+                      "rear_ft": 20,
+                      "side_ft": 15,
+                      "district": "P Public/Institutional",
+                      "front_ft": 25
+                    },
+                    "disclosure": "Approximate buildable area. Front edge inferred from the geocoded address point (approximate — not the surveyed frontage). Zoning \"P-3\" mapped to district P Public/Institutional by code prefix. Not survey grade — front/side/rear orientation and district are inferred; verify with a survey and the city before relying on it.",
+                    "edgeSignal": "point",
+                    "approximate": true,
+                    "citationUrl": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances",
+                    "maxHeightFt": 45,
+                    "districtNote": "Zoning \"P-3\" mapped to district P Public/Institutional by code prefix.",
+                    "notSurveyGrade": true,
+                    "parcelAreaSqFt": 8216,
+                    "buildableAreaPct": 19.5,
+                    "maxFootprintSqFt": 1600,
+                    "buildableAreaSqFt": 1600,
+                    "maxLotCoveragePct": 50
+                  }
+                }
+              ]
+            },
+            "district": "P Public/Institutional",
+            "setbacks": {
+              "rear_ft": 20,
+              "side_ft": 15,
+              "front_ft": 25
+            },
+            "confidence": 0.385,
+            "disclosure": "Approximate buildable area. Front edge inferred from the geocoded address point (approximate — not the surveyed frontage). Zoning \"P-3\" mapped to district P Public/Institutional by code prefix. Not survey grade — front/side/rear orientation and district are inferred; verify with a survey and the city before relying on it.",
+            "edgeSignal": "point",
+            "approximate": true,
+            "citationUrl": "https://library.municode.com/tx/bastrop/codes/code_of_ordinances",
+            "maxHeightFt": 45,
+            "provisional": false,
+            "roadsPending": false,
+            "parcelAreaSqFt": 8216,
+            "roadProvenance": {
+              "source": "osm-overpass",
+              "candidateCount": 0,
+              "fetchAttempted": false,
+              "roadSignalUsed": false
+            },
+            "jurisdictionKey": "bastrop_tx",
+            "buildableAreaPct": 19.5,
+            "maxFootprintSqFt": 1600,
+            "buildableAreaSqFt": 1600,
+            "maxLotCoveragePct": 50
+          },
+          "countyFips": "48021",
+          "countyName": "Bastrop",
+          "provenance": {
+            "tierNote": "Tier 2 (live-dep). Buildable envelope upgraded with OSM road-based front-edge labeling; FEMA NFHL flood zone per node. Honest absence on any live-dep failure (never a fabricated value).",
+            "roadSource": "osm-overpass",
+            "floodSource": "fema-nfhl",
+            "roadsPending": false
+          },
+          "parcelNodeId": "48021:28286",
+          "facetSchemaVersion": "node-facets-tier2-v1"
+        },
+        "tier2SnapshotAt": "2026-07-21T17:05:15.270Z"
+      }
+    },
+    {
+      "parcelNodeId": "48453:100000",
+      "liveReadPath": "atom-pending",
+      "live": {
+        "parcelNodeId": "48453:100000",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": null,
+        "readPath": "atom-chain",
+        "facets": {
+          "parcelNodeId": "48453:100000",
+          "countyFips": "48453",
+          "baseFacts": {
+            "apn": "100000",
+            "landUse": null,
+            "acreage": null,
+            "situsAddress": null
+          },
+          "zoning": null,
+          "envelope": {
+            "status": "declined",
+            "declineReason": "atom_path_pending",
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "No property atom chain for this parcel yet — honest decline (not invented)."
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": false,
+            "acreage": false,
+            "zoning": false,
+            "envelope": false
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": null,
+            "landUseSource": null,
+            "landUseGateBlocked": false
+          }
+        },
+        "atomPathReason": "atom-chain empty"
+      },
+      "store": {
+        "atoms": [],
+        "tier1": null,
+        "tier1SnapshotAt": null,
+        "tier2": null,
+        "tier2SnapshotAt": null
+      }
+    },
+    {
+      "parcelNodeId": "48453:200000",
+      "liveReadPath": "atom-pending",
+      "live": {
+        "parcelNodeId": "48453:200000",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": null,
+        "readPath": "atom-chain",
+        "facets": {
+          "parcelNodeId": "48453:200000",
+          "countyFips": "48453",
+          "baseFacts": {
+            "apn": "200000",
+            "landUse": null,
+            "acreage": null,
+            "situsAddress": null
+          },
+          "zoning": null,
+          "envelope": {
+            "status": "declined",
+            "declineReason": "atom_path_pending",
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "No property atom chain for this parcel yet — honest decline (not invented)."
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": false,
+            "acreage": false,
+            "zoning": false,
+            "envelope": false
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": null,
+            "landUseSource": null,
+            "landUseGateBlocked": false
+          }
+        },
+        "atomPathReason": "atom-chain empty"
+      },
+      "store": {
+        "atoms": [],
+        "tier1": null,
+        "tier1SnapshotAt": null,
+        "tier2": null,
+        "tier2SnapshotAt": null
+      }
+    },
+    {
+      "parcelNodeId": "48055:10068",
+      "liveReadPath": "atom-chain",
+      "live": {
+        "parcelNodeId": "48055:10068",
+        "adapterKey": "property-atom-chain",
+        "source": "atom-chain",
+        "snapshotAt": "2026-08-04T21:19:13.588Z",
+        "readPath": "atom-chain",
+        "facets": {
+          "parcelNodeId": "48055:10068",
+          "countyFips": "48055",
+          "baseFacts": {
+            "apn": "10068",
+            "situsAddress": "1391 FM 1854 , DALE, TX 78616",
+            "situsCity": "DALE",
+            "situsState": "TX",
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "2026-caldwell-cad-export_june-5-2026",
+              "description": "Single-family residential"
+            },
+            "acreage": {
+              "sqft": 10403,
+              "value": 0.2388,
+              "method": "shoelace-wgs84"
+            }
+          },
+          "zoning": null,
+          "envelope": {
+            "status": "declined",
+            "declineReason": "no-zoning-stamp",
+            "approximate": true,
+            "provisional": true,
+            "disclosure": "No zoning district observed for parcel — honest absence, no fallback district invented."
+          },
+          "facetCoverage": {
+            "baseFacts": true,
+            "landUse": true,
+            "acreage": true,
+            "zoning": false,
+            "envelope": false
+          },
+          "provenance": {
+            "parcelSource": "property-atom-chain",
+            "parcelVintage": "stratmap25-landparcels_48055_caldwell_202503",
+            "landUseSource": "cad-roll",
+            "landUseGateBlocked": false
+          },
+          "bakedAt": "2026-08-04T21:19:13.588Z",
+          "countyName": "Caldwell"
+        },
+        "baseFactsMerged": true
+      },
+      "store": {
+        "atoms": [
+          {
+            "status": "active",
+            "atomDid": "did:hauska:buildable-envelope:48055:10068",
+            "outcome": {
+              "kind": "no-buildable-area",
+              "reason": "no district on record — jurisdiction not yet onboarded"
+            },
+            "atomTier": "data",
+            "entityId": "48055:10068",
+            "fetchedAt": "2026-08-04T21:19:13.588Z",
+            "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot",
+            "entityType": "buildable-envelope",
+            "contentHash": "deff3aec691f4018db4a0e4be3c6d5a89496e4b942d10e40dc3b3f7486753168",
+            "extractedAt": "2026-08-04T21:19:13.588Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48055:10068",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "property-risk",
+                  "basis": "no-buildable-area",
+                  "stratum": "elevated",
+                  "assertedAt": "2026-08-04T21:19:13.588Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.5,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.2
+                }
+              },
+              "assembledAt": "2026-08-04T21:19:13.588Z"
+            },
+            "versionStamp": "48055:10068:buildable-envelope-decline:1:2026-08-04T21:19:13.588Z",
+            "recipeVersion": "1.0.0",
+            "sourceAdapter": "cortex-tier1-snapshot-breadth-bake",
+            "reasoningChain": {
+              "inputAtomRefs": [
+                {
+                  "role": "fact",
+                  "atomDid": "did:hauska:zoning-fact:48055:10068",
+                  "entityType": "zoning-fact"
+                }
+              ],
+              "reasoningKind": "derived",
+              "derivationMethod": "buildable-envelope-inset-v1"
+            },
+            "sourceCitation": "depth-warm-verify-decline",
+            "warmVerifyDecline": "no district on record — jurisdiction not yet onboarded",
+            "jurisdictionTenant": "breadth_48055_dale",
+            "warmVerifyDeclineCode": "no-district-on-record"
+          },
+          {
+            "status": "active",
+            "atomDid": "fhfact_06f575bc15f7d42c",
+            "atomTier": "data",
+            "entityId": "48055:10068",
+            "fetchedAt": "2026-08-12T02:52:22.830Z",
+            "floodZone": "X",
+            "sourceUrl": "tx_fema_nfhl_flood_zone",
+            "entityType": "flood-hazard-fact",
+            "sourceTier": "fema-nfhl",
+            "contentHash": "fnv1a64:3acf53b5949abc36",
+            "evaluatedAt": "2026-08-12T02:52:22.830Z",
+            "extractedAt": "2026-08-12T02:52:22.830Z",
+            "zoneSubtype": "AREA OF MINIMAL FLOOD HAZARD",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48055:10068",
+            "sourceAdapter": "fema-nfhl-bulk-v1",
+            "sourceVintage": "NFHL_48_20260101",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "FEMA NFHL tx_fema_nfhl_flood_zone (198178/198240 statewide rows; 2037 bbox-filtered for 48055)",
+            "baseFloodElevation": null,
+            "jurisdictionTenant": "tx_48055",
+            "verificationStatus": "machine",
+            "inSpecialFloodHazardArea": false
+          },
+          {
+            "status": "active",
+            "atomDid": "did:hauska:parcel-node:48055:10068",
+            "keyKind": "prop_id",
+            "atomTier": "data",
+            "entityId": "48055:10068",
+            "fetchedAt": "2026-08-09T18:04:17.857Z",
+            "sourceUrl": "https://data.geographic.texas.gov/",
+            "countyFips": "48055",
+            "entityType": "parcel-node",
+            "contentHash": "fnv1a64:a972392a7166a62c",
+            "evaluatedAt": "2026-08-09T18:04:17.857Z",
+            "extractedAt": "2026-08-09T18:04:17.857Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48055:10068",
+            "sourceAdapter": "txgio-stratmap-bulk-v1",
+            "sourceVintage": "stratmap25-landparcels_48055_caldwell_202503",
+            "geometryLoaded": true,
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "TxGIO StratMap Land Parcels, county 48055, vintage stratmap25-landparcels_48055_caldwell_202503",
+            "geometryStoreRef": {
+              "store": "txgio_parcel",
+              "propId": "10068",
+              "countyFips": "48055"
+            },
+            "geometrySourceTier": "txgio-stratmap",
+            "jurisdictionTenant": "tx_48055",
+            "verificationStatus": "machine"
+          },
+          {
+            "status": "active",
+            "absence": {
+              "kind": "no-zoning-stamp",
+              "reason": "No zoning district observed for parcel — honest absence, no fallback district invented."
+            },
+            "atomDid": "did:hauska:zoning-fact:48055:10068",
+            "atomTier": "data",
+            "entityId": "48055:10068",
+            "fetchedAt": "2026-07-23T14:30:15.068Z",
+            "sourceUrl": "https://hauska.dev/internal/breadth-atom-bake/cortex-snapshot",
+            "entityType": "zoning-fact",
+            "matchBasis": "exact",
+            "contentHash": "ef4bc24bbbfd19d35a823d3431648f4e8a14ca3c188f210bc257d789b2cafde1",
+            "extractedAt": "2026-07-23T14:30:15.068Z",
+            "accessPolicy": "public-free",
+            "parcelNodeId": "48055:10068",
+            "readContract": {
+              "axes": {
+                "consequence": {
+                  "kind": "not-applicable",
+                  "reason": "zoning-fact-honest-absence-has-no-life-safety-stratum",
+                  "assertedAt": "2026-07-23T14:30:15.068Z"
+                },
+                "assertedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "asserted",
+                  "intervalWidth": 0.12
+                },
+                "calibratedConfidence": {
+                  "n": 0,
+                  "estimate": 0.9,
+                  "provenance": "seed",
+                  "intervalWidth": 0.12
+                }
+              },
+              "assembledAt": "2026-07-23T14:30:15.068Z"
+            },
+            "versionStamp": "48055:10068:zoning-fact:1:2026-07-23T14:30:15.068Z",
+            "sourceAdapter": "cortex-tier1-snapshot-breadth-bake",
+            "reasoningChain": {
+              "reasoningKind": "observed"
+            },
+            "sourceCitation": "Breadth bake honest-absence from cortex tier1 snapshot (48055:10068)",
+            "jurisdictionTenant": "breadth_48055_dale"
+          }
+        ],
+        "tier1": {
+          "tier": 1,
+          "zoning": null,
+          "bakedAt": "2026-07-23T14:30:15.068Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": 0,
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": true,
+            "declineReason": "no-setback-table",
+            "jurisdictionKey": "dale_tx"
+          },
+          "baseFacts": {
+            "apn": "10068",
+            "acreage": {
+              "sqft": 10403,
+              "value": 0.2388,
+              "method": "shoelace-wgs84"
+            },
+            "landUse": {
+              "code": "A1",
+              "source": "cad-roll",
+              "vintage": "2026-caldwell-cad-export_june-5-2026",
+              "description": "Single-family residential"
+            },
+            "situsCity": "DALE",
+            "situsState": "TX",
+            "situsAddress": "1391 FM 1854 , DALE, TX 78616"
+          },
+          "countyFips": "48055",
+          "countyName": "Caldwell",
+          "provenance": {
+            "tierNote": "Tier 1 (deterministic). Buildable envelope computed WITHOUT roads (lot-shape front-edge labeling) — provisional, lower confidence; Tier 2 upgrades it with road-based labeling.",
+            "parcelSource": "txgio",
+            "roadsPending": true,
+            "landUseSource": "cad-roll",
+            "parcelVintage": "stratmap25-landparcels_48055_caldwell_202503",
+            "landUseGateBlocked": false,
+            "landUseAddressRecovered": false
+          },
+          "parcelNodeId": "48055:10068",
+          "facetCoverage": {
+            "zoning": false,
+            "acreage": true,
+            "landUse": true,
+            "envelope": false,
+            "baseFacts": true
+          },
+          "facetSchemaVersion": "node-facets-tier1-v1"
+        },
+        "tier1SnapshotAt": "2026-07-23T14:30:16.298Z",
+        "tier2": {
+          "tier": 2,
+          "flood": {
+            "status": "flood-zone",
+            "floodZone": "X",
+            "provenance": {
+              "layer": "flood-hazard-zones",
+              "source": "fema-nfhl",
+              "vintage": "2026-07-22T17:14:26.907Z",
+              "adapterKey": "fema:nfhl-flood-zone"
+            },
+            "zoneSubtype": "AREA OF MINIMAL FLOOD HAZARD",
+            "baseFloodElevation": null,
+            "inSpecialFloodHazardArea": false
+          },
+          "bakedAt": "2026-07-22T17:14:26.907Z",
+          "envelope": {
+            "status": "declined",
+            "confidence": 0,
+            "edgeSignal": "shape",
+            "approximate": true,
+            "provisional": true,
+            "roadsPending": false,
+            "declineReason": "no-setback-table",
+            "roadProvenance": {
+              "source": "osm-overpass",
+              "candidateCount": 7,
+              "fetchAttempted": true,
+              "roadSignalUsed": false
+            },
+            "jurisdictionKey": "dale_tx"
+          },
+          "countyFips": "48055",
+          "countyName": "Caldwell",
+          "provenance": {
+            "tierNote": "Tier 2 (live-dep). Buildable envelope upgraded with OSM road-based front-edge labeling; FEMA NFHL flood zone per node. Honest absence on any live-dep failure (never a fabricated value).",
+            "roadSource": "osm-overpass",
+            "floodSource": "fema-nfhl",
+            "roadsPending": false
+          },
+          "parcelNodeId": "48055:10068",
+          "facetSchemaVersion": "node-facets-tier2-v1"
+        },
+        "tier2SnapshotAt": "2026-07-22T17:17:07.504Z"
+      }
+    }
+  ]
+}

@@ -313,7 +313,12 @@ export function projectSheet(input: SheetInputs): ParcelObservation {
       flood,
       frontage,
     },
-    contradictions,
+    // ONE parcel contributes AT MOST ONE count to a contradiction kind. Two
+    // different mechanisms can raise `field-unavailable-but-present-upstream`
+    // on the same parcel (a dropped flood overlay and an unnamed county);
+    // counting both would push a per-parcel defect rate above 100% and make the
+    // tally uninterpretable against `parcelsTotal`.
+    contradictions: [...new Set(contradictions)],
     servedCardCallsSitusPresent,
     floodZoneCount,
     centroid: input.centroid,
