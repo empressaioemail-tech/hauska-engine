@@ -1,0 +1,520 @@
+{
+  "auditedAt": "2026-08-19T15:09:55.991Z",
+  "auditVersion": "ss-w9/1.0.0",
+  "countiesTotal": 254,
+  "countiesLoaded": 253,
+  "writtenComputedAt": "2026-08-19T15:07:57.388Z",
+  "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+  "servedComputedAt": null,
+  "rails": [
+    {
+      "railKey": "geometry",
+      "atomEntityTypes": [
+        "parcel-node"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": null,
+        "reachPct": null,
+        "sourceBasis": "no capability probe defined for this rail",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 253,
+      "atomsWritten": 13717341,
+      "atomsArePerParcel": true,
+      "atomKeyShape": "<fips>:<propId>",
+      "countiesScoredSatisfied": 253,
+      "countiesScoredNotYet": 1,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 1,
+        "written-unscored": 1,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 252
+      }
+    },
+    {
+      "railKey": "cad",
+      "atomEntityTypes": [
+        "cad-parcel-roll"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": null,
+        "reachPct": null,
+        "sourceBasis": "no capability probe defined for this rail",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 15,
+      "atomsWritten": 4891247,
+      "atomsArePerParcel": false,
+      "atomKeyShape": "<fips>:<propId>:<taxYear>",
+      "countiesScoredSatisfied": 13,
+      "countiesScoredNotYet": 241,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 239,
+        "written-unscored": 2,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 13
+      }
+    },
+    {
+      "railKey": "zoning",
+      "atomEntityTypes": [
+        "zoning-fact",
+        "setback-rule"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": null,
+        "reachPct": null,
+        "sourceBasis": "no capability probe defined for this rail",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 19,
+      "atomsWritten": 5385433,
+      "atomsArePerParcel": true,
+      "atomKeyShape": "<fips>:<propId> + <fips>:<propId>",
+      "countiesScoredSatisfied": 1,
+      "countiesScoredNotYet": 253,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 235,
+        "written-unscored": 18,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 1
+      }
+    },
+    {
+      "railKey": "roads",
+      "atomEntityTypes": [
+        "road-node"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": null,
+        "reachPct": null,
+        "sourceBasis": "no capability probe defined for this rail",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 101,
+      "atomsWritten": 1746716,
+      "atomsArePerParcel": false,
+      "atomKeyShape": "<fips>:road:<osmId>",
+      "countiesScoredSatisfied": 0,
+      "countiesScoredNotYet": 254,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 153,
+        "written-unscored": 101,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 0
+      }
+    },
+    {
+      "railKey": "flood",
+      "atomEntityTypes": [
+        "flood-hazard-fact"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": null,
+        "reachPct": null,
+        "sourceBasis": "no capability probe defined for this rail",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 253,
+      "atomsWritten": 13197039,
+      "atomsArePerParcel": true,
+      "atomKeyShape": "<fips>:<propId>",
+      "countiesScoredSatisfied": 114,
+      "countiesScoredNotYet": 140,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 1,
+        "written-unscored": 139,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 114
+      }
+    },
+    {
+      "railKey": "envelope",
+      "atomEntityTypes": [
+        "buildable-envelope"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": null,
+        "reachPct": null,
+        "sourceBasis": "no capability probe defined for this rail",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 11,
+      "atomsWritten": 1478708,
+      "atomsArePerParcel": true,
+      "atomKeyShape": "<fips>:<propId>",
+      "countiesScoredSatisfied": 0,
+      "countiesScoredNotYet": 254,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 243,
+        "written-unscored": 11,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 0
+      }
+    },
+    {
+      "railKey": "landuse",
+      "atomEntityTypes": [
+        "land-use-fact"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": null,
+        "reachPct": null,
+        "sourceBasis": "no capability probe defined for this rail",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 15,
+      "atomsWritten": 4250396,
+      "atomsArePerParcel": false,
+      "atomKeyShape": "<fips>:<propId>:<taxYear>",
+      "countiesScoredSatisfied": 13,
+      "countiesScoredNotYet": 241,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 239,
+        "written-unscored": 2,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 13
+      }
+    },
+    {
+      "railKey": "footprint",
+      "atomEntityTypes": [
+        "building-footprint"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": 254,
+        "reachPct": 1,
+        "sourceBasis": "ML footprint sources theoretically statewide",
+        "limitation": "O(fp×parcels) compute limits metro-scale apply; capability is theoretical max",
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 174,
+      "atomsWritten": 3495678,
+      "atomsArePerParcel": false,
+      "atomKeyShape": "<fips>:<propId>:footprint:<slot>",
+      "countiesScoredSatisfied": 0,
+      "countiesScoredNotYet": 254,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 80,
+        "written-unscored": 174,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 0
+      }
+    },
+    {
+      "railKey": "easement",
+      "atomEntityTypes": [
+        "utility-easement"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": null,
+        "reachPct": null,
+        "sourceBasis": "no capability probe defined for this rail",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 0,
+      "atomsWritten": 0,
+      "atomsArePerParcel": false,
+      "atomKeyShape": "unknown — no rows in the store",
+      "countiesScoredSatisfied": 0,
+      "countiesScoredNotYet": 254,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 254,
+        "written-unscored": 0,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 0
+      }
+    },
+    {
+      "railKey": "owner",
+      "atomEntityTypes": [
+        "owner-fact"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": 15,
+        "reachPct": 0.05905511811023622,
+        "sourceBasis": "cad_property DISTINCT county_fips (CAD roll ingest)",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 15,
+      "atomsWritten": 4250396,
+      "atomsArePerParcel": false,
+      "atomKeyShape": "<fips>:<propId>:<taxYear>",
+      "countiesScoredSatisfied": 13,
+      "countiesScoredNotYet": 241,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 0,
+        "written-unscored": 2,
+        "written-unserved": 13,
+        "out-of-reach": 239,
+        "not-measured": 0
+      }
+    },
+    {
+      "railKey": "rrc-wells",
+      "atomEntityTypes": [
+        "well-fact"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": 1,
+        "reachPct": 0.003937007874015748,
+        "sourceBasis": "RRC public GIS Harris County mirror carries statewide well coverage (lib/adapters/src/federal/texas-rrc.ts)",
+        "limitation": "Point layer mirrored from Harris endpoint; not per-county ingest",
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 174,
+      "atomsWritten": 4338295,
+      "atomsArePerParcel": false,
+      "atomKeyShape": "<fips>:<propId>:<apiNumber>",
+      "countiesScoredSatisfied": 0,
+      "countiesScoredNotYet": 254,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 80,
+        "written-unscored": 174,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 0
+      }
+    },
+    {
+      "railKey": "rrc-pipelines",
+      "atomEntityTypes": [
+        "rrc-pipeline-fact"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": null,
+        "reachPct": null,
+        "sourceBasis": "no capability probe defined for this rail",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 250,
+      "atomsWritten": 12519688,
+      "atomsArePerParcel": true,
+      "atomKeyShape": "<fips>:<propId>",
+      "countiesScoredSatisfied": 0,
+      "countiesScoredNotYet": 254,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 4,
+        "written-unscored": 250,
+        "written-unserved": 0,
+        "out-of-reach": 0,
+        "not-measured": 0
+      }
+    },
+    {
+      "railKey": "rail-corridor",
+      "atomEntityTypes": [
+        "rail-corridor-fact"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": 253,
+        "reachPct": 0.9960629921259843,
+        "sourceBasis": "txgio_parcel DISTINCT county_fips — corridor overlay needs parcel geometry context",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 252,
+      "atomsWritten": 13059613,
+      "atomsArePerParcel": true,
+      "atomKeyShape": "<fips>:<propId>",
+      "countiesScoredSatisfied": 0,
+      "countiesScoredNotYet": 254,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 0,
+        "written-unscored": 252,
+        "written-unserved": 0,
+        "out-of-reach": 2,
+        "not-measured": 0
+      }
+    },
+    {
+      "railKey": "mud",
+      "atomEntityTypes": [
+        "special-district-fact"
+      ],
+      "ceiling": {
+        "maxCountiesReachable": 186,
+        "reachPct": 0.7322834645669292,
+        "sourceBasis": "tx_special_district DISTINCT county_fips (TCEQ WaterDistricts ingest)",
+        "limitation": null,
+        "readFrom": "https://cortex-api-tds7av26va-uc.a.run.app/api/county-ledger",
+        "readAt": "2026-08-19T15:09:55.982Z"
+      },
+      "countiesWritten": 253,
+      "atomsWritten": 20844039,
+      "atomsArePerParcel": false,
+      "atomKeyShape": "<fips>:<propId>:sd:<inside|outside>",
+      "countiesScoredSatisfied": 209,
+      "countiesScoredNotYet": 45,
+      "scoredComputedAt": "2026-08-14T17:41:22.500Z",
+      "countiesServed": 0,
+      "parcelsServedPresent": null,
+      "parcelsSwept": null,
+      "countiesTotal": 254,
+      "gapCounts": {
+        "no-gap": 0,
+        "unwritten": 1,
+        "written-unscored": 44,
+        "written-unserved": 209,
+        "out-of-reach": 0,
+        "not-measured": 0
+      }
+    }
+  ],
+  "addressLadder": {
+    "denominatorParcels": 13071975,
+    "denominatorCounties": 253,
+    "measuredAt": "2026-08-19T15:09:55.991Z",
+    "rungs": [
+      {
+        "rung": "non-null",
+        "rule": "situs_address IS NOT NULL — the P-27 counting rule, reproduced",
+        "parcels": 12999845,
+        "pct": 99.45,
+        "knownPassingSentinel": "\", ,\"  (Bastrop)"
+      },
+      {
+        "rung": "non-blank",
+        "rule": "btrim(situs_address) <> ''",
+        "parcels": 12999845,
+        "pct": 99.45,
+        "knownPassingSentinel": "\", ,\"  — the defect was never an empty string"
+      },
+      {
+        "rung": "carries-a-street",
+        "rule": "the text before the first comma contains a letter or a digit",
+        "parcels": 11751433,
+        "pct": 89.9,
+        "knownPassingSentinel": null
+      },
+      {
+        "rung": "carries-a-city",
+        "rule": "btrim(situs_city) <> ''",
+        "parcels": 8179225,
+        "pct": 62.57,
+        "knownPassingSentinel": null
+      }
+    ]
+  },
+  "notMeasured": [
+    "SERVED: no county serving-sweep record was supplied, so every served figure is not-measured and none is a zero.",
+    "WRITTEN depth in PARCELS is measured only for the families whose entity_id key proves one atom per parcel; for the rest the figure is atom ROWS and says so.",
+    "This audit does not measure whether a written atom is CORRECT, only whether it exists, is scored, and is served."
+  ],
+  "contradictions": [],
+  "countyKeyDivergence": {
+    "check": "parcel-node entity_id prefix vs body.countyFips",
+    "disagreeingAtoms": 0,
+    "verdict": "county key derivation confirmed"
+  }
+}
