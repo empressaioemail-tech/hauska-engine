@@ -1,0 +1,490 @@
+{
+  "lane": "SS-W11",
+  "planRow": "P-45",
+  "resolverVersion": "ss-w11/1.0.0",
+  "generatedAt": "2026-08-19T14:49:26.081Z",
+  "layer": "WRITTEN — atoms actually in the store, and snapshot rows actually in place_layer_snapshots. Not SCORED, not SERVED.",
+  "derived": {
+    "atomTypes": [
+      "buildable-envelope",
+      "building-footprint",
+      "cad-parcel-roll",
+      "code-amendment",
+      "code-cross-reference",
+      "code-edition",
+      "code-section",
+      "flood-hazard-fact",
+      "jurisdiction-corpus",
+      "land-use-fact",
+      "owner-fact",
+      "parcel-node",
+      "parcel-terrain-model",
+      "property-boundary-edge",
+      "rail-corridor-fact",
+      "road-node",
+      "rrc-pipeline-fact",
+      "setback-rule",
+      "special-district-fact",
+      "well-fact",
+      "zoning-fact"
+    ],
+    "atomRowEstimates": {
+      "basis": "pg_stats.most_common_freqs x pg_class.reltuples. ESTIMATE, not a count.",
+      "values": {
+        "special-district-fact": 21586400,
+        "parcel-node": 14182900,
+        "rail-corridor-fact": 13592100,
+        "flood-hazard-fact": 13554400,
+        "rrc-pipeline-fact": 7800630,
+        "cad-parcel-roll": 5091280,
+        "zoning-fact": 4844550,
+        "well-fact": 4472460,
+        "land-use-fact": 4422450,
+        "owner-fact": 4369770,
+        "building-footprint": 3646920,
+        "buildable-envelope": 1544720,
+        "setback-rule": 821873,
+        "code-section": 31008,
+        "property-boundary-edge": 30674,
+        "road-node": 27340,
+        "code-cross-reference": 5668
+      }
+    },
+    "adapterKeys": [
+      "cad:owner-occupancy",
+      "cad:property",
+      "cad:tax",
+      "cotality:comparables",
+      "cotality:hoa",
+      "cotality:liens-mortgage-tax",
+      "cotality:owner-occupancy",
+      "cotality:parcels",
+      "cotality:permits",
+      "cotality:propensity",
+      "cotality:property",
+      "cotality:rent-avm",
+      "cotality:zoning",
+      "epa:ejscreen",
+      "fema:nfhl-flood-zone",
+      "national:opportunity-zone",
+      "node-facets:tier1",
+      "node-facets:tier2",
+      "permits:record",
+      "regrid:parcels",
+      "regrid:zoning",
+      "usgs:ned-elevation"
+    ],
+    "adapterCounts": {
+      "cad:owner-occupancy": {
+        "rows": 145,
+        "maxSnapshot": "2026-07-29T12:06:00.765Z"
+      },
+      "cad:property": {
+        "rows": 145,
+        "maxSnapshot": "2026-07-29T12:06:00.690Z"
+      },
+      "cad:tax": {
+        "rows": 145,
+        "maxSnapshot": "2026-07-29T12:06:00.726Z"
+      },
+      "cotality:comparables": {
+        "rows": 2,
+        "maxSnapshot": "2026-07-19T14:46:53.622Z"
+      },
+      "cotality:hoa": {
+        "rows": 2,
+        "maxSnapshot": "2026-07-19T14:46:53.594Z"
+      },
+      "cotality:liens-mortgage-tax": {
+        "rows": 12,
+        "maxSnapshot": "2026-07-19T14:46:53.478Z"
+      },
+      "cotality:owner-occupancy": {
+        "rows": 12,
+        "maxSnapshot": "2026-07-19T14:46:53.564Z"
+      },
+      "cotality:parcels": {
+        "rows": 54,
+        "maxSnapshot": "2026-07-28T04:01:05.816Z"
+      },
+      "cotality:permits": {
+        "rows": 12,
+        "maxSnapshot": "2026-07-19T14:46:53.507Z"
+      },
+      "cotality:propensity": {
+        "rows": 12,
+        "maxSnapshot": "2026-07-19T14:46:53.536Z"
+      },
+      "cotality:property": {
+        "rows": 12,
+        "maxSnapshot": "2026-07-19T14:46:53.421Z"
+      },
+      "cotality:rent-avm": {
+        "rows": 12,
+        "maxSnapshot": "2026-07-19T14:46:53.450Z"
+      },
+      "cotality:zoning": {
+        "rows": 65,
+        "maxSnapshot": "2026-07-28T04:01:05.851Z"
+      },
+      "epa:ejscreen": {
+        "rows": 58,
+        "maxSnapshot": "2026-07-29T12:06:00.841Z"
+      },
+      "fema:nfhl-flood-zone": {
+        "rows": 176,
+        "maxSnapshot": "2026-07-29T12:06:00.565Z"
+      },
+      "national:opportunity-zone": {
+        "rows": 170,
+        "maxSnapshot": "2026-07-29T12:06:00.878Z"
+      },
+      "node-facets:tier1": {
+        "rows": 4606751,
+        "maxSnapshot": "2026-08-06T12:10:17.765Z"
+      },
+      "node-facets:tier2": {
+        "rows": 608414,
+        "maxSnapshot": "2026-07-23T17:33:58.246Z"
+      },
+      "permits:record": {
+        "rows": 142,
+        "maxSnapshot": "2026-07-29T12:06:00.915Z"
+      },
+      "regrid:parcels": {
+        "rows": 2,
+        "maxSnapshot": "2026-06-02T18:48:15.386Z"
+      },
+      "regrid:zoning": {
+        "rows": 2,
+        "maxSnapshot": "2026-06-02T18:48:15.426Z"
+      },
+      "usgs:ned-elevation": {
+        "rows": 58,
+        "maxSnapshot": "2026-07-29T12:06:00.802Z"
+      }
+    },
+    "atomKeySets": "(not sampled; pass --sample-keys)",
+    "adapterKeySets": "(not sampled; pass --sample-keys)",
+    "rawTables": {
+      "cad_property": [
+        "county_fips",
+        "prop_id",
+        "tax_year",
+        "owner_name",
+        "owner_mailing_address",
+        "situs_address",
+        "situs_city",
+        "situs_zip",
+        "legal_description",
+        "exemption_codes",
+        "land_value",
+        "improvement_value",
+        "market_value",
+        "assessed_value",
+        "year_built",
+        "living_area_sqft",
+        "land_acres",
+        "property_use_code",
+        "source_file",
+        "source_vintage",
+        "ingested_at"
+      ],
+      "tx_fema_nfhl_flood_zone": [
+        "zone_row_id",
+        "dfirm_id",
+        "fld_ar_id",
+        "fld_zone",
+        "zone_subty",
+        "sfha_tf",
+        "static_bfe",
+        "fema_object_id",
+        "geometry",
+        "west_lng",
+        "south_lat",
+        "east_lng",
+        "north_lat",
+        "source",
+        "source_vintage",
+        "source_citation",
+        "ingested_at",
+        "geom"
+      ],
+      "tx_zoning_district_staging": [
+        "staging_row_id",
+        "city_key",
+        "city_geo_id",
+        "city_name",
+        "parent_county_fips",
+        "district_code",
+        "district_name",
+        "geometry",
+        "geometry_crs",
+        "is_overlay",
+        "is_base_district",
+        "layer_role",
+        "geometry_grain",
+        "source_url",
+        "source_layer_id",
+        "fetched_at",
+        "source_tiers",
+        "source_tier_satisfied",
+        "source_vintage",
+        "source_citation",
+        "passthrough_attributes",
+        "west_lng",
+        "south_lat",
+        "east_lng",
+        "north_lat",
+        "code_field_raw",
+        "code_domain_map_applied",
+        "layer_where",
+        "object_id",
+        "ingested_at"
+      ],
+      "txgio_parcel": [
+        "county_fips",
+        "tile_key",
+        "feature_index",
+        "prop_id",
+        "geo_id",
+        "owner_name",
+        "situs_address",
+        "situs_city",
+        "situs_state",
+        "situs_zip",
+        "geometry",
+        "west_lng",
+        "south_lat",
+        "east_lng",
+        "north_lat",
+        "source_file",
+        "source_vintage",
+        "ingested_at",
+        "zoning_district",
+        "zoning_jurisdiction",
+        "geom"
+      ]
+    }
+  },
+  "duplicateSubjects": [
+    {
+      "subject": "flood-zone",
+      "duplicationClass": "independent-double-derivation",
+      "storeCount": 3,
+      "stores": [
+        "atoms:flood-hazard-fact",
+        "pls:node-facets:tier2",
+        "pls:fema:nfhl-flood-zone"
+      ],
+      "groundTruth": "tx_fema_nfhl_flood_zone (FEMA NFHL, edition NFHL_48_20260101)"
+    },
+    {
+      "subject": "zoning-district",
+      "duplicationClass": "copy-transform",
+      "storeCount": 3,
+      "stores": [
+        "atoms:zoning-fact",
+        "pls:node-facets:tier1",
+        "txgio_parcel.zoning_district"
+      ],
+      "groundTruth": "the stamping city GIS feature service named in the atom sourceUrl"
+    },
+    {
+      "subject": "land-use-code",
+      "duplicationClass": "copy-transform",
+      "storeCount": 3,
+      "stores": [
+        "atoms:land-use-fact",
+        "pls:node-facets:tier1",
+        "atoms:cad-parcel-roll"
+      ],
+      "groundTruth": "the county appraisal roll export named in sourceVintage"
+    },
+    {
+      "subject": "situs-address",
+      "duplicationClass": "independent-double-derivation",
+      "storeCount": 3,
+      "stores": [
+        "pls:node-facets:tier1",
+        "atoms:cad-parcel-roll",
+        "txgio_parcel.situs_address"
+      ],
+      "groundTruth": "county appraisal roll (cad-parcel-roll), the only store carrying a street segment for the gap parcels"
+    },
+    {
+      "subject": "owner-name",
+      "duplicationClass": "independent-double-derivation",
+      "storeCount": 4,
+      "stores": [
+        "atoms:owner-fact",
+        "atoms:cad-parcel-roll",
+        "txgio_parcel.owner_name",
+        "pls:cad:property"
+      ],
+      "groundTruth": "county appraisal roll"
+    },
+    {
+      "subject": "assessed-value",
+      "duplicationClass": "vestigial-cache",
+      "storeCount": 2,
+      "stores": [
+        "atoms:cad-parcel-roll",
+        "pls:cad:tax"
+      ],
+      "groundTruth": "county appraisal roll for the stated tax year"
+    },
+    {
+      "subject": "buildable-envelope-status",
+      "duplicationClass": "copy-transform",
+      "storeCount": 3,
+      "stores": [
+        "atoms:buildable-envelope",
+        "pls:node-facets:tier1#envelope",
+        "pls:node-facets:tier2#envelope"
+      ],
+      "groundTruth": null
+    },
+    {
+      "subject": "parcel-existence",
+      "duplicationClass": "independent-double-derivation",
+      "storeCount": 2,
+      "stores": [
+        "atoms:parcel-node",
+        "pls:node-facets:tier1#existence"
+      ],
+      "groundTruth": "txgio_parcel under the current StratMap vintage"
+    }
+  ],
+  "outOfScopeStores": [
+    {
+      "storeKey": "atoms:code-section",
+      "why": "code corpus; single store, no duplicate"
+    },
+    {
+      "storeKey": "atoms:code-edition",
+      "why": "code corpus; single store, no duplicate"
+    },
+    {
+      "storeKey": "atoms:code-amendment",
+      "why": "code corpus; single store, no duplicate"
+    },
+    {
+      "storeKey": "atoms:code-cross-reference",
+      "why": "code corpus; single store, no duplicate"
+    },
+    {
+      "storeKey": "atoms:jurisdiction-corpus",
+      "why": "corpus manifest; single store"
+    },
+    {
+      "storeKey": "atoms:road-node",
+      "why": "OSM road graph; single store"
+    },
+    {
+      "storeKey": "atoms:property-boundary-edge",
+      "why": "derived edge geometry; single store"
+    },
+    {
+      "storeKey": "atoms:parcel-terrain-model",
+      "why": "single store. usgs:ned-elevation (58 rows) holds an elevation for a PLACE, not a terrain model for a parcel — a different subject with no second store"
+    },
+    {
+      "storeKey": "atoms:building-footprint",
+      "why": "upstream tx_building_footprint (10,601,695 rows) is keyed on a FOOTPRINT, not a parcel, so by the membership rule it is a derivation and not a duplicate"
+    },
+    {
+      "storeKey": "atoms:well-fact",
+      "why": "upstream tx_rrc_well (1,367,691 rows) is keyed on a WELL; one derived store"
+    },
+    {
+      "storeKey": "atoms:rrc-pipeline-fact",
+      "why": "upstream tx_rrc_pipeline (488,324 rows) is keyed on a PIPELINE; one derived store"
+    },
+    {
+      "storeKey": "atoms:rail-corridor-fact",
+      "why": "single derived store; the upstream is keyed on a corridor"
+    },
+    {
+      "storeKey": "atoms:special-district-fact",
+      "why": "upstream tx_special_district (2,782 rows) is keyed on a DISTRICT. Named rather than merely omitted because it is this programme's own precedent: OPS-16 A-002 ruled that mud is a special-district TYPE rather than its own rail, and the store confirms it — district_type MUD holds 1,888 of the 2,782 rows, beside WCID 250, MMD 197, FWSD 84 and eleven more. That duplicate was a DECLARATION built twice, not a store built twice, and it takes a different remedy: a declaration refresh, never a retirement."
+    },
+    {
+      "storeKey": "atoms:setback-rule",
+      "why": "single store keyed on the parcel. Named rather than omitted because the CONFLICT here is INSIDE the record: 48021:36521 carries displayMeta.secondSource saying the city's layer 83 specifies corner side 10 for district GC while the atom's own layer-23 reading says 5, with the note 'the two city schedules conflict'. A duplicate subject inside ONE record is outside this detector's shape and belongs on the backlog, not in a store pair."
+    },
+    {
+      "storeKey": "pls:cotality:zoning",
+      "why": "65 rows, 65 of them the empty object. Holds NO zoning value and is therefore not a store of zoning-district"
+    },
+    {
+      "storeKey": "pls:cotality:parcels",
+      "why": "54 rows, 54 empty"
+    },
+    {
+      "storeKey": "pls:cotality:rent-avm",
+      "why": "12 rows, 12 empty"
+    },
+    {
+      "storeKey": "pls:cotality:propensity",
+      "why": "12 rows, 12 empty"
+    },
+    {
+      "storeKey": "pls:regrid:parcels",
+      "why": "2 rows, 2 empty; Regrid is EXTINGUISHED"
+    },
+    {
+      "storeKey": "pls:regrid:zoning",
+      "why": "2 rows, 2 empty; Regrid is EXTINGUISHED"
+    },
+    {
+      "storeKey": "pls:cotality:property",
+      "why": "12 rows, 8 non-empty, AVM payload; Cotality is EXTINGUISHED — retire, never reconcile"
+    },
+    {
+      "storeKey": "pls:cotality:owner-occupancy",
+      "why": "12 rows, 8 non-empty; Cotality is EXTINGUISHED"
+    },
+    {
+      "storeKey": "pls:cotality:liens-mortgage-tax",
+      "why": "12 rows, 8 non-empty; Cotality is EXTINGUISHED"
+    },
+    {
+      "storeKey": "pls:cotality:permits",
+      "why": "12 rows, 2 non-empty; Cotality is EXTINGUISHED"
+    },
+    {
+      "storeKey": "pls:cotality:hoa",
+      "why": "2 rows, 1 non-empty; Cotality is EXTINGUISHED"
+    },
+    {
+      "storeKey": "pls:cotality:comparables",
+      "why": "2 rows, 1 non-empty; Cotality is EXTINGUISHED"
+    },
+    {
+      "storeKey": "pls:cad:owner-occupancy",
+      "why": "145 rows, 42 non-empty, and the payload is an OCCUPANCY SIGNAL (kind cad-owner-occupancy, signal likely-absentee or unknown, basis mailing-differs-from-situs) — never an owner NAME. Registering it under owner-name would have compared two different subjects and called the result a disagreement."
+    },
+    {
+      "storeKey": "pls:permits:record",
+      "why": "142 rows, 136 of them empty. The 6 non-empty match on a NORMALISED STREET LINE and say so in their own caveat ('Not a parcel-id join'), so they are not keyed on the same entity as anything else. The durable permit store is permit_record at 2,849,138 rows keyed on permit_number. A retirement candidate, not a reconciliation case."
+    },
+    {
+      "storeKey": "pls:epa:ejscreen",
+      "why": "58 rows, 56 non-empty; no atom counterpart, no second store"
+    },
+    {
+      "storeKey": "pls:national:opportunity-zone",
+      "why": "170 rows, all non-empty; no atom counterpart"
+    },
+    {
+      "storeKey": "pls:usgs:ned-elevation",
+      "why": "58 rows, all non-empty; see atoms:parcel-terrain-model"
+    }
+  ],
+  "registryDivergence": {
+    "deadDeclarations": [],
+    "unclassifiedLiveStores": [],
+    "clean": true
+  }
+}
