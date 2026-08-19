@@ -40,6 +40,29 @@ export function normalizeValue(v: string | null | undefined): string | null {
 }
 
 /**
+ * Is this FEMA zone code inside a Special Flood Hazard Area?
+ *
+ * FEMA's SFHA families are the A zones (A, AE, AO, AH, AR, A99) and the V zones
+ * (V, VE); X, X500 and D are outside. The rule is the leading letter, and it is
+ * stated here rather than inferred from a list so a zone code we have not seen
+ * before classifies rather than silently returning false.
+ *
+ * Used ONLY to report the DIRECTION of a disagreement, never to decide one. The
+ * direction matters because the two directions are not equally dangerous: a
+ * store that says X where the parcel is AE tells a buyer there is no flood
+ * risk, and a store that says AE where the parcel is X sells an unnecessary
+ * policy.
+ */
+export function isSfhaZone(zone: string | null): boolean | null {
+  const z = normalizeValue(zone);
+  if (z == null) return null;
+  const head = z[0];
+  if (head === "A" || head === "V") return true;
+  if (head === "X" || head === "D") return false;
+  return null;
+}
+
+/**
  * Metres between two lat/lng points. Equirectangular approximation, which is
  * accurate to well under a metre at the sub-kilometre distances this is used
  * for and avoids pulling a geodesy dependency into a pure module.
@@ -100,27 +123,31 @@ export function classifyEntity(
   const va = normalizeValue(a.value);
   const vb = normalizeValue(b.value);
 
-  if (va == null && vb == null) {
-    return {
-      entityId,
-      a,
-      b,
-      groundTruth,
-      divergence: "absent-both",
-      basis: "neither store names a value",
-    };
-  }
-  if (va != null && vb == null) {
-    return {
-      entityId,
-      a,
-      b,
-      groundTruth,
-      divergence: "one-sided-a",
-      basis: `only store A names a value (${va}); B status=${b.status ?? "no row"}`,
-    };
-  }
-  if (va == null && vb != null) {
+  // The null cases are handled in ONE block so both values are genuinely
+  // narrowed to `string` afterwards. Written this way rather than with three
+  // sibling ifs and a cast: a cast here would let a future edit compare a null
+  // against a zone set and get a silent false.
+  if (va == null || vb == null) {
+    if (va == null && vb == null) {
+      return {
+        entityId,
+        a,
+        b,
+        groundTruth,
+        divergence: "absent-both",
+        basis: "neither store names a value",
+      };
+    }
+    if (va != null) {
+      return {
+        entityId,
+        a,
+        b,
+        groundTruth,
+        divergence: "one-sided-a",
+        basis: `only store A names a value (${va}); B status=${b.status ?? "no row"}`,
+      };
+    }
     return {
       entityId,
       a,

@@ -45,7 +45,72 @@ import {
   tallyPair,
   femaTileCentre,
   approxDistanceMetres,
+  isSfhaZone,
+  normalizeValue,
 } from "../src/duplicate-subject/classify.js";
+import { isDisagreement } from "../src/duplicate-subject/types.js";
+
+/**
+ * Which way a disagreement points, and how dangerous that direction is.
+ *
+ * Counted over disagreements only. The asymmetry is the whole reason to report
+ * it: `b-understates-hazard` means the tier2 store tells a reader the parcel is
+ * OUTSIDE the special flood hazard area when the atom says it is inside.
+ */
+function directionTally(verdicts) {
+  const out = {
+    "b-understates-hazard": 0,
+    "b-overstates-hazard": 0,
+    "same-hazard-class-different-zone": 0,
+    unclassifiable: 0,
+    countingRule:
+      "over DISAGREEMENTS only. SFHA membership is decided by the leading letter of the FEMA zone code " +
+      "(A and V families are inside; X and D are outside). 'b-understates-hazard' = store A names an SFHA " +
+      "zone and store B does not.",
+  };
+  const pairs = {};
+  for (const v of verdicts) {
+    if (!isDisagreement(v.divergence)) continue;
+    const key = `${normalizeValue(v.a.value)} -> ${normalizeValue(v.b.value)}`;
+    pairs[key] = (pairs[key] ?? 0) + 1;
+    const sa = isSfhaZone(v.a.value);
+    const sb = isSfhaZone(v.b.value);
+    if (sa == null || sb == null) out.unclassifiable += 1;
+    else if (sa && !sb) out["b-understates-hazard"] += 1;
+    else if (!sa && sb) out["b-overstates-hazard"] += 1;
+    else out["same-hazard-class-different-zone"] += 1;
+  }
+  out.valuePairs = Object.fromEntries(
+    Object.entries(pairs).sort((x, y) => y[1] - x[1]),
+  );
+  return out;
+}
+
+/**
+ * Where ground truth lands, per divergence class. The classifier names the
+ * CAUSE of a divergence; this names the WINNER, which is what a retirement
+ * decision actually needs.
+ */
+function truthAttribution(verdicts) {
+  const out = {};
+  for (const v of verdicts) {
+    if (!isDisagreement(v.divergence) || v.groundTruth == null) continue;
+    const bucket = (out[v.divergence] ??= { matchesA: 0, matchesB: 0, matchesBoth: 0, matchesNeither: 0 });
+    const truth = normalizeValue(v.groundTruth.atSamplePointA) ?? normalizeValue(v.groundTruth.atSamplePointB);
+    const a = normalizeValue(v.a.value);
+    const b = normalizeValue(v.b.value);
+    if (truth === a && truth === b) bucket.matchesBoth += 1;
+    else if (truth === a) bucket.matchesA += 1;
+    else if (truth === b) bucket.matchesB += 1;
+    else bucket.matchesNeither += 1;
+  }
+  return {
+    byClass: out,
+    countingRule:
+      "'truth' is the NFHL zone at store A's sample point (the parcel centroid), falling back to store B's " +
+      "point when A's is null. Counted over adjudicated disagreements only.",
+  };
+}
 
 const RESOLVER_VERSION = "ss-w11/1.0.0";
 
@@ -60,6 +125,7 @@ function parseArgs(argv) {
     counties: [],
     subjects: [],
     adjudicate: false,
+    sampleKeys: false,
     out: null,
     batch: 2000,
   };
@@ -68,6 +134,7 @@ function parseArgs(argv) {
     if (a === "--inventory") out.inventory = true;
     else if (a === "--check-registry") out.checkRegistry = true;
     else if (a === "--adjudicate") out.adjudicate = true;
+    else if (a === "--sample-keys") out.sampleKeys = true;
     else if (a === "--county") out.counties.push(String(argv[++i]).trim());
     else if (a === "--counties")
       out.counties.push(...String(argv[++i]).split(",").map((s) => s.trim()).filter(Boolean));
@@ -117,7 +184,7 @@ async function distinctViaIndex(sql, table, column) {
   return rows.map((r) => r.v);
 }
 
-async function runInventory({ atoms, cortex, outDir, checkRegistry }) {
+async function runInventory({ atoms, cortex, outDir, checkRegistry, sampleKeys }) {
   const atomTypes = await distinctViaIndex(atoms, "atoms", "entity_type");
   const adapterKeys = await distinctViaIndex(cortex, "place_layer_snapshots", "adapter_key");
 
@@ -143,22 +210,60 @@ async function runInventory({ atoms, cortex, outDir, checkRegistry }) {
   `;
   const atomEstimates = Object.fromEntries(est.map((r) => [r.entity_type, Number(r.est_rows)]));
 
-  // Sampled key sets, depth 2, one row per type/adapter. Bounded by the index.
+  // Sampled key sets, one row per type/adapter. OFF BY DEFAULT.
+  //
+  // A single `LIMIT 1` on `atoms` is an index seek, but the heap fetch has to
+  // detoast a body that can carry parcel geometry, and under concurrent
+  // full-table scans from another lane one of these measured 4m52s. The
+  // inventory's job is the store-by-subject matrix and the drift check; the key
+  // sets are diagnostic colour. So they are opt-in behind --sample-keys and
+  // every probe carries its own statement_timeout: a probe that times out is
+  // recorded as "not sampled", never as an empty key set. An empty result is
+  // not an absence (DEV_PROCESS 4.3).
   const atomKeySets = {};
-  for (const t of atomTypes) {
-    const r = await atoms`
-      SELECT (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(s.body) k) AS keys
-      FROM (SELECT body FROM atoms WHERE entity_type = ${t} LIMIT 1) s
-    `;
-    atomKeySets[t] = r[0]?.keys ?? [];
-  }
   const adapterKeySets = {};
-  for (const k of adapterKeys) {
-    const r = await cortex`
-      SELECT (SELECT array_agg(kk ORDER BY kk) FROM jsonb_object_keys(s.payload_json) kk) AS keys
-      FROM (SELECT payload_json FROM place_layer_snapshots WHERE adapter_key = ${k} LIMIT 1) s
-    `;
-    adapterKeySets[k] = r[0]?.keys ?? [];
+  if (sampleKeys) {
+    // Dedicated clients whose SERVER-SIDE statement_timeout enforces the budget.
+    // postgres.js has no per-query timeout, and a client-side race would leave
+    // the query running on the server — a "timeout" that does not stop the work
+    // is not a budget.
+    const atomsBounded = postgres(requireEnv("ATOMS_DATABASE_URL"), {
+      max: 1,
+      prepare: false,
+      connection: { statement_timeout: 45_000 },
+    });
+    const cortexBounded = postgres(requireEnv("CORTEX_DATABASE_URL"), {
+      max: 1,
+      prepare: false,
+      connection: { statement_timeout: 45_000 },
+    });
+    try {
+    for (const t of atomTypes) {
+      try {
+        const r = await atomsBounded`
+          SELECT (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(s.body) k) AS keys
+          FROM (SELECT (body - 'geojson') AS body FROM atoms WHERE entity_type = ${t} LIMIT 1) s
+        `;
+        atomKeySets[t] = r[0]?.keys ?? [];
+      } catch {
+        atomKeySets[t] = "(not sampled: probe exceeded its 45 s budget)";
+      }
+    }
+    for (const k of adapterKeys) {
+      try {
+        const r = await cortexBounded`
+          SELECT (SELECT array_agg(kk ORDER BY kk) FROM jsonb_object_keys(s.payload_json) kk) AS keys
+          FROM (SELECT payload_json FROM place_layer_snapshots WHERE adapter_key = ${k} LIMIT 1) s
+        `;
+        adapterKeySets[k] = r[0]?.keys ?? [];
+      } catch {
+        adapterKeySets[k] = "(not sampled: probe exceeded its 45 s budget)";
+      }
+    }
+    } finally {
+      await atomsBounded.end({ timeout: 5 });
+      await cortexBounded.end({ timeout: 5 });
+    }
   }
 
   // Raw cortex tables that carry a parcel-subject column.
@@ -221,8 +326,8 @@ async function runInventory({ atoms, cortex, outDir, checkRegistry }) {
       },
       adapterKeys,
       adapterCounts,
-      atomKeySets,
-      adapterKeySets,
+      atomKeySets: sampleKeys ? atomKeySets : "(not sampled; pass --sample-keys)",
+      adapterKeySets: sampleKeys ? adapterKeySets : "(not sampled; pass --sample-keys)",
       rawTables,
     },
     duplicateSubjects: duplicates,
@@ -378,6 +483,7 @@ async function measureFloodPair({ atoms, cortex, countyFips, adjudicate, outDir 
           : "tier2 provenance.vintage carries non-instant values; inspect before classifying",
     },
     preAdjudication: firstTally,
+    disagreementDirection: directionTally(firstPass),
     adjudication: null,
     elapsedMs: Date.now() - t0,
   };
@@ -410,6 +516,13 @@ async function measureFloodPair({ atoms, cortex, countyFips, adjudicate, outDir 
     });
   }
 
+  // Batch by SPATIAL LOCALITY, not by id order. The zone CTE is materialised
+  // per batch from the batch's own bbox, so a batch scattered across a county
+  // materialises every zone in the county while a batch drawn from one
+  // neighbourhood materialises a handful. Sorting first is the difference
+  // between a few zones per batch and a few thousand.
+  points.sort((p, q) => p.bLat - q.bLat || p.bLng - q.bLng);
+
   const gtById = new Map();
   const BATCH = 500;
   for (let i = 0; i < points.length; i += BATCH) {
@@ -433,7 +546,8 @@ async function measureFloodPair({ atoms, cortex, countyFips, adjudicate, outDir 
         SELECT ST_Expand(ST_Extent(ST_MakePoint(a_lng, a_lat))::geometry, 0.02) AS g FROM pts
       ),
       zones AS MATERIALIZED (
-        SELECT zone_row_id, fld_zone, sfha_tf, geom
+        SELECT zone_row_id, fld_zone, sfha_tf,
+               west_lng, south_lat, east_lng, north_lat, geom
         FROM tx_fema_nfhl_flood_zone, box
         WHERE geom && box.g
       ),
@@ -444,19 +558,32 @@ async function measureFloodPair({ atoms, cortex, countyFips, adjudicate, outDir 
           ON tp.county_fips = ${countyFips} AND tp.prop_id = p.prop_id AND tp.geom IS NOT NULL
       )
       SELECT p.id,
+        -- Two things are load-bearing here.
+        --
+        -- The FLOAT BBOX PREFILTER (west/south/east/north are plain columns) is
+        -- the twin of bboxContainsPoint in the writer, and it is what keeps this
+        -- from calling ST_Intersects once per point per zone. A materialised CTE
+        -- has no GiST index, so without it every point would test every zone.
+        --
         -- The ORDER BY mirrors findZoneAtPoint in
         -- packages/engine-core/src/flood-hazard-fact/geo.ts:175-201: where several
         -- polygons contain the point, the SFHA one wins, else the first in
         -- zone_row_id order (the writer's own scan order). A bare LIMIT 1 would
         -- measure the planner rather than the writer.
         (SELECT z.fld_zone FROM zones z
-          WHERE ST_Intersects(z.geom, ST_SetSRID(ST_MakePoint(p.a_lng, p.a_lat), 4326))
+          WHERE p.a_lng BETWEEN z.west_lng AND z.east_lng
+            AND p.a_lat BETWEEN z.south_lat AND z.north_lat
+            AND ST_Intersects(z.geom, ST_SetSRID(ST_MakePoint(p.a_lng, p.a_lat), 4326))
           ORDER BY (z.sfha_tf IN ('T','t','true')) DESC, z.zone_row_id LIMIT 1) AS gt_a,
         (SELECT z.fld_zone FROM zones z
-          WHERE ST_Intersects(z.geom, ST_SetSRID(ST_MakePoint(p.b_lng, p.b_lat), 4326))
+          WHERE p.b_lng BETWEEN z.west_lng AND z.east_lng
+            AND p.b_lat BETWEEN z.south_lat AND z.north_lat
+            AND ST_Intersects(z.geom, ST_SetSRID(ST_MakePoint(p.b_lng, p.b_lat), 4326))
           ORDER BY (z.sfha_tf IN ('T','t','true')) DESC, z.zone_row_id LIMIT 1) AS gt_b,
         (SELECT array_agg(DISTINCT z.fld_zone) FROM zones z, parcels pa
-          WHERE pa.id = p.id AND pa.geom IS NOT NULL AND ST_Intersects(z.geom, pa.geom)) AS zone_set,
+          WHERE pa.id = p.id AND pa.geom IS NOT NULL
+            AND z.geom && pa.geom
+            AND ST_Intersects(z.geom, pa.geom)) AS zone_set,
         (SELECT pa.geom IS NOT NULL FROM parcels pa WHERE pa.id = p.id LIMIT 1) AS has_geom
       FROM pts p
     `;
@@ -516,16 +643,57 @@ async function measureFloodPair({ atoms, cortex, countyFips, adjudicate, outDir 
         "and the 0.005-degree tile centre (store B's sample point), over adjudicated disagreements only",
     },
     tally: finalTally,
-    examples: secondPass
-      .filter((v) => v.groundTruth != null)
-      .slice(0, 12)
-      .map((v) => ({
-        entityId: v.entityId,
-        a: v.a.value,
-        b: v.b.value,
-        divergence: v.divergence,
-        basis: v.basis,
-      })),
+    truthAttribution: truthAttribution(secondPass),
+    // Examples PER CLASS, not the first twelve overall. The residue classes are
+    // the ones the retirement decision turns on, and a head-of-list sample
+    // shows only whichever class happens to sort first.
+    examplesByClass: (() => {
+      const out = {};
+      for (const v of secondPass) {
+        if (v.groundTruth == null) continue;
+        (out[v.divergence] ??= []).push({
+          entityId: v.entityId,
+          a: v.a.value,
+          b: v.b.value,
+          basis: v.basis,
+          groundTruthAtA: v.groundTruth.atSamplePointA,
+          groundTruthAtB: v.groundTruth.atSamplePointB,
+          entityZoneSet: v.groundTruth.entityZoneSet,
+          samplePointDistanceM: Number((v.groundTruth.samplePointDistanceM ?? 0).toFixed(1)),
+        });
+      }
+      for (const k of Object.keys(out)) out[k] = out[k].slice(0, 8);
+      return out;
+    })(),
+    /**
+     * A SELF-CHECK on this instrument's one declared deviation.
+     *
+     * Store A's sample point is not read from store A: the atom does not record
+     * the point it evaluated, so the tier2 bake's recorded parcel centroid is
+     * used as a stand-in. The two are computed by different ringCentroid
+     * implementations in different repos. This counts how often ground truth at
+     * that stand-in point reproduces store A's own value — a high rate is
+     * evidence the stand-in is sound, and a low one would invalidate every
+     * `explained-by-sampling-point` verdict here.
+     */
+    standInPointReproducesStoreA: (() => {
+      let ok = 0;
+      let n = 0;
+      for (const v of secondPass) {
+        if (v.groundTruth == null) continue;
+        n += 1;
+        const gtA = (v.groundTruth.atSamplePointA ?? "").toUpperCase();
+        if (gtA !== "" && gtA === (v.a.value ?? "").toUpperCase()) ok += 1;
+      }
+      return {
+        reproduced: ok,
+        adjudicated: n,
+        pct: n === 0 ? 0 : Number(((ok / n) * 100).toFixed(2)),
+        countingRule:
+          "adjudicated disagreements where the NFHL zone at the stand-in centroid equals the atom's own " +
+          "recorded zone, over all adjudicated disagreements",
+      };
+    })(),
   };
   result.elapsedMs = Date.now() - t0;
 
@@ -557,6 +725,7 @@ async function main() {
         cortex,
         outDir: args.out,
         checkRegistry: args.checkRegistry,
+        sampleKeys: args.sampleKeys,
       });
     }
     for (const c of args.counties) {

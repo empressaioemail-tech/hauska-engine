@@ -1,0 +1,485 @@
+{
+  "lane": "SS-W11",
+  "planRow": "P-45",
+  "subject": "flood-zone",
+  "countyFips": "48021",
+  "resolverVersion": "ss-w11/1.0.0",
+  "generatedAt": "2026-08-19T15:07:23.738Z",
+  "layer": "WRITTEN",
+  "samplingContracts": {
+    "storeA": "parcel centroid point-in-polygon against tx_fema_nfhl_flood_zone (packages/engine-core/scripts/write-flood-hazard-fact-county.mjs)",
+    "storeB": "one live FEMA ArcGIS MapServer/28 point query per 0.005-degree tile CENTRE, reused across every parcel whose centroid rounds into the tile (legacy-design-tools nodeFacetBakeTier2Cli.ts FEMA_TILE_DEG=0.005)"
+  },
+  "tier2VintageFieldAudit": {
+    "rowsWithVintage": 62257,
+    "isoInstantCount": 62257,
+    "nonIsoValues": [],
+    "verdict": "tier2 provenance.vintage is a BAKE CLOCK, not a source edition — every value is an ISO instant"
+  },
+  "preAdjudication": {
+    "subject": "flood-zone",
+    "storeA": "atoms:flood-hazard-fact",
+    "storeB": "pls:node-facets:tier2",
+    "countyFips": "48021",
+    "rosterUnion": 62257,
+    "rowsA": 62256,
+    "rowsB": 62257,
+    "comparable": 62249,
+    "byClass": {
+      "agree": 56825,
+      "one-sided-a": 5,
+      "one-sided-b": 3,
+      "absent-both": 0,
+      "explained-by-sampling-point": 0,
+      "split-subject": 0,
+      "edition-differs": 0,
+      "vintage-undecidable": 5424,
+      "genuine-conflict": 0
+    },
+    "disagreementRate": {
+      "numerator": 5424,
+      "denominator": 62249,
+      "pct": 8.7134,
+      "countingRule": "entities where BOTH stores NAME a value and the values differ, over entities where both stores NAME a value. One entity contributes at most one count. This is the only population in which a disagreement is arithmetically possible."
+    },
+    "disagreementRateOverRoster": {
+      "numerator": 5424,
+      "denominator": 62257,
+      "pct": 8.7123,
+      "countingRule": "the SAME numerator over every entity either store holds a row for. Printed only so the denominator gap is visible; it understates the rate by the share of the roster where no comparison is possible and must never be quoted alone."
+    },
+    "editionsA": {
+      "(none recorded)": 1,
+      "NFHL_48_20260101": 62256
+    },
+    "editionsB": {
+      "(none recorded)": 62257
+    },
+    "statusesB": {
+      "in-sfha": 5473,
+      "flood-zone": 56779,
+      "unavailable": 5
+    }
+  },
+  "disagreementDirection": {
+    "b-understates-hazard": 1940,
+    "b-overstates-hazard": 3393,
+    "same-hazard-class-different-zone": 91,
+    "unclassifiable": 0,
+    "countingRule": "over DISAGREEMENTS only. SFHA membership is decided by the leading letter of the FEMA zone code (A and V families are inside; X and D are outside). 'b-understates-hazard' = store A names an SFHA zone and store B does not.",
+    "valuePairs": {
+      "X -> A": 2170,
+      "A -> X": 1448,
+      "X -> AE": 1210,
+      "AE -> X": 489,
+      "AO -> AE": 32,
+      "A -> AE": 29,
+      "A -> AO": 14,
+      "X -> AO": 13,
+      "AE -> AO": 12,
+      "AE -> A": 4,
+      "AO -> X": 3
+    }
+  },
+  "adjudication": {
+    "groundTruth": "tx_fema_nfhl_flood_zone edition NFHL_48_20260101",
+    "adjudicatedEntities": 5424,
+    "disagreementsFound": 5424,
+    "parcelsWithNoGeometry": 0,
+    "parcelsWithGeometryButNoZoneIntersect": 0,
+    "samplePointDistanceM": {
+      "min": 12.36800409222534,
+      "median": 226.53926360198844,
+      "max": 366.44002560667553,
+      "countingRule": "metres between the parcel centroid (store A's sample point, as recorded by the tier2 bake) and the 0.005-degree tile centre (store B's sample point), over adjudicated disagreements only"
+    },
+    "tally": {
+      "subject": "flood-zone",
+      "storeA": "atoms:flood-hazard-fact",
+      "storeB": "pls:node-facets:tier2",
+      "countyFips": "48021",
+      "rosterUnion": 62257,
+      "rowsA": 62256,
+      "rowsB": 62257,
+      "comparable": 62249,
+      "byClass": {
+        "agree": 56825,
+        "one-sided-a": 5,
+        "one-sided-b": 3,
+        "absent-both": 0,
+        "explained-by-sampling-point": 5371,
+        "split-subject": 42,
+        "edition-differs": 0,
+        "vintage-undecidable": 11,
+        "genuine-conflict": 0
+      },
+      "disagreementRate": {
+        "numerator": 5424,
+        "denominator": 62249,
+        "pct": 8.7134,
+        "countingRule": "entities where BOTH stores NAME a value and the values differ, over entities where both stores NAME a value. One entity contributes at most one count. This is the only population in which a disagreement is arithmetically possible."
+      },
+      "disagreementRateOverRoster": {
+        "numerator": 5424,
+        "denominator": 62257,
+        "pct": 8.7123,
+        "countingRule": "the SAME numerator over every entity either store holds a row for. Printed only so the denominator gap is visible; it understates the rate by the share of the roster where no comparison is possible and must never be quoted alone."
+      },
+      "editionsA": {
+        "(none recorded)": 1,
+        "NFHL_48_20260101": 62256
+      },
+      "editionsB": {
+        "(none recorded)": 62257
+      },
+      "statusesB": {
+        "in-sfha": 5473,
+        "flood-zone": 56779,
+        "unavailable": 5
+      }
+    },
+    "truthAttribution": {
+      "byClass": {
+        "explained-by-sampling-point": {
+          "matchesA": 5371,
+          "matchesB": 0,
+          "matchesBoth": 0,
+          "matchesNeither": 0
+        },
+        "split-subject": {
+          "matchesA": 10,
+          "matchesB": 30,
+          "matchesBoth": 0,
+          "matchesNeither": 2
+        },
+        "vintage-undecidable": {
+          "matchesA": 11,
+          "matchesB": 0,
+          "matchesBoth": 0,
+          "matchesNeither": 0
+        }
+      },
+      "countingRule": "'truth' is the NFHL zone at store A's sample point (the parcel centroid), falling back to store B's point when A's is null. Counted over adjudicated disagreements only."
+    },
+    "examplesByClass": {
+      "explained-by-sampling-point": [
+        {
+          "entityId": "48021:10006",
+          "a": "X",
+          "b": "A",
+          "basis": "ground truth at A's point = X = A; at B's point = A = B; points are 177 m apart",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 177
+        },
+        {
+          "entityId": "48021:10011",
+          "a": "X",
+          "b": "A",
+          "basis": "ground truth at A's point = X = A; at B's point = A = B; points are 311 m apart",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 311.5
+        },
+        {
+          "entityId": "48021:102814",
+          "a": "X",
+          "b": "A",
+          "basis": "ground truth at A's point = X = A; at B's point = A = B; points are 170 m apart",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 169.8
+        },
+        {
+          "entityId": "48021:102823",
+          "a": "A",
+          "b": "X",
+          "basis": "ground truth at A's point = A = A; at B's point = X = B; points are 92 m apart",
+          "groundTruthAtA": "A",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 91.5
+        },
+        {
+          "entityId": "48021:102839",
+          "a": "X",
+          "b": "A",
+          "basis": "ground truth at A's point = X = A; at B's point = A = B; points are 215 m apart",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "X"
+          ],
+          "samplePointDistanceM": 215.4
+        },
+        {
+          "entityId": "48021:102853",
+          "a": "X",
+          "b": "AE",
+          "basis": "ground truth at A's point = X = A; at B's point = AE = B; points are 297 m apart",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "AE",
+          "entityZoneSet": [
+            "A",
+            "AE",
+            "X"
+          ],
+          "samplePointDistanceM": 297.2
+        },
+        {
+          "entityId": "48021:102854",
+          "a": "X",
+          "b": "AE",
+          "basis": "ground truth at A's point = X = A; at B's point = AE = B; points are 342 m apart",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "AE",
+          "entityZoneSet": [
+            "AE",
+            "X"
+          ],
+          "samplePointDistanceM": 341.9
+        },
+        {
+          "entityId": "48021:102858",
+          "a": "X",
+          "b": "A",
+          "basis": "ground truth at A's point = X = A; at B's point = A = B; points are 260 m apart",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 260.3
+        }
+      ],
+      "split-subject": [
+        {
+          "entityId": "48021:103261",
+          "a": "A",
+          "b": "X",
+          "basis": "parcel geometry intersects both A and X (zone set: A|X)",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 348.9
+        },
+        {
+          "entityId": "48021:11707",
+          "a": "A",
+          "b": "X",
+          "basis": "parcel geometry intersects both A and X (zone set: A|X)",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 323.5
+        },
+        {
+          "entityId": "48021:11996",
+          "a": "A",
+          "b": "X",
+          "basis": "parcel geometry intersects both A and X (zone set: A|X)",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 246.3
+        },
+        {
+          "entityId": "48021:13875",
+          "a": "X",
+          "b": "A",
+          "basis": "parcel geometry intersects both X and A (zone set: A|X)",
+          "groundTruthAtA": "A",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 212.7
+        },
+        {
+          "entityId": "48021:141315",
+          "a": "A",
+          "b": "X",
+          "basis": "parcel geometry intersects both A and X (zone set: A|X)",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 256.2
+        },
+        {
+          "entityId": "48021:15147",
+          "a": "X",
+          "b": "A",
+          "basis": "parcel geometry intersects both X and A (zone set: A|X)",
+          "groundTruthAtA": "A",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 271.3
+        },
+        {
+          "entityId": "48021:17489",
+          "a": "AE",
+          "b": "X",
+          "basis": "parcel geometry intersects both AE and X (zone set: A|AE|X)",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "A",
+            "AE",
+            "X"
+          ],
+          "samplePointDistanceM": 246.1
+        },
+        {
+          "entityId": "48021:17785",
+          "a": "A",
+          "b": "X",
+          "basis": "parcel geometry intersects both A and X (zone set: A|X)",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "A",
+            "X"
+          ],
+          "samplePointDistanceM": 225.1
+        }
+      ],
+      "vintage-undecidable": [
+        {
+          "entityId": "48021:119863",
+          "a": "A",
+          "b": "X",
+          "basis": "current edition NFHL_48_20260101 says A, matching A; but B records no source edition, so the other side's value cannot be attributed to a known prior edition",
+          "groundTruthAtA": "A",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "A"
+          ],
+          "samplePointDistanceM": 263.3
+        },
+        {
+          "entityId": "48021:52848",
+          "a": "A",
+          "b": "X",
+          "basis": "current edition NFHL_48_20260101 says A, matching A; but B records no source edition, so the other side's value cannot be attributed to a known prior edition",
+          "groundTruthAtA": "A",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "A"
+          ],
+          "samplePointDistanceM": 300.9
+        },
+        {
+          "entityId": "48021:70967",
+          "a": "A",
+          "b": "X",
+          "basis": "current edition NFHL_48_20260101 says A, matching A; but B records no source edition, so the other side's value cannot be attributed to a known prior edition",
+          "groundTruthAtA": "A",
+          "groundTruthAtB": "A",
+          "entityZoneSet": [
+            "A"
+          ],
+          "samplePointDistanceM": 152
+        },
+        {
+          "entityId": "48021:8727948",
+          "a": "X",
+          "b": "AE",
+          "basis": "current edition NFHL_48_20260101 says X, matching A; but B records no source edition, so the other side's value cannot be attributed to a known prior edition",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "X"
+          ],
+          "samplePointDistanceM": 284.7
+        },
+        {
+          "entityId": "48021:8727992",
+          "a": "X",
+          "b": "AE",
+          "basis": "current edition NFHL_48_20260101 says X, matching A; but B records no source edition, so the other side's value cannot be attributed to a known prior edition",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "X"
+          ],
+          "samplePointDistanceM": 308.3
+        },
+        {
+          "entityId": "48021:8727993",
+          "a": "X",
+          "b": "AE",
+          "basis": "current edition NFHL_48_20260101 says X, matching A; but B records no source edition, so the other side's value cannot be attributed to a known prior edition",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "X"
+          ],
+          "samplePointDistanceM": 304.4
+        },
+        {
+          "entityId": "48021:8727994",
+          "a": "X",
+          "b": "AE",
+          "basis": "current edition NFHL_48_20260101 says X, matching A; but B records no source edition, so the other side's value cannot be attributed to a known prior edition",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "X"
+          ],
+          "samplePointDistanceM": 279.2
+        },
+        {
+          "entityId": "48021:8727996",
+          "a": "X",
+          "b": "AE",
+          "basis": "current edition NFHL_48_20260101 says X, matching A; but B records no source edition, so the other side's value cannot be attributed to a known prior edition",
+          "groundTruthAtA": "X",
+          "groundTruthAtB": "X",
+          "entityZoneSet": [
+            "X"
+          ],
+          "samplePointDistanceM": 298.5
+        }
+      ]
+    },
+    "standInPointReproducesStoreA": {
+      "reproduced": 5392,
+      "adjudicated": 5424,
+      "pct": 99.41,
+      "countingRule": "adjudicated disagreements where the NFHL zone at the stand-in centroid equals the atom's own recorded zone, over all adjudicated disagreements"
+    }
+  },
+  "elapsedMs": 344521
+}

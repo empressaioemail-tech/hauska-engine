@@ -106,7 +106,7 @@ describe("subject registry", () => {
   it("no store is both claimed and excluded", () => {
     const excluded = new Set(OUT_OF_SCOPE_STORES.map((s) => s.storeKey));
     for (const k of declaredStoreKeys()) {
-      expect(excluded.has(k.split("#")[0]), `${k} is both claimed and excluded`).toBe(false);
+      expect(excluded.has(k.split("#")[0] ?? k), `${k} is both claimed and excluded`).toBe(false);
     }
   });
 });
