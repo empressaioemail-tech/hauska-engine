@@ -21,6 +21,7 @@ on:
       - "packages/engine-core/src/flood-hazard-fact/**"
       - "packages/engine-core/scripts/write-flood-hazard-fact-county.mjs"
       - "packages/engine-core/src/__tests__/flood-*.test.ts"
+      - "packages/atoms/src/flood-hazard-fact-writer.ts"
       - "packages/retrieval/src/flood-adjudication/**"
       - "packages/retrieval/scripts/flood-adjudication-standing-check.mjs"
       - ".github/workflows/flood-containment-gate.yml"
@@ -30,6 +31,7 @@ on:
       - "packages/engine-core/src/flood-hazard-fact/**"
       - "packages/engine-core/scripts/write-flood-hazard-fact-county.mjs"
       - "packages/engine-core/src/__tests__/flood-*.test.ts"
+      - "packages/atoms/src/flood-hazard-fact-writer.ts"
       - "packages/retrieval/src/flood-adjudication/**"
       - "packages/retrieval/scripts/flood-adjudication-standing-check.mjs"
       - ".github/workflows/flood-containment-gate.yml"
@@ -115,3 +117,25 @@ jobs:
             exit 1
           fi
           echo "flood writer containment grep gate: clean"
+
+      # SOLE WRITE PATH. Today exactly one non-test caller builds a
+      # flood-hazard-fact atom, and it is the gated one. Nothing structural said
+      # so, which means the next caller would bypass the containment gate
+      # without breaking a single test. This makes a second caller a build
+      # failure instead of a review responsibility.
+      - name: Flood atom builders have exactly one gated caller
+        run: |
+          GATED=packages/engine-core/src/flood-hazard-fact/flood-hazard-fact-atoms.ts
+          OFFENDERS=$(grep -rln 'buildPresentFloodHazardFactAtom\|buildFloodHazardFactAbsenceAtom' \
+            --include='*.ts' --include='*.mjs' packages services \
+            | grep -v '__tests__' \
+            | grep -v '^packages/atoms/src/flood-hazard-fact-writer.ts$' \
+            | grep -v '^packages/atoms/src/index.ts$' \
+            | grep -v "^$GATED$" || true)
+          if [ -n "$OFFENDERS" ]; then
+            echo "FATAL: flood atom builders called outside the containment-gated path:"
+            echo "$OFFENDERS"
+            echo "Every flood-hazard-fact atom must be built through buildAtomForPlannedFloodHazard so it carries a sample-point containment stamp."
+            exit 1
+          fi
+          echo "flood atom sole-write-path gate: clean"
