@@ -532,6 +532,24 @@ describe("planCountyOwnerFacts", () => {
 });
 
 describe("planCountyFloodHazard", () => {
+  /**
+   * A real parcel ring centred on (lng, lat). SS-W17 made
+   * FloodParcelInput.geometry required, so a fixture that supplies only a
+   * coordinate is exercising a path the writer can no longer take.
+   */
+  const parcelRing = (lng: number, lat: number, half = 0.002) => ({
+    type: "Polygon",
+    coordinates: [
+      [
+        [lng - half, lat - half],
+        [lng + half, lat - half],
+        [lng + half, lat + half],
+        [lng - half, lat + half],
+        [lng - half, lat - half],
+      ],
+    ],
+  });
+
   const square: FloodZoneFeature = {
     zoneRowId: "48261C:1",
     fldZone: "AE",
@@ -559,7 +577,7 @@ describe("planCountyFloodHazard", () => {
 
   it("treats empty zone index as typed absence", () => {
     const plan = planCountyFloodHazard(
-      [{ parcelKey: "15271", centroid: [-97.5, 26.5] }],
+      [{ parcelKey: "15271", geometry: parcelRing(-97.5, 26.5) }],
       [],
       { countyFips: "48261" },
     );
@@ -572,6 +590,7 @@ describe("planCountyFloodHazard", () => {
       verifyStoredFloodHazardFactAtom(atom, {
         parcelNodeId: "48261:15271",
         outcome: "absent",
+        samplePointContainment: "contained",
       }),
     ).toEqual({ ok: true });
   });
@@ -579,7 +598,7 @@ describe("planCountyFloodHazard", () => {
   it("outside loaded zones fail-closes to typed absence (never Zone X by omission)", () => {
     expect(pointInGeoJson(-96, 26.5, square.geometry)).toBe(false);
     const plan = planCountyFloodHazard(
-      [{ parcelKey: "1", centroid: [-96, 26.5] }],
+      [{ parcelKey: "1", geometry: parcelRing(-96, 26.5) }],
       [square],
       { countyFips: "48261" },
     );
@@ -595,13 +614,14 @@ describe("planCountyFloodHazard", () => {
       verifyStoredFloodHazardFactAtom(atom, {
         parcelNodeId: "48261:1",
         outcome: "absent",
+        samplePointContainment: "contained",
       }),
     ).toEqual({ ok: true });
   });
 
   it("hits SFHA zone as present inSFHA=true", () => {
     const plan = planCountyFloodHazard(
-      [{ parcelKey: "2", centroid: [-97.5, 26.5] }],
+      [{ parcelKey: "2", geometry: parcelRing(-97.5, 26.5) }],
       [square],
       { countyFips: "48261" },
     );
@@ -609,6 +629,46 @@ describe("planCountyFloodHazard", () => {
     const [atom] = buildAtomsForFloodHazardPlan(plan, FH_PROV);
     expect(atom!.inSpecialFloodHazardArea).toBe(true);
     expect(atom!.floodZone).toBe("AE");
+    expect(atom!.samplePointContainment).toBe("contained");
+    expect(atom!.samplePointDerivation).toBe("ring-centroid");
+    expect(atom!.samplePoint).not.toBeNull();
+  });
+
+  it("REJECTS a stored atom that carries no containment stamp at all", () => {
+    const plan = planCountyFloodHazard(
+      [{ parcelKey: "2", geometry: parcelRing(-97.5, 26.5) }],
+      [square],
+      { countyFips: "48261" },
+    );
+    const [atom] = buildAtomsForFloodHazardPlan(plan, FH_PROV);
+    const unstamped = { ...atom } as Record<string, unknown>;
+    delete unstamped.samplePointContainment;
+    const verdict = verifyStoredFloodHazardFactAtom(unstamped, {
+      parcelNodeId: "48261:2",
+      outcome: "present",
+    });
+    expect(verdict.ok).toBe(false);
+    expect((verdict as { problem: string }).problem).toMatch(
+      /no samplePointContainment/,
+    );
+  });
+
+  it("REJECTS a stored atom whose containment stamp says not-contained", () => {
+    const plan = planCountyFloodHazard(
+      [{ parcelKey: "2", geometry: parcelRing(-97.5, 26.5) }],
+      [square],
+      { countyFips: "48261" },
+    );
+    const [atom] = buildAtomsForFloodHazardPlan(plan, FH_PROV);
+    const tampered = { ...atom, samplePointContainment: "not-contained" };
+    const verdict = verifyStoredFloodHazardFactAtom(tampered, {
+      parcelNodeId: "48261:2",
+      outcome: "present",
+    });
+    expect(verdict.ok).toBe(false);
+    expect((verdict as { problem: string }).problem).toMatch(
+      /reached the store/,
+    );
   });
 
   it("bbox-filters zones (Kenedy-friendly)", () => {
