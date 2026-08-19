@@ -65,3 +65,8 @@ packages/engine-core/_build_*.mjs
 packages/engine-core/_tmp_*.mjs
 packages/engine-core/_parse_*.mjs
 packages/engine-core/depth-warm-*-refused-roster-*.json
+
+# SS-W9 statewide three-layer audit: the full-prose statewide record is multi-megabyte
+# and fully regenerable by packages/retrieval/scripts/three-layer-audit.mjs. The rollup and
+# the WRITTEN scan cache beside it ARE committed, because they are the evidence.
+artifacts/three-layer-audit/statewide.json
