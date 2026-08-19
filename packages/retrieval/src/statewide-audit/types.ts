@@ -10,12 +10,23 @@
 //     SCORED    the county_facet_coverage ledger cells
 //     SERVED    what Smart Site actually shows a human
 //
-// The worked case: building-footprint atoms landed in 174 counties, closing
-// 2026-08-17 12:43Z. The ledger reports `footprint` as not-yet on all 254 cells
-// because it was materialized 2026-08-14T17:41:22.500Z, 67 hours BEFORE the
-// work landed. Separately, flood is written for millions of parcels and reaches
-// no user at all, because `mergeBakedBaseFacts` never copies `tier2` into the
-// served payload.
+// The worked case, CORRECTED 2026-08-19 against the store. The planner's
+// original claim here was that the ledger reports `footprint` as not-yet on all
+// 254 cells BECAUSE it was materialized 67 hours before the work landed. That
+// causal claim is wrong and the correction is the whole point of this record:
+//
+//   building-footprint atoms landed in 174 of 254 counties (3,495,678 rows,
+//   2,829,513 parcels), closing 2026-08-17 12:43Z. The ledger does report
+//   `footprint` as not-yet on all 254 cells, and it IS 4.8 days stale. But
+//   staleness is not the mechanism. There is NO `footprint` row in
+//   `county_facet_coverage` AT ALL, so the grid resolves `rail_state IS NULL`
+//   to not-yet by display precedence and A RECOMPUTE WOULD MOVE ZERO OF THE 254
+//   CELLS. Six of fourteen rails are in that position. The remediation is a
+//   scorer that does not exist, not a refresh.
+//
+// Separately, flood is written for millions of parcels and reaches no user at
+// all: `mergeBakedBaseFacts` never copies `tier2` into the served payload, and
+// the live wire body carries no `tier2` key.
 //
 // THE ORDER OF THOSE THREE LAYERS IS THE COST OF THE FIX. Written-but-unscored
 // is a scorer run. Written-but-unserved is a merge fix. Only genuinely
