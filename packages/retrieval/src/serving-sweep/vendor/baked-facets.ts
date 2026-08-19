@@ -30,7 +30,7 @@ import type {
   EnvelopeProvenanceRefs,
   SetbackFieldProvenance,
   SetbackFieldNotes,
-} from "./buildable-envelope-types.js"; // VENDOR-PATH-REWRITE (was ./buildable-envelope.js)
+} from "./buildable-envelope-types.js"; // VENDOR-PATH-REWRITE (was ./buildable-envelope.js; the shim stays a .d.ts, verbatim)
 
 export type { EnvelopeProvenanceRefs, SetbackFieldProvenance, SetbackFieldNotes };
 

@@ -202,7 +202,7 @@ describe("bulk chain assembly does not diverge from the live retrieval service",
     // Suffixed first, so a naive "last wins" would pick the wrong one.
     const picked = dedupeParcelAtoms("48021:1007", [suffixed, canonical]);
     expect(picked).toHaveLength(1);
-    expect(picked[0].entityId).toBe("48021:1007");
+    expect(picked[0]?.entityId).toBe("48021:1007");
   });
 
   it("dedupe drops a retired atom and a foreign-parcel prefix collision", () => {
