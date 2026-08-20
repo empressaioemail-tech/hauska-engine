@@ -113,13 +113,7 @@ export interface PropertyAtomChainWire {
    * via getAttachingRoads). Never fabricated.
    */
   attachingRoads: ReadonlyArray<StoredAtomInstance>;
-  atoms: ReadonlyArray<{
-    did: string;
-    type: string;
-    kind: string;
-    accessPolicy: string;
-    payload: StoredAtomInstance;
-  }>;
+  atoms: ReadonlyArray<AtomChainWireEntry>;
 }
 
 /**
@@ -140,16 +134,53 @@ function withGuaranteedAtomDid<T extends StoredAtomInstance>(payload: T): T {
   };
 }
 
+/**
+ * Copy stored accessPolicy onto the chain wire only when the atom actually
+ * carries one. Missing / null / undefined is omitted, never filled as
+ * `public-free` (W-30). listJurisdictions remains the declared exception
+ * for jurisdiction snapshots.
+ */
+function servedAccessPolicy(
+  payload: StoredAtomInstance,
+): AccessPolicy | undefined {
+  const value = (payload as { accessPolicy?: AccessPolicy | null }).accessPolicy;
+  if (value == null) return undefined;
+  return value;
+}
+
+function toAtomChainWireEntry(payload: StoredAtomInstance): AtomChainWireEntry {
+  const did =
+    typeof payload.atomDid === "string" && payload.atomDid.startsWith("did:")
+      ? payload.atomDid
+      : buildAtomDid(payload.entityType, payload.entityId).raw;
+  const accessPolicy = servedAccessPolicy(payload);
+  return {
+    did,
+    type: payload.entityType,
+    kind: payload.entityType,
+    ...(accessPolicy !== undefined ? { accessPolicy } : {}),
+    payload,
+  };
+}
+
+/** One `atoms[]` row on property/road chain wire. */
+export interface AtomChainWireEntry {
+  did: string;
+  type: string;
+  kind: string;
+  /**
+   * Copied from the stored atom when present. Omitted when the stored
+   * value is missing, null, or undefined: never synthesized as
+   * `public-free`. (W-30; listJurisdictions is the declared exception.)
+   */
+  accessPolicy?: AccessPolicy;
+  payload: StoredAtomInstance;
+}
+
 export interface RoadAtomChainWire {
   roadNodeId: string;
   roadNode: StoredAtomInstance | null;
-  atoms: ReadonlyArray<{
-    did: string;
-    type: string;
-    kind: string;
-    accessPolicy: string;
-    payload: StoredAtomInstance;
-  }>;
+  atoms: ReadonlyArray<AtomChainWireEntry>;
 }
 
 /** One node row on the county roster wire (snake_case pinned with CC). */
@@ -390,19 +421,7 @@ export class HybridRetrieval {
         }
         return true;
       })
-      .map((payload) => {
-      const did =
-        typeof payload.atomDid === "string" && payload.atomDid.startsWith("did:")
-          ? payload.atomDid
-          : buildAtomDid(payload.entityType, payload.entityId).raw;
-      return {
-        did,
-        type: payload.entityType,
-        kind: payload.entityType,
-        accessPolicy: payload.accessPolicy ?? "public-free",
-        payload,
-      };
-    });
+      .map((payload) => toAtomChainWireEntry(payload));
     // Track B1: attaching road-nodes for STREET/map render (boundary-edge path;
     // empty ring skips proximity — callers with a ring use getAttachingRoads).
     const attaching = await resolveAttachingRoadNodes({
@@ -472,19 +491,7 @@ export class HybridRetrieval {
   async getRoadAtomChain(roadNodeId: string): Promise<RoadAtomChainWire> {
     const resolved = await this.storage.listRoadAtomsByRoadNodeId(roadNodeId);
     const roadNode = resolved[0] ?? null;
-    const atoms = resolved.map((payload) => {
-      const did =
-        typeof payload.atomDid === "string" && payload.atomDid.startsWith("did:")
-          ? payload.atomDid
-          : buildAtomDid(payload.entityType, payload.entityId).raw;
-      return {
-        did,
-        type: payload.entityType,
-        kind: payload.entityType,
-        accessPolicy: payload.accessPolicy ?? "public-free",
-        payload,
-      };
-    });
+    const atoms = resolved.map((payload) => toAtomChainWireEntry(payload));
     return { roadNodeId, roadNode, atoms };
   }
 
