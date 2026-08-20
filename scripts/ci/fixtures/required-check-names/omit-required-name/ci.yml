@@ -1,0 +1,9 @@
+name: fixture-omit-required-name
+on: push
+jobs:
+  ci:
+    name: not the required check
+    runs-on: ubuntu-latest
+    steps:
+      - name: typecheck + test
+        run: echo "step title must not satisfy a required check-run name"
