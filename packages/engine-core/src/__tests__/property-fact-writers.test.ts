@@ -29,6 +29,7 @@ import {
 import {
   buildAtomsForFloodHazardPlan,
   filterZonesByBBox,
+  memoryStoreContainingCentroids,
   planCountyFloodHazard,
   pointInGeoJson,
   verifyStoredFloodHazardFactAtom,
@@ -558,10 +559,14 @@ describe("planCountyFloodHazard", () => {
   };
 
   it("treats empty zone index as typed absence", () => {
+    const parcels = [{ parcelKey: "15271", centroid: [-97.5, 26.5] as const }];
     const plan = planCountyFloodHazard(
-      [{ parcelKey: "15271", centroid: [-97.5, 26.5] }],
+      parcels,
       [],
-      { countyFips: "48261" },
+      {
+        countyFips: "48261",
+        ringStore: memoryStoreContainingCentroids("48261", parcels),
+      },
     );
     expect(plan.emptyZoneIndex).toBe(true);
     expect(plan.counts.absent).toBe(1);
@@ -578,10 +583,14 @@ describe("planCountyFloodHazard", () => {
 
   it("outside loaded zones fail-closes to typed absence (never Zone X by omission)", () => {
     expect(pointInGeoJson(-96, 26.5, square.geometry)).toBe(false);
+    const parcels = [{ parcelKey: "1", centroid: [-96, 26.5] as const }];
     const plan = planCountyFloodHazard(
-      [{ parcelKey: "1", centroid: [-96, 26.5] }],
+      parcels,
       [square],
-      { countyFips: "48261" },
+      {
+        countyFips: "48261",
+        ringStore: memoryStoreContainingCentroids("48261", parcels),
+      },
     );
     expect(plan.counts.presentOutside).toBe(0);
     expect(plan.counts.absent).toBe(1);
@@ -600,10 +609,14 @@ describe("planCountyFloodHazard", () => {
   });
 
   it("hits SFHA zone as present inSFHA=true", () => {
+    const parcels = [{ parcelKey: "2", centroid: [-97.5, 26.5] as const }];
     const plan = planCountyFloodHazard(
-      [{ parcelKey: "2", centroid: [-97.5, 26.5] }],
+      parcels,
       [square],
-      { countyFips: "48261" },
+      {
+        countyFips: "48261",
+        ringStore: memoryStoreContainingCentroids("48261", parcels),
+      },
     );
     expect(plan.counts.presentInSfha).toBe(1);
     const [atom] = buildAtomsForFloodHazardPlan(plan, FH_PROV);

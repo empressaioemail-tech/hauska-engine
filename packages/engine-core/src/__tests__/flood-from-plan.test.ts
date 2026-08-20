@@ -28,6 +28,7 @@ const PLAN: CountyFloodHazardPlan = {
       floodZone: "AE",
       zoneSubtype: null,
       baseFloodElevation: 12.5,
+      samplePointContainment: "contained",
     },
     {
       outcome: "absent",
@@ -36,11 +37,22 @@ const PLAN: CountyFloodHazardPlan = {
       reason: "no usable centroid",
     },
   ],
+  refused: [],
+  containment: {
+    contained: 1,
+    notContained: 0,
+    unmeasurable: 0,
+    emitted: 1,
+    refused: 0,
+    byReasonCode: { contained: 1 },
+    countingRule: "fixture",
+  },
   counts: {
     present: 1,
     presentInSfha: 1,
     presentOutside: 0,
     absent: 1,
+    refused: 0,
     skippedUnusableKey: 0,
   },
 };

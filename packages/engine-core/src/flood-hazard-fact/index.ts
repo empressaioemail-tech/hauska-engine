@@ -9,11 +9,15 @@ export {
   findZoneAtPoint,
   geometryCentroid,
   isSfhaFlag,
+  parseSfhaTf,
+  pickPreferredFloodZone,
   pointInGeoJson,
   ringCentroid,
+  UnrecognisedSfhaFlagError,
   type BBox,
   type FloodZoneFeature,
   type LngLat,
+  type SfhaFlag,
 } from "./geo.js";
 
 export {
@@ -29,6 +33,7 @@ export {
 export {
   assembleCountyFloodHazardPlan,
   hasUsableCentroid,
+  isQueryableParcel,
   planCountyFloodHazard,
   selectPlannableParcels,
   type CountyFloodHazardPlan,
@@ -38,6 +43,7 @@ export {
   type PlannedAbsentFloodHazard,
   type PlannedFloodHazard,
   type PlannedPresentFloodHazard,
+  type RefusedFloodHazard,
   type ResolvedFloodZone,
 } from "./plan-county-flood-hazard.js";
 
@@ -76,3 +82,29 @@ export {
   type FloodPlanDigest,
   type FloodPlanPayload,
 } from "./plan-payload.js";
+
+export {
+  classifySamplePointContainment,
+  countTestableRings,
+  emptyContainmentTally,
+  floodDeterminationGate,
+  memoryStoreContainingCentroids,
+  MemoryParcelRingStore,
+  tallyContainment,
+  type ContainmentState,
+  type ContainmentTally,
+  type ContainmentVerdict,
+  type EmittableContainmentState,
+  type ParcelRingLoad,
+  type ParcelRingRef,
+  type ParcelRingStore,
+} from "./containment.js";
+
+export {
+  fetchTxgioParcelRing,
+  loadTxgioParcelRingStore,
+  parseFloodParcelStoreKey,
+  TXGIO_PARCEL_RING_BY_FEATURE_INDEX_SQL,
+  TXGIO_PARCEL_RING_BY_PROP_ID_SQL,
+  TXGIO_PARCEL_RING_COUNTY_BATCH_SQL,
+} from "./txgio-parcel-ring-store.js";

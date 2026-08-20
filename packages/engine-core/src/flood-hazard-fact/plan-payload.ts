@@ -262,12 +262,24 @@ export function drainFloodPlanPayload(
     parcelsRead: payload.parcelsRead ?? payload.planned.length,
     emptyZoneIndex: Boolean(payload.emptyZoneIndex),
     planned: payload.planned,
-    counts: payload.counts ?? {
-      present: 0,
-      presentInSfha: 0,
-      presentOutside: 0,
-      absent: 0,
-      skippedUnusableKey: 0,
+    refused: [],
+    containment: {
+      contained: 0,
+      notContained: 0,
+      unmeasurable: 0,
+      emitted: 0,
+      refused: 0,
+      byReasonCode: {},
+      countingRule:
+        "--from-plan drain does not re-run containment; refused[] is empty on the artifact",
+    },
+    counts: {
+      present: payload.counts?.present ?? 0,
+      presentInSfha: payload.counts?.presentInSfha ?? 0,
+      presentOutside: payload.counts?.presentOutside ?? 0,
+      absent: payload.counts?.absent ?? 0,
+      refused: payload.counts?.refused ?? 0,
+      skippedUnusableKey: payload.counts?.skippedUnusableKey ?? 0,
     },
   };
 
