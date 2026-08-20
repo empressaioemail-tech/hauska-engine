@@ -32,12 +32,15 @@ export {
 
 export {
   assembleCountyFloodHazardPlan,
+  assertFloodPlanPopulationIdentity,
+  floodPlanPopulationIdentity,
   hasUsableCentroid,
   isQueryableParcel,
   planCountyFloodHazard,
   selectPlannableParcels,
   type CountyFloodHazardPlan,
   type FloodParcelInput,
+  type FloodPlanPopulationIdentity,
   type PlannableParcel,
   type PlannableParcelSelection,
   type PlannedAbsentFloodHazard,
@@ -102,6 +105,7 @@ export {
 
 export {
   fetchTxgioParcelRing,
+  ingestTxgioParcelRingRows,
   loadTxgioParcelRingStore,
   parseFloodParcelStoreKey,
   TXGIO_PARCEL_RING_BY_FEATURE_INDEX_SQL,

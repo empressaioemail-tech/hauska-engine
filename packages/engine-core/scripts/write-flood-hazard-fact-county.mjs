@@ -484,6 +484,8 @@ try {
     const parcels = [];
     const tLoadParcels = performance.now();
     let lastFeature = -1;
+    let multipartCentroidNullLoaded = 0;
+    let nullGeomLoaded = 0;
     while (true) {
       if (args.limit > 0 && parcels.length >= args.limit) break;
       const remaining =
@@ -506,6 +508,12 @@ try {
         // Do not substitute bbox midpoint: that re-opens W-4 by answering
         // for a different point after geometryCentroid correctly returned null.
         const centroid = geometryCentroid(p.geometry);
+        const geomType =
+          p.geometry && typeof p.geometry === "object" ? p.geometry.type : null;
+        if (p.geometry == null) nullGeomLoaded += 1;
+        if (geomType === "MultiPolygon" && centroid == null) {
+          multipartCentroidNullLoaded += 1;
+        }
         parcels.push({
           parcelKey: p.prop_id ?? `_feature-${p.feature_index}`,
           centroid,
@@ -515,6 +523,8 @@ try {
       if (page.length < pageSize) break;
     }
     summary.loadParcelsMs = Math.round(performance.now() - tLoadParcels);
+    summary.multipartCentroidNullLoaded = multipartCentroidNullLoaded;
+    summary.nullGeomLoaded = nullGeomLoaded;
 
     const tLoadRings = performance.now();
     const ringStore = await loadTxgioParcelRingStore(
@@ -661,6 +671,7 @@ try {
     }
 
     summary.planDigest = digestFloodPlan(plan);
+    const identity = plan.populationIdentity;
     summary.plan = {
       parcelsRead: plan.parcelsRead,
       zonesIndexed: plan.zonesIndexed,
@@ -672,7 +683,20 @@ try {
       wouldWriteAbsent: plan.counts.absent,
       wouldWriteRefused: plan.counts.refused,
       skippedUnusableKey: plan.counts.skippedUnusableKey,
+      skippedDuplicateKey: plan.counts.skippedDuplicateKey,
+      containment: plan.containment,
+      populationIdentity: identity,
+      multipartCentroidNullLoaded,
+      nullGeomLoaded,
     };
+    console.log(
+      JSON.stringify({
+        event: "flood-hazard-fact-county.population-identity",
+        county: args.county,
+        ok: identity.sum === identity.parcelsRead,
+        equation: identity.equation,
+      }),
+    );
 
     const provenance = {
       sourceAdapter: SOURCE_ADAPTER,

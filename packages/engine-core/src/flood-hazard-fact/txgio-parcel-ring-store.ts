@@ -119,6 +119,35 @@ export async function fetchTxgioParcelRing(
 }
 
 /**
+ * Prefill a MemoryParcelRingStore from txgio_parcel rows.
+ * First write for a parcelKey wins. That matches selectPlannableParcels
+ * first-key-wins (lowest feature_index on the writer page). Last-write-wins
+ * pairs feature A's centroid with feature B's ring.
+ *
+ * This is SS-W17's duplicate-resolution convention, not a second derivation
+ * of which feature the parcel is. Reproducing 229 licenses apply against
+ * that baseline.
+ */
+export function ingestTxgioParcelRingRows(
+  store: MemoryParcelRingStore,
+  countyFips: string,
+  rows: ReadonlyArray<{
+    feature_index: number;
+    prop_id: string | null;
+    geometry: unknown;
+  }>,
+): void {
+  const fips = assertCountyFips(countyFips);
+  for (const row of rows) {
+    const parcelKey = row.prop_id ?? `_feature-${row.feature_index}`;
+    if (store.getRing({ countyFips: fips, parcelKey }).status === "present") {
+      continue;
+    }
+    store.set(fips, parcelKey, row.geometry);
+  }
+}
+
+/**
  * Prefetch rings for the county writer. SECOND query, keyed by the same
  * parcelKeys the centroid page produced. Does not reuse that page's
  * GeoJSON objects.
@@ -143,9 +172,6 @@ export async function loadTxgioParcelRingStore(
     Array<{ feature_index: number; prop_id: string | null; geometry: unknown }>
   >(TXGIO_PARCEL_RING_COUNTY_BATCH_SQL, [fips, propIds, featureIndexes]);
 
-  for (const row of rows) {
-    const parcelKey = row.prop_id ?? `_feature-${row.feature_index}`;
-    store.set(fips, parcelKey, row.geometry);
-  }
+  ingestTxgioParcelRingRows(store, fips, rows);
   return store;
 }

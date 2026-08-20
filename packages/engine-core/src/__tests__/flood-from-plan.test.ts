@@ -54,6 +54,17 @@ const PLAN: CountyFloodHazardPlan = {
     absent: 1,
     refused: 0,
     skippedUnusableKey: 0,
+    skippedDuplicateKey: 0,
+  },
+  populationIdentity: {
+    parcelsRead: 2,
+    skippedUnusableKey: 0,
+    skippedDuplicateKey: 0,
+    contained: 1,
+    notContained: 0,
+    unmeasurable: 0,
+    sum: 1,
+    equation: "fixture — --from-plan does not re-run identity",
   },
 };
 

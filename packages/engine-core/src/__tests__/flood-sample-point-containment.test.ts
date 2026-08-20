@@ -27,6 +27,7 @@ import {
 } from "../flood-hazard-fact/index.js";
 import { pointInGeoJson, type LngLat } from "../flood-hazard-fact/geo.js";
 import {
+  ingestTxgioParcelRingRows,
   parseFloodParcelStoreKey,
   TXGIO_PARCEL_RING_BY_FEATURE_INDEX_SQL,
   TXGIO_PARCEL_RING_BY_PROP_ID_SQL,
@@ -155,6 +156,28 @@ describe("store demonstration: the check reads the ParcelRingStore", () => {
       countyFips: "48021",
       featureIndex: 12,
     });
+  });
+
+  it("first-write-wins: later feature_index for the same prop_id does not replace the ring", () => {
+    const store = new MemoryParcelRingStore("txgio_parcel");
+    ingestTxgioParcelRingRows(store, COUNTY, [
+      { feature_index: 1634, prop_id: "10250", geometry: ATOM_RING },
+      { feature_index: 1635, prop_id: "10250", geometry: STORE_RING },
+    ]);
+    const live = classifySamplePointContainment(POINT, {
+      countyFips: COUNTY,
+      parcelKey: "10250",
+    }, store);
+    expect(live.state).toBe("contained");
+    const lastWins = new MemoryParcelRingStore("txgio_parcel");
+    lastWins.set(COUNTY, "10250", ATOM_RING);
+    lastWins.set(COUNTY, "10250", STORE_RING);
+    expect(
+      classifySamplePointContainment(POINT, {
+        countyFips: COUNTY,
+        parcelKey: "10250",
+      }, lastWins).state,
+    ).toBe("not-contained");
   });
 });
 
@@ -319,13 +342,14 @@ describe("plan path: not-contained cannot be emitted as present", () => {
     ).toThrow(/ringStore/);
   });
 
-  it("B5 null centroid still absents without collapsing into not-contained", () => {
+  it("B5 null centroid is unmeasurable, still absents, never not-contained", () => {
     const store = new MemoryParcelRingStore("txgio_parcel");
     const sel = selectPlannableParcels(
       [{ parcelKey: KEY, centroid: null }],
       { countyFips: COUNTY, ringStore: store },
     );
-    expect(sel.items[0]!.containment).toBeNull();
+    expect(sel.items[0]!.containment.state).toBe("unmeasurable");
+    expect(sel.items[0]!.containment.cause).toBe("no-point");
     const plan = assembleCountyFloodHazardPlan(sel, [null], {
       countyFips: COUNTY,
       zonesIndexed: 10,
@@ -336,7 +360,8 @@ describe("plan path: not-contained cannot be emitted as present", () => {
     });
     expect(plan.counts.refused).toBe(0);
     expect(plan.containment.notContained).toBe(0);
-    expect(plan.containment.unmeasurable).toBe(0);
+    expect(plan.containment.unmeasurable).toBe(1);
+    expect(plan.populationIdentity.sum).toBe(1);
   });
 });
 

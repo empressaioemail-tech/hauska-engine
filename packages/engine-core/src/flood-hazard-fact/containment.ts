@@ -282,7 +282,7 @@ export function emptyContainmentTally(): ContainmentTally {
     refused: 0,
     byReasonCode: {},
     countingRule:
-      "one count per FINITE-POINT plannable parcel. contained + notContained + unmeasurable = that population, measured not subtracted. Null centroid is B5 absence and is not a containment class. emitted + refused = the same finite-point population.",
+      "one count per loaded parcel that survived key skip. contained + notContained + unmeasurable = that classified population. Null centroid is unmeasurable (cause no-point), never silently dropped. parcelsRead = skippedUnusable + skippedDuplicate + contained + notContained + unmeasurable.",
   };
 }
 

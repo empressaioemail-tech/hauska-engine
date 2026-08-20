@@ -96,22 +96,84 @@ export interface CountyFloodHazardPlan {
     absent: number;
     refused: number;
     skippedUnusableKey: number;
+    skippedDuplicateKey: number;
   };
+  /** Loaded-row identity. Must equal parcelsRead. Printed on every dry-run. */
+  populationIdentity: FloodPlanPopulationIdentity;
 }
 
 /** A parcel that survived key normalization and dedupe, in plan order. */
 export interface PlannableParcel {
   parcelKey: string;
   centroid: LngLat | null;
-  /** Null when there is no finite point — B5 absence, not a containment class. */
-  containment: ContainmentVerdict | null;
-  gate: FloodDeterminationGateResult | null;
+  containment: ContainmentVerdict;
+  gate: FloodDeterminationGateResult;
 }
 
 export interface PlannableParcelSelection {
   items: PlannableParcel[];
   skippedUnusableKey: number;
+  skippedDuplicateKey: number;
   parcelsRead: number;
+}
+
+export interface FloodPlanPopulationIdentity {
+  parcelsRead: number;
+  skippedUnusableKey: number;
+  skippedDuplicateKey: number;
+  contained: number;
+  notContained: number;
+  unmeasurable: number;
+  sum: number;
+  equation: string;
+}
+
+/**
+ * Every loaded row is in exactly one named bucket. A county that reports
+ * unmeasurable: 0 while parcels have no centroid has dropped them from the
+ * denominator. That is the failure the three-state rule exists to prevent.
+ */
+export function floodPlanPopulationIdentity(plan: {
+  parcelsRead: number;
+  counts: { skippedUnusableKey: number; skippedDuplicateKey: number };
+  containment: { contained: number; notContained: number; unmeasurable: number };
+}): FloodPlanPopulationIdentity {
+  const skippedUnusableKey = plan.counts.skippedUnusableKey;
+  const skippedDuplicateKey = plan.counts.skippedDuplicateKey;
+  const contained = plan.containment.contained;
+  const notContained = plan.containment.notContained;
+  const unmeasurable = plan.containment.unmeasurable;
+  const sum =
+    skippedUnusableKey +
+    skippedDuplicateKey +
+    contained +
+    notContained +
+    unmeasurable;
+  return {
+    parcelsRead: plan.parcelsRead,
+    skippedUnusableKey,
+    skippedDuplicateKey,
+    contained,
+    notContained,
+    unmeasurable,
+    sum,
+    equation:
+      `${contained} contained + ${notContained} not-contained + ${unmeasurable} unmeasurable + ` +
+      `${skippedUnusableKey} skipped-unusable + ${skippedDuplicateKey} skipped-duplicate = ${sum} ` +
+      `(parcelsRead ${plan.parcelsRead})`,
+  };
+}
+
+export function assertFloodPlanPopulationIdentity(
+  plan: Parameters<typeof floodPlanPopulationIdentity>[0],
+): FloodPlanPopulationIdentity {
+  const identity = floodPlanPopulationIdentity(plan);
+  if (identity.sum !== identity.parcelsRead) {
+    throw new Error(
+      `flood plan population identity FAIL: ${identity.equation}`,
+    );
+  }
+  return identity;
 }
 
 /** The zone attributes a resolved point-in-polygon hit contributes to a record. */
@@ -145,6 +207,7 @@ export function selectPlannableParcels(
   const items: PlannableParcel[] = [];
   const seen = new Set<string>();
   let skippedUnusableKey = 0;
+  let skippedDuplicateKey = 0;
 
   for (const parcel of parcels) {
     const key = parcel.parcelKey?.trim() ?? "";
@@ -152,25 +215,13 @@ export function selectPlannableParcels(
       skippedUnusableKey += 1;
       continue;
     }
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      skippedDuplicateKey += 1;
+      continue;
+    }
     seen.add(key);
 
     const centroid = parcel.centroid;
-    const usable =
-      Boolean(centroid) &&
-      Number.isFinite(centroid![0]) &&
-      Number.isFinite(centroid![1]);
-
-    if (!usable) {
-      items.push({
-        parcelKey: key,
-        centroid,
-        containment: null,
-        gate: null,
-      });
-      continue;
-    }
-
     const containment = classifySamplePointContainment(
       centroid,
       { countyFips: opts.countyFips, parcelKey: key },
@@ -180,7 +231,12 @@ export function selectPlannableParcels(
     items.push({ parcelKey: key, centroid, containment, gate });
   }
 
-  return { items, skippedUnusableKey, parcelsRead: parcels.length };
+  return {
+    items,
+    skippedUnusableKey,
+    skippedDuplicateKey,
+    parcelsRead: parcels.length,
+  };
 }
 
 export function hasUsableCentroid(parcel: PlannableParcel): boolean {
@@ -197,11 +253,7 @@ export function hasUsableCentroid(parcel: PlannableParcel): boolean {
  * determination is not to compute one.
  */
 export function isQueryableParcel(parcel: PlannableParcel): boolean {
-  return (
-    hasUsableCentroid(parcel) &&
-    parcel.gate != null &&
-    parcel.gate.decision === "emit"
-  );
+  return hasUsableCentroid(parcel) && parcel.gate.decision === "emit";
 }
 
 /**
@@ -226,23 +278,26 @@ export function assembleCountyFloodHazardPlan(
     const parcel = selection.items[i]!;
     const key = parcel.parcelKey;
 
-    if (parcel.containment && parcel.gate) {
-      tallyContainment(containment, parcel.containment, parcel.gate);
-      if (parcel.gate.decision === "refuse") {
-        refused.push({
-          outcome: "refused",
-          parcelKey: key,
-          reasonCode: parcel.gate.reasonCode,
-          reason: `${opts.countyFips}:${key} — ${parcel.gate.basis}`,
-          samplePointContainment: parcel.containment.state,
-        });
-        continue;
-      }
-      if (parcel.containment.state === "not-contained") {
-        throw new Error(
-          `unreachable: ${opts.countyFips}:${key} passed the flood determination gate while not-contained`,
-        );
-      }
+    tallyContainment(containment, parcel.containment, parcel.gate);
+    // Null-centroid is unmeasurable (no-point) and still a B5 typed absence,
+    // not a refused determination. Ring-missing and not-contained refuse.
+    if (
+      parcel.gate.decision === "refuse" &&
+      parcel.containment.cause !== "no-point"
+    ) {
+      refused.push({
+        outcome: "refused",
+        parcelKey: key,
+        reasonCode: parcel.gate.reasonCode,
+        reason: `${opts.countyFips}:${key} — ${parcel.gate.basis}`,
+        samplePointContainment: parcel.containment.state,
+      });
+      continue;
+    }
+    if (parcel.containment.state === "not-contained") {
+      throw new Error(
+        `unreachable: ${opts.countyFips}:${key} passed the flood determination gate while not-contained`,
+      );
     }
 
     if (emptyZoneIndex) {
@@ -293,7 +348,16 @@ export function assembleCountyFloodHazardPlan(
     else presentOutside += 1;
   }
 
-  return {
+  const counts = {
+    present: planned.filter((p) => p.outcome === "present").length,
+    presentInSfha,
+    presentOutside,
+    absent: planned.filter((p) => p.outcome === "absent").length,
+    refused: refused.length,
+    skippedUnusableKey: selection.skippedUnusableKey,
+    skippedDuplicateKey: selection.skippedDuplicateKey,
+  };
+  const draft = {
     countyFips: opts.countyFips,
     zonesIndexed: opts.zonesIndexed,
     parcelsRead: selection.parcelsRead,
@@ -301,15 +365,10 @@ export function assembleCountyFloodHazardPlan(
     planned,
     refused,
     containment,
-    counts: {
-      present: planned.filter((p) => p.outcome === "present").length,
-      presentInSfha,
-      presentOutside,
-      absent: planned.filter((p) => p.outcome === "absent").length,
-      refused: refused.length,
-      skippedUnusableKey: selection.skippedUnusableKey,
-    },
+    counts,
   };
+  const populationIdentity = assertFloodPlanPopulationIdentity(draft);
+  return { ...draft, populationIdentity };
 }
 
 export function planCountyFloodHazard(

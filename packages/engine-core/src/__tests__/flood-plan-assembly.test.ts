@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assembleCountyFloodHazardPlan,
+  assertFloodPlanPopulationIdentity,
   hasUsableCentroid,
   planCountyFloodHazard,
   selectPlannableParcels,
@@ -71,8 +72,8 @@ describe("selectPlannableParcels", () => {
     ]);
     expect(sel.items).toHaveLength(1);
     expect(sel.items[0]!.centroid).toEqual([-97.1, 30.1]);
-    // A duplicate is not "unusable" — it is already planned.
     expect(sel.skippedUnusableKey).toBe(0);
+    expect(sel.skippedDuplicateKey).toBe(1);
   });
 
   it("treats a non-finite centroid as unusable without dropping the parcel", () => {
@@ -230,5 +231,45 @@ describe("planCountyFloodHazard still routes through the shared assembly", () =>
     );
     expect(viaPlanner.planned).toEqual(viaAssembly.planned);
     expect(viaPlanner.counts).toEqual(viaAssembly.counts);
+  });
+});
+
+describe("flood plan population identity", () => {
+  it("sums skipped + three states to parcelsRead, including null-centroid unmeasurable", () => {
+    const parcels: FloodParcelInput[] = [
+      parcel("0"),
+      parcel("R1", -97.1, 30.1),
+      parcel("R1", -97.1, 30.1),
+      parcel("R2", null),
+      parcel("R3", -97.2, 30.2),
+    ];
+    const sel = select(parcels);
+    const plan = assembleCountyFloodHazardPlan(
+      sel,
+      sel.items.map(() => AE),
+      { countyFips: COUNTY, zonesIndexed: 10 },
+    );
+    expect(plan.parcelsRead).toBe(5);
+    expect(plan.counts.skippedUnusableKey).toBe(1);
+    expect(plan.counts.skippedDuplicateKey).toBe(1);
+    expect(plan.containment.unmeasurable).toBe(1);
+    expect(plan.containment.notContained).toBe(0);
+    expect(plan.containment.contained).toBe(2);
+    expect(plan.populationIdentity.sum).toBe(5);
+    expect(plan.populationIdentity.equation).toMatch(/parcelsRead 5/);
+  });
+
+  it("FIRES when a bucket is dropped from the denominator", () => {
+    const sel = select([parcel("R1")]);
+    const plan = assembleCountyFloodHazardPlan(sel, [AE], {
+      countyFips: COUNTY,
+      zonesIndexed: 1,
+    });
+    expect(() =>
+      assertFloodPlanPopulationIdentity({
+        ...plan,
+        parcelsRead: 99,
+      }),
+    ).toThrow(/population identity FAIL/);
   });
 });
