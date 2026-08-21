@@ -15,9 +15,11 @@ import {
   factClaimContentHash,
   landUseFactAtomDid,
 } from "./fact-writer-ids.js";
+import { mintParcelFactIdentity } from "./parcel-write-identity.js";
 import type {
   EnginePropertyPersistence,
   LandUseFactAtomInstance,
+  ParcelExternalKey,
 } from "./property-instances.js";
 import type { PropertyFactWriteProvenance } from "./cad-parcel-roll-writer.js";
 
@@ -54,6 +56,7 @@ function persistenceOf(
   entityId: string,
   provenance: PropertyFactWriteProvenance,
   observedAt: string,
+  externalKeys?: ReadonlyArray<ParcelExternalKey>,
 ): EnginePropertyPersistence {
   return {
     entityId,
@@ -63,6 +66,7 @@ function persistenceOf(
     sourceUrl: provenance.sourceUrl,
     contentHash: provenance.contentHash,
     status: "active",
+    ...(externalKeys && externalKeys.length > 0 ? { externalKeys } : {}),
   };
 }
 
@@ -91,15 +95,18 @@ export function buildPresentLandUseFactAtom(
   provenance: PropertyFactWriteProvenance,
 ): LandUseFactAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
+  const id = mintParcelFactIdentity(observation.parcelNodeId, [
+    String(observation.taxYear),
+  ]);
   const atomDid = landUseFactAtomDid({
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     taxYear: observation.taxYear,
   });
 
   const contractAtom = createLandUseFact({
     entityType: "land-use-fact",
     atomDid,
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     taxYear: observation.taxYear,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier: "cad-authoritative",
@@ -122,11 +129,7 @@ export function buildPresentLandUseFactAtom(
 
   return {
     ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(observation.parcelNodeId, observation.taxYear),
-      provenance,
-      observedAt,
-    ),
+    ...persistenceOf(id.entityId, provenance, observedAt, id.externalKeys),
   };
 }
 
@@ -135,15 +138,18 @@ export function buildLandUseFactAbsenceAtom(
   provenance: PropertyFactWriteProvenance,
 ): LandUseFactAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
+  const id = mintParcelFactIdentity(observation.parcelNodeId, [
+    String(observation.taxYear),
+  ]);
   const atomDid = landUseFactAtomDid({
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     taxYear: observation.taxYear,
   });
 
   const contractAtom = createLandUseFact({
     entityType: "land-use-fact",
     atomDid,
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     taxYear: observation.taxYear,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier: "cad-authoritative",
@@ -166,11 +172,7 @@ export function buildLandUseFactAbsenceAtom(
 
   return {
     ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(observation.parcelNodeId, observation.taxYear),
-      provenance,
-      observedAt,
-    ),
+    ...persistenceOf(id.entityId, provenance, observedAt, id.externalKeys),
   };
 }
 

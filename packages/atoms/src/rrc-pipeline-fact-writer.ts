@@ -17,6 +17,7 @@ import {
   factClaimContentHash,
   rrcPipelineFactAtomDid,
 } from "./fact-writer-ids.js";
+import { finalizeParcelFactAtom } from "./parcel-write-identity.js";
 import type {
   EnginePropertyPersistence,
   RrcPipelineFactAtomInstance,
@@ -185,10 +186,10 @@ export function buildPresentRrcPipelineFactAtom(
     atomTier: "data",
   });
 
-  return {
+  return finalizeParcelFactAtom({
     ...contractAtom,
     ...persistenceOf(observation.parcelNodeId, provenance, observedAt),
-  };
+  });
 }
 
 export function buildRrcPipelineFactAbsenceAtom(
@@ -227,10 +228,10 @@ export function buildRrcPipelineFactAbsenceAtom(
     atomTier: "data",
   });
 
-  return {
+  return finalizeParcelFactAtom({
     ...contractAtom,
     ...persistenceOf(observation.parcelNodeId, provenance, observedAt),
-  };
+  });
 }
 
 export function buildCountyRrcPipelineCoverageAbsenceAtom(

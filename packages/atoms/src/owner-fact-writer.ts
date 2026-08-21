@@ -26,6 +26,7 @@ import {
 } from "@empressaio/atom-contract/property";
 
 import { factClaimContentHash, ownerFactAtomDid } from "./fact-writer-ids.js";
+import { finalizeParcelFactAtom } from "./parcel-write-identity.js";
 import type {
   EnginePropertyPersistence,
   OwnerFactAtomInstance,
@@ -178,14 +179,17 @@ export function buildPresentOwnerFactAtom(
     atomTier: "data",
   });
 
-  return {
-    ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(observation.parcelNodeId, observation.taxYear),
-      provenance,
-      observedAt,
-    ),
-  };
+  return finalizeParcelFactAtom(
+    {
+      ...contractAtom,
+      ...persistenceOf(
+        entityIdOf(observation.parcelNodeId, observation.taxYear),
+        provenance,
+        observedAt,
+      ),
+    },
+    [String(observation.taxYear)],
+  );
 }
 
 export function buildOwnerFactAbsenceAtom(
@@ -222,14 +226,17 @@ export function buildOwnerFactAbsenceAtom(
     atomTier: "data",
   });
 
-  return {
-    ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(observation.parcelNodeId, observation.taxYear),
-      provenance,
-      observedAt,
-    ),
-  };
+  return finalizeParcelFactAtom(
+    {
+      ...contractAtom,
+      ...persistenceOf(
+        entityIdOf(observation.parcelNodeId, observation.taxYear),
+        provenance,
+        observedAt,
+      ),
+    },
+    [String(observation.taxYear)],
+  );
 }
 
 export function buildCountyOwnerCoverageAbsenceAtom(

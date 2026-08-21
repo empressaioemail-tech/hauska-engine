@@ -16,6 +16,7 @@ import {
 } from "@empressaio/atom-contract/property";
 
 import { factClaimContentHash, wellFactAtomDid } from "./fact-writer-ids.js";
+import { finalizeParcelFactAtom } from "./parcel-write-identity.js";
 import type {
   EnginePropertyPersistence,
   WellFactAtomInstance,
@@ -139,14 +140,17 @@ export function buildPresentWellFactAtom(
     atomTier: "data",
   });
 
-  return {
-    ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(observation.parcelNodeId, observation.wellKey),
-      provenance,
-      observedAt,
-    ),
-  };
+  return finalizeParcelFactAtom(
+    {
+      ...contractAtom,
+      ...persistenceOf(
+        entityIdOf(observation.parcelNodeId, observation.wellKey),
+        provenance,
+        observedAt,
+      ),
+    },
+    [observation.wellKey],
+  );
 }
 
 export function buildWellFactAbsenceAtom(
@@ -182,14 +186,17 @@ export function buildWellFactAbsenceAtom(
     atomTier: "data",
   });
 
-  return {
-    ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(observation.parcelNodeId, observation.wellKey),
-      provenance,
-      observedAt,
-    ),
-  };
+  return finalizeParcelFactAtom(
+    {
+      ...contractAtom,
+      ...persistenceOf(
+        entityIdOf(observation.parcelNodeId, observation.wellKey),
+        provenance,
+        observedAt,
+      ),
+    },
+    [observation.wellKey],
+  );
 }
 
 export function buildCountyWellFactCoverageAbsenceAtom(

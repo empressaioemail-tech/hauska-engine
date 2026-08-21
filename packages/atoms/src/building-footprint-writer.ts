@@ -16,9 +16,15 @@ import {
   buildingFootprintAtomDid,
   factClaimContentHash,
 } from "./fact-writer-ids.js";
+import {
+  buildingFootprintAbsenceEntityId,
+  buildingFootprintPresentEntityId,
+  mintParcelFactIdentity,
+} from "./parcel-write-identity.js";
 import type {
   BuildingFootprintAtomInstance,
   EnginePropertyPersistence,
+  ParcelExternalKey,
 } from "./property-instances.js";
 import type { PropertyFactWriteProvenance } from "./cad-parcel-roll-writer.js";
 
@@ -55,14 +61,11 @@ export interface CountyBuildingFootprintCoverageAbsenceObservation {
   asOf?: string;
 }
 
-function entityIdOf(parcelNodeId: string, footprintId: string): string {
-  return `${parcelNodeId}:footprint:${footprintId}`;
-}
-
 function persistenceOf(
   entityId: string,
   provenance: PropertyFactWriteProvenance,
   observedAt: string,
+  externalKeys?: ReadonlyArray<ParcelExternalKey>,
 ): EnginePropertyPersistence {
   return {
     entityId,
@@ -72,6 +75,7 @@ function persistenceOf(
     sourceUrl: provenance.sourceUrl,
     contentHash: provenance.contentHash,
     status: "active",
+    ...(externalKeys && externalKeys.length > 0 ? { externalKeys } : {}),
   };
 }
 
@@ -103,22 +107,25 @@ export function buildPresentBuildingFootprintAtom(
 ): BuildingFootprintAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
   const footprintId = observation.footprintId;
+  const id = buildingFootprintPresentEntityId(observation.parcelNodeId, footprintId);
   const atomDid = buildingFootprintAtomDid({
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     footprintId,
   });
 
   const contractAtom = createBuildingFootprint({
     entityType: "building-footprint",
     atomDid,
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     footprintId,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier: observation.sourceTier,
     footprintGeometry: observation.footprintGeometry,
     ...(observation.structureRole
       ? { structureRole: observation.structureRole }
-      : {}),
+      : footprintId === "primary"
+        ? { structureRole: "primary" as const }
+        : {}),
     accessPolicy: "public-free",
     sourceCitation: provenance.sourceCitation,
     extractedAt: observedAt,
@@ -139,11 +146,7 @@ export function buildPresentBuildingFootprintAtom(
 
   return {
     ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(observation.parcelNodeId, footprintId),
-      provenance,
-      observedAt,
-    ),
+    ...persistenceOf(id.entityId, provenance, observedAt, id.externalKeys),
   };
 }
 
@@ -152,9 +155,10 @@ export function buildBuildingFootprintPerParcelAbsenceAtom(
   provenance: PropertyFactWriteProvenance,
 ): BuildingFootprintAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
-  const footprintId = observation.footprintId ?? "primary";
+  const footprintId = observation.footprintId ?? "none";
+  const id = buildingFootprintAbsenceEntityId(observation.parcelNodeId);
   const atomDid = buildingFootprintAtomDid({
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     footprintId,
   });
   const sourceTier = observation.sourceTier ?? "ml-derived";
@@ -162,7 +166,7 @@ export function buildBuildingFootprintPerParcelAbsenceAtom(
   const contractAtom = createBuildingFootprint({
     entityType: "building-footprint",
     atomDid,
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     footprintId,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier,
@@ -185,11 +189,7 @@ export function buildBuildingFootprintPerParcelAbsenceAtom(
 
   return {
     ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(observation.parcelNodeId, footprintId),
-      provenance,
-      observedAt,
-    ),
+    ...persistenceOf(id.entityId, provenance, observedAt, id.externalKeys),
   };
 }
 
@@ -198,14 +198,18 @@ export function buildCountyBuildingFootprintCoverageAbsenceAtom(
   provenance: PropertyFactWriteProvenance,
 ): BuildingFootprintAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
-  const parcelNodeId = countyCoverageParcelNodeId(observation.countyFips);
+  const coverageId = countyCoverageParcelNodeId(observation.countyFips);
+  const id = mintParcelFactIdentity(coverageId, ["footprint", "county-coverage"]);
   const footprintId = "county-coverage";
-  const atomDid = buildingFootprintAtomDid({ parcelNodeId, footprintId });
+  const atomDid = buildingFootprintAtomDid({
+    parcelNodeId: id.parcelNodeId,
+    footprintId,
+  });
 
   const contractAtom = createBuildingFootprint({
     entityType: "building-footprint",
     atomDid,
-    parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     footprintId,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier: "absent",
@@ -228,10 +232,6 @@ export function buildCountyBuildingFootprintCoverageAbsenceAtom(
 
   return {
     ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(parcelNodeId, footprintId),
-      provenance,
-      observedAt,
-    ),
+    ...persistenceOf(id.entityId, provenance, observedAt, id.externalKeys),
   };
 }

@@ -382,6 +382,25 @@ describe("flood-hazard-fact writer seam", () => {
     expect(atom.entityId).toBe("48261:15271");
     expect(atom.atomDid).toMatch(/^fhfact_[0-9a-f]{16}$/);
     expect(atom.absence).toBeUndefined();
+    expect(atom.externalKeys?.[0]?.keyValue).toBe("48261:15271");
+  });
+
+  it("canonicalizes padded StratMap parcelNodeId and keeps the pad in externalKeys (WDLL 11 C1/C3)", () => {
+    const atom = buildPresentFloodHazardFactAtom(
+      {
+        parcelNodeId: "48021:27303.00000000",
+        inSpecialFloodHazardArea: false,
+        floodZone: null,
+      },
+      {
+        ...PROVENANCE,
+        sourceAdapter: "fema-nfhl-bulk-v1",
+        sourceCitation: "FEMA NFHL S_FLD_HAZ_AR 2026-01-01",
+      },
+    );
+    expect(atom.entityId).toBe("48021:27303");
+    expect(atom.parcelNodeId).toBe("48021:27303");
+    expect(atom.externalKeys?.[0]?.keyValue).toBe("48021:27303.00000000");
   });
 
   it("builds per-parcel no-flood-coverage absence", () => {
@@ -608,6 +627,8 @@ describe("special-district-fact writer seam", () => {
       PROVENANCE,
     );
     expect(atom.absence?.kind).toBe("outside-tceq-source-boundaries");
-    expect(atom.entityId).toBe("48021:27303:sd:outside");
+    expect(atom.entityId).toBe("48021:27303:sd");
+    expect(atom.entityId.includes("outside")).toBe(false);
+    expect(atom.externalKeys?.[0]?.keyValue).toBe("48021:27303");
   });
 });

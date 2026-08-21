@@ -20,6 +20,7 @@ import {
   cadParcelRollAtomDid,
   factClaimContentHash,
 } from "./fact-writer-ids.js";
+import { finalizeParcelFactAtom } from "./parcel-write-identity.js";
 import type {
   CadParcelRollAtomInstance,
   EnginePropertyPersistence,
@@ -217,14 +218,17 @@ export function buildPresentCadParcelRollAtom(
     atomTier: "data",
   });
 
-  return {
-    ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(parcelNodeId, observation.taxYear),
-      provenance,
-      observedAt,
-    ),
-  };
+  return finalizeParcelFactAtom(
+    {
+      ...contractAtom,
+      ...persistenceOf(
+        entityIdOf(parcelNodeId, observation.taxYear),
+        provenance,
+        observedAt,
+      ),
+    },
+    [String(observation.taxYear)],
+  );
 }
 
 export function buildCadParcelRollAbsenceAtom(
@@ -270,14 +274,17 @@ export function buildCadParcelRollAbsenceAtom(
     atomTier: "data",
   });
 
-  return {
-    ...contractAtom,
-    ...persistenceOf(
-      entityIdOf(parcelNodeId, observation.taxYear),
-      provenance,
-      observedAt,
-    ),
-  };
+  return finalizeParcelFactAtom(
+    {
+      ...contractAtom,
+      ...persistenceOf(
+        entityIdOf(parcelNodeId, observation.taxYear),
+        provenance,
+        observedAt,
+      ),
+    },
+    [String(observation.taxYear)],
+  );
 }
 
 export function buildCountyCadRollCoverageAbsenceAtom(

@@ -35,6 +35,7 @@ export * from "./instances.js";
 export * from "./property-instances.js";
 export * from "./parcel-node-writer.js";
 export * from "./fact-writer-ids.js";
+export * from "./parcel-write-identity.js";
 export * from "./cad-parcel-roll-writer.js";
 export * from "./building-footprint-writer.js";
 export * from "./utility-easement-writer.js";

@@ -18,6 +18,8 @@ import {
   isPropertyAtomInstance,
   isRoadNodeAtomInstance,
   PARCEL_KEYED_PROPERTY_ENTITY_TYPES,
+  appliesToLinksFromPropertyAtoms,
+  assertCanonicalParcelEntityId,
   type PropertyAtomInstance,
   type RoadNodeAtomInstance,
   type StoredAtomInstance,
@@ -212,6 +214,7 @@ export class PgStorage implements StoragePort {
   async writePropertyAtom(
     instance: PropertyAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {
+    assertCanonicalParcelEntityId(instance.entityId);
     const atomDid =
       typeof instance.atomDid === "string" &&
       instance.atomDid.startsWith("did:hauska:")
@@ -265,6 +268,8 @@ export class PgStorage implements StoragePort {
         updated_at = now()
     `;
 
+    const links = appliesToLinksFromPropertyAtoms([instance]);
+    if (links.length > 0) await this.writeAtomLinks(links);
     return { atomDid, cid: pin.cid };
   }
 
@@ -272,6 +277,9 @@ export class PgStorage implements StoragePort {
     instances: ReadonlyArray<PropertyAtomInstance>,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
     if (instances.length === 0) return [];
+    for (const inst of instances) {
+      assertCanonicalParcelEntityId(inst.entityId);
+    }
     // OPS-16 A-012: fail closed without the live DB lease. Named error
     // ATOMS_WRITER_LEASE_NOT_HELD. Holder from ATOMS_WRITER_LEASE_HOLDER.
     await assertAndHeartbeatWriterLease(this.sql);
@@ -279,6 +287,8 @@ export class PgStorage implements StoragePort {
       dedupe: true,
     });
     await upsertPropertyAtomRowsMulti(this.sql, rows);
+    const links = appliesToLinksFromPropertyAtoms(instances);
+    if (links.length > 0) await this.writeAtomLinks(links);
     return out;
   }
 

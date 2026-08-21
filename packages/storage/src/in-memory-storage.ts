@@ -7,7 +7,12 @@
  * so retrieval-api endpoints can be exercised end-to-end pre-Postgres).
  */
 
-import { buildAtomDid, type AtomLink } from "@hauska-engine/atoms";
+import {
+  appliesToLinksFromPropertyAtoms,
+  assertCanonicalParcelEntityId,
+  buildAtomDid,
+  type AtomLink,
+} from "@hauska-engine/atoms";
 import type {
   BoundaryEdgeAtomInstance,
   CodeAtomInstance,
@@ -62,6 +67,7 @@ export class InMemoryStorage implements StoragePort {
   async writePropertyAtom(
     instance: PropertyAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {
+    assertCanonicalParcelEntityId(instance.entityId);
     const atomDid =
       typeof instance.atomDid === "string" &&
       instance.atomDid.startsWith("did:hauska:")
@@ -71,6 +77,8 @@ export class InMemoryStorage implements StoragePort {
     this.atoms.set(atomDid, instance);
     this.cids.set(atomDid, pin.cid);
     this.cache.set(atomDid, instance);
+    const links = appliesToLinksFromPropertyAtoms([instance]);
+    if (links.length > 0) await this.writeAtomLinks(links);
     return { atomDid, cid: pin.cid };
   }
 

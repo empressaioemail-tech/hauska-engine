@@ -233,6 +233,8 @@ export interface EnginePropertyPersistence {
   versionStamp?: string;
   retiredAt?: string;
   supersedesEntityId?: string;
+  /** Source aliases for the canonical entity_id (Wave C / C3). */
+  externalKeys?: ReadonlyArray<ParcelExternalKey>;
 }
 
 /** Optional envelope geometry outcome (engine extension; not a confidence multiply). */

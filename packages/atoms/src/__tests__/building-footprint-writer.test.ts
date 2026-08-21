@@ -65,7 +65,10 @@ describe("building-footprint writer seam", () => {
     );
 
     expect(atom.entityType).toBe("building-footprint");
-    expect(atom.entityId).toBe("48021:27303:footprint:primary");
+    expect(atom.entityId).toBe("48021:27303:footprint");
+    expect(atom.structureRole).toBe("primary");
+    expect(atom.entityId.includes("primary")).toBe(false);
+    expect(atom.externalKeys?.[0]?.keyValue).toBe("48021:27303");
     expect(atom.sourceTier).toBe("ml-derived");
     expect(atom.accessPolicy).toBe("public-free");
     expect(BUILDING_FOOTPRINT_SCHEMA.safeParse(atom).success).toBe(true);
