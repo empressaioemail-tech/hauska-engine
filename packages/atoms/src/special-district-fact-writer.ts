@@ -19,8 +19,13 @@ import {
   factClaimContentHash,
   specialDistrictFactAtomDid,
 } from "./fact-writer-ids.js";
+import {
+  specialDistrictAbsenceEntityId,
+  specialDistrictPresentEntityId,
+} from "./parcel-write-identity.js";
 import type {
   EnginePropertyPersistence,
+  ParcelExternalKey,
   SpecialDistrictFactAtomInstance,
 } from "./property-instances.js";
 import type { PropertyFactWriteProvenance } from "./cad-parcel-roll-writer.js";
@@ -80,21 +85,11 @@ export interface CountySpecialDistrictCoverageAbsenceObservation {
   asOf?: string;
 }
 
-function entityIdForPresent(
-  parcelNodeId: string,
-  districtId: string,
-): string {
-  return `${parcelNodeId}:sd:${districtId}`;
-}
-
-function entityIdForOutside(parcelNodeId: string): string {
-  return `${parcelNodeId}:sd:outside`;
-}
-
 function persistenceOf(
   entityId: string,
   provenance: PropertyFactWriteProvenance,
   observedAt: string,
+  externalKeys?: ReadonlyArray<ParcelExternalKey>,
 ): EnginePropertyPersistence {
   return {
     entityId,
@@ -104,6 +99,7 @@ function persistenceOf(
     sourceUrl: provenance.sourceUrl,
     contentHash: provenance.contentHash,
     status: "active",
+    ...(externalKeys && externalKeys.length > 0 ? { externalKeys } : {}),
   };
 }
 
@@ -132,15 +128,19 @@ export function buildPresentSpecialDistrictFactAtom(
   provenance: PropertyFactWriteProvenance,
 ): SpecialDistrictFactAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
+  const id = specialDistrictPresentEntityId(
+    observation.parcelNodeId,
+    observation.districtId,
+  );
   const atomDid = specialDistrictFactAtomDid({
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     districtId: observation.districtId,
   });
 
   const contractAtom = createSpecialDistrictFact({
     entityType: "special-district-fact",
     atomDid,
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier: "tceq-water-districts",
     districtName: observation.districtName,
@@ -164,11 +164,7 @@ export function buildPresentSpecialDistrictFactAtom(
 
   return {
     ...contractAtom,
-    ...persistenceOf(
-      entityIdForPresent(observation.parcelNodeId, observation.districtId),
-      provenance,
-      observedAt,
-    ),
+    ...persistenceOf(id.entityId, provenance, observedAt, id.externalKeys),
   };
 }
 
@@ -178,15 +174,16 @@ export function buildSpecialDistrictFactAbsenceAtom(
 ): SpecialDistrictFactAtomInstance {
   assertAbsenceReasonIsScoped(observation.reason);
   const observedAt = provenance.observedAt ?? new Date().toISOString();
+  const id = specialDistrictAbsenceEntityId(observation.parcelNodeId);
   const atomDid = specialDistrictFactAtomDid({
-    parcelNodeId: observation.parcelNodeId,
-    districtId: "outside",
+    parcelNodeId: id.parcelNodeId,
+    districtId: "none",
   });
 
   const contractAtom = createSpecialDistrictFact({
     entityType: "special-district-fact",
     atomDid,
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier: "tceq-water-districts",
     absence: {
@@ -208,11 +205,7 @@ export function buildSpecialDistrictFactAbsenceAtom(
 
   return {
     ...contractAtom,
-    ...persistenceOf(
-      entityIdForOutside(observation.parcelNodeId),
-      provenance,
-      observedAt,
-    ),
+    ...persistenceOf(id.entityId, provenance, observedAt, id.externalKeys),
   };
 }
 

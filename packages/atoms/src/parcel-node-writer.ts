@@ -40,6 +40,7 @@ import type {
   EnginePropertyPersistence,
   ParcelNodeAtomInstance,
 } from "./property-instances.js";
+import { resolveCanonicalParcelKey } from "./parcel-write-identity.js";
 
 /** Provenance every parcel-node write carries, whatever the outcome. */
 export interface ParcelNodeWriteProvenance {
@@ -129,10 +130,16 @@ export function buildResolvedParcelNodeAtom(
   provenance: ParcelNodeWriteProvenance,
 ): ParcelNodeAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
-  const parcelNodeId = parcelNodeIdOf(
-    observation.countyFips,
-    observation.parcelKey,
+  const id = resolveCanonicalParcelKey(
+    parcelNodeIdOf(observation.countyFips, observation.parcelKey),
   );
+  const parcelNodeId = id.parcelNodeId;
+  const externalKeys = [
+    ...(observation.externalKeys ?? []),
+    ...(id.paddedSource || !(observation.externalKeys && observation.externalKeys.length > 0)
+      ? id.externalKeys
+      : []),
+  ];
 
   const contractAtom = createParcelNode({
     entityType: "parcel-node",
@@ -140,7 +147,7 @@ export function buildResolvedParcelNodeAtom(
     parcelNodeId,
     countyFips: observation.countyFips,
     keyKind: observation.keyKind,
-    ...(observation.externalKeys ? { externalKeys: observation.externalKeys } : {}),
+    ...(externalKeys.length > 0 ? { externalKeys } : {}),
     reasoningChain: { reasoningKind: "observed" },
     geometrySourceTier: observation.geometrySourceTier,
     geometryStoreRef: {
@@ -181,10 +188,10 @@ export function buildParcelNodeAbsenceAtom(
   provenance: ParcelNodeWriteProvenance,
 ): ParcelNodeAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
-  const parcelNodeId = parcelNodeIdOf(
-    observation.countyFips,
-    observation.parcelKey,
+  const id = resolveCanonicalParcelKey(
+    parcelNodeIdOf(observation.countyFips, observation.parcelKey),
   );
+  const parcelNodeId = id.parcelNodeId;
 
   const contractAtom = createParcelNode({
     entityType: "parcel-node",
@@ -192,6 +199,7 @@ export function buildParcelNodeAbsenceAtom(
     parcelNodeId,
     countyFips: observation.countyFips,
     keyKind: observation.keyKind,
+    ...(id.externalKeys.length > 0 ? { externalKeys: id.externalKeys } : {}),
     reasoningChain: { reasoningKind: "observed" },
     geometrySourceTier: observation.geometrySourceTier,
     geometryLoaded: false,

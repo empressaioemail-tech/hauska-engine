@@ -16,9 +16,11 @@ import {
   factClaimContentHash,
   floodHazardFactAtomDid,
 } from "./fact-writer-ids.js";
+import { mintParcelFactIdentity } from "./parcel-write-identity.js";
 import type {
   EnginePropertyPersistence,
   FloodHazardFactAtomInstance,
+  ParcelExternalKey,
 } from "./property-instances.js";
 import type { PropertyFactWriteProvenance } from "./cad-parcel-roll-writer.js";
 
@@ -50,6 +52,7 @@ function persistenceOf(
   entityId: string,
   provenance: PropertyFactWriteProvenance,
   observedAt: string,
+  externalKeys?: ReadonlyArray<ParcelExternalKey>,
 ): EnginePropertyPersistence {
   return {
     entityId,
@@ -59,6 +62,7 @@ function persistenceOf(
     sourceUrl: provenance.sourceUrl,
     contentHash: provenance.contentHash,
     status: "active",
+    ...(externalKeys && externalKeys.length > 0 ? { externalKeys } : {}),
   };
 }
 
@@ -87,14 +91,15 @@ export function buildPresentFloodHazardFactAtom(
   provenance: PropertyFactWriteProvenance,
 ): FloodHazardFactAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
+  const id = mintParcelFactIdentity(observation.parcelNodeId);
   const atomDid = floodHazardFactAtomDid({
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
   });
 
   const contractAtom = createFloodHazardFact({
     entityType: "flood-hazard-fact",
     atomDid,
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier: "fema-nfhl",
     inSpecialFloodHazardArea: observation.inSpecialFloodHazardArea,
@@ -122,7 +127,7 @@ export function buildPresentFloodHazardFactAtom(
 
   return {
     ...contractAtom,
-    ...persistenceOf(observation.parcelNodeId, provenance, observedAt),
+    ...persistenceOf(id.entityId, provenance, observedAt, id.externalKeys),
   };
 }
 
@@ -131,14 +136,15 @@ export function buildFloodHazardFactAbsenceAtom(
   provenance: PropertyFactWriteProvenance,
 ): FloodHazardFactAtomInstance {
   const observedAt = provenance.observedAt ?? new Date().toISOString();
+  const id = mintParcelFactIdentity(observation.parcelNodeId);
   const atomDid = floodHazardFactAtomDid({
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
   });
 
   const contractAtom = createFloodHazardFact({
     entityType: "flood-hazard-fact",
     atomDid,
-    parcelNodeId: observation.parcelNodeId,
+    parcelNodeId: id.parcelNodeId,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier: "fema-nfhl",
     absence: {
@@ -160,7 +166,7 @@ export function buildFloodHazardFactAbsenceAtom(
 
   return {
     ...contractAtom,
-    ...persistenceOf(observation.parcelNodeId, provenance, observedAt),
+    ...persistenceOf(id.entityId, provenance, observedAt, id.externalKeys),
   };
 }
 

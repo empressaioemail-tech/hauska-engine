@@ -75,7 +75,6 @@ export function buildAtomForPlannedBuildingFootprint(
   return buildBuildingFootprintPerParcelAbsenceAtom(
     {
       parcelNodeId,
-      footprintId: "primary",
       absenceKind: entry.absenceKind,
       reason: entry.reason,
       sourceTier: "ml-derived",
@@ -84,7 +83,7 @@ export function buildAtomForPlannedBuildingFootprint(
       ...provenance,
       contentHash: buildingFootprintClaimContentHash({
         parcelNodeId,
-        footprintId: "primary",
+        footprintId: "none",
         sourceTier: "ml-derived",
         absenceKind: entry.absenceKind,
         absenceReason: entry.reason,

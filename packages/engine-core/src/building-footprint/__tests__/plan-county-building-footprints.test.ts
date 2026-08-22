@@ -125,7 +125,8 @@ describe("buildAtomsForBuildingFootprintPlan", () => {
     for (const atom of atoms) {
       expect(BUILDING_FOOTPRINT_SCHEMA.safeParse(atom).success).toBe(true);
       expect(atom.accessPolicy).toBe("public-free");
-      expect(atom.entityId).toMatch(/^48021:\d+:footprint:/);
+      expect(atom.entityId).toMatch(/^48021:\d+:footprint(?:$|:[^:]+)$/);
+      expect(atom.entityId.includes(":primary")).toBe(false);
     }
   });
 });

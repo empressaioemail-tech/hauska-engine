@@ -20,6 +20,7 @@ import {
   factClaimContentHash,
   utilityEasementAtomDid,
 } from "./fact-writer-ids.js";
+import { finalizeParcelFactAtom } from "./parcel-write-identity.js";
 import type {
   EnginePropertyPersistence,
   UtilityEasementAtomInstance,
@@ -129,10 +130,13 @@ export function buildPresentUtilityEasementAtom(
     atomTier: "data",
   });
 
-  return {
-    ...contractAtom,
-    ...persistenceOf(entityId, provenance, observedAt),
-  };
+  return finalizeParcelFactAtom(
+    {
+      ...contractAtom,
+      ...persistenceOf(entityId, provenance, observedAt),
+    },
+    ["easement", observation.easementId],
+  );
 }
 
 export function buildUtilityEasementPerParcelAbsenceAtom(
@@ -171,10 +175,13 @@ export function buildUtilityEasementPerParcelAbsenceAtom(
     atomTier: "data",
   });
 
-  return {
-    ...contractAtom,
-    ...persistenceOf(entityId, provenance, observedAt),
-  };
+  return finalizeParcelFactAtom(
+    {
+      ...contractAtom,
+      ...persistenceOf(entityId, provenance, observedAt),
+    },
+    ["easement", easementId],
+  );
 }
 
 export function buildCountyUtilityEasementCoverageAbsenceAtom(

@@ -20,6 +20,7 @@ import {
   factClaimContentHash,
   railCorridorFactAtomDid,
 } from "./fact-writer-ids.js";
+import { finalizeParcelFactAtom } from "./parcel-write-identity.js";
 import type {
   EnginePropertyPersistence,
   RailCorridorFactAtomInstance,
@@ -142,10 +143,10 @@ export function buildPresentRailCorridorFactAtom(
     atomTier: "data",
   });
 
-  return {
+  return finalizeParcelFactAtom({
     ...contractAtom,
     ...persistenceOf(observation.parcelNodeId, provenance, observedAt),
-  };
+  });
 }
 
 export function buildRailCorridorFactAbsenceAtom(
@@ -184,10 +185,10 @@ export function buildRailCorridorFactAbsenceAtom(
     atomTier: "data",
   });
 
-  return {
+  return finalizeParcelFactAtom({
     ...contractAtom,
     ...persistenceOf(observation.parcelNodeId, provenance, observedAt),
-  };
+  });
 }
 
 export function buildCountyRailCorridorCoverageAbsenceAtom(
