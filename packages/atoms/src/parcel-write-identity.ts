@@ -4,6 +4,8 @@
  * Canonical parcel-keyed entity_id is {fips}:{integer} plus a non-sentinel
  * family suffix. StratMap decimal padding belongs in externalKeys.
  * :outside and :primary must not appear as entity_id tokens.
+ * Special-district absence is {fips}:{integer}:sd:none (same discriminator
+ * as footprint :footprint:none). Bare :sd is not minted.
  *
  * Atoms has no Postgres trigger (R-07 Q1a). This helper is the writer-path
  * stand-in for BP-WRITE-01. Bypass: COPY / raw SQL INSERT INTO atoms that
@@ -172,7 +174,7 @@ export function specialDistrictPresentEntityId(
 export function specialDistrictAbsenceEntityId(
   sourceParcelNodeId: string,
 ): MintedParcelFactIdentity {
-  return mintParcelFactIdentity(sourceParcelNodeId, ["sd"]);
+  return mintParcelFactIdentity(sourceParcelNodeId, ["sd", "none"]);
 }
 
 export function buildingFootprintPresentEntityId(

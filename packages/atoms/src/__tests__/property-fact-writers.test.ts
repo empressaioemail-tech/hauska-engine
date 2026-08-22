@@ -627,7 +627,7 @@ describe("special-district-fact writer seam", () => {
       PROVENANCE,
     );
     expect(atom.absence?.kind).toBe("outside-tceq-source-boundaries");
-    expect(atom.entityId).toBe("48021:27303:sd");
+    expect(atom.entityId).toBe("48021:27303:sd:none");
     expect(atom.entityId.includes("outside")).toBe(false);
     expect(atom.externalKeys?.[0]?.keyValue).toBe("48021:27303");
   });

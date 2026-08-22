@@ -42,6 +42,9 @@ describe("assertCanonicalParcelEntityId (WDLL 11 C1/C2)", () => {
       assertCanonicalParcelEntityId("48021:27303:footprint:none"),
     ).not.toThrow();
     expect(() =>
+      assertCanonicalParcelEntityId("48021:27303:sd:none"),
+    ).not.toThrow();
+    expect(() =>
       assertCanonicalParcelEntityId("48021:_county_coverage"),
     ).not.toThrow();
   });
@@ -66,12 +69,12 @@ describe("resolveCanonicalParcelKey (WDLL 11 C1/C3)", () => {
 });
 
 describe("family entity_id mint (WDLL 11 C2)", () => {
-  it("SD present keeps district id; SD absence is :sd not :outside", () => {
+  it("SD present keeps district id; SD absence is :sd:none not :outside", () => {
     expect(specialDistrictPresentEntityId("48201:12345", "999").entityId).toBe(
       "48201:12345:sd:999",
     );
     expect(specialDistrictAbsenceEntityId("48021:27303").entityId).toBe(
-      "48021:27303:sd",
+      "48021:27303:sd:none",
     );
     expect(() => specialDistrictPresentEntityId("48021:27303", "outside")).toThrow(
       /sentinel token 'outside'/,
