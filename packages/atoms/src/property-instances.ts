@@ -27,6 +27,7 @@ import type {
   TerrainExportFormat as ContractTerrainExportFormat,
   UtilityEasementAtomInstance as ContractUtilityEasementAtomInstance,
   ZoningFactAtomInstance as ContractZoningFactAtomInstance,
+  ParcelExternalKey,
 } from "@empressaio/atom-contract/property";
 import type { ReasoningReadContract } from "@empressaio/atom-contract/read-contract";
 

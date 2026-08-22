@@ -210,12 +210,14 @@ export function appliesToParcelLink(
 /**
  * Derive applies-to from a built property atom. body.parcelNodeId is the
  * join hint, not the edge — this function is what must be persisted.
- * Returns null for identity nodes, roads, and county-coverage rows.
+ * Returns null for identity nodes and county-coverage rows.
+ * road-node is not a PropertyAtomInstance (StoredAtomInstance only), so
+ * it cannot reach this helper and must not be compared here (TS2367).
  */
 export function appliesToLinkFromPropertyAtom(
   atom: Pick<PropertyAtomInstance, "entityType" | "entityId" | "parcelNodeId">,
 ): AtomLink | null {
-  if (atom.entityType === "parcel-node" || atom.entityType === "road-node") {
+  if (atom.entityType === "parcel-node") {
     return null;
   }
   if (!atom.parcelNodeId || isCountyCoverageParcelNodeId(atom.parcelNodeId)) {
