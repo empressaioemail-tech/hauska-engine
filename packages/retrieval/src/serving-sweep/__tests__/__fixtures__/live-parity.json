@@ -45,48 +45,7 @@
             },
             "approximate": true,
             "provisional": true,
-            "disclosure": "Depth-warm verified envelope from promoted ledger — no live re-derive (27c WDLL 8).",
-            "buildableAreaSqFt": 6325,
-            "geojson": {
-              "type": "FeatureCollection",
-              "features": [
-                {
-                  "type": "Feature",
-                  "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [
-                      [
-                        [
-                          -97.30877409940827,
-                          30.112763786271547
-                        ],
-                        [
-                          -97.30876788681368,
-                          30.112545383000114
-                        ],
-                        [
-                          -97.3085170807435,
-                          30.112550756226707
-                        ],
-                        [
-                          -97.30852329486002,
-                          30.112769180024014
-                        ],
-                        [
-                          -97.30877409940827,
-                          30.112763786271547
-                        ]
-                      ]
-                    ]
-                  },
-                  "properties": {
-                    "kind": "buildable-envelope",
-                    "depthWarm": "depth-warm-promoted-v1",
-                    "recipeVersion": "1.0.0"
-                  }
-                }
-              ]
-            },
+            "disclosure": "Atom-chain setback rule from live per-parcel record — depth-warm envelope geometry withheld (re-derive from live setbacks).",
             "maxHeightFt": 55,
             "maxImperviousPct": 65,
             "minLotSize": "0.25",
@@ -673,47 +632,7 @@
             },
             "approximate": true,
             "provisional": true,
-            "disclosure": "Depth-warm verified envelope from promoted ledger — no live re-derive (27c WDLL 8).",
-            "buildableAreaSqFt": 9350,
-            "geojson": {
-              "type": "FeatureCollection",
-              "features": [
-                {
-                  "type": "Feature",
-                  "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [
-                      [
-                        [
-                          -97.31667837203561,
-                          30.109968721203103
-                        ],
-                        [
-                          -97.31667547896944,
-                          30.109645755083747
-                        ],
-                        [
-                          -97.31642298960233,
-                          30.1096477633846
-                        ],
-                        [
-                          -97.31642795658927,
-                          30.109969246105962
-                        ],
-                        [
-                          -97.31667837203561,
-                          30.109968721203103
-                        ]
-                      ]
-                    ]
-                  },
-                  "properties": {
-                    "kind": "buildable-envelope",
-                    "depthWarm": "depth-warm-promoted-v1"
-                  }
-                }
-              ]
-            },
+            "disclosure": "Atom-chain setback rule from live per-parcel record — depth-warm envelope geometry withheld (re-derive from live setbacks).",
             "maxHeightFt": 35,
             "maxImperviousPct": 50,
             "minLotSize": "0.33",
@@ -2746,48 +2665,7 @@
             },
             "approximate": true,
             "provisional": true,
-            "disclosure": "Depth-warm verified envelope from promoted ledger — no live re-derive (27c WDLL 8).",
-            "buildableAreaSqFt": 3477,
-            "geojson": {
-              "type": "FeatureCollection",
-              "features": [
-                {
-                  "type": "Feature",
-                  "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [
-                      [
-                        [
-                          -97.32736219802008,
-                          30.102996666633754
-                        ],
-                        [
-                          -97.32748863503295,
-                          30.102996688624415
-                        ],
-                        [
-                          -97.3274886896558,
-                          30.10275836087103
-                        ],
-                        [
-                          -97.32736225391322,
-                          30.102758338880317
-                        ],
-                        [
-                          -97.32736219802008,
-                          30.102996666633754
-                        ]
-                      ]
-                    ]
-                  },
-                  "properties": {
-                    "kind": "buildable-envelope",
-                    "depthWarm": "depth-warm-promoted-v1",
-                    "recipeVersion": "1.0.0"
-                  }
-                }
-              ]
-            },
+            "disclosure": "Atom-chain setback rule from live per-parcel record — depth-warm envelope geometry withheld (re-derive from live setbacks).",
             "maxHeightFt": 35,
             "maxImperviousPct": 50,
             "minLotSize": "0.33",
