@@ -1,12 +1,12 @@
 /**
  * Codified setback table → property atoms for stamped zoning parcels.
  *
- * Travis / Central TX serve-rate expectation (SS-W5 audit, 2026-08-23):
- * zoned parcels with a GIS stamp + a row in the adapter setback table should
- * emit (or serve) setback-rule + a provisional envelope even when depth-warm
- * geometry verify fails — only ~3% of Travis zoned parcels are expected to
- * carry depth-warm-promoted geometry; the remainder should still surface table
- * setbacks, not warm-verify-decline + setback-rule-pending.
+ * Serve-rate expectation (SS-W5 audit, 2026-08-23): zoned parcels with a GIS
+ * stamp + a row in the adapter setback table should emit (or serve) setback-rule
+ * + a provisional envelope even when depth-warm geometry verify fails — only a
+ * small fraction of zoned parcels carry depth-warm-promoted geometry; the
+ * remainder should still surface table setbacks, not warm-verify-decline +
+ * setback-rule-pending.
  */
 
 import {
