@@ -98,6 +98,57 @@ export class LayeredStorage implements StoragePort {
     return [];
   }
 
+  async listBuildingFootprintsNearBbox(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+    opts?: { limit?: number },
+  ): Promise<ReadonlyArray<import("@hauska-engine/atoms").PropertyAtomInstance>> {
+    const primaryFn = this.primary.listBuildingFootprintsNearBbox?.bind(this.primary);
+    const snapshotFn = this.snapshot.listBuildingFootprintsNearBbox?.bind(this.snapshot);
+    if (primaryFn) {
+      const primary = await primaryFn(countyFips, bbox, opts);
+      if (primary.length > 0) return primary;
+    }
+    if (snapshotFn) return snapshotFn(countyFips, bbox, opts);
+    return [];
+  }
+
+  async listSpecialDistrictPolygonsNearBbox(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+    opts?: { limit?: number; districtType?: string },
+  ): Promise<
+    ReadonlyArray<{
+      districtRowId: string;
+      districtId: string;
+      districtName: string;
+      districtType: string;
+      countyFips: string;
+      geometry: unknown;
+      sourceCitation: string;
+    }>
+  > {
+    const primaryFn = this.primary.listSpecialDistrictPolygonsNearBbox?.bind(
+      this.primary,
+    );
+    if (primaryFn) return primaryFn(countyFips, bbox, opts);
+    const snapshotFn = this.snapshot.listSpecialDistrictPolygonsNearBbox?.bind(
+      this.snapshot,
+    );
+    if (snapshotFn) return snapshotFn(countyFips, bbox, opts);
+    return [];
+  }
+
   /**
    * County node roster: primary wins when it has any nodes for the county;
    * fall back to snapshot otherwise (same shape as listRoadAtomsNearBbox).

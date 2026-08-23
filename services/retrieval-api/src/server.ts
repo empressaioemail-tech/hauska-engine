@@ -470,6 +470,132 @@ export function buildApp(options: ServerOptions = {}): Hono {
     return c.json(result);
   });
 
+  /**
+   * Viewport building-footprint layer (P-60). Present building-footprint atoms
+   * whose footprintGeometry intersects the bbox. Registered before param routes.
+   */
+  app.get("/building-footprints/near-bbox", async (c) => {
+    const countyFips = (c.req.query("countyFips") ?? "").trim();
+    if (!/^\d{5}$/.test(countyFips)) {
+      return c.json(
+        {
+          error: "invalid countyFips",
+          hint: "expected 5-digit FIPS e.g. 48021",
+        },
+        400,
+      );
+    }
+    const westLng = Number(c.req.query("westLng"));
+    const southLat = Number(c.req.query("southLat"));
+    const eastLng = Number(c.req.query("eastLng"));
+    const northLat = Number(c.req.query("northLat"));
+    if (
+      ![westLng, southLat, eastLng, northLat].every((n) => Number.isFinite(n)) ||
+      westLng >= eastLng ||
+      southLat >= northLat
+    ) {
+      return c.json(
+        {
+          error: "invalid bbox",
+          hint: "westLng,southLat,eastLng,northLat required; west<east and south<north",
+        },
+        400,
+      );
+    }
+    const spanLng = eastLng - westLng;
+    const spanLat = northLat - southLat;
+    if (spanLng > 0.5 || spanLat > 0.5) {
+      return c.json(
+        {
+          error: "bbox too large",
+          hint: "max span 0.5 deg lng/lat — zoom in for the footprint layer",
+        },
+        400,
+      );
+    }
+    const limitRaw = c.req.query("limit");
+    const limit =
+      limitRaw !== undefined && limitRaw !== ""
+        ? Number(limitRaw)
+        : undefined;
+    if (limit !== undefined && (!Number.isFinite(limit) || limit < 1)) {
+      return c.json({ error: "invalid limit" }, 400);
+    }
+    const result = await retrieval.listBuildingFootprintsNearBbox({
+      countyFips,
+      westLng,
+      southLat,
+      eastLng,
+      northLat,
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    return c.json(result);
+  });
+
+  /**
+   * Viewport special-district layer (P-60 / mud-pid registry slot). TCEQ
+   * water-district polygons — same source cited by special-district-fact atoms.
+   */
+  app.get("/special-districts/near-bbox", async (c) => {
+    const countyFips = (c.req.query("countyFips") ?? "").trim();
+    if (!/^\d{5}$/.test(countyFips)) {
+      return c.json(
+        {
+          error: "invalid countyFips",
+          hint: "expected 5-digit FIPS e.g. 48021",
+        },
+        400,
+      );
+    }
+    const westLng = Number(c.req.query("westLng"));
+    const southLat = Number(c.req.query("southLat"));
+    const eastLng = Number(c.req.query("eastLng"));
+    const northLat = Number(c.req.query("northLat"));
+    if (
+      ![westLng, southLat, eastLng, northLat].every((n) => Number.isFinite(n)) ||
+      westLng >= eastLng ||
+      southLat >= northLat
+    ) {
+      return c.json(
+        {
+          error: "invalid bbox",
+          hint: "westLng,southLat,eastLng,northLat required; west<east and south<north",
+        },
+        400,
+      );
+    }
+    const spanLng = eastLng - westLng;
+    const spanLat = northLat - southLat;
+    if (spanLng > 0.5 || spanLat > 0.5) {
+      return c.json(
+        {
+          error: "bbox too large",
+          hint: "max span 0.5 deg lng/lat — zoom in for the district layer",
+        },
+        400,
+      );
+    }
+    const limitRaw = c.req.query("limit");
+    const limit =
+      limitRaw !== undefined && limitRaw !== ""
+        ? Number(limitRaw)
+        : undefined;
+    if (limit !== undefined && (!Number.isFinite(limit) || limit < 1)) {
+      return c.json({ error: "invalid limit" }, 400);
+    }
+    const districtType = (c.req.query("districtType") ?? "").trim();
+    const result = await retrieval.listSpecialDistrictsNearBbox({
+      countyFips,
+      westLng,
+      southLat,
+      eastLng,
+      northLat,
+      ...(limit !== undefined ? { limit } : {}),
+      ...(districtType.length > 0 ? { districtType } : {}),
+    });
+    return c.json(result);
+  });
+
   app.get("/road-nodes/:roadNodeId{.+}/atom-chain", async (c) => {
     const roadNodeId = decodeURIComponent(c.req.param("roadNodeId"));
     if (!/^\d{5}:road:\d+$/.test(roadNodeId)) {
