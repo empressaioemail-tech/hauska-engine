@@ -23,6 +23,7 @@ import type {
 import { isBoundaryEdgeAtomInstance, isPropertyAtomInstance, isPropertyEntityType, isRoadNodeAtomInstance } from "@hauska-engine/atoms";
 
 import { HotCache, InProcessIpfsPin } from "./in-process-cache.js";
+import { pickPreferredSetbackRule } from "./setback-rule-pick.js";
 import type {
   AtomQuery,
   AtomSearchResult,
@@ -102,7 +103,18 @@ export class InMemoryStorage implements StoragePort {
       if (property.parcelNodeId !== parcelNodeId) continue;
       if (property.status && property.status !== "active") continue;
       const prior = byType.get(property.entityType);
-      if (!prior || property.entityId === parcelNodeId) {
+      if (!prior) {
+        byType.set(property.entityType, property);
+        continue;
+      }
+      if (property.entityType === "setback-rule") {
+        byType.set(
+          property.entityType,
+          pickPreferredSetbackRule(prior, property, parcelNodeId),
+        );
+        continue;
+      }
+      if (property.entityId === parcelNodeId) {
         byType.set(property.entityType, property);
       }
     }

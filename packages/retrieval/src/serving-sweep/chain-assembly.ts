@@ -21,6 +21,7 @@
 // file and `getPropertyAtomChain` are two implementations of one rule.
 
 import { isStaleBastropCitySetbackRule } from "@hauska-engine/adapters";
+import { pickPreferredSetbackRule } from "@hauska-engine/storage";
 import { envelopeServeIndependentOfStaleSetback } from "../envelope-serve-independent.js";
 
 /** One `atoms` row as the sweep reads it. `body` is the stored atom JSON. */
@@ -80,6 +81,13 @@ export function dedupeParcelAtoms(
     const prior = byType.get(inst.entityType);
     if (!prior) {
       byType.set(inst.entityType, inst);
+      continue;
+    }
+    if (inst.entityType === "setback-rule") {
+      byType.set(
+        inst.entityType,
+        pickPreferredSetbackRule(prior, inst, parcelNodeId),
+      );
       continue;
     }
     if (inst.entityId === parcelNodeId && prior.entityId !== parcelNodeId) {

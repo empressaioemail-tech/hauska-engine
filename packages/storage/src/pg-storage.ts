@@ -32,6 +32,7 @@ import {
   preparePropertyAtomRows,
   upsertPropertyAtomRowsMulti,
 } from "./property-atom-batch-write.js";
+import { pickPreferredSetbackRule } from "./setback-rule-pick.js";
 import type {
   AtomQuery,
   AtomSearchResult,
@@ -323,6 +324,13 @@ export class PgStorage implements StoragePort {
       const prior = byType.get(inst.entityType);
       if (!prior) {
         byType.set(inst.entityType, inst);
+        continue;
+      }
+      if (inst.entityType === "setback-rule") {
+        byType.set(
+          inst.entityType,
+          pickPreferredSetbackRule(prior, inst, parcelNodeId),
+        );
         continue;
       }
       if (inst.entityId === parcelNodeId && prior.entityId !== parcelNodeId) {
