@@ -26,6 +26,7 @@ import {
 } from "../property-reasoning/confidence.js";
 import type { JurisdictionDescriptor } from "../property-reasoning/types.js";
 import { writePropertyAtomIfEnabled } from "../property-reasoning/write-property-atom.js";
+import { promoteTableBackedSetbackIfAbsent } from "../property-reasoning/table-backed-setback-from-zoning.js";
 import { RECIPE_VERSION } from "./types.js";
 
 export interface HonestVerifyDeclineInput {
@@ -37,6 +38,10 @@ export interface HonestVerifyDeclineInput {
   extractedAt?: string;
   /** Optional override for verifiedAbsence.provenanceScope (defaults applied). */
   provenanceScope?: ReadonlyArray<string>;
+  /** When set with cityKey + countyFips, also mint table-backed setback if absent. */
+  district?: string;
+  cityKey?: string;
+  countyFips?: string;
 }
 
 /**
@@ -206,6 +211,21 @@ export async function promoteHonestVerifyDecline(
   const instance = buildHonestVerifyDeclineAtom(input);
   const result = await writePropertyAtomIfEnabled(storage, instance);
   if (!result) return null;
+
+  const district = input.district?.trim();
+  const cityKey = input.cityKey?.trim();
+  const countyFips = input.countyFips?.trim();
+  if (district && cityKey && countyFips) {
+    await promoteTableBackedSetbackIfAbsent(storage, {
+      parcelNodeId: input.parcelNodeId,
+      countyFips,
+      district,
+      cityKey,
+      zoningFactAtomDid: input.zoningFactAtomDid,
+      extractedAt: input.extractedAt,
+    });
+  }
+
   return { buildableEnvelopeAtomDid: result.atomDid };
 }
 

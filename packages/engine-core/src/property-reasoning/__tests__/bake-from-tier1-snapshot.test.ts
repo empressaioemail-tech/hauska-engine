@@ -22,6 +22,28 @@ function gisProv(opts: {
 }
 
 describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
+  it("emits setback-RULE for pflugerville-tx SF-S (Travis gold table)", () => {
+    const result = emitFromTier1Snapshot(
+      "48453:TEST-PFLUGERVILLE-SFS",
+      {
+        bakedAt: "2026-07-24T20:00:00.000Z",
+        zoning: {
+          district: "SF-S",
+          jurisdictionKey: "pflugerville-tx",
+          provenance: gisProv({
+            sourceUrl: "https://example.test/pflugerville-zoning",
+            codeField: "ZONING",
+            cityKey: "pflugerville-tx",
+          }),
+        },
+      },
+      "48453",
+    );
+    expect(result.setbackPresent).toBe(true);
+    const setback = result.atoms.find((a) => a.entityType === "setback-rule");
+    expect(setback).toMatchObject({ front: 25, side: 7.5, rear: 20 });
+  });
+
   it("emits setback-RULE + envelope DERIVED for austin-tx SF-3", () => {
     const result = emitFromTier1Snapshot(
       "48453:TEST-AUSTIN-SF3",

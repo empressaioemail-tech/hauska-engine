@@ -24,6 +24,7 @@ import bastropTx from "./bastrop-tx.json" with { type: "json" };
 import bastropCityTx from "./bastrop-city-tx.json" with { type: "json" };
 import bastropDevelopmentCode from "./bastrop-development-code.json" with { type: "json" };
 import austinTx from "./austin-tx.json" with { type: "json" };
+import pflugervilleTx from "./pflugerville-tx.json" with { type: "json" };
 import sanAntonioTx from "./san-antonio-tx.json" with { type: "json" };
 import utahUnincorporated from "./utah-unincorporated.json" with { type: "json" };
 import idahoUnincorporated from "./idaho-unincorporated.json" with { type: "json" };
@@ -50,6 +51,7 @@ const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = {
   // Tier-1 stamps cityKey/jurisdictionKey as elgin-tx — alias to the ratified table.
   "elgin-tx": elginDevelopmentCode as SetbackTable,
   "austin-tx": austinTx as SetbackTable,
+  "pflugerville-tx": pflugervilleTx as SetbackTable,
   "san-antonio-tx": sanAntonioTx as SetbackTable,
   "utah-unincorporated": utahUnincorporated as SetbackTable,
   "idaho-unincorporated": idahoUnincorporated as SetbackTable,
