@@ -126,6 +126,24 @@ gcloud run deploy hauska-retrieval-api \
 image runs the service with `tsx` (no tsc step — workspace packages
 ship source-direct exports per `REPO_NOTES.md`).
 
+**Startup probe:** boot listens on `PORT` before `countAtoms()` telemetry
+(postgres-serve can block minutes on a cold COUNT). If deploy fails with
+`Startup probes timed out`, widen the probe and/or deploy with no traffic
+first:
+
+```bash
+gcloud run deploy hauska-retrieval-api \
+  --source . \
+  --project=hauska-prod-497015 \
+  --region=us-central1 \
+  --no-traffic \
+  --tag=p60-canary \
+  --startup-probe=timeoutSeconds=10,periodSeconds=10,failureThreshold=30,tcpSocket.port=8080
+```
+
+After `curl` on the tagged URL passes `/health`, shift traffic to the new
+revision.
+
 ## Verify
 
 Replace `<service-url>` with the Cloud Run URL and `<key>` with `RETRIEVAL_API_KEY`.
