@@ -8,6 +8,7 @@
 // not_specified: live setback-rule atoms currently drop the flag; we re-attach
 // B3 provenance by district so silent axes never render as real 0′ / "consume lot".
 
+import { resolveCodifiedSetbacksForStamp } from "@hauska-engine/engine-core/property-reasoning";
 import {
   anyNotSpecified,
   buildToLineDisclosure,
@@ -562,6 +563,12 @@ export function adaptAtomChainToBakedFacets(
   const jurisdictionKey = jurisdictionKeyFromSourceAdapter(zoningSourceAdapter);
 
   const setbacks = mapSetbacks(rule, district);
+  const tableSetbacks =
+    setbacks ??
+    (hasDistrict && jurisdictionKey
+      ? resolveCodifiedSetbacksForStamp(jurisdictionKey, district)
+      : null);
+  const effectiveSetbacks = setbacks ?? tableSetbacks ?? undefined;
   const liveSetback = hasLiveAtomChainSetbackRule(
     parcelNodeId,
     rule,
@@ -627,11 +634,30 @@ export function adaptAtomChainToBakedFacets(
   } else if (envAtom) {
     const warmDecline = mapWarmVerifyDeclineEnvelope(envAtom, district);
     if (warmDecline) {
-      envelope = warmDecline;
-      envelopeCovered = false;
+      // Travis/Central TX: depth-warm verify-fail must not block codified table
+      // setbacks when a GIS stamp + table row exist (~3% promoted geometry;
+      // remainder still serves setback scalars).
+      if (effectiveSetbacks) {
+        envelope = {
+          status: "ok",
+          district: district ?? undefined,
+          setbacks: effectiveSetbacks,
+          approximate: true,
+          provisional: true,
+          disclosure:
+            `Codified setback table (${jurisdictionKey ?? "unknown"}); depth-warm geometry withheld` +
+            (warmDecline.declineReason
+              ? ` — ${warmDecline.declineReason}`
+              : "."),
+        };
+        envelopeCovered = true;
+      } else {
+        envelope = warmDecline;
+        envelopeCovered = false;
+      }
     }
   }
-  if (!envelope && !setbacks) {
+  if (!envelope && !effectiveSetbacks) {
     envelope = {
       status: "declined",
       declineReason: "setback-rule-pending",
@@ -649,7 +675,7 @@ export function adaptAtomChainToBakedFacets(
     envelope = {
       status: "ok",
       district: district ?? undefined,
-      setbacks,
+      setbacks: effectiveSetbacks,
       approximate: true,
       provisional: true,
       disclosure: buildToLineDisclosure(ns),
@@ -659,7 +685,7 @@ export function adaptAtomChainToBakedFacets(
     envelope = {
       status: "no-buildable-area",
       district: district ?? undefined,
-      setbacks,
+      setbacks: effectiveSetbacks,
       // Honest zero — setbacks consume the lot (QA-3: not "not verified").
       buildableAreaPct: 0,
       approximate: true,
@@ -669,7 +695,7 @@ export function adaptAtomChainToBakedFacets(
       ...(geojson !== undefined && !preferLiveOverWarm ? { geojson } : {}),
     };
     envelopeCovered = true;
-  } else if (!envelope && (outcomeKind === "buildable" || setbacks)) {
+  } else if (!envelope && (outcomeKind === "buildable" || effectiveSetbacks)) {
     // Proof atoms may omit geojson / pct — honest partial OK; do not fabricate.
     // When pct is absent, baked-facets marks buildable as pending (QA-3).
     // When silent axes exist, never publish a pct that treated them as 0 ft.
@@ -690,7 +716,7 @@ export function adaptAtomChainToBakedFacets(
     envelope = {
       status: "ok",
       district: district ?? undefined,
-      setbacks,
+      setbacks: effectiveSetbacks,
       approximate: true,
       provisional: true,
       disclosure: baseDisclosure,
@@ -746,7 +772,7 @@ export function adaptAtomChainToBakedFacets(
         ? { district, ...(jurisdictionKey ? { jurisdictionKey } : {}) }
         : null,
       envelope:
-        envelope && depthWarm && setbacks && !liveSetback
+        envelope && depthWarm && effectiveSetbacks && !liveSetback
           ? {
               ...envelope,
               disclosure:
