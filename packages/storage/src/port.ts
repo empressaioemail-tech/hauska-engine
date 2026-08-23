@@ -186,6 +186,47 @@ export interface StoragePort {
   ): Promise<ReadonlyArray<RoadNodeAtomInstance>>;
 
   /**
+   * Present building-footprint atoms whose footprintGeometry intersects a WGS84
+   * bbox (P-60 map layer). Optional on older ports — callers must feature-detect.
+   */
+  listBuildingFootprintsNearBbox?(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+    opts?: { limit?: number },
+  ): Promise<ReadonlyArray<PropertyAtomInstance>>;
+
+  /**
+   * TCEQ water-district polygons intersecting a WGS84 bbox — the same source
+   * layer cited by special-district-fact atoms (P-60 mud-pid map slot). Returns
+   * [] when tx_special_district is not installed. Optional on older ports.
+   */
+  listSpecialDistrictPolygonsNearBbox?(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+    opts?: { limit?: number; districtType?: string },
+  ): Promise<
+    ReadonlyArray<{
+      districtRowId: string;
+      districtId: string;
+      districtName: string;
+      districtType: string;
+      countyFips: string;
+      geometry: unknown;
+      sourceCitation: string;
+    }>
+  >;
+
+  /**
    * County → node roster LIST (CC browse; Control-Tower flow port). Pages
    * DISTINCT parcel / road node ids for a county with a real (capped) count.
    * Optional on older ports — callers must feature-detect.

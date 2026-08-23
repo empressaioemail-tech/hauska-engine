@@ -466,6 +466,113 @@ export class PgStorage implements StoragePort {
     return out;
   }
 
+  async listBuildingFootprintsNearBbox(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+    opts?: { limit?: number },
+  ): Promise<ReadonlyArray<PropertyAtomInstance>> {
+    const limit =
+      typeof opts?.limit === "number" && Number.isFinite(opts.limit)
+        ? Math.max(1, Math.min(Math.floor(opts.limit), 2000))
+        : 500;
+    const parcelPrefix = `${countyFips}:%`;
+    const rows = await this.sql<AtomBodyRow[]>`
+      SELECT body
+      FROM atoms
+      WHERE entity_type = 'building-footprint'
+        AND body->>'parcelNodeId' LIKE ${parcelPrefix}
+        AND COALESCE(body->>'status', 'active') = 'active'
+        AND body->'footprintGeometry' IS NOT NULL
+        AND body->'absence' IS NULL
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(body->'footprintGeometry'->'coordinates'->0) AS pt
+          WHERE (pt->>0)::float8 BETWEEN ${bbox.westLng} AND ${bbox.eastLng}
+            AND (pt->>1)::float8 BETWEEN ${bbox.southLat} AND ${bbox.northLat}
+        )
+      ORDER BY updated_at DESC
+      LIMIT ${limit}
+    `;
+    const out: PropertyAtomInstance[] = [];
+    for (const row of rows) {
+      const inst = parseStoredAtom(row.body);
+      if (inst && isPropertyAtomInstance(inst)) out.push(inst);
+    }
+    return out;
+  }
+
+  async listSpecialDistrictPolygonsNearBbox(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+    opts?: { limit?: number; districtType?: string },
+  ): Promise<
+    ReadonlyArray<{
+      districtRowId: string;
+      districtId: string;
+      districtName: string;
+      districtType: string;
+      countyFips: string;
+      geometry: unknown;
+      sourceCitation: string;
+    }>
+  > {
+    const limit =
+      typeof opts?.limit === "number" && Number.isFinite(opts.limit)
+        ? Math.max(1, Math.min(Math.floor(opts.limit), 2000))
+        : 200;
+    const reg = await this.sql<Array<{ reg: string | null }>>`
+      SELECT to_regclass('public.tx_special_district') AS reg
+    `;
+    if (!reg[0]?.reg) return [];
+    const districtType = opts?.districtType?.trim() ?? "";
+    const typeFrag =
+      districtType.length > 0
+        ? this.sql`AND district_type = ${districtType}`
+        : this.sql``;
+    const rows = await this.sql<
+      Array<{
+        district_row_id: string;
+        district_id: string;
+        district_name: string;
+        district_type: string;
+        county_fips: string;
+        geometry: unknown;
+        source_citation: string;
+      }>
+    >`
+      SELECT district_row_id, district_id, district_name, district_type,
+             county_fips, geometry, source_citation
+      FROM tx_special_district
+      WHERE county_fips = ${countyFips}
+        AND west_lng <= ${bbox.eastLng}
+        AND east_lng >= ${bbox.westLng}
+        AND south_lat <= ${bbox.northLat}
+        AND north_lat >= ${bbox.southLat}
+        ${typeFrag}
+      ORDER BY district_name ASC
+      LIMIT ${limit}
+    `;
+    return rows.map((row) => ({
+      districtRowId: row.district_row_id,
+      districtId: row.district_id,
+      districtName: row.district_name,
+      districtType: row.district_type,
+      countyFips: row.county_fips,
+      geometry: row.geometry,
+      sourceCitation: row.source_citation,
+    }));
+  }
+
   async writeBoundaryEdgeAtom(
     instance: BoundaryEdgeAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {

@@ -538,6 +538,120 @@ export class HybridRetrieval {
   }
 
   /**
+   * Viewport building-footprint layer (P-60). Serves present building-footprint
+   * atoms whose footprintGeometry intersects a WGS84 bbox.
+   */
+  async listBuildingFootprintsNearBbox(input: {
+    countyFips: string;
+    westLng: number;
+    southLat: number;
+    eastLng: number;
+    northLat: number;
+    limit?: number;
+  }): Promise<{
+    countyFips: string;
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    };
+    limit: number;
+    count: number;
+    footprints: ReadonlyArray<StoredAtomInstance>;
+  }> {
+    const limit =
+      typeof input.limit === "number" && Number.isFinite(input.limit)
+        ? Math.max(1, Math.min(Math.floor(input.limit), 2000))
+        : 400;
+    const bbox = {
+      westLng: input.westLng,
+      southLat: input.southLat,
+      eastLng: input.eastLng,
+      northLat: input.northLat,
+    };
+    const listFn = this.storage.listBuildingFootprintsNearBbox?.bind(this.storage);
+    const rows = listFn ? await listFn(input.countyFips, bbox, { limit }) : [];
+    const footprints = await Promise.all(
+      rows.map((row) =>
+        isPropertyAtomInstance(row)
+          ? applyPropertyCalibrationAtRead(row, this.overlay)
+          : Promise.resolve(row as StoredAtomInstance),
+      ),
+    );
+    return {
+      countyFips: input.countyFips,
+      bbox,
+      limit,
+      count: footprints.length,
+      footprints,
+    };
+  }
+
+  /**
+   * Viewport special-district layer (P-60 / mud-pid registry slot). Serves
+   * TCEQ water-district polygons — the same source layer cited by
+   * special-district-fact atoms, not a separate mud-pid GIS bake.
+   */
+  async listSpecialDistrictsNearBbox(input: {
+    countyFips: string;
+    westLng: number;
+    southLat: number;
+    eastLng: number;
+    northLat: number;
+    limit?: number;
+    districtType?: string;
+  }): Promise<{
+    countyFips: string;
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    };
+    limit: number;
+    count: number;
+    districts: ReadonlyArray<{
+      districtRowId: string;
+      districtId: string;
+      districtName: string;
+      districtType: string;
+      countyFips: string;
+      geometry: unknown;
+      sourceCitation: string;
+    }>;
+  }> {
+    const limit =
+      typeof input.limit === "number" && Number.isFinite(input.limit)
+        ? Math.max(1, Math.min(Math.floor(input.limit), 2000))
+        : 200;
+    const bbox = {
+      westLng: input.westLng,
+      southLat: input.southLat,
+      eastLng: input.eastLng,
+      northLat: input.northLat,
+    };
+    const listFn = this.storage.listSpecialDistrictPolygonsNearBbox?.bind(
+      this.storage,
+    );
+    const districts = listFn
+      ? await listFn(input.countyFips, bbox, {
+          limit,
+          ...(input.districtType !== undefined
+            ? { districtType: input.districtType }
+            : {}),
+        })
+      : [];
+    return {
+      countyFips: input.countyFips,
+      bbox,
+      limit,
+      count: districts.length,
+      districts,
+    };
+  }
+
+  /**
    * County → node roster LIST (CC browse; Control-Tower flow port). Wire
    * shape pinned with Command Center: snake_case node rows, real (capped)
    * total, honest-degrade `{ available: false, reason }` when the county has

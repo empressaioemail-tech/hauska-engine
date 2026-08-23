@@ -20,7 +20,7 @@ import type {
   RoadNodeAtomInstance,
   StoredAtomInstance,
 } from "@hauska-engine/atoms";
-import { isBoundaryEdgeAtomInstance, isPropertyEntityType, isRoadNodeAtomInstance } from "@hauska-engine/atoms";
+import { isBoundaryEdgeAtomInstance, isPropertyAtomInstance, isPropertyEntityType, isRoadNodeAtomInstance } from "@hauska-engine/atoms";
 
 import { HotCache, InProcessIpfsPin } from "./in-process-cache.js";
 import type {
@@ -213,6 +213,60 @@ export class InMemoryStorage implements StoragePort {
         ? Math.max(1, Math.min(Math.floor(opts.limit), 2000))
         : 500;
     return out.slice(0, limit);
+  }
+
+  async listBuildingFootprintsNearBbox(
+    countyFips: string,
+    bbox: {
+      westLng: number;
+      southLat: number;
+      eastLng: number;
+      northLat: number;
+    },
+    opts?: { limit?: number },
+  ): Promise<ReadonlyArray<import("@hauska-engine/atoms").PropertyAtomInstance>> {
+    const prefix = `${countyFips}:`;
+    const out: import("@hauska-engine/atoms").PropertyAtomInstance[] = [];
+    for (const inst of this.atoms.values()) {
+      if (!isPropertyAtomInstance(inst)) continue;
+      if (inst.entityType !== "building-footprint") continue;
+      if (!inst.parcelNodeId.startsWith(prefix)) continue;
+      if (inst.status && inst.status !== "active") continue;
+      const body = inst as {
+        footprintGeometry?: { coordinates?: Array<Array<[number, number]>> };
+        absence?: unknown;
+      };
+      if (body.absence || !body.footprintGeometry?.coordinates?.[0]) continue;
+      const ring = body.footprintGeometry.coordinates[0];
+      const hits = ring.some(([lng, lat]) => {
+        return (
+          lng >= bbox.westLng &&
+          lng <= bbox.eastLng &&
+          lat >= bbox.southLat &&
+          lat <= bbox.northLat
+        );
+      });
+      if (hits) out.push(inst);
+    }
+    const limit =
+      typeof opts?.limit === "number" && Number.isFinite(opts.limit)
+        ? Math.max(1, Math.min(Math.floor(opts.limit), 2000))
+        : 500;
+    return out.slice(0, limit);
+  }
+
+  async listSpecialDistrictPolygonsNearBbox(): Promise<
+    ReadonlyArray<{
+      districtRowId: string;
+      districtId: string;
+      districtName: string;
+      districtType: string;
+      countyFips: string;
+      geometry: unknown;
+      sourceCitation: string;
+    }>
+  > {
+    return [];
   }
 
   /**
