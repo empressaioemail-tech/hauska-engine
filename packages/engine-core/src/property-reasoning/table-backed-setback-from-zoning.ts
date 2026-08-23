@@ -22,6 +22,7 @@ import { descriptorForCounty } from "./bake-from-tier1-snapshot.js";
 import { emitBuildableEnvelope } from "./emit-buildable-envelope.js";
 import { emitSetbackRule, resolveSetbackTableRow } from "./emit-setback-rule.js";
 import { normalizeCityKey, setbackTableDescriptorFromAdapter } from "./setback-table-from-adapter.js";
+import type { SetbackTableRowProvenance } from "./types.js";
 import { writePropertyAtomIfEnabled } from "./write-property-atom.js";
 
 export type CodifiedSetbackScalars = {
@@ -33,10 +34,10 @@ export type CodifiedSetbackScalars = {
 };
 
 function findRowForResolved(
-  rows: ReadonlyArray<{ district_code: string; match_basis: string }>,
+  rows: ReadonlyArray<SetbackTableRowProvenance>,
   districtCode: string,
   matchBasis: string,
-) {
+): SetbackTableRowProvenance | undefined {
   const wanted = districtCode.trim().toLowerCase();
   return (
     rows.find(
