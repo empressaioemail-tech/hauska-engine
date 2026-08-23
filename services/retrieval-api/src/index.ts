@@ -102,22 +102,6 @@ if (isMain) {
     ? createPgCalibrationOverlayPort({ databaseUrl: overlayUrl })
     : null;
 
-  console.log(
-    JSON.stringify({
-      level: "info",
-      service: "retrieval-api",
-      event: "corpus.loaded",
-      mode: boot.mode,
-      snapshotPath: snapshot ? snapshotPath : null,
-      layered: boot.mode === "layered",
-      calibrationOverlay: Boolean(overlayHandle),
-      jurisdictions: (await storage.listJurisdictionStatus()).length,
-      atomCount: await storage.countAtoms(),
-      memoryLimitMib,
-      ts: new Date().toISOString(),
-    }),
-  );
-
   if (!overlayHandle) {
     console.log(
       JSON.stringify({
@@ -135,7 +119,40 @@ if (isMain) {
     storage,
     calibrationOverlay: overlayHandle?.port ?? null,
   });
+  // Listen before expensive substrate telemetry — Cloud Run's startup probe
+  // is a TCP check on PORT. countAtoms() against a 100M-row heap can exceed
+  // the default 240s single-attempt window on cold boot.
   startServer(app, port);
+
+  void (async () => {
+    try {
+      console.log(
+        JSON.stringify({
+          level: "info",
+          service: "retrieval-api",
+          event: "corpus.loaded",
+          mode: boot.mode,
+          snapshotPath: snapshot ? snapshotPath : null,
+          layered: boot.mode === "layered",
+          calibrationOverlay: Boolean(overlayHandle),
+          jurisdictions: (await storage.listJurisdictionStatus()).length,
+          atomCount: await storage.countAtoms(),
+          memoryLimitMib,
+          ts: new Date().toISOString(),
+        }),
+      );
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          service: "retrieval-api",
+          event: "corpus.loaded.failed",
+          message: err instanceof Error ? err.message : String(err),
+          ts: new Date().toISOString(),
+        }),
+      );
+    }
+  })();
 
   const shutdown = async () => {
     await boot.close();
