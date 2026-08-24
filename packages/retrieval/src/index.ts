@@ -400,9 +400,7 @@ export class HybridRetrieval {
         type: payload.entityType,
         kind: payload.entityType,
         accessPolicy:
-          payload.accessPolicy != null && payload.accessPolicy !== ""
-            ? payload.accessPolicy
-            : "",
+          payload.accessPolicy != null ? payload.accessPolicy : "",
         payload,
       };
     });
@@ -485,9 +483,7 @@ export class HybridRetrieval {
         type: payload.entityType,
         kind: payload.entityType,
         accessPolicy:
-          payload.accessPolicy != null && payload.accessPolicy !== ""
-            ? payload.accessPolicy
-            : "",
+          payload.accessPolicy != null ? payload.accessPolicy : "",
         payload,
       };
     });

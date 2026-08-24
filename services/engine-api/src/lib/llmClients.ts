@@ -14,11 +14,11 @@ import {
 export type LlmMode = "grok" | "anthropic";
 
 export function resolveBriefingMode(): LlmMode {
-  return resolveBriefingLlmMode();
+  return resolveBriefingLlmMode() as LlmMode;
 }
 
 export function resolveFindingMode(): LlmMode {
-  return resolveFindingLlmMode();
+  return resolveFindingLlmMode() as LlmMode;
 }
 
 export function getGrokClient(): GrokClient {
