@@ -239,6 +239,7 @@ describe("runPathCIngest end-to-end", () => {
       stateAbbr: "TX",
       chapterFilter: /unified.*development/i,
       adapter,
+      accessPolicy: "public-free",
     });
 
     expect(result.report.sectionsIngested).toBeGreaterThanOrEqual(4);
