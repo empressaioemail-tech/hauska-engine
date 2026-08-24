@@ -29,6 +29,11 @@ import {
   LAYER_1_QUALITY_BAR,
 } from "../eval-rubric.js";
 
+const ICC_TEST_EXTRACTION = {
+  accessPolicy: "platform-internal" as const,
+  sourceActorDid: "did:hauska:actor:org:icc",
+};
+
 const IRC_2021 = ICC_CODE_CONNECT_FIXTURES.documents[IRC_2021_BOOK_ID]!;
 const A117_2021 = ICC_CODE_CONNECT_FIXTURES.documents[A117_2021_BOOK_ID]!;
 
@@ -64,7 +69,7 @@ describe("IRC 2021 curated query set", () => {
   });
 
   it("every expectedAtomDid resolves to a section the extractor emits", async () => {
-    const { sections } = await extractModelCodeAtoms(IRC_2021);
+    const { sections } = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     const sectionDids = new Set(
       sections.map((s) => buildAtomDid("code-section", s.entityId).raw),
     );
@@ -85,7 +90,7 @@ describe("ICC credential-pending editions", () => {
 
 describe("A117.1 2021 curated query set (credential-pending)", () => {
   it("every expectedAtomDid resolves to a section the extractor emits", async () => {
-    const { sections } = await extractModelCodeAtoms(A117_2021);
+    const { sections } = await extractModelCodeAtoms(A117_2021, ICC_TEST_EXTRACTION);
     const sectionDids = new Set(
       sections.map((s) => buildAtomDid("code-section", s.entityId).raw),
     );
@@ -103,7 +108,7 @@ describe("A117.1 2021 curated query set (credential-pending)", () => {
 
 describe("eval rubric — retrieval against the IRC 2021 fixture", () => {
   it("the curated set retrieves every target section (top-3 score 1.0)", async () => {
-    const atoms = await extractModelCodeAtoms(IRC_2021);
+    const atoms = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     const storage = new InMemoryStorage();
     await storage.writeAtoms([
       atoms.edition,

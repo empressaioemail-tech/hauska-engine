@@ -10,6 +10,7 @@ import { buildAtomDid, type PropertyAtomInstance } from "@hauska-engine/atoms";
 import type postgres from "postgres";
 
 import type { IpfsPort } from "./ipfs-port.js";
+import { resolveAccessPolicyOrRefuse } from "./access-policy-write.js";
 
 /** Postgres bind-parameter ceiling ÷ 13 columns per row. */
 export const PROPERTY_ATOM_ROW_PARAM_COUNT = 13;
@@ -50,10 +51,6 @@ export function resolvePropertyAtomDid(instance: PropertyAtomInstance): string {
     : buildAtomDid(instance.entityType, instance.entityId).raw;
 }
 
-function resolveAccessPolicy(instance: PropertyAtomInstance): string {
-  return instance.accessPolicy ?? "public-free";
-}
-
 /** Last occurrence wins — matches concurrent single-row upsert race semantics. */
 export function dedupePreparedRowsLastWins(
   rows: PreparedPropertyAtomRow[],
@@ -92,7 +89,7 @@ export async function preparePropertyAtomRows(
       source_url: instance.sourceUrl,
       fetched_at: instance.fetchedAt,
       body: instance,
-      access_policy: resolveAccessPolicy(instance),
+      access_policy: resolveAccessPolicyOrRefuse(instance),
     });
     out.push({ atomDid, cid: pin.cid });
   }

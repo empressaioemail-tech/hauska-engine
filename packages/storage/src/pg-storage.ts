@@ -116,12 +116,11 @@ function parseStoredAtom(body: unknown): StoredAtomInstance | null {
   return body as CodeAtomInstance;
 }
 
-function resolveAccessPolicy(
-  instance: CodeAtomInstance | PropertyAtomInstance | RoadNodeAtomInstance,
-): string {
-  const maybePolicy = (instance as { accessPolicy?: string }).accessPolicy;
-  return maybePolicy ?? "public-free";
-}
+import {
+  accessPolicyMatchesFilter,
+  resolveAccessPolicyOrRefuse,
+  resolveJurisdictionAccessPolicyOrRefuse,
+} from "./access-policy-write.js";
 
 function toIsoString(value: Date | string | null | undefined): string | null {
   if (value == null) return null;
@@ -191,7 +190,7 @@ export class PgStorage implements StoragePort {
         ${instance.sourceUrl},
         ${instance.fetchedAt},
         ${this.sql.json(instance as unknown as Parameters<typeof this.sql.json>[0])},
-        ${resolveAccessPolicy(instance)}
+        ${resolveAccessPolicyOrRefuse(instance)}
       )
       ON CONFLICT (atom_did) DO UPDATE SET
         cid = EXCLUDED.cid,
@@ -251,7 +250,7 @@ export class PgStorage implements StoragePort {
         ${instance.sourceUrl},
         ${instance.fetchedAt},
         ${this.sql.json(instance as unknown as Parameters<typeof this.sql.json>[0])},
-        ${resolveAccessPolicy(instance)}
+        ${resolveAccessPolicyOrRefuse(instance)}
       )
       ON CONFLICT (atom_did) DO UPDATE SET
         cid = EXCLUDED.cid,
@@ -1012,7 +1011,7 @@ export class PgStorage implements StoragePort {
     if (filter?.accessPolicies && filter.accessPolicies.length > 0) {
       const allowed = new Set(filter.accessPolicies);
       snapshots = snapshots.filter((s) =>
-        allowed.has(s.accessPolicy ?? "public-free"),
+        accessPolicyMatchesFilter(s.accessPolicy, allowed),
       );
     }
     return snapshots;
@@ -1045,7 +1044,7 @@ export class PgStorage implements StoragePort {
         ${snapshot.atomCount},
         ${snapshot.lastRefreshedAt},
         ${snapshot.driftStatus},
-        ${snapshot.accessPolicy ?? "public-free"}
+        ${resolveJurisdictionAccessPolicyOrRefuse(snapshot)}
       )
       ON CONFLICT (jurisdiction_tenant) DO UPDATE SET
         jurisdiction_name = EXCLUDED.jurisdiction_name,

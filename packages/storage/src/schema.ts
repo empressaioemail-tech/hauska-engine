@@ -52,7 +52,7 @@ export const atoms = pgTable(
     /** Full atom-instance body as JSON. IPFS holds the canonical copy. */
     body: jsonb("body").notNull(),
     /** Access policy per ADR-007 + 08 tier model. */
-    accessPolicy: text("access_policy").notNull().default("public-free"),
+    accessPolicy: text("access_policy").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -201,7 +201,7 @@ export const jurisdictionStatus = pgTable("jurisdiction_status", {
    * `"public-free"` keeps backward compatibility with rows written by
    * older ingest runs (pre-v1.1.0 of the atom contract).
    */
-  accessPolicy: text("access_policy").notNull().default("public-free"),
+  accessPolicy: text("access_policy").notNull(),
 });
 
 /**

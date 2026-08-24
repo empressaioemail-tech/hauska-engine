@@ -7,6 +7,9 @@ import { describe, expect, it } from "vitest";
 import type { CodeSectionAtomInstance } from "@hauska-engine/atoms";
 import { createWidthedConfidence } from "@empressaio/atom-contract/read-contract";
 
+import {
+  AccessPolicyRequiredError,
+} from "../access-policy-write.js";
 import { PgStorage } from "../pg-storage.js";
 import {
   STORAGE_PORT_PROOF_ATOM_DID,
@@ -230,6 +233,21 @@ class FakePgBackend {
     return sql;
   }
 }
+
+describe("PgStorage accessPolicy fail-closed", () => {
+  it("refuses writeAtom when accessPolicy is absent and issues no INSERT", async () => {
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    const proof = buildStoragePortProofAtom();
+    const { accessPolicy: _removed, ...withoutPolicy } = proof as CodeSectionAtomInstance & {
+      accessPolicy?: string;
+    };
+    await expect(storage.writeAtom(withoutPolicy as CodeSectionAtomInstance)).rejects.toBeInstanceOf(
+      AccessPolicyRequiredError,
+    );
+    expect(backend.atoms.size).toBe(0);
+  });
+});
 
 describe("PgStorage", () => {
   it("writes and reads a code-section atom by DID", async () => {

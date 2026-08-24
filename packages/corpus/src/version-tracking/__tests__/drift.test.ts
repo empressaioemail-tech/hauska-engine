@@ -40,7 +40,7 @@ async function snapshot(body: string) {
   const adapter = new MunicodeHtmlAdapter({ http: new StubFetch(body) });
   const raw = await adapter.fetch(reference);
   const tree = buildCodeTree(await adapter.normalize(raw));
-  return captureDriftSnapshot(atomize(tree));
+  return captureDriftSnapshot(atomize(tree, { accessPolicy: "public-free" }));
 }
 
 describe("drift detection", () => {

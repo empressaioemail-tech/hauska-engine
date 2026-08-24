@@ -10,14 +10,31 @@ import {
   okCoverage,
   resolveReadPathConfidence,
 } from "@hauska-engine/engine-core/envelope";
+import {
+  LlmModeRefusalError,
+  LlmResolutionRefusalError,
+} from "@hauska-engine/engine-core/llm-mode-refusal";
 import { resolveBriefingMode, resolveLlmForMode } from "../lib/llmClients.js";
 import { envelopeJson } from "../lib/envelopeResponse.js";
 
 const generateBodySchema = z.object({
   input: z.record(z.unknown()),
   knownCodeSectionIds: z.array(z.string()).optional(),
-  mode: z.enum(["mock", "grok", "anthropic"]).optional(),
+  mode: z.enum(["grok", "anthropic"]).optional(),
 });
+
+function llmRefusalResponse(c: { json: (body: unknown, status: number) => Response }, err: unknown) {
+  if (err instanceof LlmModeRefusalError || err instanceof LlmResolutionRefusalError) {
+    return c.json(
+      {
+        error: err.code,
+        message: err.message,
+      },
+      503,
+    );
+  }
+  return null;
+}
 
 function dataVintageFromSources(
   sources: ReadonlyArray<{ snapshotDate?: unknown }>,
@@ -29,7 +46,6 @@ function dataVintageFromSources(
   return dates.sort().at(-1) ?? null;
 }
 
-/** Keep only non-null objects that carry a usable string on `key`. */
 function objectsWithStringKey(
   value: unknown,
   key: string,
@@ -56,45 +72,32 @@ export function buildBriefingRoutes(): Hono {
       );
     }
 
-    const requestedMode = parsed.data.mode ?? resolveBriefingMode();
-    // The body schema accepts `input` as an unshaped record. Normalize the
-    // array fields the engine dereferences unconditionally (for EVERY
-    // mode, not just mock: engine.ts builds resolver sets from
-    // input.sources / input.codeSections) so a minimal or malformed
-    // bundle degrades to a real brief instead of throwing a 500
-    // (commitment #1). Field-level shape beyond "is an array" is left to
-    // the engine, which tolerates empty arrays.
+    let requestedMode: "grok" | "anthropic";
+    try {
+      requestedMode = parsed.data.mode ?? resolveBriefingMode();
+    } catch (err) {
+      const refusal = llmRefusalResponse(c, err);
+      if (refusal) return refusal;
+      throw err;
+    }
+
     const rawInput = (parsed.data.input ?? {}) as Record<string, unknown>;
     const input = {
       ...rawInput,
-      // Filter to well-shaped items: sources need a string id (the engine
-      // builds a resolver set from source ids and the mock generator
-      // cites them), code sections need a string atomId. Dropping
-      // malformed items keeps a garbage bundle from 500ing while never
-      // fabricating a citable id (commitment #1).
       sources: objectsWithStringKey(rawInput.sources, "id"),
       codeSections: objectsWithStringKey(rawInput.codeSections, "atomId"),
     } as unknown as GenerateBriefingInput;
 
-    // Resolve a runnable LLM without throwing on a missing key. A brief
-    // must always return a real (or honestly-degraded) result, never a
-    // 500 — company commitment #1. The Grok-first / rules-mock ladder
-    // lives in resolveLlmForMode.
-    const llm = resolveLlmForMode(requestedMode);
-    const mode = llm.mode;
-
     try {
+      const llm = resolveLlmForMode(requestedMode);
       const result = await generateBriefing(input, {
-        mode,
+        mode: llm.mode,
         grokClient: llm.grokClient,
         anthropicClient: llm.anthropicClient,
         knownCodeSectionIds: parsed.data.knownCodeSectionIds,
       });
       const dataVintage = dataVintageFromSources(input.sources ?? []);
       const degradationReasons: string[] = [];
-      if (llm.degraded && llm.degradationReason) {
-        degradationReasons.push(llm.degradationReason);
-      }
       if (result.invalidCitations.length > 0) {
         degradationReasons.push(
           `${result.invalidCitations.length} invalid citation(s) stripped`,
@@ -106,16 +109,15 @@ export function buildBriefingRoutes(): Hono {
           : okCoverage();
       return envelopeJson(
         c,
-        { result, mode, requestedMode, degraded: llm.degraded },
+        { result, mode: llm.mode, requestedMode },
         {
           confidence: resolveReadPathConfidence({
             codeSections: input.codeSections,
-            assertedBaseline: mode === "mock" ? 0.7 : undefined,
           }),
           dataVintage,
           coverage,
           source: {
-            adapter: `briefing-engine:${mode}`,
+            adapter: `briefing-engine:${llm.mode}`,
             citationIds: [
               ...(input.sources ?? []).map((s) => s.id),
               ...(input.codeSections ?? []).map((s) => s.atomId),
@@ -124,48 +126,8 @@ export function buildBriefingRoutes(): Hono {
         },
       );
     } catch (err) {
-      // Last-resort guard: a live-LLM call can still fail (network,
-      // upstream 5xx, malformed response). Rather than 500, retry the
-      // deterministic mock path so the tile always gets a real brief
-      // with an honest degraded flag.
-      if (mode !== "mock") {
-        try {
-          const fallback = await generateBriefing(input, {
-            mode: "mock",
-            knownCodeSectionIds: parsed.data.knownCodeSectionIds,
-          });
-          const dataVintage = dataVintageFromSources(input.sources ?? []);
-          return envelopeJson(
-            c,
-            {
-              result: fallback,
-              mode: "mock",
-              requestedMode,
-              degraded: true,
-            },
-            {
-              confidence: resolveReadPathConfidence({
-                codeSections: input.codeSections,
-                assertedBaseline: 0.7,
-              }),
-              dataVintage,
-              coverage: degradedCoverage(
-                `${mode} generation failed (${err instanceof Error ? err.message : String(err)}); returned deterministic rules/mock brief`,
-                true,
-              ),
-              source: {
-                adapter: "briefing-engine:mock",
-                citationIds: [
-                  ...(input.sources ?? []).map((s) => s.id),
-                  ...(input.codeSections ?? []).map((s) => s.atomId),
-                ],
-              },
-            },
-          );
-        } catch {
-          // fall through to the 500 below only if even mock fails
-        }
-      }
+      const refusal = llmRefusalResponse(c, err);
+      if (refusal) return refusal;
       return c.json(
         {
           error: "briefing_generation_failed",

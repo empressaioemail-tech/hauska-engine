@@ -32,6 +32,7 @@ import {
   type GenerateBriefingResult,
 } from "./types";
 import { SECTIONS_WITH_NO_CITATIONS } from "./sourceCategories";
+import { resolveBriefingLlmModeFromEnv } from "../llm-mode-refusal.js";
 
 export interface GenerateBriefingOptions {
   /** Force a mode; defaults to {@link resolveBriefingLlmMode}. */
@@ -64,10 +65,7 @@ export interface GenerateBriefingOptions {
  * the route's startup log and the engine's runtime branch.
  */
 export function resolveBriefingLlmMode(): BriefingLlmMode {
-  const raw = (process.env.BRIEFING_LLM_MODE ?? "mock").toLowerCase();
-  if (raw === "grok") return "grok";
-  if (raw === "anthropic") return "anthropic";
-  return "mock";
+  return resolveBriefingLlmModeFromEnv();
 }
 
 const HEAVY_SECTION_SET: ReadonlySet<string> = new Set(HEAVY_SECTIONS);

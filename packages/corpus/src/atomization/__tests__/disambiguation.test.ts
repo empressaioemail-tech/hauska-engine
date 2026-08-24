@@ -68,6 +68,7 @@ function tree(children: CodeTreeNode["children"]): CodeTreeNode {
 }
 
 const EDITION = "leander_tx/test-edition";
+const ATOMIZE_POLICY = { accessPolicy: "public-free" as const };
 
 describe("atomize — bare-numbered section entityId disambiguation", () => {
   it("re-keys colliding bare sections by their containing chapter/article path", () => {
@@ -102,6 +103,7 @@ describe("atomize — bare-numbered section entityId disambiguation", () => {
           ]),
         ]),
       ]),
+      ATOMIZE_POLICY,
     );
 
     const ids = result.sections.map((s) => s.entityId);
@@ -141,6 +143,7 @@ describe("atomize — bare-numbered section entityId disambiguation", () => {
           ]),
         ]),
       ]),
+      ATOMIZE_POLICY,
     );
     const ids = result.sections.map((s) => s.entityId).sort();
     // Hyphenated numbers are globally unique — bare ids, no prefix.
@@ -167,6 +170,7 @@ describe("atomize — bare-numbered section entityId disambiguation", () => {
           ]),
         ]),
       ]),
+      ATOMIZE_POLICY,
     );
     const ids = result.sections.map((s) => s.entityId);
     expect(ids).toEqual([`${EDITION}/5`, `${EDITION}/5`]);
@@ -188,6 +192,7 @@ describe("atomize — bare-numbered section entityId disambiguation", () => {
           ]),
         ]),
       ]),
+      ATOMIZE_POLICY,
     );
     const ids = result.sections.map((s) => s.entityId).sort();
     expect(ids).toEqual([

@@ -25,7 +25,7 @@ describe("engine-api reasoning routes", () => {
     gateContextMode: "off",
   };
 
-  it("generates mock findings behind the gate", async () => {
+  it("rejects mock findings mode at the schema boundary", async () => {
     const app = buildApp({ config });
     const res = await app.request("/v1/findings/generate", {
       method: "POST",
@@ -39,34 +39,12 @@ describe("engine-api reasoning routes", () => {
             projectName: "Test",
             note: null,
           },
-          sources: [
-            {
-              id: "src-1",
-              layerKind: "qgis-zoning",
-              sourceKind: "manual-upload",
-              provider: "Test",
-              snapshotDate: "2026-01-01",
-              note: null,
-            },
-          ],
-          codeSections: [{ atomId: "code-1", label: "Sample Rule" }],
-          bimElements: [{ ref: "wall:north", label: "North wall" }],
+          sources: [],
+          codeSections: [],
+          bimElements: [],
         },
       }),
     });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      payload: {
-        mode: string;
-        result: { findings: Array<{ atomId?: string; citations?: unknown[] }> };
-      };
-      confidence: { value: number; kind: string };
-      coverage: { degraded: boolean };
-    };
-    expect(body.payload.mode).toBe("mock");
-    expect(body.payload.result.findings.length).toBeGreaterThan(0);
-    expect(body.payload.result.findings[0]?.atomId).toMatch(/^finding:sub-1:/);
-    expect(body.confidence.kind).toBeTruthy();
-    expect(typeof body.coverage.degraded).toBe("boolean");
+    expect(res.status).toBe(400);
   });
 });

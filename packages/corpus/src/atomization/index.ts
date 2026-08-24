@@ -54,14 +54,15 @@ export interface AtomizationResult {
 }
 
 export interface AtomizeOptions {
-  /**
-   * ADR-017 access tier tagged onto the emitted `jurisdiction-corpus`
-   * atom. Per the 2026-05-19 Sync 4.5 sprint, partnership-pending
-   * jurisdictions ingest as `"platform-internal"`; partnership-
-   * confirmed ingest as `"public-free"` (also the default when this
-   * option is omitted).
-   */
-  accessPolicy?: AccessPolicy;
+  /** ADR-017 access tier stamped onto every atom this function emits. Required. */
+  accessPolicy: AccessPolicy;
+}
+
+function withAccessPolicy<T extends { entityType: string; entityId: string }>(
+  instance: T,
+  accessPolicy: AccessPolicy,
+): T & { accessPolicy: AccessPolicy } {
+  return { ...instance, accessPolicy };
 }
 
 function slugify(input: string): string {
@@ -181,8 +182,9 @@ function buildCrossReferenceId(
  */
 export function atomize(
   tree: CodeTreeNode,
-  options: AtomizeOptions = {},
+  options: AtomizeOptions,
 ): AtomizationResult {
+  const { accessPolicy } = options;
   const jurisdictionTenant = tree.jurisdictionTenant;
   const editionLabel = tree.editionLabel;
   const editionSlug = slugify(editionLabel);
@@ -283,7 +285,7 @@ export function atomize(
         section.bodyText,
       ),
     });
-    sections.push(inst);
+    sections.push(withAccessPolicy(inst, accessPolicy));
     links.push({
       fromEntityType: "code-edition",
       fromEntityId: editionId,
@@ -322,7 +324,7 @@ export function atomize(
       sourceUrl: tree.sourceUrl,
       contentHash: hashContent("code-definition", defId, def.term, def.definitionText),
     };
-    definitions.push(inst);
+    definitions.push(withAccessPolicy(inst, accessPolicy));
     if (containerSectionId) {
       links.push({
         fromEntityType: "code-section",
@@ -373,7 +375,7 @@ export function atomize(
         xref.referenceText,
       ),
     };
-    crossReferences.push(inst);
+    crossReferences.push(withAccessPolicy(inst, accessPolicy));
     if (toSectionId) {
       links.push({
         fromEntityType: "code-section",
@@ -467,7 +469,7 @@ export function atomize(
             node.amendmentText,
           ),
         };
-        amendments.push(inst);
+        amendments.push(withAccessPolicy(inst, accessPolicy));
         for (const affectedId of affectedSectionIds) {
           links.push({
             fromEntityType: "code-amendment",
@@ -491,48 +493,53 @@ export function atomize(
   }
 
   const editionFetchedAt = tree.fetchedAt;
-  const editionInstance: CodeEditionAtomInstance = {
-    entityType: "code-edition",
-    entityId: editionId,
-    jurisdictionTenant,
-    editionLabel,
-    effectiveFrom: tree.publicationDate || editionFetchedAt,
-    effectiveTo: null,
-    sectionIds: sections.map((s) => s.entityId),
-    amendmentIds: amendments.map((a) => a.entityId),
-    fetchedAt: editionFetchedAt,
-    sourceAdapter: tree.sourceAdapter,
-    sourceUrl: tree.sourceUrl,
-    contentHash: hashContent(
-      "code-edition",
-      editionId,
+  const editionInstance: CodeEditionAtomInstance = withAccessPolicy(
+    {
+      entityType: "code-edition",
+      entityId: editionId,
+      jurisdictionTenant,
       editionLabel,
-      ...sections.map((s) => s.contentHash),
-      ...amendments.map((a) => a.contentHash),
-    ),
-  };
+      effectiveFrom: tree.publicationDate || editionFetchedAt,
+      effectiveTo: null,
+      sectionIds: sections.map((s) => s.entityId),
+      amendmentIds: amendments.map((a) => a.entityId),
+      fetchedAt: editionFetchedAt,
+      sourceAdapter: tree.sourceAdapter,
+      sourceUrl: tree.sourceUrl,
+      contentHash: hashContent(
+        "code-edition",
+        editionId,
+        editionLabel,
+        ...sections.map((s) => s.contentHash),
+        ...amendments.map((a) => a.contentHash),
+      ),
+    },
+    accessPolicy,
+  );
 
-  const jurisdictionCorpusInstance: JurisdictionCorpusAtomInstance = {
-    entityType: "jurisdiction-corpus",
-    entityId: jurisdictionId,
-    jurisdictionTenant,
-    jurisdictionName: tree.jurisdictionName,
-    adoptedEditionIds: [editionId],
-    currentEditionId: editionId,
-    coverageQualityBar: "not-evaluated",
-    lastRefreshedAt: editionFetchedAt,
-    fetchedAt: editionFetchedAt,
-    sourceAdapter: tree.sourceAdapter,
-    sourceUrl: tree.sourceUrl,
-    contentHash: hashContent(
-      "jurisdiction-corpus",
-      jurisdictionId,
-      tree.jurisdictionName,
-      editionId,
-      options.accessPolicy ?? "public-free",
-    ),
-    ...(options.accessPolicy ? { accessPolicy: options.accessPolicy } : {}),
-  };
+  const jurisdictionCorpusInstance: JurisdictionCorpusAtomInstance = withAccessPolicy(
+    {
+      entityType: "jurisdiction-corpus",
+      entityId: jurisdictionId,
+      jurisdictionTenant,
+      jurisdictionName: tree.jurisdictionName,
+      adoptedEditionIds: [editionId],
+      currentEditionId: editionId,
+      coverageQualityBar: "not-evaluated",
+      lastRefreshedAt: editionFetchedAt,
+      fetchedAt: editionFetchedAt,
+      sourceAdapter: tree.sourceAdapter,
+      sourceUrl: tree.sourceUrl,
+      contentHash: hashContent(
+        "jurisdiction-corpus",
+        jurisdictionId,
+        tree.jurisdictionName,
+        editionId,
+        accessPolicy,
+      ),
+    },
+    accessPolicy,
+  );
 
   links.push({
     fromEntityType: "jurisdiction-corpus",

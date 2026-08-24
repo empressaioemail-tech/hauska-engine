@@ -44,6 +44,7 @@ import {
   rankSearchResults,
   scoreAtomSearch,
 } from "./search-scoring.js";
+import { accessPolicyMatchesFilter } from "./access-policy-write.js";
 
 export class InMemoryStorage implements StoragePort {
   private readonly atoms = new Map<string, StoredAtomInstance>();
@@ -538,9 +539,8 @@ export class InMemoryStorage implements StoragePort {
     }
     if (filter?.accessPolicies && filter.accessPolicies.length > 0) {
       const allowed = new Set(filter.accessPolicies);
-      // Absent accessPolicy is treated as "public-free" per port docs.
       snapshots = snapshots.filter((s) =>
-        allowed.has(s.accessPolicy ?? "public-free"),
+        accessPolicyMatchesFilter(s.accessPolicy, allowed),
       );
     }
     return snapshots;

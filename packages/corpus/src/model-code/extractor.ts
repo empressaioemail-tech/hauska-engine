@@ -34,7 +34,7 @@
 
 import { createHash } from "node:crypto";
 
-import type { AtomLink, LinkType } from "@hauska-engine/atoms";
+import type { AccessPolicy, AtomLink, LinkType } from "@hauska-engine/atoms";
 import type {
   CodeCrossReferenceAtomInstance,
   CodeDefinitionAtomInstance,
@@ -141,6 +141,10 @@ export const deterministicReasoningLayer: ModelCodeReasoningLayer = (
  * ──────────────────────────────────────────────────────────────────── */
 
 export interface ModelCodeExtractionOptions {
+  /** ADR-017 access tier stamped onto every atom family this extractor emits. */
+  accessPolicy: AccessPolicy;
+  /** Source actor DID for ICC obligation metering (required for icc-model-code tenant). */
+  sourceActorDid: string;
   /** Tenant the shared Layer 1 base ingests under. Default `icc-model-code`. */
   modelCodeTenant?: string;
   /** Reasoning-layer generator. Default {@link deterministicReasoningLayer}. */
@@ -316,11 +320,17 @@ function parseReferencesFromText(text: string): ParsedReference[] {
  */
 export async function extractModelCodeAtoms(
   document: IccCodeDocument,
-  options: ModelCodeExtractionOptions = {},
+  options: ModelCodeExtractionOptions,
 ): Promise<ModelCodeExtractionResult> {
   const tenant = options.modelCodeTenant ?? ICC_MODEL_CODE_TENANT;
   const reasoningLayer = options.reasoningLayer ?? deterministicReasoningLayer;
   const fetchedAt = options.fetchedAt ?? new Date().toISOString();
+  const { accessPolicy, sourceActorDid } = options;
+
+  const modelCodeFields = {
+    accessPolicy,
+    sourceActorDid,
+  } as const;
 
   const { book } = document;
   // Extract year from title or uri.year (uri.year is a string)
@@ -429,12 +439,7 @@ export async function extractModelCodeAtoms(
           bodyText,
           deepLink,
         ),
-        ...(tenant === ICC_MODEL_CODE_TENANT
-          ? {
-              accessPolicy: "platform-internal" as const,
-              sourceActorDid: "did:hauska:actor:org:icc",
-            }
-          : {}),
+        ...(tenant === ICC_MODEL_CODE_TENANT ? modelCodeFields : { accessPolicy }),
       };
       sections.push(sectionAtom);
       links.push({
@@ -470,6 +475,8 @@ export async function extractModelCodeAtoms(
             term,
             "",
           ),
+          accessPolicy,
+          ...(tenant === ICC_MODEL_CODE_TENANT ? { sourceActorDid } : {}),
         });
         links.push({
           fromEntityType: "code-section",
@@ -514,6 +521,8 @@ export async function extractModelCodeAtoms(
             targetId,
             ref.kind,
           ),
+          accessPolicy,
+          ...(tenant === ICC_MODEL_CODE_TENANT ? { sourceActorDid } : {}),
         });
         if (targetId) {
           links.push({
@@ -554,6 +563,8 @@ export async function extractModelCodeAtoms(
       editionLabel,
       ...sections.map((s) => s.contentHash),
     ),
+    accessPolicy,
+    ...(tenant === ICC_MODEL_CODE_TENANT ? { sourceActorDid } : {}),
   };
 
   return { edition, sections, definitions, crossReferences, links };

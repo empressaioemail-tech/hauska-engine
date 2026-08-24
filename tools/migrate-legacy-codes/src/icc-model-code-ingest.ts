@@ -70,6 +70,8 @@ export async function runIccModelCodeIngest(
     const result = await extractModelCodeAtoms(doc, {
       modelCodeTenant: "icc-model-code",
       reasoningLayer: opts?.reasoningLayer,
+      accessPolicy: "platform-internal",
+      sourceActorDid: "did:hauska:actor:org:icc",
     });
 
     // Write atoms to storage

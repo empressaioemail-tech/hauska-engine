@@ -84,16 +84,25 @@ describe("EngineEnvelope contract — all reasoning surfaces", () => {
     ).toBe(true);
   }
 
-  it("POST /v1/findings/generate", async () => {
-    await assertEnvelope("/v1/findings/generate", {
+  it("POST /v1/findings/generate refuses mock mode", async () => {
+    const res = await app.request("/v1/findings/generate", {
       method: "POST",
+      headers: {
+        ...gateHeaders(),
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ mode: "mock", input: findingsInput }),
     });
+    expect(res.status).toBe(400);
   });
 
-  it("POST /v1/briefing/generate", async () => {
-    await assertEnvelope("/v1/briefing/generate", {
+  it("POST /v1/briefing/generate refuses mock mode", async () => {
+    const res = await app.request("/v1/briefing/generate", {
       method: "POST",
+      headers: {
+        ...gateHeaders(),
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
         mode: "mock",
         input: {
@@ -103,6 +112,7 @@ describe("EngineEnvelope contract — all reasoning surfaces", () => {
         },
       }),
     });
+    expect(res.status).toBe(400);
   });
 
   it("POST /v1/hydrology/rainfall-forcing", async () => {

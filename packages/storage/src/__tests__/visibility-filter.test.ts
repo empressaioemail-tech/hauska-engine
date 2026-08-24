@@ -118,7 +118,7 @@ describe("listJurisdictionStatus — visibility filter", () => {
     expect(both).toHaveLength(4);
   });
 
-  it("absent accessPolicy is treated as public-free", async () => {
+  it("absent accessPolicy does not widen into public-free filter matches", async () => {
     const storage = seed();
     storage.upsertJurisdictionStatus({
       jurisdictionTenant: "legacy_pre_v1_1",
@@ -137,7 +137,7 @@ describe("listJurisdictionStatus — visibility filter", () => {
       accessPolicies: ["public-free"],
     });
     const tenants = publicOnly.map((s) => s.jurisdictionTenant);
-    expect(tenants).toContain("legacy_pre_v1_1");
+    expect(tenants).not.toContain("legacy_pre_v1_1");
   });
 
   it("qualityBarOnly filter composes with accessPolicies filter", async () => {

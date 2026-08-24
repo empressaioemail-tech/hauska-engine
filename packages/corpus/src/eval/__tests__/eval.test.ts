@@ -47,7 +47,7 @@ describe("eval harness", () => {
     };
     const raw = await adapter.fetch(ref);
     const tree = buildCodeTree(await adapter.normalize(raw));
-    const atomized = atomize(tree);
+    const atomized = atomize(tree, { accessPolicy: "public-free" });
     await storage.writeAtoms([
       atomized.jurisdictionCorpus,
       atomized.edition,

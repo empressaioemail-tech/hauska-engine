@@ -135,7 +135,10 @@ export async function runPathCIngest(
     },
   });
   const extractionQuality = reportExtractionQuality(tree);
-  const accessPolicy: AccessPolicy = options.accessPolicy ?? "public-free";
+  const accessPolicy: AccessPolicy = options.accessPolicy;
+  if (!accessPolicy) {
+    throw new Error("accessPolicy is required for Path C ingest");
+  }
   const rawAtomization = atomize(tree, { accessPolicy });
   // Dedupe sections by entityId — the Municode JSON walker can emit
   // the same Doc through multiple TOC paths (intermediate-article

@@ -145,7 +145,10 @@ export async function runPathPdfIngest(
     },
   });
   const extractionQuality = reportExtractionQuality(tree);
-  const accessPolicy: AccessPolicy = options.accessPolicy ?? "public-free";
+  const accessPolicy: AccessPolicy = options.accessPolicy;
+  if (!accessPolicy) {
+    throw new Error("accessPolicy is required for PDF ingest");
+  }
   const rawAtomization = atomize(tree, { accessPolicy });
 
   // Dedupe sections by entityId. Born-digital PDF walks don't typically

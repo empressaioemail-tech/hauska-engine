@@ -55,6 +55,29 @@ const reference: CodeReference = {
   sourceUrl: "https://library.municode.com/codes/test/test-city",
 };
 
+describe("atomize — accessPolicy stamping", () => {
+  it("stamps every emitted family with the caller-declared accessPolicy", async () => {
+    const adapter = new MunicodeHtmlAdapter({ http: new StubFetch(FIXTURE) });
+    const raw = await adapter.fetch(reference);
+    const normalized = await adapter.normalize(raw);
+    const tree = buildCodeTree(normalized);
+    const declared = "platform-internal" as const;
+    const atomized = atomize(tree, { accessPolicy: declared });
+    const all = [
+      atomized.jurisdictionCorpus,
+      atomized.edition,
+      ...atomized.sections,
+      ...atomized.definitions,
+      ...atomized.crossReferences,
+      ...atomized.amendments,
+    ];
+    expect(all.length).toBeGreaterThan(0);
+    for (const atom of all) {
+      expect(atom.accessPolicy).toBe(declared);
+    }
+  });
+});
+
 describe("end-to-end pipeline (adapter -> extract -> atomize)", () => {
   it("produces all six Bump 1 atom types with provenance", async () => {
     const adapter = new MunicodeHtmlAdapter({ http: new StubFetch(FIXTURE) });
@@ -67,7 +90,7 @@ describe("end-to-end pipeline (adapter -> extract -> atomize)", () => {
     expect(report.totalCrossReferences).toBeGreaterThanOrEqual(1);
     expect(report.totalAmendments).toBeGreaterThanOrEqual(1);
 
-    const atomized = atomize(tree);
+    const atomized = atomize(tree, { accessPolicy: "public-free" });
     expect(atomized.jurisdictionCorpus.entityType).toBe("jurisdiction-corpus");
     expect(atomized.edition.entityType).toBe("code-edition");
     expect(atomized.sections.length).toBeGreaterThanOrEqual(2);
