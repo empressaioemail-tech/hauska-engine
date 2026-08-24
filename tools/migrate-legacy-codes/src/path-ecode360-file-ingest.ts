@@ -212,7 +212,10 @@ export async function runPathEcode360FileIngest(
     headingDepthSchema: options.headingDepthSchema ?? ECODE360_DEPTH_SCHEMA,
   });
   const extractionQuality = reportExtractionQuality(tree);
-  const accessPolicy: AccessPolicy = options.accessPolicy;
+  if (options.accessPolicy == null) {
+    throw new Error("accessPolicy is required for eCode360 file ingest");
+  }
+  const accessPolicy = options.accessPolicy;
   const rawAtomization = atomize(tree, { accessPolicy });
 
   // Dedupe sections by entityId — verbatim from path-pdf-ingest.ts.

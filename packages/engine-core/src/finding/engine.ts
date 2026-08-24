@@ -49,6 +49,10 @@ import {
   type GenerateFindingsInput,
   type GenerateFindingsResult,
 } from "./types";
+import {
+  LlmModeRefusalError,
+  resolveFindingLlmModeFromEnv,
+} from "../llm-mode-refusal.js";
 
 export interface GenerateFindingsOptions {
   /** Force a mode; defaults to {@link resolveFindingLlmMode}. */
@@ -78,15 +82,11 @@ export interface GenerateFindingsOptions {
 }
 
 /**
- * Resolve the engine mode from env. The route layer can override at
- * call time; this helper exists so a single source of truth backs both
- * the route's startup log and the engine's runtime branch.
+ * Resolve the engine mode from env. Refuses when unset or mock — mock is
+ * test-only via explicit `options.mode`.
  */
 export function resolveFindingLlmMode(): FindingLlmMode {
-  const raw = (process.env.AIR_FINDING_LLM_MODE ?? "mock").toLowerCase();
-  if (raw === "grok") return "grok";
-  if (raw === "anthropic") return "anthropic";
-  return "mock";
+  return resolveFindingLlmModeFromEnv();
 }
 
 /** Default ulid-shaped id generator (collision-resistant for tests). */

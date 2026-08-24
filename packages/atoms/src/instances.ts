@@ -102,8 +102,7 @@ export interface CodeSectionAtomInstance extends BaseAtomInstance {
   consequenceInputs?: ConsequenceClassificationInputs;
   /**
    * ADR-017. ICC model-code sections are platform-internal until G-50
-   * public-paid. Omitted still means public-free at some consumers, so
-   * ICC ingest must set this explicitly.
+   * public-paid. Writers refuse when absent.
    */
   accessPolicy?: AccessPolicy;
   /** G-17 hard actor reference. ICC rows: did:hauska:actor:org:icc */
@@ -134,6 +133,8 @@ export interface CodeDefinitionAtomInstance extends BaseAtomInstance {
   definingSectionId: string | null;
   /** Scope of the definition. */
   scope: "section" | "chapter" | "code";
+  accessPolicy?: AccessPolicy;
+  sourceActorDid?: string;
 }
 
 /**
@@ -200,6 +201,8 @@ export interface CodeAmendmentBaseFields extends BaseAtomInstance {
    */
   affectedSectionIds: ReadonlyArray<string>;
   amendmentText: string;
+  accessPolicy?: AccessPolicy;
+  sourceActorDid?: string;
 }
 
 /**
@@ -323,6 +326,8 @@ export interface CodeCrossReferenceAtomInstance extends BaseAtomInstance {
     | "amends"
     | "supersedes"
     | "unknown";
+  accessPolicy?: AccessPolicy;
+  sourceActorDid?: string;
 }
 
 export interface CodeEditionAtomInstance extends BaseAtomInstance {
@@ -332,6 +337,8 @@ export interface CodeEditionAtomInstance extends BaseAtomInstance {
   effectiveTo: string | null;
   sectionIds: ReadonlyArray<string>;
   amendmentIds: ReadonlyArray<string>;
+  accessPolicy?: AccessPolicy;
+  sourceActorDid?: string;
 }
 
 export interface JurisdictionCorpusAtomInstance extends BaseAtomInstance {
@@ -347,11 +354,10 @@ export interface JurisdictionCorpusAtomInstance extends BaseAtomInstance {
     | "passing-recalibrated";
   lastRefreshedAt: string;
   /**
-   * ADR-017 access tier per `@hauska/atom-contract@^1.1.0`. Surfaces
-   * that gate on visibility (MCP `list_jurisdictions`, public catalog)
-   * treat an omitted field as `"public-free"`. Partnership-pending
-   * jurisdictions ingest as `"platform-internal"` until partnership
-   * outreach closes; the field flips to `"public-free"` once cleared.
+   * ADR-017 access tier per `@hauska/atom-contract@^1.1.0`. Writers
+   * refuse when absent. Partnership-pending jurisdictions ingest as
+   * `"platform-internal"` until partnership outreach closes; the field
+   * flips to `"public-free"` once cleared.
    *
    * See `_decisions/2026-05-19_sync_4_5_and_cortex_sprint.md` Path A
    * resolution for the Smithville / Elgin / Bastrop County tagging

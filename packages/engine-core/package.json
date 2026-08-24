@@ -19,6 +19,10 @@
       "types": "./src/finding/index.ts",
       "import": "./src/finding/index.ts"
     },
+    "./llm-mode-refusal": {
+      "types": "./src/llm-mode-refusal.ts",
+      "import": "./src/llm-mode-refusal.ts"
+    },
     "./calibration": {
       "types": "./src/calibration/overlay.ts",
       "import": "./src/calibration/overlay.ts"

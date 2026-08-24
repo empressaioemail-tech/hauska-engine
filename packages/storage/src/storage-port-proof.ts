@@ -27,6 +27,7 @@ export function buildStoragePortProofAtom(
     sourceAdapter: "storage-port-proof",
     sourceUrl: "https://hauska.dev/internal/storage-port-proof/phase-1a",
     contentHash: sha256Hex(bodyText),
+    accessPolicy: "platform-internal",
     codeEditionId: "storage_port_proof_tx/edition-1a",
     sectionNumber: "SP-1a",
     title: "StoragePort Phase 1a proof section",

@@ -17,7 +17,7 @@ import {
   reportExtractionQuality,
 } from "@hauska-engine/corpus/extraction";
 import { evaluate, type CuratedQuery, type EvalReport } from "@hauska-engine/corpus/eval";
-import type { StoragePort } from "@hauska-engine/storage";
+import type { StoragePort, AccessPolicy } from "@hauska-engine/storage";
 
 import type { JobPort, JobRecord } from "./job-port.js";
 import { assertTransition } from "./state-machine.js";
@@ -25,6 +25,8 @@ import { assertTransition } from "./state-machine.js";
 export interface RunnerOptions {
   jobPort: JobPort;
   storage: StoragePort;
+  /** ADR-017 access tier stamped on every atom this runner ingests. */
+  accessPolicy: AccessPolicy;
   /** Lookup adapter by name (matches adapter.capabilities.name). */
   adapterRegistry: Map<string, CodeSourceAdapter>;
   /** Optional eval queries loader. Returns the query set for a jurisdiction. */
@@ -101,7 +103,7 @@ export class PipelineRunner {
       await this.transition(job, "extracted", "atomized", {
         telemetry: { blockCount: normalized.blocks.length, sectionCount: quality.totalSections },
       });
-      const atomized = atomize(tree);
+      const atomized = atomize(tree, { accessPolicy: this.opts.accessPolicy });
 
       // indexed
       await this.transition(job, "atomized", "indexed");
@@ -125,6 +127,7 @@ export class PipelineRunner {
         atomCount: atomized.sections.length,
         lastRefreshedAt: atomized.edition.fetchedAt,
         driftStatus: "clean",
+        accessPolicy: this.opts.accessPolicy,
       });
 
       // eval-running
@@ -151,6 +154,7 @@ export class PipelineRunner {
         atomCount: atomized.sections.length,
         lastRefreshedAt: atomized.edition.fetchedAt,
         driftStatus: "clean",
+        accessPolicy: this.opts.accessPolicy,
       });
 
       const terminal = evalReport.passed ? "loaded" : "failed";

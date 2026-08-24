@@ -119,9 +119,7 @@ export interface JurisdictionStatusSnapshot {
   driftStatus: "clean" | "amendments-pending" | "stale";
   /**
    * ADR-017 access tier propagated from the jurisdiction-corpus atom.
-   * Surfaces that gate visibility (MCP `list_jurisdictions` for
-   * unauthenticated callers, public catalog) filter on this. Absent =
-   * treat as `"public-free"`.
+   * Absent does not match any filter; writers refuse when omitted.
    */
   accessPolicy?: AccessPolicy;
 }
@@ -314,7 +312,7 @@ export interface StoragePort {
      * visibility: MCP `list_jurisdictions` for unauthenticated callers
      * passes `["public-free"]`; platform-internal callers pass all four.
      * Omitted = no access-policy filter. Snapshots whose `accessPolicy`
-     * is absent are treated as `"public-free"`.
+     * is absent do not match any allow-list entry.
      */
     accessPolicies?: ReadonlyArray<AccessPolicy>;
   }): Promise<ReadonlyArray<JurisdictionStatusSnapshot>>;

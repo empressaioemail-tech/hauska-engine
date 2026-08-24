@@ -24,6 +24,7 @@ import {
   FindingGeneratorError,
   type GenerateFindingsInput,
 } from "../index";
+import { LlmModeRefusalError } from "../../llm-mode-refusal.js";
 
 function makeInput(
   overrides: Partial<GenerateFindingsInput> = {},
@@ -267,11 +268,11 @@ describe("generateFindings: validator + discard pipeline", () => {
 });
 
 describe("resolveFindingLlmMode", () => {
-  it("defaults to mock when AIR_FINDING_LLM_MODE is unset", () => {
+  it("refuses when AIR_FINDING_LLM_MODE is unset", () => {
     const original = process.env.AIR_FINDING_LLM_MODE;
     delete process.env.AIR_FINDING_LLM_MODE;
     try {
-      expect(resolveFindingLlmMode()).toBe("mock");
+      expect(() => resolveFindingLlmMode()).toThrow(LlmModeRefusalError);
     } finally {
       if (original !== undefined) process.env.AIR_FINDING_LLM_MODE = original;
     }
@@ -299,11 +300,11 @@ describe("resolveFindingLlmMode", () => {
     }
   });
 
-  it("treats unknown env values as mock (defensive default)", () => {
+  it("refuses unknown env values instead of defaulting to mock", () => {
     const original = process.env.AIR_FINDING_LLM_MODE;
     process.env.AIR_FINDING_LLM_MODE = "openai";
     try {
-      expect(resolveFindingLlmMode()).toBe("mock");
+      expect(() => resolveFindingLlmMode()).toThrow(LlmModeRefusalError);
     } finally {
       if (original === undefined) delete process.env.AIR_FINDING_LLM_MODE;
       else process.env.AIR_FINDING_LLM_MODE = original;

@@ -22,10 +22,34 @@ import {
 
 const IRC_2021 = ICC_CODE_CONNECT_FIXTURES.documents[IRC_2021_BOOK_ID]!;
 const EDITION_LABEL = "2021 International Residential Code";
+const ICC_TEST_EXTRACTION = {
+  accessPolicy: "platform-internal" as const,
+  sourceActorDid: "did:hauska:actor:org:icc",
+};
+
+describe("extractModelCodeAtoms — accessPolicy stamping", () => {
+  it("stamps every emitted family with the caller-declared accessPolicy", async () => {
+    const declared = "platform-internal" as const;
+    const result = await extractModelCodeAtoms(IRC_2021, {
+      accessPolicy: declared,
+      sourceActorDid: "did:hauska:actor:org:icc",
+    });
+    const all = [
+      result.edition,
+      ...result.sections,
+      ...result.definitions,
+      ...result.crossReferences,
+    ];
+    expect(all.length).toBeGreaterThan(0);
+    for (const atom of all) {
+      expect(atom.accessPolicy).toBe(declared);
+    }
+  });
+});
 
 describe("extractModelCodeAtoms — edition", () => {
   it("emits one code-edition aggregating every section, with no amendments", async () => {
-    const result = await extractModelCodeAtoms(IRC_2021);
+    const result = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     expect(result.edition.entityType).toBe("code-edition");
     expect(result.edition.entityId).toBe(
       modelCodeEditionEntityId("icc-model-code", EDITION_LABEL),
@@ -42,7 +66,7 @@ describe("extractModelCodeAtoms — edition", () => {
 
 describe("extractModelCodeAtoms — sections (ADR-019 deep-link footing)", () => {
   it("emits a code-section per Code Connect section with a deep-link set", async () => {
-    const result = await extractModelCodeAtoms(IRC_2021);
+    const result = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     expect(result.sections.map((s) => s.sectionNumber)).toEqual([
       "R201",
       "R202",
@@ -56,7 +80,7 @@ describe("extractModelCodeAtoms — sections (ADR-019 deep-link footing)", () =>
   });
 
   it("prefers a Code Connect viewerUrl, else synthesizes the deep-link", async () => {
-    const result = await extractModelCodeAtoms(IRC_2021);
+    const result = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     const r301 = result.sections.find((s) => s.sectionNumber === "R301")!;
     const r201 = result.sections.find((s) => s.sectionNumber === "R201")!;
     // Real API uses xmlId-based anchors (verified live 2026-07-05).
@@ -69,7 +93,7 @@ describe("extractModelCodeAtoms — sections (ADR-019 deep-link footing)", () =>
   });
 
   it("bodyText is the reasoning layer, never the verbatim normative text", async () => {
-    const result = await extractModelCodeAtoms(IRC_2021);
+    const result = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     const r301 = result.sections.find((s) => s.sectionNumber === "R301")!;
     // Reasoning-layer markers present.
     expect(r301.bodyText).toContain("Layer 1 model-code base section");
@@ -91,7 +115,7 @@ describe("extractModelCodeAtoms — sections (ADR-019 deep-link footing)", () =>
   });
 
   it("produces section atoms that satisfy CODE_SECTION_SCHEMA", async () => {
-    const result = await extractModelCodeAtoms(IRC_2021);
+    const result = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     for (const section of result.sections) {
       expect(() => CODE_SECTION_SCHEMA.parse(section)).not.toThrow();
     }
@@ -102,6 +126,7 @@ describe("extractModelCodeAtoms — sections (ADR-019 deep-link footing)", () =>
       `SUMMARY of ${input.sectionNumber}`;
     const result = await extractModelCodeAtoms(IRC_2021, {
       reasoningLayer: hook,
+      ...ICC_TEST_EXTRACTION,
     });
     expect(result.sections[0]!.bodyText).toBe("SUMMARY of R201");
   });
@@ -109,7 +134,7 @@ describe("extractModelCodeAtoms — sections (ADR-019 deep-link footing)", () =>
 
 describe("extractModelCodeAtoms — definitions", () => {
   it("emits a code-definition per defined term, code-scoped in the Definitions chapter", async () => {
-    const result = await extractModelCodeAtoms(IRC_2021);
+    const result = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     // TODO: Definition extraction from HTML content not yet implemented.
     // The real ICC API returns HTML content, not structured definitions.
     expect(result.definitions).toEqual([]);
@@ -118,7 +143,7 @@ describe("extractModelCodeAtoms — definitions", () => {
 
 describe("extractModelCodeAtoms — cross-references", () => {
   it("parses model-code references and resolves in-edition targets", async () => {
-    const result = await extractModelCodeAtoms(IRC_2021);
+    const result = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     // R201 cites Section R202; R301 cites Table R301.2(1); R302 cites
     // Table R302.1(1), Section R302.2, Section R301, Chapter 2.
     expect(result.crossReferences.length).toBe(6);
@@ -142,7 +167,7 @@ describe("extractModelCodeAtoms — cross-references", () => {
   });
 
   it("links the edition, definitions, and resolved cross-references", async () => {
-    const result = await extractModelCodeAtoms(IRC_2021);
+    const result = await extractModelCodeAtoms(IRC_2021, ICC_TEST_EXTRACTION);
     const linkTypes = result.links.map((l) => l.linkType);
     // 4 edition->section contains, resolved cross-reference links.
     // TODO: No section->definition "defines" links until definition extraction from HTML is implemented.
@@ -184,7 +209,7 @@ describe("extractModelCodeAtoms — live corpus optionality (regression)", () =>
       ],
     };
 
-    const result = await extractModelCodeAtoms(sparseDoc);
+    const result = await extractModelCodeAtoms(sparseDoc, ICC_TEST_EXTRACTION);
 
     expect(result.sections).toHaveLength(1);
     const r401 = result.sections.find((s) => s.sectionNumber === "R401");
@@ -233,7 +258,7 @@ describe("extractModelCodeAtoms — live corpus optionality (regression)", () =>
       ],
     };
 
-    const result = await extractModelCodeAtoms(nestedDoc);
+    const result = await extractModelCodeAtoms(nestedDoc, ICC_TEST_EXTRACTION);
 
     expect(result.sections).toHaveLength(2);
     expect(result.sections.map((s) => s.sectionNumber)).toEqual(["R501", "R502"]);

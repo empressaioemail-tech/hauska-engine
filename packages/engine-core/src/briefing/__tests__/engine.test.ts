@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generateBriefing, resolveBriefingLlmMode } from "../engine";
+import { LlmModeRefusalError } from "../../llm-mode-refusal.js";
 import type { BriefingSourceInput, GenerateBriefingInput } from "../types";
 
 const src = (overrides: Partial<BriefingSourceInput>): BriefingSourceInput => ({
@@ -121,11 +122,11 @@ describe("resolveBriefingLlmMode", () => {
     }
   });
 
-  it("treats unknown env values as mock", () => {
+  it("refuses unknown env values instead of defaulting to mock", () => {
     const original = process.env.BRIEFING_LLM_MODE;
     process.env.BRIEFING_LLM_MODE = "openai";
     try {
-      expect(resolveBriefingLlmMode()).toBe("mock");
+      expect(() => resolveBriefingLlmMode()).toThrow(LlmModeRefusalError);
     } finally {
       if (original === undefined) delete process.env.BRIEFING_LLM_MODE;
       else process.env.BRIEFING_LLM_MODE = original;

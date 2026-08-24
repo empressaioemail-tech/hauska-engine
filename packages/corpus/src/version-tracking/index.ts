@@ -114,7 +114,7 @@ export async function detectDriftAgainstSnapshot(
   const raw = await adapter.fetch(reference);
   const normalized = await adapter.normalize(raw);
   const tree = buildCodeTree(normalized);
-  const current = atomize(tree);
+  const current = atomize(tree, { accessPolicy: "public-free" });
   const currentSnapshot = captureDriftSnapshot(current);
   return diffSnapshots(prior, currentSnapshot);
 }

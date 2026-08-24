@@ -45,7 +45,7 @@ async function seed(storage: InMemoryStorage) {
   });
   const normalized = await adapter.normalize(raw);
   const tree = buildCodeTree(normalized);
-  const atomized = atomize(tree);
+  const atomized = atomize(tree, { accessPolicy: "public-free" });
   await storage.writeAtoms([
     atomized.jurisdictionCorpus,
     atomized.edition,
