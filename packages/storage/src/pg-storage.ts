@@ -20,6 +20,8 @@ import {
   PARCEL_KEYED_PROPERTY_ENTITY_TYPES,
   appliesToLinksFromPropertyAtoms,
   assertCanonicalParcelEntityId,
+  assertPropertyWriteBoundary,
+  assertEdgesNotStarved,
   type PropertyAtomInstance,
   type RoadNodeAtomInstance,
   type StoredAtomInstance,
@@ -215,6 +217,7 @@ export class PgStorage implements StoragePort {
     instance: PropertyAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {
     assertCanonicalParcelEntityId(instance.entityId);
+    assertPropertyWriteBoundary(instance);
     const atomDid =
       typeof instance.atomDid === "string" &&
       instance.atomDid.startsWith("did:hauska:")
@@ -279,6 +282,7 @@ export class PgStorage implements StoragePort {
     if (instances.length === 0) return [];
     for (const inst of instances) {
       assertCanonicalParcelEntityId(inst.entityId);
+      assertPropertyWriteBoundary(inst);
     }
     // OPS-16 A-012: fail closed without the live DB lease. Named error
     // ATOMS_WRITER_LEASE_NOT_HELD. Holder from ATOMS_WRITER_LEASE_HOLDER.
@@ -288,6 +292,7 @@ export class PgStorage implements StoragePort {
     });
     await upsertPropertyAtomRowsMulti(this.sql, rows);
     const links = appliesToLinksFromPropertyAtoms(instances);
+    assertEdgesNotStarved(instances, links.length);
     if (links.length > 0) await this.writeAtomLinks(links);
     return out;
   }
@@ -762,17 +767,18 @@ export class PgStorage implements StoragePort {
   }
 
   async writeAtomLinks(links: ReadonlyArray<AtomLink>): Promise<void> {
-    for (const link of links) {
-      const fromAtomDid = buildAtomDid(link.fromEntityType, link.fromEntityId).raw;
-      const toAtomDid = buildAtomDid(link.toEntityType, link.toEntityId).raw;
+    if (links.length === 0) return;
+    const insertRows = links.map((link) => ({
+      from_atom_did: buildAtomDid(link.fromEntityType, link.fromEntityId).raw,
+      to_atom_did: buildAtomDid(link.toEntityType, link.toEntityId).raw,
+      link_type: link.linkType,
+      context: link.context ?? null,
+    }));
+    const chunk = Math.floor(65_535 / 4);
+    for (let i = 0; i < insertRows.length; i += chunk) {
+      const slice = insertRows.slice(i, i + chunk);
       await this.sql`
-        INSERT INTO atom_links (from_atom_did, to_atom_did, link_type, context)
-        VALUES (
-          ${fromAtomDid},
-          ${toAtomDid},
-          ${link.linkType},
-          ${link.context ?? null}
-        )
+        INSERT INTO atom_links ${this.sql(slice, "from_atom_did", "to_atom_did", "link_type", "context")}
         ON CONFLICT (from_atom_did, to_atom_did, link_type) DO NOTHING
       `;
     }
