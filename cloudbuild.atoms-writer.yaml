@@ -9,19 +9,20 @@ substitutions:
   _REGION: "us-east4"
   _IMAGE: "us-east4-docker.pkg.dev/hauska-prod-497015/hauska-factory/atoms-writer"
   _ENGINE_SHA: "b402c8b4f430ee82d3c9e6fb25f4e41317aefe22"
+  _IMAGE_TAG: "b402c8b4f430ee82d3c9e6fb25f4e41317aefe22"
 
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - -t
-      - ${_IMAGE}:$COMMIT_SHA
+      - ${_IMAGE}:${_IMAGE_TAG}
       - -f
       - Dockerfile.atoms-writer
       - .
 
   - name: gcr.io/cloud-builders/docker
-    args: ["push", "${_IMAGE}:$COMMIT_SHA"]
+    args: ["push", "${_IMAGE}:${_IMAGE_TAG}"]
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
@@ -29,7 +30,7 @@ steps:
       - -c
       - |
         set -euo pipefail
-        DIGEST="$$(gcloud artifacts docker images describe ${_IMAGE}:$COMMIT_SHA --format='value(image_summary.fully_qualified_digest)')"
+        DIGEST="$$(gcloud artifacts docker images describe ${_IMAGE}:${_IMAGE_TAG} --format='value(image_summary.fully_qualified_digest)')"
         test -n "$$DIGEST"
         echo "pinning factory-atoms-cad to $$DIGEST"
         gcloud run jobs deploy factory-atoms-cad \
@@ -44,7 +45,7 @@ steps:
           --set-env-vars=CAD_PARCEL_ROLL_PATH=1,COUNTY=48029,APPLY=1,ENGINE_SHA=${_ENGINE_SHA},IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION}
 
 images:
-  - ${_IMAGE}:$COMMIT_SHA
+  - ${_IMAGE}:${_IMAGE_TAG}
 
 options:
   logging: CLOUD_LOGGING_ONLY
