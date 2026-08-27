@@ -93,6 +93,14 @@ describe("assertPropertyWriteBoundary (P-82 item 1)", () => {
     ).not.toThrow();
   });
 
+  it("preserves a well-formed did:hauska DID whose local id differs from entityId", () => {
+    expect(() =>
+      assertPropertyWriteBoundary(
+        cad({ atomDid: "did:hauska:cad-parcel-roll:custom-entity-id" }),
+      ),
+    ).not.toThrow();
+  });
+
   it("accepts matching did:hauska column namespace", () => {
     const atomDid = buildAtomDid("cad-parcel-roll", "48029:12345").raw;
     expect(() => assertPropertyWriteBoundary(cad({ atomDid }))).not.toThrow();

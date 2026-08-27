@@ -94,17 +94,16 @@ export function assertDidNamespace(
       `column atom_did is not did:hauska: ${columnAtomDid}`,
     );
   }
+  if (parsed.entityType !== instance.entityType) {
+    throw new WriteBoundaryError(
+      DID_NAMESPACE,
+      `body.atomDid entityType ${parsed.entityType} != ${instance.entityType}`,
+    );
+  }
   if (parsed.entityType !== columnParsed.entityType) {
     throw new WriteBoundaryError(
       DID_NAMESPACE,
       `body.atomDid entityType ${parsed.entityType} != column ${columnParsed.entityType}`,
-    );
-  }
-  const expected = buildAtomDid(instance.entityType, instance.entityId).raw;
-  if (bodyDid !== expected && bodyDid !== columnAtomDid) {
-    throw new WriteBoundaryError(
-      DID_NAMESPACE,
-      `body.atomDid ${bodyDid} != column ${columnAtomDid}`,
     );
   }
 }
