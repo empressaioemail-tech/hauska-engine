@@ -125,7 +125,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "@empressaio/atom-contract": "^1.22.0",
+    "@empressaio/atom-contract": "^1.30.0",
     "@gltf-transform/core": "^4.2.1",
     "@hauska-engine/adapters": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",
