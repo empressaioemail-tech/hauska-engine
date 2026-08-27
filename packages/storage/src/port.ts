@@ -143,6 +143,7 @@ export interface StoragePort {
    */
   writePropertyAtomsBatch(
     instances: ReadonlyArray<PropertyAtomInstance>,
+    lease?: import("./atoms-writer-lease.js").HeldLease,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>>;
 
   /**

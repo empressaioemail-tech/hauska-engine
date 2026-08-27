@@ -90,6 +90,7 @@ export class InMemoryStorage implements StoragePort {
 
   async writePropertyAtomsBatch(
     instances: ReadonlyArray<PropertyAtomInstance>,
+    _lease?: import("./atoms-writer-lease.js").HeldLease,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
     const out: Array<{ atomDid: string; cid: string }> = [];
     for (const inst of instances) {
