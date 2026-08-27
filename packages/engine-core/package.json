@@ -107,6 +107,7 @@
     "cert-grade-and-report": "tsx scripts/cert-grade-and-report.mjs",
     "write-parcel-node-county": "tsx scripts/write-parcel-node-county.mjs",
     "write-cad-parcel-roll-county": "tsx scripts/write-cad-parcel-roll-county.mjs",
+    "atoms-writer-job": "tsx scripts/atoms-writer-job.mjs",
     "write-land-use-fact-county": "tsx scripts/write-land-use-fact-county.mjs",
     "write-owner-fact-county": "tsx scripts/write-owner-fact-county.mjs",
     "write-well-fact-county": "tsx scripts/write-well-fact-county.mjs",

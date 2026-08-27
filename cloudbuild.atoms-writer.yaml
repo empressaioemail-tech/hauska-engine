@@ -1,0 +1,58 @@
+# F-02 stage runner writer image + Cloud Run Job, us-east4.
+# Precedent: cloudbuild.property-atom-bake.yaml. Pin by digest.
+# APPLY, COUNTY, LIMIT, RUN_ID are per-execution args, not job env.
+#
+#   gcloud builds submit --config=cloudbuild.atoms-writer.yaml \
+#     --project=hauska-prod-497015
+#
+substitutions:
+  _REGION: "us-east4"
+  _IMAGE: "us-east4-docker.pkg.dev/hauska-prod-497015/hauska-factory/atoms-writer"
+  _ENGINE_SHA: "b402c8b4f430ee82d3c9e6fb25f4e41317aefe22"
+  _IMAGE_TAG: "b402c8b4f430ee82d3c9e6fb25f4e41317aefe22"
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_IMAGE}:${_IMAGE_TAG}
+      - -f
+      - Dockerfile.atoms-writer
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}:${_IMAGE_TAG}"]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        DIGEST="$$(gcloud artifacts docker images describe ${_IMAGE}:${_IMAGE_TAG} --format='value(image_summary.fully_qualified_digest)')"
+        test -n "$$DIGEST"
+        case "$$DIGEST" in
+          *@sha256:*) ;;
+          *) echo "REFUSE: describe did not return a digest: $$DIGEST" >&2; exit 2 ;;
+        esac
+        echo "pinning factory-atoms-cad to $$DIGEST"
+        gcloud run jobs deploy factory-atoms-cad \
+          --project=hauska-prod-497015 \
+          --region=${_REGION} \
+          --image="$$DIGEST" \
+          --task-timeout=21600 \
+          --max-retries=0 \
+          --memory=4Gi \
+          --cpu=2 \
+          --command=pnpm,--filter,@hauska-engine/engine-core,exec,tsx,scripts/atoms-writer-job.mjs \
+          --set-secrets=DATABASE_URL=ATOMS_DATABASE_URL:latest,SUBSTRATE_DATABASE_URL=ATOMS_DATABASE_URL:latest,CORTEX_DATABASE_URL=SOURCE_DATABASE_URL:latest \
+          --set-env-vars=CAD_PARCEL_ROLL_PATH=1,ENGINE_SHA=${_ENGINE_SHA},IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION}
+
+images:
+  - ${_IMAGE}:${_IMAGE_TAG}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+timeout: 3600s
