@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildAtomDid } from "../did.js";
+import type { PropertyAtomInstance } from "../property-instances.js";
 import {
   DID_NAMESPACE,
   KEY_SENTINEL,
@@ -11,12 +12,22 @@ import {
   expectedAppliesToCount,
 } from "../write-boundary.js";
 
-function cad(overrides: Record<string, unknown> = {}) {
+type BoundaryFixture = Pick<
+  PropertyAtomInstance,
+  "entityType" | "entityId" | "parcelNodeId" | "atomDid"
+>;
+
+function cad(
+  overrides: Partial<BoundaryFixture> = {},
+): BoundaryFixture {
+  const entityType = overrides.entityType ?? "cad-parcel-roll";
+  const entityId = overrides.entityId ?? "48029:12345";
+  const parcelNodeId = overrides.parcelNodeId ?? "48029:12345";
   return {
-    entityType: "cad-parcel-roll",
-    entityId: "48029:12345",
-    parcelNodeId: "48029:12345",
-    ...overrides,
+    entityType,
+    entityId,
+    parcelNodeId,
+    atomDid: overrides.atomDid ?? buildAtomDid(entityType, entityId).raw,
   };
 }
 
@@ -64,7 +75,12 @@ describe("assertPropertyWriteBoundary (P-82 item 1)", () => {
 
 describe("expectedAppliesToCount (P-82 item 4)", () => {
   it("skipped helper fails STARVED_EDGE; matching count passes", () => {
-    const atoms = [{ entityType: "cad-parcel-roll", parcelNodeId: "48029:1" }];
+    const atoms = [
+      {
+        entityType: "cad-parcel-roll",
+        parcelNodeId: "48029:1",
+      } as const satisfies Pick<PropertyAtomInstance, "entityType" | "parcelNodeId">,
+    ];
     expect(() => assertEdgesNotStarved(atoms, 0)).toThrow(
       expect.objectContaining({ code: STARVED_EDGE }),
     );
@@ -78,7 +94,9 @@ describe("expectedAppliesToCount (P-82 item 4)", () => {
         { entityType: "parcel-node", parcelNodeId: "48029:1" },
         { entityType: "cad-parcel-roll", parcelNodeId: "48029:_county_coverage" },
         { entityType: "cad-parcel-roll", parcelNodeId: "" },
-      ]),
+      ] as const satisfies ReadonlyArray<
+        Pick<PropertyAtomInstance, "entityType" | "parcelNodeId">
+      >),
     ).toBe(1);
   });
 });
