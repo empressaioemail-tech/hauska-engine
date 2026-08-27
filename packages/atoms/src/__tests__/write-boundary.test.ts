@@ -67,6 +67,12 @@ describe("assertPropertyWriteBoundary (P-82 item 1)", () => {
     ).toThrow(expect.objectContaining({ code: DID_NAMESPACE }));
   });
 
+  it("admits a writer-local atomDid that is not a DID", () => {
+    expect(() =>
+      assertPropertyWriteBoundary(cad({ atomDid: "fhfact_6514bebf8b04b91f" })),
+    ).not.toThrow();
+  });
+
   it("accepts matching did:hauska column namespace", () => {
     const atomDid = buildAtomDid("cad-parcel-roll", "48029:12345").raw;
     expect(() => assertPropertyWriteBoundary(cad({ atomDid }))).not.toThrow();

@@ -70,6 +70,10 @@ export function assertDidNamespace(
 ): void {
   const bodyDid = instance.atomDid;
   if (bodyDid == null || bodyDid === "") return;
+  // Writer-local ids (fhfact_*, railfact_*) are not a DID namespace.
+  // The column is minted as did:hauska. Only a did: method that is not
+  // hauska, or a hauska DID whose type does not match the column, refuses.
+  if (!bodyDid.startsWith("did:")) return;
   let parsed;
   try {
     parsed = parseAtomDid(bodyDid);
