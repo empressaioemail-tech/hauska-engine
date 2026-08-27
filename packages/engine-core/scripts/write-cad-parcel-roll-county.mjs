@@ -24,7 +24,12 @@ import { writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
 import postgres from "postgres";
-import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
+import {
+  createPgStorage,
+  resolveSubstrateDatabaseUrl,
+  takeScopedLease,
+  releaseScopedLease,
+} from "@hauska-engine/storage";
 
 import {
   buildAtomsForCadParcelRollPlan,
@@ -45,6 +50,7 @@ function parseArgs(argv) {
     out: null,
     listCounties: false,
     taxYear: null,
+    runId: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -61,6 +67,8 @@ function parseArgs(argv) {
     else if (a === "--tax-year") out.taxYear = Number(argv[++i] || 0) || null;
     else if (a.startsWith("--tax-year="))
       out.taxYear = Number(a.slice("--tax-year=".length)) || null;
+    else if (a === "--run-id") out.runId = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--run-id=")) out.runId = a.slice("--run-id=".length).trim() || null;
   }
   return out;
 }
@@ -140,6 +148,30 @@ if (args.apply && !substrateUrl) {
   console.error("FATAL: --apply requires DATABASE_URL / SUBSTRATE_DATABASE_URL (the ATOMS store).");
   await cadSql.end({ timeout: 5 });
   process.exit(1);
+}
+
+if (args.apply && args.county !== "48029") {
+  console.error(
+    JSON.stringify({
+      event: "cad-parcel-roll-county.refused",
+      code: "OLD_SHAPE_FILL_FROZEN",
+      county: args.county,
+    }),
+  );
+  await cadSql.end({ timeout: 5 });
+  process.exit(2);
+}
+
+if (args.apply && !args.runId) {
+  console.error(
+    JSON.stringify({
+      event: "cad-parcel-roll-county.refused",
+      code: "LEASE_REQUIRED",
+      message: "--apply requires --run-id (a Factory runs row). HeldLease is minted from that id. v1 ATOMS_WRITER_LEASE_HOLDER cannot satisfy a write.",
+    }),
+  );
+  await cadSql.end({ timeout: 5 });
+  process.exit(2);
 }
 
 const handle = args.apply
@@ -299,9 +331,27 @@ try {
         }),
       );
     } else {
+      const lease = await takeScopedLease(handle.sql, {
+        scope: {
+          scope_type: "write",
+          entity_type: "cad-parcel-roll",
+          county_fips: args.county,
+        },
+        holder_label:
+          process.env.CLOUD_RUN_EXECUTION?.trim() ||
+          process.env.K_REVISION?.trim() ||
+          "cad-parcel-roll-writer",
+        run_id: args.runId,
+      });
+      summary.lease = {
+        holder_token: lease.holder_token,
+        scope: lease.scope,
+        stolen_from: lease.stolen_from,
+      };
+      try {
       for (let i = 0; i < atoms.length; i += args.batch) {
         const slice = atoms.slice(i, i + args.batch);
-        await handle.storage.writePropertyAtomsBatch(slice);
+        await handle.storage.writePropertyAtomsBatch(slice, lease);
         summary.atomsWritten += slice.length;
 
         const dids = slice.map((a) => `did:hauska:cad-parcel-roll:${a.entityId}`);
@@ -344,6 +394,9 @@ try {
             ofTotal: atoms.length,
           }),
         );
+      }
+      } finally {
+        await releaseScopedLease(handle.sql, lease);
       }
     }
   }

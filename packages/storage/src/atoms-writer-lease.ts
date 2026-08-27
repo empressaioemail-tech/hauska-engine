@@ -1,18 +1,37 @@
 /**
- * Database-enforced atoms bulk-writer lease (OPS-16 A-012 ruling 0).
+ * Atoms writer lease v2 (OPS-19 F-02 / P-83).
  *
- * PgStorage.writePropertyAtomsBatch validates + heartbeats this row and
- * FAILS CLOSED with ATOMS_WRITER_LEASE_NOT_HELD without a live match.
- * Take / release live in the CLI; the batch path never creates a lease.
+ * Scope is (entity_type, county_fips) for a bulk write, or one heavy-scan
+ * scope per database. Holder is a minted token on HeldLease, never an env
+ * var. v1 takeWriterLease / ATOMS_WRITER_LEASE_HOLDER is retired by refuse.
  */
+
+import { randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
+export const ATOMS_WRITER_LEASE_V1_RETIRED = "ATOMS_WRITER_LEASE_V1_RETIRED";
 export const ATOMS_WRITER_LEASE_NOT_HELD = "ATOMS_WRITER_LEASE_NOT_HELD";
 export const ATOMS_WRITER_LEASE_HELD_BY_OTHER = "ATOMS_WRITER_LEASE_HELD_BY_OTHER";
+export const SCOPE_MISMATCH = "SCOPE_MISMATCH";
+export const NO_GLOBAL = "NO_GLOBAL";
+export const LEASE_EXPIRED = "LEASE_EXPIRED";
+export const LEASE_REQUIRED = "LEASE_REQUIRED";
+
+/** @deprecated v1 single-row lock id. Do not take. */
 export const WRITER_LEASE_LOCK_ID = 1;
-export const DEFAULT_LEASE_TTL_MS = 60 * 60 * 1000;
+/** @deprecated v1 env holder. Reading it cannot satisfy a v2 write. */
 export const WRITER_LEASE_HOLDER_ENV = "ATOMS_WRITER_LEASE_HOLDER";
+
+export const DEFAULT_LEASE_TTL_MS = 15 * 60 * 1000;
+
+export class AtomsWriterLeaseV1RetiredError extends Error {
+  readonly code = ATOMS_WRITER_LEASE_V1_RETIRED;
+  constructor() {
+    super("v1 writer lease is retired");
+    this.name = "AtomsWriterLeaseV1RetiredError";
+  }
+}
 
 export class AtomsWriterLeaseNotHeldError extends Error {
   readonly code = ATOMS_WRITER_LEASE_NOT_HELD;
@@ -30,29 +49,111 @@ export class AtomsWriterLeaseHeldByOtherError extends Error {
   }
 }
 
-export interface WriterLeaseRow {
-  holder: string;
+export class ScopeMismatchError extends Error {
+  readonly code = SCOPE_MISMATCH;
+  constructor(detail: string) {
+    super(`${SCOPE_MISMATCH}: ${detail}`);
+    this.name = "ScopeMismatchError";
+  }
+}
+
+export class NoGlobalScopeError extends Error {
+  readonly code = NO_GLOBAL;
+  constructor() {
+    super("GLOBAL scope refused");
+    this.name = "NoGlobalScopeError";
+  }
+}
+
+export class LeaseExpiredError extends Error {
+  readonly code = LEASE_EXPIRED;
+  constructor(detail: string) {
+    super(`${LEASE_EXPIRED}: ${detail}`);
+    this.name = "LeaseExpiredError";
+  }
+}
+
+export class LeaseRequiredError extends Error {
+  readonly code = LEASE_REQUIRED;
+  constructor() {
+    super("writePropertyAtomsBatch requires a HeldLease");
+    this.name = "LeaseRequiredError";
+  }
+}
+
+export type WriteLeaseScope = {
+  scope_type: "write";
+  entity_type: string;
+  county_fips: string;
+};
+
+export type HeavyScanLeaseScope = {
+  scope_type: "heavy-scan";
+  database: string;
+};
+
+export type LeaseScope = WriteLeaseScope | HeavyScanLeaseScope;
+
+export type HeldLease = {
+  holder_token: string;
+  holder_label: string;
+  run_id: string;
+  scope: LeaseScope;
+  expires: string;
+  stolen_from: string | null;
+};
+
+type LeaseV2Row = {
+  scope_type: string;
+  scope_id: string;
+  holder_token: string;
+  holder_label: string;
+  run_id: string;
   taken_at: Date | string;
   heartbeat: Date | string;
   expires: Date | string;
+  stolen_from: string | null;
+};
+
+const FIPS = /^\d{5}$/;
+
+export function isHeldLease(value: unknown): value is HeldLease {
+  if (value == null || typeof value !== "object") return false;
+  const v = value as HeldLease;
+  return (
+    typeof v.holder_token === "string" &&
+    v.holder_token.length > 0 &&
+    typeof v.holder_label === "string" &&
+    typeof v.run_id === "string" &&
+    v.run_id.length > 0 &&
+    v.scope != null &&
+    typeof v.scope === "object" &&
+    (v.scope.scope_type === "write" || v.scope.scope_type === "heavy-scan")
+  );
 }
 
-export interface WriterLeaseView {
-  holder: string;
-  takenAt: string;
-  heartbeat: string;
-  expires: string;
+export function scopeIdOf(scope: LeaseScope): string {
+  if (scope.scope_type === "write") {
+    return `${scope.entity_type}:${scope.county_fips}`;
+  }
+  return scope.database;
 }
 
-function toIso(value: Date | string): string {
-  return typeof value === "string" ? value : value.toISOString();
-}
-
-export function resolveWriterLeaseHolder(
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  const raw = env[WRITER_LEASE_HOLDER_ENV]?.trim();
-  return raw ? raw : undefined;
+function refuseGlobal(scope: LeaseScope): void {
+  if (scope.scope_type === "write") {
+    if (
+      scope.entity_type === "GLOBAL" ||
+      scope.county_fips === "GLOBAL" ||
+      !scope.entity_type ||
+      !FIPS.test(scope.county_fips)
+    ) {
+      throw new NoGlobalScopeError();
+    }
+    return;
+  }
+  if (!scope.database || scope.database === "GLOBAL") {
+    throw new NoGlobalScopeError();
+  }
 }
 
 function ttlMsOrDefault(ttlMs?: number): number {
@@ -62,134 +163,201 @@ function ttlMsOrDefault(ttlMs?: number): number {
   return ttlMs;
 }
 
-export async function assertAndHeartbeatWriterLease(
-  sql: postgres.Sql,
-  options?: { holder?: string; now?: Date; ttlMs?: number },
-): Promise<WriterLeaseView> {
-  const holder = options?.holder ?? resolveWriterLeaseHolder();
-  if (!holder) {
-    throw new AtomsWriterLeaseNotHeldError(
-      `${WRITER_LEASE_HOLDER_ENV} is unset — a writer without the live lease cannot write`,
-    );
-  }
-  const now = options?.now ?? new Date();
-  const nowIso = now.toISOString();
-  const expiresIso = new Date(now.getTime() + ttlMsOrDefault(options?.ttlMs)).toISOString();
+function toIso(value: Date | string): string {
+  return typeof value === "string" ? value : value.toISOString();
+}
 
-  const updated = await sql<WriterLeaseRow[]>`
-    UPDATE atoms_bulk_writer_lease
-    SET heartbeat = ${nowIso}::timestamptz,
-        expires = ${expiresIso}::timestamptz
-    WHERE lock_id = ${WRITER_LEASE_LOCK_ID}
-      AND holder = ${holder}
-      AND expires > ${nowIso}::timestamptz
-    RETURNING holder, taken_at, heartbeat, expires
-  `;
-  if (updated.length === 0) {
-    throw new AtomsWriterLeaseNotHeldError(
-      `no live lease for holder=${holder}`,
-    );
-  }
-  const row = updated[0]!;
+function rowToHeldLease(row: LeaseV2Row, scope: LeaseScope): HeldLease {
   return {
-    holder: row.holder,
-    takenAt: toIso(row.taken_at),
-    heartbeat: toIso(row.heartbeat),
+    holder_token: String(row.holder_token),
+    holder_label: row.holder_label,
+    run_id: row.run_id,
+    scope,
     expires: toIso(row.expires),
+    stolen_from: row.stolen_from,
   };
 }
 
-export async function takeWriterLease(
+/** v1 take. Retired. A successful return cannot satisfy a v2 write. */
+export async function takeWriterLease(): Promise<never> {
+  throw new AtomsWriterLeaseV1RetiredError();
+}
+
+/** v1 heartbeat / env holder. Retired. */
+export async function assertAndHeartbeatWriterLease(): Promise<never> {
+  throw new AtomsWriterLeaseV1RetiredError();
+}
+
+/** v1 release. Retired. */
+export async function releaseWriterLease(): Promise<never> {
+  throw new AtomsWriterLeaseV1RetiredError();
+}
+
+export async function takeScopedLease(
   sql: postgres.Sql,
-  options: { holder: string; now?: Date; ttlMs?: number },
-): Promise<WriterLeaseView> {
-  const holder = options.holder.trim();
-  if (!holder) {
-    throw new AtomsWriterLeaseNotHeldError("take requires a non-empty holder");
+  options: {
+    scope: LeaseScope;
+    holder_label: string;
+    run_id: string;
+    now?: Date;
+    ttlMs?: number;
+  },
+): Promise<HeldLease> {
+  refuseGlobal(options.scope);
+  const run_id = options.run_id.trim();
+  const holder_label = options.holder_label.trim();
+  if (!run_id) {
+    throw new AtomsWriterLeaseNotHeldError("take requires a run_id");
+  }
+  if (!holder_label) {
+    throw new AtomsWriterLeaseNotHeldError("take requires a holder_label");
   }
   const now = options.now ?? new Date();
   const nowIso = now.toISOString();
   const expiresIso = new Date(now.getTime() + ttlMsOrDefault(options.ttlMs)).toISOString();
+  const holder_token = randomUUID();
+  const scope_id = scopeIdOf(options.scope);
+  const scope_type = options.scope.scope_type;
 
-  const rows = await sql<WriterLeaseRow[]>`
-    INSERT INTO atoms_bulk_writer_lease (lock_id, holder, taken_at, heartbeat, expires)
-    VALUES (
-      ${WRITER_LEASE_LOCK_ID},
-      ${holder},
+  const rows = await sql<LeaseV2Row[]>`
+    INSERT INTO atoms_writer_lease_v2 (
+      scope_type, scope_id, holder_token, holder_label, run_id,
+      taken_at, heartbeat, expires, stolen_from
+    ) VALUES (
+      ${scope_type},
+      ${scope_id},
+      ${holder_token}::uuid,
+      ${holder_label},
+      ${run_id},
       ${nowIso}::timestamptz,
       ${nowIso}::timestamptz,
-      ${expiresIso}::timestamptz
+      ${expiresIso}::timestamptz,
+      NULL
     )
-    ON CONFLICT (lock_id) DO UPDATE SET
-      holder = EXCLUDED.holder,
-      taken_at = CASE
-        WHEN atoms_bulk_writer_lease.holder = EXCLUDED.holder
-          THEN atoms_bulk_writer_lease.taken_at
-        ELSE EXCLUDED.taken_at
-      END,
+    ON CONFLICT (scope_type, scope_id) DO UPDATE SET
+      holder_token = EXCLUDED.holder_token,
+      holder_label = EXCLUDED.holder_label,
+      run_id = EXCLUDED.run_id,
+      taken_at = EXCLUDED.taken_at,
       heartbeat = EXCLUDED.heartbeat,
-      expires = EXCLUDED.expires
-    WHERE atoms_bulk_writer_lease.expires <= ${nowIso}::timestamptz
-       OR atoms_bulk_writer_lease.holder = EXCLUDED.holder
-    RETURNING holder, taken_at, heartbeat, expires
+      expires = EXCLUDED.expires,
+      stolen_from = atoms_writer_lease_v2.holder_label
+    WHERE atoms_writer_lease_v2.expires <= ${nowIso}::timestamptz
+    RETURNING
+      scope_type, scope_id, holder_token, holder_label, run_id,
+      taken_at, heartbeat, expires, stolen_from
   `;
   if (rows.length === 0) {
-    const current = await readWriterLease(sql);
+    const current = await sql<LeaseV2Row[]>`
+      SELECT scope_type, scope_id, holder_token, holder_label, run_id,
+             taken_at, heartbeat, expires, stolen_from
+        FROM atoms_writer_lease_v2
+       WHERE scope_type = ${scope_type}
+         AND scope_id = ${scope_id}
+    `;
+    const held = current[0];
     throw new AtomsWriterLeaseHeldByOtherError(
-      `live lease held by ${current?.holder ?? "unknown"} until ${current?.expires ?? "unknown"}`,
+      `live lease held by ${held?.holder_label ?? "unknown"} until ${held?.expires ?? "unknown"}`,
+    );
+  }
+  return rowToHeldLease(rows[0]!, options.scope);
+}
+
+export async function lockAndHeartbeatLease(
+  sql: postgres.Sql,
+  lease: HeldLease,
+  options?: { now?: Date; ttlMs?: number },
+): Promise<HeldLease> {
+  if (!isHeldLease(lease)) {
+    throw new LeaseRequiredError();
+  }
+  refuseGlobal(lease.scope);
+  const now = options?.now ?? new Date();
+  const nowIso = now.toISOString();
+  const expiresIso = new Date(now.getTime() + ttlMsOrDefault(options?.ttlMs)).toISOString();
+  const scope_id = scopeIdOf(lease.scope);
+
+  const rows = await sql<LeaseV2Row[]>`
+    SELECT scope_type, scope_id, holder_token, holder_label, run_id,
+           taken_at, heartbeat, expires, stolen_from
+      FROM atoms_writer_lease_v2
+     WHERE holder_token = ${lease.holder_token}::uuid
+       AND expires > ${nowIso}::timestamptz
+     FOR UPDATE
+  `;
+  if (rows.length === 0) {
+    throw new LeaseExpiredError(
+      `no live row for token scope ${lease.scope.scope_type}:${scope_id}`,
     );
   }
   const row = rows[0]!;
-  return {
-    holder: row.holder,
-    takenAt: toIso(row.taken_at),
-    heartbeat: toIso(row.heartbeat),
-    expires: toIso(row.expires),
-  };
+  if (row.scope_type !== lease.scope.scope_type || row.scope_id !== scope_id) {
+    throw new ScopeMismatchError(
+      `locked row ${row.scope_type}:${row.scope_id} != ${lease.scope.scope_type}:${scope_id}`,
+    );
+  }
+  const updated = await sql<LeaseV2Row[]>`
+    UPDATE atoms_writer_lease_v2
+       SET heartbeat = ${nowIso}::timestamptz,
+           expires = ${expiresIso}::timestamptz
+     WHERE holder_token = ${lease.holder_token}::uuid
+    RETURNING
+      scope_type, scope_id, holder_token, holder_label, run_id,
+      taken_at, heartbeat, expires, stolen_from
+  `;
+  return rowToHeldLease(updated[0]!, lease.scope);
 }
 
-export async function releaseWriterLease(
-  sql: postgres.Sql,
-  options: { holder: string },
-): Promise<WriterLeaseView> {
-  const holder = options.holder.trim();
-  if (!holder) {
-    throw new AtomsWriterLeaseNotHeldError("release requires a non-empty holder");
+export function assertScopeOnAtoms(
+  lease: HeldLease,
+  atoms: ReadonlyArray<{ entityType: string; entityId: string; parcelNodeId?: string }>,
+): void {
+  if (lease.scope.scope_type !== "write") {
+    throw new ScopeMismatchError("bulk write requires a write scope, not heavy-scan");
   }
-  const rows = await sql<WriterLeaseRow[]>`
-    DELETE FROM atoms_bulk_writer_lease
-    WHERE lock_id = ${WRITER_LEASE_LOCK_ID}
-      AND holder = ${holder}
-    RETURNING holder, taken_at, heartbeat, expires
+  const { entity_type, county_fips } = lease.scope;
+  for (const atom of atoms) {
+    if (atom.entityType !== entity_type) {
+      throw new ScopeMismatchError(
+        `atom entityType ${atom.entityType} != lease ${entity_type}`,
+      );
+    }
+    const atomFips = atom.entityId.split(":")[0] ?? "";
+    if (atomFips !== county_fips) {
+      throw new ScopeMismatchError(
+        `atom entityId fips ${atomFips} != lease ${county_fips}`,
+      );
+    }
+    if (atom.parcelNodeId) {
+      const parcelFips = atom.parcelNodeId.split(":")[0] ?? "";
+      if (parcelFips !== county_fips) {
+        throw new ScopeMismatchError(
+          `atom parcelNodeId fips ${parcelFips} != lease ${county_fips}`,
+        );
+      }
+    }
+  }
+}
+
+export async function releaseScopedLease(
+  sql: postgres.Sql,
+  lease: HeldLease,
+): Promise<void> {
+  const rows = await sql<LeaseV2Row[]>`
+    DELETE FROM atoms_writer_lease_v2
+     WHERE holder_token = ${lease.holder_token}::uuid
+    RETURNING
+      scope_type, scope_id, holder_token, holder_label, run_id,
+      taken_at, heartbeat, expires, stolen_from
   `;
   if (rows.length === 0) {
     throw new AtomsWriterLeaseNotHeldError(
-      `release failed — no lease row for holder=${holder}`,
+      `release failed — no lease row for token`,
     );
   }
-  const row = rows[0]!;
-  return {
-    holder: row.holder,
-    takenAt: toIso(row.taken_at),
-    heartbeat: toIso(row.heartbeat),
-    expires: toIso(row.expires),
-  };
 }
 
-export async function readWriterLease(
-  sql: postgres.Sql,
-): Promise<WriterLeaseView | null> {
-  const rows = await sql<WriterLeaseRow[]>`
-    SELECT holder, taken_at, heartbeat, expires
-    FROM atoms_bulk_writer_lease
-    WHERE lock_id = ${WRITER_LEASE_LOCK_ID}
-  `;
-  const row = rows[0];
-  if (!row) return null;
-  return {
-    holder: row.holder,
-    takenAt: toIso(row.taken_at),
-    heartbeat: toIso(row.heartbeat),
-    expires: toIso(row.expires),
-  };
+/** v1 status read. Retired with the env holder. */
+export async function readWriterLease(): Promise<never> {
+  throw new AtomsWriterLeaseV1RetiredError();
 }
