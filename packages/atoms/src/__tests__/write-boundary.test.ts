@@ -36,6 +36,26 @@ describe("assertPropertyWriteBoundary (P-82 item 1)", () => {
     expect(() => assertPropertyWriteBoundary(cad())).not.toThrow();
   });
 
+  it("accepts declared feature-id and boundary discriminators", () => {
+    expect(() =>
+      assertPropertyWriteBoundary(
+        cad({
+          entityType: "parcel-node",
+          entityId: "48261:_feature-stratmap25-landparcels-48261-kenedy-202503-0",
+          parcelNodeId: "48261:_feature-stratmap25-landparcels-48261-kenedy-202503-0",
+        }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertPropertyWriteBoundary(
+        cad({
+          entityId: "48021:ROUND:boundary:0",
+          parcelNodeId: "48021:ROUND",
+        }),
+      ),
+    ).not.toThrow();
+  });
+
   it("refuses a bare key as NON_CANONICAL_BINDING before INSERT", () => {
     expect(() => assertPropertyWriteBoundary(cad({ entityId: "12345" }))).toThrow(
       expect.objectContaining({ code: NON_CANONICAL_BINDING }),

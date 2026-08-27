@@ -19,7 +19,7 @@ export const DID_NAMESPACE = "DID_NAMESPACE";
 export const STARVED_EDGE = "STARVED_EDGE";
 
 const FIPS = /^\d{5}$/;
-const INTEGER_PROP = /^\d+$/;
+const DECIMAL_PADDED_PROP = /^\d+\.\d+$/;
 
 export class WriteBoundaryError extends Error {
   readonly code: string;
@@ -35,14 +35,16 @@ function isParcelKeyedType(entityType: string): boolean {
 }
 
 /**
- * {fips}:{integer} plus optional non-sentinel discriminators, or county coverage.
+ * {fips}:{token} plus optional non-sentinel discriminators, or county coverage.
+ * Bare keys (no FIPS prefix) refuse. Decimal-padded parcel grammar refuses.
+ * Feature ids (`_feature-…`) and boundary suffixes are declared discriminators.
  */
 export function assertCanonicalBinding(key: string, field: "entityId" | "parcelNodeId"): void {
   const tokens = parseEntityIdTokens(key);
   if (tokens.length < 2 || !FIPS.test(tokens[0]!)) {
     throw new WriteBoundaryError(
       NON_CANONICAL_BINDING,
-      `${field} is not {fips}:{integer}: ${key}`,
+      `${field} is not {fips}:{token}: ${key}`,
     );
   }
   for (const token of tokens) {
@@ -56,10 +58,10 @@ export function assertCanonicalBinding(key: string, field: "entityId" | "parcelN
   if (isCountyCoverageParcelNodeId(key)) {
     return;
   }
-  if (!INTEGER_PROP.test(tokens[1]!)) {
+  if (DECIMAL_PADDED_PROP.test(tokens[1]!)) {
     throw new WriteBoundaryError(
       NON_CANONICAL_BINDING,
-      `${field} is not {fips}:{integer}: ${key}`,
+      `${field} uses decimal-padded parcel grammar: ${key}`,
     );
   }
 }
