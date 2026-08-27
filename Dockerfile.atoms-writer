@@ -1,9 +1,9 @@
 # F-02 / P-83 atoms writer job. Engine main. Cloud Run Job in us-east4.
-# Same monorepo install as the retrieval-api image; command is the cad writer.
 FROM node:22-slim
 RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
 WORKDIR /app
 COPY . .
-RUN pnpm install --frozen-lockfile=false
+RUN pnpm install --frozen-lockfile
 ENV CAD_PARCEL_ROLL_PATH=1
-CMD ["pnpm", "--filter", "@hauska-engine/engine-core", "exec", "tsx", "scripts/atoms-writer-job.mjs"]
+ENTRYPOINT ["pnpm", "--filter", "@hauska-engine/engine-core", "exec", "tsx", "scripts/atoms-writer-job.mjs"]
+CMD []

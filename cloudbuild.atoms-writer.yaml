@@ -1,6 +1,6 @@
 # F-02 stage runner writer image + Cloud Run Job, us-east4.
-# Precedent: cloudbuild.property-atom-bake.yaml (Secret Manager DATABASE_URL,
-# CORTEX_DATABASE_URL, node 22, engine-core writer). Pin by digest.
+# Precedent: cloudbuild.property-atom-bake.yaml. Pin by digest.
+# APPLY, COUNTY, LIMIT, RUN_ID are per-execution args, not job env.
 #
 #   gcloud builds submit --config=cloudbuild.atoms-writer.yaml \
 #     --project=hauska-prod-497015
@@ -32,6 +32,10 @@ steps:
         set -euo pipefail
         DIGEST="$$(gcloud artifacts docker images describe ${_IMAGE}:${_IMAGE_TAG} --format='value(image_summary.fully_qualified_digest)')"
         test -n "$$DIGEST"
+        case "$$DIGEST" in
+          *@sha256:*) ;;
+          *) echo "REFUSE: describe did not return a digest: $$DIGEST" >&2; exit 2 ;;
+        esac
         echo "pinning factory-atoms-cad to $$DIGEST"
         gcloud run jobs deploy factory-atoms-cad \
           --project=hauska-prod-497015 \
@@ -41,8 +45,9 @@ steps:
           --max-retries=0 \
           --memory=4Gi \
           --cpu=2 \
-          --set-secrets=DATABASE_URL=ATOMS_DATABASE_URL:latest,SUBSTRATE_DATABASE_URL=ATOMS_DATABASE_URL:latest,CORTEX_DATABASE_URL=SOURCE_DATABASE_URL:latest,FACTORY_DATABASE_URL=FACTORY_DATABASE_URL:latest \
-          --set-env-vars=CAD_PARCEL_ROLL_PATH=1,COUNTY=48029,APPLY=1,ENGINE_SHA=${_ENGINE_SHA},IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION}
+          --command=pnpm,--filter,@hauska-engine/engine-core,exec,tsx,scripts/atoms-writer-job.mjs \
+          --set-secrets=DATABASE_URL=ATOMS_DATABASE_URL:latest,SUBSTRATE_DATABASE_URL=ATOMS_DATABASE_URL:latest,CORTEX_DATABASE_URL=SOURCE_DATABASE_URL:latest \
+          --set-env-vars=CAD_PARCEL_ROLL_PATH=1,ENGINE_SHA=${_ENGINE_SHA},IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION}
 
 images:
   - ${_IMAGE}:${_IMAGE_TAG}
