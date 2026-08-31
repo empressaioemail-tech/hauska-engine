@@ -23,7 +23,17 @@ import { writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
 import postgres from "postgres";
-import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
+import {
+  createPgStorage,
+  resolveSubstrateDatabaseUrl,
+  takeScopedLease,
+  releaseScopedLease,
+} from "@hauska-engine/storage";
+import {
+  consumeRunIdArg,
+  railLeaseArgs,
+  refuseApplyWithoutRunId,
+} from "./writer-apply-lease.mjs";
 
 import {
   FOOTPRINT_WRITER_ADAPTER,
@@ -72,6 +82,7 @@ function parseArgs(argv) {
     fixture: null,
     adapterKind: null,
     mlProbeOnly: false,
+    runId: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -92,6 +103,10 @@ function parseArgs(argv) {
     else if (a.startsWith("--adapter-kind="))
       out.adapterKind = a.slice("--adapter-kind=".length).trim() || null;
     else if (a === "--ml-probe-only") out.mlProbeOnly = true;
+    else {
+      const next = consumeRunIdArg(a, argv, i, out);
+      if (next !== null) i = next;
+    }
   }
   return out;
 }
@@ -104,6 +119,9 @@ if (process.env.BUILDING_FOOTPRINT_PATH !== "1") {
 }
 
 const args = parseArgs(process.argv.slice(2));
+if (refuseApplyWithoutRunId("building-footprint-county.refused", args.apply, args.runId)) {
+  process.exit(2);
+}
 
 const poolUrl =
   process.env.CORTEX_DATABASE_URL?.trim() ||
@@ -394,9 +412,24 @@ try {
         }),
       );
     } else {
+      const lease = await takeScopedLease(
+        handle.sql,
+        railLeaseArgs({
+          entityType: "building-footprint",
+          countyFips: args.county,
+          runId: args.runId,
+          holderFallback: "building-footprint-writer",
+        }),
+      );
+      summary.lease = {
+        holder_token: lease.holder_token,
+        scope: lease.scope,
+        stolen_from: lease.stolen_from,
+      };
+      try {
       for (let i = 0; i < atoms.length; i += args.batch) {
         const slice = atoms.slice(i, i + args.batch);
-        await handle.storage.writePropertyAtomsBatch(slice);
+        await handle.storage.writePropertyAtomsBatch(slice, lease);
         summary.atomsWritten += slice.length;
 
         // Look rows up by the atoms PRIMARY KEY (`atom_did`), never by the
@@ -449,6 +482,9 @@ try {
             ofTotal: atoms.length,
           }),
         );
+      }
+      } finally {
+        await releaseScopedLease(handle.sql, lease);
       }
     }
     }
