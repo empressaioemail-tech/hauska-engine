@@ -82,7 +82,7 @@ export function boundaryAtomInstancesForRing(
         ? { kind: "no-setback-row" as const, reason: "fixture: code silent on this edge" }
         : {
             feet: spec.setbackFeet ?? 0,
-            provenance: "road-class-setback-table",
+            provenance: "district-setback-table",
             atomCitation: "bastrop-tx",
           },
       interior: {

@@ -84,7 +84,7 @@ function buildBoundaryAtom(
     },
     setback: {
       feet: 15,
-      provenance: "road-class-setback-table",
+      provenance: "district-setback-table",
       atomCitation: bastropDescriptor.key,
     },
     interior: {

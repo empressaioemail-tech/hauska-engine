@@ -23,6 +23,11 @@
 import { isStaleBastropCitySetbackRule } from "@hauska-engine/adapters";
 import { pickPreferredSetbackRule } from "@hauska-engine/storage";
 import { envelopeServeIndependentOfStaleSetback } from "../envelope-serve-independent.js";
+import {
+  applySetbackProvenanceServe,
+  type EnvelopeServeVerdict,
+  type SetbackServeVerdict,
+} from "../setback-envelope-serve.js";
 
 /** One `atoms` row as the sweep reads it. `body` is the stored atom JSON. */
 export interface RawAtomRow {
@@ -59,6 +64,8 @@ export interface AssembledChain {
   atoms: Array<{ did: string; type: string; kind: string; payload: AtomLike }>;
   /** Observability: true when R13/R27 suppressed a stale city setback rule. */
   staleSetbackSuppressed: boolean;
+  setbackServe: SetbackServeVerdict;
+  envelopeServe: EnvelopeServeVerdict;
 }
 
 /**
@@ -180,6 +187,11 @@ export function assembleChain(
       payload,
     }));
 
+  const serve = applySetbackProvenanceServe({
+    setbackRule,
+    buildableEnvelope,
+  });
+
   return {
     parcelNodeId,
     zoningFact,
@@ -187,5 +199,7 @@ export function assembleChain(
     buildableEnvelope,
     atoms,
     staleSetbackSuppressed,
+    setbackServe: serve.setbackServe,
+    envelopeServe: serve.envelopeServe,
   };
 }

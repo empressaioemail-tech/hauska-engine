@@ -33,6 +33,7 @@ function buildTestBoundaryAtom(
     adjacencyKind: BoundaryEdgeAtomInstance["adjacencyKind"];
     setbackFeet?: number;
     setbackKind?: "unmapped-adjacency";
+    setbackProvenance?: string;
   },
 ): BoundaryEdgeAtomInstance {
   const facts = computeParcelInteriorFacts(ring);
@@ -49,7 +50,7 @@ function buildTestBoundaryAtom(
         }
       : {
           feet: spec.setbackFeet ?? 0,
-          provenance: "road-class-setback-table",
+          provenance: spec.setbackProvenance ?? "district-setback-table",
           atomCitation: bastropDescriptor.key,
         };
 
@@ -194,6 +195,50 @@ describe("S2-U3 offset consumes boundary primitive", () => {
 
     expect(candidate.insetFeetPerEdge[0]).toBe(0);
     expect(candidate.edges.find((e) => e.index === 0)?.insetFeet).toBe(0);
+  });
+
+  it("F-11 road-class-only edge refuses envelope compute — does not inset the retired feet", () => {
+    const ring = PARCEL_28286_LIVE_TXGIO;
+    const atoms = [
+      buildTestBoundaryAtom(ring, {
+        edgeIndex: 0,
+        role: "rear",
+        adjacencyKind: "unmapped",
+        setbackKind: "unmapped-adjacency",
+      }),
+      buildTestBoundaryAtom(ring, {
+        edgeIndex: 1,
+        role: "side",
+        adjacencyKind: "neighbor-parcel",
+        setbackProvenance: "road-class-setback-table",
+        setbackFeet: 15,
+      }),
+      buildTestBoundaryAtom(ring, {
+        edgeIndex: 2,
+        role: "front",
+        adjacencyKind: "ROW",
+        setbackProvenance: "road-class-setback-table",
+        setbackFeet: 15,
+      }),
+      buildTestBoundaryAtom(ring, {
+        edgeIndex: 3,
+        role: "side_corner",
+        adjacencyKind: "ROW",
+        setbackProvenance: "road-class-setback-table",
+        setbackFeet: 15,
+      }),
+    ];
+    const candidate = computeWarmCandidateFromBoundary({
+      parcelNodeId: `${COUNTY_FIPS}:${PROP_28286}`,
+      district: "P-3",
+      parcelRing: ring,
+      boundaryEdges: atoms,
+    });
+    expect(candidate.empty).toBe(true);
+    expect(candidate.emptyReason).toMatch(/road-class-setback-table/);
+    expect(candidate.insetRing).toBeNull();
+    expect(candidate.buildableAreaSqFt).toBe(0);
+    expect(() => setbackFeetFromBoundaryAtom(atoms[2]!)).toThrow(/refused/);
   });
 
   it("U3.4 genuine-self-touch negative fixture still rejected (guard not weakened)", () => {

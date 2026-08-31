@@ -26,6 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { classifySetbackRuleAtom } from "@hauska-engine/adapters";
 import { assembleChain, dedupeParcelAtoms } from "../chain-assembly.js";
 import { composeServedResponse } from "../bff-flow.js";
 
@@ -136,6 +137,22 @@ describe("live-wire parity", () => {
       });
 
       expect(served.readPath).toBe(c.liveReadPath);
+      const ruleVerdict = classifySetbackRuleAtom(chain.setbackRule);
+      if (
+        chain.setbackRule &&
+        (ruleVerdict.disposition === "unknown" || ruleVerdict.disposition === "refused")
+      ) {
+        // F-11: instrument now refuses/unknowns placeholder and road-class.
+        // The 2026-08-18 capture still served those as value — that is the
+        // defect. Do not rewrite the capture into a new gold.
+        const env = (served.body.facets as { envelope?: { status?: string; disclosure?: string } })
+          ?.envelope;
+        if (env) {
+          expect(env.status).toBe("declined");
+          expect(env.disclosure ?? "").toMatch(/storage-port-proof\/phase-1a|road-class-setback-table|no setback-rule/);
+        }
+        return;
+      }
       expect(normalize(served.body)).toEqual(normalize(c.live));
 
       const liveEnv = (c.live.facets as Record<string, unknown> | undefined)

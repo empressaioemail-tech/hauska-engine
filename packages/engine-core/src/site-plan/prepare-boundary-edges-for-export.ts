@@ -37,6 +37,8 @@ import type {
   SetbackRuleAtomInstance,
 } from "@hauska-engine/atoms";
 import {
+  classifySetbackRuleAtom,
+  classifyBoundaryEdgeSetback,
   isStaleBastropCitySetbackRule,
   requiresPerParcelSetbackRecord,
 } from "@hauska-engine/adapters";
@@ -249,14 +251,24 @@ export async function prepareBoundaryEdgesForExport(
 
   // Setback VALUE refresh: stored per-edge setback feet can be stale (baked
   // from a repealed/fixture source) independent of the geometry gates above.
+  // F-11: a dimensional setback-rule may replace a retired edge stamp.
+  // A placeholder rule must not. A road-class-only edge with no dimensional
+  // rule refuses — never a road-class substitute.
   let setbackValuesRefreshed = false;
-  if (input.setback) {
+  const ruleVerdict = input.setback
+    ? classifySetbackRuleAtom(input.setback)
+    : null;
+  if (input.setback && ruleVerdict?.disposition === "value") {
     const stale = isStaleBastropCitySetbackRule({
       parcelNodeId: input.parcelNodeId,
       sourceAdapter: edges[0]!.sourceAdapter,
     });
     const perParcelOnly = requiresPerParcelSetbackRecord(edges[0]!.jurisdictionTenant);
-    if (stale || perParcelOnly) {
+    const anyRetiredEdge = edges.some((edge) => {
+      const v = classifyBoundaryEdgeSetback(edge.setback);
+      return v.disposition === "refused" || v.disposition === "unknown";
+    });
+    if (stale || perParcelOnly || anyRetiredEdge) {
       const setbackAtom = input.setback;
       edges = edges.map((edge) => ({
         ...edge,
@@ -265,6 +277,23 @@ export async function prepareBoundaryEdgesForExport(
       setbackValuesRefreshed = true;
     }
   }
+
+  edges = edges.map((edge) => {
+    const edgeVerdict = classifyBoundaryEdgeSetback(edge.setback);
+    if (edgeVerdict.disposition === "refused") {
+      return {
+        ...edge,
+        setback: { kind: "no-setback-row" as const, reason: edgeVerdict.basis },
+      };
+    }
+    if (edgeVerdict.disposition === "unknown") {
+      return {
+        ...edge,
+        setback: { kind: "no-setback-row" as const, reason: edgeVerdict.basis },
+      };
+    }
+    return edge;
+  });
 
   return {
     edges,
