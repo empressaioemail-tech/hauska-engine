@@ -49,6 +49,13 @@ describe("write-setback-city CLI (restored; spawn, not import)", () => {
     expect(r.stderr).not.toContain("CITY_REQUIRED");
   });
 
+  it("--apply without --run-id refuses LEASE_REQUIRED before the hold", () => {
+    const r = run(["--county=48021", "--city=elgin-tx", "--apply"]);
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("LEASE_REQUIRED");
+    expect(r.stderr).not.toContain("SETBACK_APPLY_HELD");
+  });
+
   it("--apply with --run-id still refuses SETBACK_APPLY_HELD (quarantine)", () => {
     const r = run([
       "--county=48021",

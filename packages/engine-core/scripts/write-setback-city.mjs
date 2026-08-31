@@ -25,6 +25,7 @@ import {
   planConformantChunks,
   resolveSetbackCityBinding,
 } from "../src/setback-writer/index.ts";
+import { APPLY_LEASE_MESSAGE } from "./writer-apply-lease.mjs";
 
 export const SETBACK_PATH_REQUIRED = "SETBACK_PATH_REQUIRED";
 
@@ -85,6 +86,11 @@ function loadFixtureParcels(fixturePath, limit) {
 export function runSetbackWriter(argv, env = process.env) {
   requireSetbackPath(env);
   const args = parseSetbackWriterArgs(argv);
+  if (args.apply && !args.runId) {
+    throw new SetbackWriterRefuseError("LEASE_REQUIRED", {
+      message: APPLY_LEASE_MESSAGE,
+    });
+  }
   if (args.apply) {
     throw new SetbackWriterRefuseError(SETBACK_APPLY_HELD, {
       reason: "F-11 apply is held; dry-run / plan / refuse only",
