@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
@@ -160,5 +161,55 @@ describe("atoms-writer-job process refusals", () => {
     const result = runJob(["--writer=cad-parcel-roll"]);
     expect(result.status).not.toBe(0);
     expect(`${result.stderr}${result.stdout}`).toContain(COUNTY_REQUIRED);
+  });
+
+  it("POSITIVE admit: --writer=cad-parcel-roll selects the CAD child and sets CAD_PARCEL_ROLL_PATH (falsifier: WRITER_REQUIRED or a non-CAD script)", () => {
+    const resolved = resolveWriterJob(["--writer=cad-parcel-roll", "--county=48021"]);
+    expect(resolved.writer.id).toBe("cad-parcel-roll");
+    expect(resolved.runScope.script).toBe("scripts/write-cad-parcel-roll-county.mjs");
+    expect(resolved.runScope.pathEnv).toBe("CAD_PARCEL_ROLL_PATH");
+    const env = applyWriterPathEnv({}, resolved.writer);
+    expect(env.CAD_PARCEL_ROLL_PATH).toBe("1");
+    expect(env.WELL_FACT_PATH).toBeUndefined();
+    const result = runJob(["--writer=cad-parcel-roll", "--county=48021"]);
+    const text = `${result.stderr}${result.stdout}`;
+    expect(text).toContain("atoms-writer.run-scope");
+    expect(text).toContain("write-cad-parcel-roll-county.mjs");
+    expect(text).toContain('"writer":"cad-parcel-roll"');
+    expect(text).not.toContain(WRITER_REQUIRED);
+    expect(text).not.toContain(WRITER_NOT_ALLOWLISTED);
+  });
+});
+
+/**
+ * gcloud `run jobs deploy --args=[ARG,...]` is comma-separated. The first "="
+ * after --args starts the list; remaining "=" stay in the token. Verified
+ * against `gcloud run jobs deploy --help` 2026-08-31 and the Factory
+ * precedent `--args=f10-cad-loop,--apply` (A-019).
+ */
+function gcloudArgsFlag(flag: string): string[] {
+  const eq = flag.indexOf("=");
+  if (eq < 0) return [];
+  const list = flag.slice(eq + 1);
+  return list === "" ? [] : list.split(",");
+}
+
+describe("cloudbuild.atoms-writer --args form", () => {
+  it("EQUALS form --args=--writer=cad-parcel-roll is one token the entrypoint admits (falsifier: split on the second = or drop the flag)", () => {
+    const tokens = gcloudArgsFlag("--args=--writer=cad-parcel-roll");
+    expect(tokens).toEqual(["--writer=cad-parcel-roll"]);
+    const resolved = resolveWriterJob([...tokens, "--county=48021"]);
+    expect(resolved.writer.id).toBe("cad-parcel-roll");
+    expect(resolved.runScope.script).toBe("scripts/write-cad-parcel-roll-county.mjs");
+  });
+
+  it("yaml does not bake a county and does not stamp CAD_PARCEL_ROLL_PATH (falsifier: --county= or CAD_PARCEL_ROLL_PATH=1 in deploy env)", () => {
+    const yaml = readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../cloudbuild.atoms-writer.yaml"),
+      "utf8",
+    );
+    expect(yaml).toContain("--args=--writer=cad-parcel-roll");
+    expect(yaml).not.toMatch(/--set-env-vars=[^\n]*CAD_PARCEL_ROLL_PATH=1/);
+    expect(yaml).not.toMatch(/--args=[^\n]*--county=/);
   });
 });
