@@ -1,6 +1,13 @@
 # F-02 stage runner writer image + Cloud Run Job, us-east4.
 # Precedent: cloudbuild.property-atom-bake.yaml. Pin by digest.
 # APPLY, COUNTY, LIMIT, RUN_ID are per-execution args, not job env.
+# WRITER is on the template: --args=--writer=cad-parcel-roll (one token).
+# Verified 2026-08-31: `gcloud run jobs deploy --help` says --args=[ARG,...]
+# is comma-separated. First "=" after --args starts the list; remaining "="
+# stay inside the token. No comma in the value, so no caret delimiter.
+# Factory execute overrides REPLACE template args (cloudrun-jobs.mjs
+# containerOverrides.args / --args=${args.join(",")}). An execute that
+# passes only --county=... must also pass --writer=cad-parcel-roll.
 #
 #   gcloud builds submit --config=cloudbuild.atoms-writer.yaml \
 #     --project=hauska-prod-497015
@@ -46,8 +53,9 @@ steps:
           --memory=4Gi \
           --cpu=2 \
           --command=pnpm,--filter,@hauska-engine/engine-core,exec,tsx,scripts/atoms-writer-job.mjs \
+          --args=--writer=cad-parcel-roll \
           --set-secrets=DATABASE_URL=ATOMS_DATABASE_URL:latest,SUBSTRATE_DATABASE_URL=ATOMS_DATABASE_URL:latest,CORTEX_DATABASE_URL=SOURCE_DATABASE_URL:latest \
-          --set-env-vars=CAD_PARCEL_ROLL_PATH=1,ENGINE_SHA=${_ENGINE_SHA},IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION}
+          --set-env-vars=ENGINE_SHA=${_ENGINE_SHA},IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION}
 
 images:
   - ${_IMAGE}:${_IMAGE_TAG}
