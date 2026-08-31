@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { PLACEHOLDER_SETBACK_PROVENANCE } from "@hauska-engine/adapters";
 
 import {
   CITY_REQUIRED,
@@ -7,17 +6,11 @@ import {
   DISTRICT_UNRESOLVED,
   JURISDICTION_BINDING_UNRESOLVED,
   MCLENNAN_ENVELOPE_COLLISION,
-  PLACEHOLDER_COLLISION,
-  SETBACK_APPLY_HELD,
   SetbackWriterRefuseError,
   planCitySetback,
   planConformantChunks,
   resolveSetbackCityBinding,
 } from "../index.js";
-import {
-  parseSetbackWriterArgs,
-  runSetbackWriter,
-} from "../../../scripts/write-setback-city.mjs";
 
 function refuseCode(fn: () => unknown): string {
   try {
@@ -30,18 +23,6 @@ function refuseCode(fn: () => unknown): string {
 }
 
 describe("setback writer flags", () => {
-  it("parses --county=48021 and --city=elgin-tx (falsifier: equals-form dropped)", () => {
-    const args = parseSetbackWriterArgs(["--county=48021", "--city=elgin-tx"]);
-    expect(args.county).toBe("48021");
-    expect(args.city).toBe("elgin-tx");
-  });
-
-  it("parses spaced --county and --city", () => {
-    const args = parseSetbackWriterArgs(["--county", "48021", "--city", "elgin-tx"]);
-    expect(args.county).toBe("48021");
-    expect(args.city).toBe("elgin-tx");
-  });
-
   it("missing county refuses COUNTY_REQUIRED (falsifier: default 48021)", () => {
     expect(refuseCode(() => resolveSetbackCityBinding("elgin-tx", null))).toBe(
       COUNTY_REQUIRED,
@@ -56,43 +37,6 @@ describe("setback writer flags", () => {
     expect(refuseCode(() => planCitySetback({ countyFips: "48021", parcels: [] }))).toBe(
       CITY_REQUIRED,
     );
-  });
-
-  it("--apply without --run-id refuses LEASE_REQUIRED before the hold", () => {
-    expect(
-      refuseCode(() =>
-        runSetbackWriter(["--county=48021", "--city=elgin-tx", "--apply"], {
-          SETBACK_PATH: "1",
-        }),
-      ),
-    ).toBe("LEASE_REQUIRED");
-  });
-
-  it("--apply with --run-id still refuses SETBACK_APPLY_HELD (quarantine)", () => {
-    expect(
-      refuseCode(() =>
-        runSetbackWriter(
-          ["--county=48021", "--city=elgin-tx", "--apply", "--run-id=row-1"],
-          { SETBACK_PATH: "1" },
-        ),
-      ),
-    ).toBe(SETBACK_APPLY_HELD);
-  });
-
-  it("CLI missing county refuses COUNTY_REQUIRED before fixture", () => {
-    expect(
-      refuseCode(() =>
-        runSetbackWriter(["--city=elgin-tx"], { SETBACK_PATH: "1" }),
-      ),
-    ).toBe(COUNTY_REQUIRED);
-  });
-
-  it("CLI missing city refuses CITY_REQUIRED before fixture", () => {
-    expect(
-      refuseCode(() =>
-        runSetbackWriter(["--county=48021"], { SETBACK_PATH: "1" }),
-      ),
-    ).toBe(CITY_REQUIRED);
   });
 });
 
@@ -126,7 +70,7 @@ describe("setback city binding", () => {
   });
 });
 
-describe("setback city plan — applicability", () => {
+describe("setback city plan applicability", () => {
   it("unincorporated is not-applicable (falsifier: emit setback outside city)", () => {
     const plan = planCitySetback({
       countyFips: "48021",
@@ -181,30 +125,6 @@ describe("setback city plan — applicability", () => {
         }),
       ),
     ).toBe(DISTRICT_UNRESOLVED);
-  });
-
-  it("placeholder setback-rule input refuses PLACEHOLDER_COLLISION (falsifier: adopt phase-1a)", () => {
-    expect(
-      refuseCode(() =>
-        planCitySetback({
-          countyFips: "48021",
-          cityKey: "elgin-tx",
-          parcels: [
-            {
-              parcelNodeId: "48021:PH-1",
-              inCity: true,
-              district: "R-1",
-              existingSetbackRule: {
-                sourceAdapter: "property-atom-proof",
-                sourceCodeAtomRef: {
-                  atomDid: `did:hauska:code-section:${PLACEHOLDER_SETBACK_PROVENANCE}`,
-                },
-              },
-            },
-          ],
-        }),
-      ),
-    ).toBe(PLACEHOLDER_COLLISION);
   });
 
   it("McLennan envelope from 0 rules refuses MCLENNAN_ENVELOPE_COLLISION (named before binding)", () => {

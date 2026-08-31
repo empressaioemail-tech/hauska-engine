@@ -22,6 +22,7 @@ export {
   refuseSetbackQuarantines,
   type CitySetbackPlan,
   type ConformantChunk,
+  type PlaceholderDisposition,
   type PlannedSetbackOutcome,
   type PlannedSetbackRow,
   type SetbackParcelInput,
