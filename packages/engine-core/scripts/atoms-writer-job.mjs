@@ -1,59 +1,91 @@
 #!/usr/bin/env node
 /**
- * F-02 writer half. Cloud Run Job only.
- * Passes container args through to write-cad-parcel-roll-county.
- * startRun is the Factory caller's job. No FACTORY_DATABASE_URL here.
+ * Snapshot (F11-WRITER implementer, 2026-08-31):
+ *   Seat: property worktree, supervised by integration on P:/doc_repo.
+ *   Repo: hauska-engine
+ *   Worktree: P:/seat-worktrees/property/hauska-engine-f11-setback
+ *   Branch: seat/property-ctx-f11-writer
+ *   HEAD at spawn: 80fb906 (origin/main; PR #366 refuse road-class / placeholder unknown already merged)
+ *   PLAN-ROW: F-11, F-02
+ *
+ * F-02 writer job. Cloud Run Job only. Cloud Run cannot override command,
+ * so this file is the only job form. Selection is an allowlist keyed by
+ * writer name. CAD_PARCEL_ROLL_PATH is a property of the selected writer,
+ * not a constant. startRun is the Factory caller's job. No FACTORY_DATABASE_URL here.
  */
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-function refusePooler(url, name) {
-  if (!url || String(url).trim() === "") {
-    const err = new Error(`missing required env: ${name}`);
-    err.code = "MISSING_ENV";
-    throw err;
-  }
-  const host = new URL(url).hostname;
-  if (host.includes("-pooler")) {
-    const err = new Error(`${name} is a pooler host (${host})`);
-    err.code = "POOLER_HOST_REFUSED";
-    throw err;
-  }
-  return host;
-}
+import {
+  applyWriterPathEnv,
+  requireWriterEnv,
+  resolveWriterJob,
+} from "./atoms-writer-allowlist.mjs";
 
-export function requireWriterEnv(env = process.env) {
-  const atomsUrl = env.SUBSTRATE_DATABASE_URL || env.DATABASE_URL || env.ATOMS_DATABASE_URL;
-  const sourceUrl = env.CORTEX_DATABASE_URL || env.SOURCE_DATABASE_URL || env.TXGIO_DATABASE_URL;
-  const atomsHost = refusePooler(atomsUrl, "DATABASE_URL");
-  const sourceHost = refusePooler(sourceUrl, "CORTEX_DATABASE_URL");
-  return { atomsUrl, sourceUrl, atomsHost, sourceHost };
+export {
+  COUNTY_REQUIRED,
+  WRITER_ALLOWLIST,
+  WRITER_NOT_ALLOWLISTED,
+  WRITER_REQUIRED,
+  applyWriterPathEnv,
+  parseWriterJobFlags,
+  refusePooler,
+  requireCountyFips,
+  requireWriterEnv,
+  resolveWriterJob,
+  resolveWriterSelection,
+  writerJobRunScope,
+} from "./atoms-writer-allowlist.mjs";
+
+function printRefuse(err) {
+  console.error(
+    JSON.stringify({
+      event: "atoms-writer.refused",
+      code: err.code || err.message,
+    }),
+  );
 }
 
 async function main() {
+  let resolved;
+  try {
+    resolved = resolveWriterJob(process.argv.slice(2), process.env);
+  } catch (err) {
+    printRefuse(err);
+    process.exit(2);
+  }
+
+  const { writer, county, rest, runScope } = resolved;
+  console.log(JSON.stringify({ event: "atoms-writer.run-scope", ...runScope }));
+
   const urls = requireWriterEnv(process.env);
-  process.env.CAD_PARCEL_ROLL_PATH = "1";
-  process.env.DATABASE_URL = urls.atomsUrl;
-  process.env.SUBSTRATE_DATABASE_URL = urls.atomsUrl;
-  process.env.CORTEX_DATABASE_URL = urls.sourceUrl;
+  const childEnv = applyWriterPathEnv(
+    {
+      ...process.env,
+      DATABASE_URL: urls.atomsUrl,
+      SUBSTRATE_DATABASE_URL: urls.atomsUrl,
+      CORTEX_DATABASE_URL: urls.sourceUrl,
+    },
+    writer,
+  );
 
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-  const passthrough = process.argv.slice(2);
   const childArgs = [
     "--filter",
     "@hauska-engine/engine-core",
     "exec",
     "tsx",
-    "scripts/write-cad-parcel-roll-county.mjs",
+    writer.script,
     "--",
-    ...passthrough,
+    `--county=${county}`,
+    ...rest,
   ];
 
   const exitCode = await new Promise((resolve, reject) => {
     const child = spawn("pnpm", childArgs, {
       stdio: "inherit",
-      env: process.env,
+      env: childEnv,
       cwd: repoRoot,
       shell: process.platform === "win32",
     });
