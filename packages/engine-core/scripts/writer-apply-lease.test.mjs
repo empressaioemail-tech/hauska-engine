@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -12,6 +13,28 @@ import {
 } from "./writer-apply-lease.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const tsxCli = path.join(here, "../node_modules/tsx/dist/cli.mjs");
+
+/** No store URLs: a late guard after poolUrl dies FATAL exit 1, not LEASE_REQUIRED. */
+function spawnEnv(extra) {
+  return {
+    PATH: process.env.PATH,
+    PATHEXT: process.env.PATHEXT,
+    SystemRoot: process.env.SystemRoot,
+    WINDIR: process.env.WINDIR,
+    COMSPEC: process.env.COMSPEC,
+    ...extra,
+  };
+}
+
+function isEarlyRefuse(r) {
+  return (
+    r.status === 2 &&
+    r.stderr.includes("LEASE_REQUIRED") &&
+    r.stderr.includes(APPLY_LEASE_MESSAGE) &&
+    !/dry-run-prediction|\.plan\b|atomsBuilt|PLANNING_STARTED/.test(r.stdout)
+  );
+}
 
 function parseWithConsume(argv) {
   const out = { runId: null };
@@ -99,22 +122,68 @@ describe("four writers: --apply without --run-id is LEASE_REQUIRED before planni
     it(`${w.file} exits 2 at parse with no county plan`, () => {
       const r = spawnSync(
         process.execPath,
-        [
-          path.join(here, "../node_modules/tsx/dist/cli.mjs"),
-          path.join(here, w.file),
-          "--apply",
-          "--county=48021",
-          ...(w.extraArgs ?? []),
-        ],
+        [tsxCli, path.join(here, w.file), "--apply", "--county=48021", ...(w.extraArgs ?? [])],
         {
-          env: { ...process.env, ...w.env },
+          env: spawnEnv(w.env),
           encoding: "utf8",
         },
       );
-      expect(r.status).toBe(2);
-      expect(r.stderr).toContain("LEASE_REQUIRED");
-      expect(r.stderr).toContain(APPLY_LEASE_MESSAGE);
-      expect(r.stdout).not.toMatch(/dry-run-prediction|\.plan\b|atomsBuilt/);
+      expect(isEarlyRefuse(r)).toBe(true);
     });
   }
+
+  it("late-guard fixture fails the early-refuse predicate (instrument can fire)", () => {
+    const r = spawnSync(
+      process.execPath,
+      [tsxCli, path.join(here, "writer-apply-lease-late-guard.fixture.mjs"), "--apply", "--county=48021"],
+      { env: spawnEnv({}), encoding: "utf8" },
+    );
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("LEASE_REQUIRED");
+    expect(r.stdout).toContain("PLANNING_STARTED");
+    expect(isEarlyRefuse(r)).toBe(false);
+  });
+
+  it("LEASE_REQUIRED precedes poolUrl / setback planning in source", () => {
+    for (const file of [
+      "write-well-fact-county.mjs",
+      "write-building-footprint-county.mjs",
+      "write-utility-easement-county.mjs",
+    ]) {
+      const src = readFileSync(path.join(here, file), "utf8");
+      const refuseAt = src.indexOf("refuseApplyWithoutRunId");
+      const poolAt = src.indexOf("const poolUrl");
+      expect(refuseAt, file).toBeGreaterThan(-1);
+      expect(poolAt, file).toBeGreaterThan(-1);
+      expect(refuseAt, file).toBeLessThan(poolAt);
+      expect(src).not.toMatch(/entityType:\s*["']cad-parcel-roll["']/);
+    }
+    const setback = readFileSync(path.join(here, "write-setback-city.mjs"), "utf8");
+    const body = setback.slice(setback.indexOf("export function runSetbackWriter"));
+    const leaseAt = body.indexOf("LEASE_REQUIRED");
+    const holdAt = body.indexOf("SETBACK_APPLY_HELD");
+    const planAt = body.indexOf("resolveSetbackCityBinding");
+    expect(leaseAt).toBeGreaterThan(-1);
+    expect(holdAt).toBeGreaterThan(leaseAt);
+    expect(planAt).toBeGreaterThan(holdAt);
+  });
+
+  it("setback --apply with --run-id still refuses SETBACK_APPLY_HELD", () => {
+    const r = spawnSync(
+      process.execPath,
+      [
+        tsxCli,
+        path.join(here, "write-setback-city.mjs"),
+        "--apply",
+        "--county=48021",
+        "--city=elgin-tx",
+        "--run-id=row-1",
+      ],
+      { env: spawnEnv({ SETBACK_PATH: "1" }), encoding: "utf8" },
+    );
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("SETBACK_APPLY_HELD");
+    expect(r.stderr).not.toContain("LEASE_REQUIRED");
+    expect(r.stdout).not.toMatch(/setback-city\.dry-run|atomsBuilt|PLANNING_STARTED/);
+  });
 });
