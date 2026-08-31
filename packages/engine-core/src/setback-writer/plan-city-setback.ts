@@ -43,6 +43,10 @@ export type PlannedSetbackOutcome =
   | "absent-verified"
   | "present";
 
+export type PlaceholderDisposition =
+  | "superseded-by-named-source"
+  | "recorded-unknown";
+
 export type PlannedSetbackRow = {
   parcelNodeId: string;
   inCity: boolean;
@@ -50,6 +54,8 @@ export type PlannedSetbackRow = {
   basis: string;
   district?: string;
   source?: { id: string; citation: string };
+  /** Set when the existing on-file rule classifies unknown (phase-1a). */
+  placeholderDisposition?: PlaceholderDisposition;
 };
 
 export type CitySetbackPlan = {
@@ -122,20 +128,37 @@ function resolveDistrictRow(
   return { districtCode: wanted || leadingDistrictToken(hit.district_name), citation };
 }
 
-function refusePlaceholder(rule: SetbackRuleProvenanceInput, parcelNodeId: string): void {
-  const verdict = classifySetbackRuleAtom(rule);
-  if (verdict.disposition === "unknown") {
-    throw new SetbackWriterRefuseError(PLACEHOLDER_COLLISION, {
-      parcelNodeId,
-      provenance: PLACEHOLDER_SETBACK_PROVENANCE,
-      basis: verdict.basis,
-    });
+function existingRuleIsPlaceholder(
+  rule: SetbackRuleProvenanceInput | null | undefined,
+): boolean {
+  if (!rule) return false;
+  return classifySetbackRuleAtom(rule).disposition === "unknown";
+}
+
+function withPlaceholderDisposition(
+  row: PlannedSetbackRow,
+  isPlaceholder: boolean,
+): PlannedSetbackRow {
+  if (!isPlaceholder) return row;
+  if (row.outcome === "present" && row.source) {
+    return {
+      ...row,
+      placeholderDisposition: "superseded-by-named-source",
+      basis: `${row.basis}; ${PLACEHOLDER_COLLISION} superseded by named source ${row.source.id} (${PLACEHOLDER_SETBACK_PROVENANCE})`,
+    };
   }
+  return {
+    ...row,
+    placeholderDisposition: "recorded-unknown",
+    basis: `${row.basis}; ${PLACEHOLDER_COLLISION} recorded, placeholder not adopted (${PLACEHOLDER_SETBACK_PROVENANCE})`,
+  };
 }
 
 /**
  * Quarantines that must be named before a binding is resolved.
- * McLennan envelopes and placeholder rules are collisions, not inputs.
+ * McLennan envelopes from zero setback rules stay a named refuse until F4.
+ * Placeholder rules no longer refuse the city plan: an incoming named
+ * source supersedes them per parcel.
  */
 export function refuseSetbackQuarantines(input: {
   countyFips?: string | null;
@@ -151,11 +174,6 @@ export function refuseSetbackQuarantines(input: {
         county: "48309",
         reason: "McLennan buildable envelope derived from 0 setback rules",
       });
-    }
-  }
-  for (const parcel of parcels) {
-    if (parcel.existingSetbackRule) {
-      refusePlaceholder(parcel.existingSetbackRule, parcel.parcelNodeId);
     }
   }
 }
@@ -178,9 +196,7 @@ export function planCitySetback(input: {
         reason: "inCity is not a resolved city-layer containment",
       });
     }
-    if (parcel.existingSetbackRule) {
-      refusePlaceholder(parcel.existingSetbackRule, parcel.parcelNodeId);
-    }
+    const isPlaceholder = existingRuleIsPlaceholder(parcel.existingSetbackRule);
     if (binding.countyFips === "48309" && parcel.envelopeWithoutSetbackRule === true) {
       throw new SetbackWriterRefuseError(MCLENNAN_ENVELOPE_COLLISION, {
         parcelNodeId: parcel.parcelNodeId,
@@ -190,24 +206,34 @@ export function planCitySetback(input: {
     }
 
     if (!parcel.inCity) {
-      planned.push({
-        parcelNodeId: parcel.parcelNodeId,
-        inCity: false,
-        outcome: "not-applicable",
-        basis: "unincorporated: counties do not zone",
-      });
+      planned.push(
+        withPlaceholderDisposition(
+          {
+            parcelNodeId: parcel.parcelNodeId,
+            inCity: false,
+            outcome: "not-applicable",
+            basis: "unincorporated: counties do not zone",
+          },
+          isPlaceholder,
+        ),
+      );
       continue;
     }
 
     if (!binding.tableLanded) {
-      planned.push({
-        parcelNodeId: parcel.parcelNodeId,
-        inCity: true,
-        outcome: probed ? "absent-verified" : "unmeasured",
-        basis: probed
-          ? "in-city table probed absent"
-          : "in-city no table landed",
-      });
+      planned.push(
+        withPlaceholderDisposition(
+          {
+            parcelNodeId: parcel.parcelNodeId,
+            inCity: true,
+            outcome: probed ? "absent-verified" : "unmeasured",
+            basis: probed
+              ? "in-city table probed absent"
+              : "in-city no table landed",
+          },
+          isPlaceholder,
+        ),
+      );
       continue;
     }
 
@@ -240,14 +266,19 @@ export function planCitySetback(input: {
       });
     }
 
-    planned.push({
-      parcelNodeId: parcel.parcelNodeId,
-      inCity: true,
-      outcome: "present",
-      basis: `named source ${binding.namedSource.id}`,
-      district: resolved.districtCode,
-      source: binding.namedSource,
-    });
+    planned.push(
+      withPlaceholderDisposition(
+        {
+          parcelNodeId: parcel.parcelNodeId,
+          inCity: true,
+          outcome: "present",
+          basis: `named source ${binding.namedSource.id}`,
+          district: resolved.districtCode,
+          source: binding.namedSource,
+        },
+        isPlaceholder,
+      ),
+    );
   }
 
   const inCityNotApplicable = planned.find(
