@@ -58,12 +58,23 @@ describe("setback writer flags", () => {
     );
   });
 
-  it("--apply refuses SETBACK_APPLY_HELD (falsifier: apply writes)", () => {
+  it("--apply without --run-id refuses LEASE_REQUIRED before the hold", () => {
     expect(
       refuseCode(() =>
         runSetbackWriter(["--county=48021", "--city=elgin-tx", "--apply"], {
           SETBACK_PATH: "1",
         }),
+      ),
+    ).toBe("LEASE_REQUIRED");
+  });
+
+  it("--apply with --run-id still refuses SETBACK_APPLY_HELD (quarantine)", () => {
+    expect(
+      refuseCode(() =>
+        runSetbackWriter(
+          ["--county=48021", "--city=elgin-tx", "--apply", "--run-id=row-1"],
+          { SETBACK_PATH: "1" },
+        ),
       ),
     ).toBe(SETBACK_APPLY_HELD);
   });
