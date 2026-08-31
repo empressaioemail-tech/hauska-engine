@@ -12,6 +12,7 @@ import {
   type BoundaryResolvedSetback,
 } from "@hauska-engine/atoms";
 
+import { ROAD_CLASS_SETBACK_PROVENANCE } from "@hauska-engine/adapters";
 import { computeParcelInteriorFacts } from "../boundary-primitive/interior.js";
 import { computePropertyLineTagsFromLocalEnuEndpoints } from "../geometry/gis-property-line-tags.js";
 import {
@@ -60,9 +61,15 @@ function facingRoadFromWarmEdge(
 }
 
 function setbackFromWarmInset(insetFeet: number): BoundaryResolvedSetback {
+  const provenance: string = "depth-warm-promote";
+  if (provenance === ROAD_CLASS_SETBACK_PROVENANCE) {
+    throw new Error(
+      "emit-boundary-edges-from-warm: retired road-class-setback-table must not be stamped",
+    );
+  }
   return {
     feet: insetFeet,
-    provenance: "depth-warm-promote",
+    provenance,
     atomCitation: DEPTH_WARM_SOURCE_CITATION,
   };
 }

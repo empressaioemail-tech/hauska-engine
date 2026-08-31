@@ -3,10 +3,10 @@
  */
 
 import type { BoundaryEdgeAtomInstance } from "@hauska-engine/atoms";
+import { classifyBoundaryEdgeSetback } from "@hauska-engine/adapters";
 
 import {
   insetPerEdgeFromPrimitive,
-  openRing,
   ringAreaSqFt,
   type Ring,
 } from "../depth-warm/geometry.js";
@@ -20,18 +20,48 @@ import type { WarmCandidate, WarmEdgeInfo, WarmRoadSource } from "../depth-warm/
 export const BOUNDARY_PRIMITIVE_WARM_AGENT_ID =
   "depth-warm-boundary-primitive-v1" as const;
 
-/** Honest setback feet from stored boundary atom — never fabricate on unmapped. */
+/**
+ * Honest setback feet from a stored boundary atom.
+ * Unmapped / no-row absence is 0 (declared empty inset).
+ * Retired road-class and placeholder provenances must not return their feet —
+ * callers that need a number after a refuse must handle the verdict first.
+ */
 export function setbackFeetFromBoundaryAtom(
   atom: BoundaryEdgeAtomInstance,
 ): number {
+  const verdict = classifyBoundaryEdgeSetback(atom.setback);
+  if (verdict.disposition === "absent") return 0;
+  if (verdict.disposition !== "value") {
+    throw new Error(
+      `setbackFeetFromBoundaryAtom: ${verdict.disposition} (${verdict.basis})`,
+    );
+  }
   if ("kind" in atom.setback) return 0;
   return atom.setback.feet;
+}
+
+function refusedBoundarySetback(
+  atoms: ReadonlyArray<BoundaryEdgeAtomInstance>,
+): { disposition: "refused" | "unknown"; basis: string } | null {
+  for (const atom of atoms) {
+    const verdict = classifyBoundaryEdgeSetback(atom.setback);
+    if (verdict.disposition === "refused" || verdict.disposition === "unknown") {
+      return { disposition: verdict.disposition, basis: verdict.basis };
+    }
+  }
+  return null;
 }
 
 /** Map persisted boundary edges to warm edge info (label = adjacency-FACT role). */
 export function boundaryEdgesToWarmEdgeInfo(
   atoms: ReadonlyArray<BoundaryEdgeAtomInstance>,
 ): WarmEdgeInfo[] {
+  const refused = refusedBoundarySetback(atoms);
+  if (refused) {
+    throw new Error(
+      `boundaryEdgesToWarmEdgeInfo: ${refused.disposition} (${refused.basis})`,
+    );
+  }
   return [...atoms]
     .sort((a, b) => a.edgeIndex - b.edgeIndex)
     .map((atom) => ({
@@ -74,8 +104,31 @@ export function computeWarmCandidateFromBoundary(
     (a, b) => a.edgeIndex - b.edgeIndex,
   );
 
+  const overlayDimensional = perParcelDescriptorSetbacks(input.descriptor);
+  if (!overlayDimensional) {
+    const refused = refusedBoundarySetback(sorted);
+    if (refused) {
+      return {
+        parcelNodeId: input.parcelNodeId,
+        district: input.district,
+        parcelRing: input.parcelRing,
+        insetRing: null,
+        insetFeetPerEdge: [],
+        edges: [],
+        roads: [...(input.roads ?? [])],
+        buildableAreaSqFt: 0,
+        parcelAreaSqFt: ringAreaSqFt(input.parcelRing),
+        empty: true,
+        emptyReason: refused.basis,
+        warmAt,
+        warmAgentId,
+        rawParcelRing: input.rawParcelRing ?? input.parcelRing,
+      };
+    }
+  }
+
   const flatFallback =
-    input.descriptor && perParcelDescriptorSetbacks(input.descriptor)
+    input.descriptor && overlayDimensional
       ? buildFlatSetbackFallback(input.descriptor, input.district)
       : null;
 

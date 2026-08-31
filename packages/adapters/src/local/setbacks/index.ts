@@ -241,3 +241,18 @@ export {
   isStaleBastropCitySetbackRule,
   requiresPerParcelSetbackRecord,
 } from "./bastrop-setback-currency.js";
+export {
+  NO_SETBACK_RULE_ENVELOPE_BASIS,
+  PLACEHOLDER_SETBACK_PROVENANCE,
+  PLACEHOLDER_SETBACK_UNKNOWN_BASIS,
+  RETIRED_ROAD_CLASS_SETBACK_BASIS,
+  ROAD_CLASS_SETBACK_PROVENANCE,
+  classifyBoundaryEdgeSetback,
+  classifyEnvelopeServe,
+  classifySetbackRuleAtom,
+  type BoundarySetbackBody,
+  type EnvelopeServeVerdict,
+  type SetbackRuleProvenanceInput,
+  type SetbackServeDisposition,
+  type SetbackServeVerdict,
+} from "./setback-provenance-disposition.js";

@@ -1,4 +1,5 @@
 import {
+  classifySetbackRuleAtom,
   fetchUsgs3depDem,
   selectAdaptiveResolutionMeters,
   DEFAULT_TERRAIN_RESOLUTION_METERS,
@@ -308,8 +309,16 @@ export async function composeSitePlanModelForParcel(
   // still succeeds — the setback layer is drawn honest-absent (no F/S/R
   // fabricated) rather than refusing the whole sheet. `notSpecified` /
   // districtCode enrichment only applies when a rule actually exists.
-  const setbackHonestAbsence = !options.setback;
-  const setbackAtom = options.setback as
+  // F-11: a present placeholder or road-class rule is not a value and is
+  // not absent-verified — treat as unusable for scalars, keep the atom.
+  const setbackRuleVerdict = options.setback
+    ? classifySetbackRuleAtom(options.setback)
+    : null;
+  const setbackHonestAbsence =
+    !options.setback || setbackRuleVerdict?.disposition !== "value";
+  const setbackAtom = (
+    setbackRuleVerdict?.disposition === "value" ? options.setback : undefined
+  ) as
     | (SetbackRuleAtomInstance & {
         districtCode?: string;
         fieldProvenance?: unknown;
@@ -428,6 +437,10 @@ export async function composeSitePlanModelForParcel(
             entityType: "setback-rule",
           },
           honestAbsence: true,
+          honestAbsenceReason:
+            setbackRuleVerdict && setbackRuleVerdict.disposition !== "value"
+              ? setbackRuleVerdict.basis
+              : undefined,
         }
       : {
           front: options.setback!.front,

@@ -114,6 +114,19 @@ export {
   isBastropCountyParcelNodeId,
   isStaleBastropCitySetbackRule,
   requiresPerParcelSetbackRecord,
+  NO_SETBACK_RULE_ENVELOPE_BASIS,
+  PLACEHOLDER_SETBACK_PROVENANCE,
+  PLACEHOLDER_SETBACK_UNKNOWN_BASIS,
+  RETIRED_ROAD_CLASS_SETBACK_BASIS,
+  ROAD_CLASS_SETBACK_PROVENANCE,
+  classifyBoundaryEdgeSetback,
+  classifyEnvelopeServe,
+  classifySetbackRuleAtom,
+  type BoundarySetbackBody,
+  type EnvelopeServeVerdict,
+  type SetbackRuleProvenanceInput,
+  type SetbackServeDisposition,
+  type SetbackServeVerdict,
 } from "./local/setbacks";
 
 /** Master WDLL 3.10 — public-record permit-outcome fuel for calibration. */

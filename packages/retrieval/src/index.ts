@@ -29,6 +29,11 @@ import {
 } from "@hauska-engine/engine-core/property-reasoning";
 import { isStaleBastropCitySetbackRule } from "@hauska-engine/adapters";
 import { envelopeServeIndependentOfStaleSetback } from "./envelope-serve-independent.js";
+import {
+  applySetbackProvenanceServe,
+  type EnvelopeServeVerdict,
+  type SetbackServeVerdict,
+} from "./setback-envelope-serve.js";
 import { resolveAttachingRoadNodes } from "@hauska-engine/engine-core/site-plan";
 import type {
   AccessPolicy,
@@ -51,6 +56,7 @@ export * from "./effective-rule.js";
 export * from "./atom-trace.js";
 export * from "./edition-at-date.js";
 export * from "./node-detail.js";
+export * from "./setback-envelope-serve.js";
 
 export interface SearchInput {
   q: string;
@@ -113,6 +119,13 @@ export interface PropertyAtomChainWire {
    * via getAttachingRoads). Never fabricated.
    */
   attachingRoads: ReadonlyArray<StoredAtomInstance>;
+  /**
+   * F-11 mark — not a delete. value | refused | unknown on the setback-rule
+   * slot and the envelope derived from it. Placeholder is unknown, never
+   * absent-verified. Road-class is refused.
+   */
+  setbackServe: SetbackServeVerdict;
+  envelopeServe: EnvelopeServeVerdict;
   atoms: ReadonlyArray<{
     did: string;
     type: string;
@@ -426,6 +439,11 @@ export class HybridRetrieval {
       atomsByType[entityType] = slot ? withGuaranteedAtomDid(slot) : null;
     }
 
+    const serve = applySetbackProvenanceServe({
+      setbackRule,
+      buildableEnvelope,
+    });
+
     return {
       parcelNodeId,
       zoningFact: zoningFact ? withGuaranteedAtomDid(zoningFact) : null,
@@ -433,6 +451,8 @@ export class HybridRetrieval {
       buildableEnvelope: buildableEnvelope
         ? withGuaranteedAtomDid(buildableEnvelope)
         : null,
+      setbackServe: serve.setbackServe,
+      envelopeServe: serve.envelopeServe,
       atomsByType,
       attachingRoads: attaching.roads,
       atoms,
