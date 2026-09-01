@@ -87,7 +87,9 @@ describe("planCountyCadParcelRoll", () => {
     expect(plan.counts.present).toBe(1);
     const atoms = buildAtomsForCadParcelRollPlan(plan, CAD_PROV);
     expect(atoms[0]!.entityId).toBe("48021:27303:2026");
-    expect(atoms[0]!.ownerName).toBe("EXAMPLE LLC");
+    expect(atoms[0]!.ownerName).toBeUndefined();
+    expect(atoms[0]!.ownerMailingAddress).toBeUndefined();
+    expect(atoms[0]!.marketValue).toBe(300000);
     const verdict = verifyStoredCadParcelRollAtom(atoms[0], {
       parcelNodeId: "48021:27303",
       taxYear: 2026,
@@ -158,6 +160,28 @@ describe("planCountyCadParcelRoll", () => {
     expect(atoms).toHaveLength(1);
     expect(atoms[0]!.absence?.kind).toBe("join-hold");
     expect(atoms[0]!.ownerName).toBeUndefined();
+  });
+
+  it("owner-only cad_property rows emit no-cad-row absent (owner lives on owner-fact)", () => {
+    const plan = planCountyCadParcelRoll(
+      [
+        {
+          countyFips: "48021",
+          propId: "99999",
+          taxYear: 2026,
+          sourceFile: "bastrop.txt",
+          sourceVintage: "2026-01-15",
+          ownerName: "OWNER ONLY LLC",
+          ownerMailingAddress: "PO BOX 1",
+        },
+      ],
+      { countyFips: "48021" },
+    );
+    expect(plan.counts.present).toBe(0);
+    expect(plan.counts.absentByKind["no-cad-row"]).toBe(1);
+    const [atom] = buildAtomsForCadParcelRollPlan(plan, CAD_PROV);
+    expect(atom!.ownerName).toBeUndefined();
+    expect(atom!.absence?.kind).toBe("no-cad-row");
   });
 
   it("rejects stored bodies that embed geometry", () => {
