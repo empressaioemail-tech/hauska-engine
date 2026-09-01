@@ -127,7 +127,6 @@ describe("cad-parcel-roll writer seam", () => {
         keyKind: "prop_id",
         joinPassedOwnerMatchGate: true,
         sourceFile: "bastropcad_2026_property.txt",
-        ownerName: "EXAMPLE HOLDINGS LLC",
         situsAddress: "714 Spring St",
         marketValue: 300000,
         propertyUseCode: "A1",
@@ -150,7 +149,8 @@ describe("cad-parcel-roll writer seam", () => {
     expect(atom.entityType).toBe("cad-parcel-roll");
     expect(atom.entityId).toBe("48021:27303:2026");
     expect(atom.atomDid).toMatch(/^cadroll_[0-9a-f]{16}$/);
-    expect(atom.ownerName).toBe("EXAMPLE HOLDINGS LLC");
+    expect(atom.ownerName).toBeUndefined();
+    expect(atom.ownerMailingAddress).toBeUndefined();
     expect(atom.sourceTier).toBe("cad-authoritative");
   });
 

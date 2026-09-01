@@ -38,10 +38,6 @@ export function buildAtomForPlannedCadParcelRoll(
         keyKind: entry.keyKind,
         joinPassedOwnerMatchGate: entry.joinPassedOwnerMatchGate,
         sourceFile: entry.sourceFile,
-        ...(entry.ownerName ? { ownerName: entry.ownerName } : {}),
-        ...(entry.ownerMailingAddress
-          ? { ownerMailingAddress: entry.ownerMailingAddress }
-          : {}),
         ...(entry.situsAddress ? { situsAddress: entry.situsAddress } : {}),
         ...(entry.situsCity ? { situsCity: entry.situsCity } : {}),
         ...(entry.situsZip ? { situsZip: entry.situsZip } : {}),

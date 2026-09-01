@@ -70,6 +70,12 @@ export interface CountyWellFactPlan {
     onParcel: number;
     nearParcel: number;
     skippedUnusableKey: number;
+    /**
+     * Present hits that shared (parcelKey, wellKey) with an earlier hit
+     * on the same parcel. These used to be planned as separate rows and
+     * then collapsed on persist PK. Counted, never silent.
+     */
+    collapsedDuplicateWellKeys: number;
     absentByKind: Record<"no-well-on-or-near", number>;
   };
 }
@@ -119,6 +125,7 @@ export function planCountyWellFacts(
   let onParcel = 0;
   let nearParcel = 0;
   let skippedUnusableKey = 0;
+  let collapsedDuplicateWellKeys = 0;
   const absentByKind = { "no-well-on-or-near": 0 };
   const seenParcelKeys = new Set<string>();
 
@@ -172,8 +179,25 @@ export function planCountyWellFacts(
       continue;
     }
 
-    hits.sort((a, b) => a.wellKey.localeCompare(b.wellKey));
+    const byWellKey = new Map<string, PlannedPresentWellFact>();
     for (const hit of hits) {
+      const existing = byWellKey.get(hit.wellKey);
+      if (!existing) {
+        byWellKey.set(hit.wellKey, hit);
+        continue;
+      }
+      collapsedDuplicateWellKeys += 1;
+      const preferIncoming =
+        (hit.parcelRelation === "on-parcel" &&
+          existing.parcelRelation !== "on-parcel") ||
+        (hit.parcelRelation === existing.parcelRelation &&
+          hit.proximityDistanceMeters < existing.proximityDistanceMeters);
+      if (preferIncoming) byWellKey.set(hit.wellKey, hit);
+    }
+    const deduped = [...byWellKey.values()].sort((a, b) =>
+      a.wellKey.localeCompare(b.wellKey),
+    );
+    for (const hit of deduped) {
       planned.push(hit);
       if (hit.parcelRelation === "on-parcel") onParcel += 1;
       else nearParcel += 1;
@@ -195,6 +219,7 @@ export function planCountyWellFacts(
       onParcel,
       nearParcel,
       skippedUnusableKey,
+      collapsedDuplicateWellKeys,
       absentByKind,
     },
   };
