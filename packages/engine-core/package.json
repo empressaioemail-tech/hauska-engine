@@ -66,6 +66,10 @@
     "./parcel-node": {
       "types": "./src/parcel-node/index.ts",
       "import": "./src/parcel-node/index.ts"
+    },
+    "./parcel-record": {
+      "types": "./src/parcel-record/index.ts",
+      "import": "./src/parcel-record/index.ts"
     }
   },
   "scripts": {
