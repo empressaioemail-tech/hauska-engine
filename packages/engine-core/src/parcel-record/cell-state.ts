@@ -17,9 +17,18 @@ export type ScalarValueCell = CellProvenance & {
   value: string | number | boolean | null;
 };
 
+/** Basis recorded when a matched CAD row's scalar is null/blank. */
+export type CadNullVerifiedBasis = {
+  source: "cad_property";
+  countyFips: string;
+  propId: string;
+  taxYear: number | string;
+  vintage: string;
+};
+
 export type ScalarAbsentVerifiedCell = {
   kind: "absent-verified";
-  basis: string;
+  basis: string | CadNullVerifiedBasis;
 };
 
 export type ScalarNotApplicableCell = {

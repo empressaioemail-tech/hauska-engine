@@ -5,16 +5,25 @@
  *   - cad_property (CORTEX_DATABASE_URL / neondb) for CAD scalars
  *   - atoms (DATABASE_URL / hauska_mcp) for atom-family companions
  *
- * Does NOT convert unaccounted → absent-verified.
+ * cad-null-verified: a MATCHED latest CAD row with a null/blank scalar emits
+ * absent-verified. A join miss never reaches that emission (structural:
+ * applyCadScalar is only called after cadByProp.get hits). living_area 0
+ * stays unaccounted. $0 stays value 0.
  */
 
-import type { CompanionCellState, ScalarCellState } from "./cell-state.js";
+import type {
+  CadNullVerifiedBasis,
+  CompanionCellState,
+  ScalarAbsentVerifiedCell,
+  ScalarCellState,
+} from "./cell-state.js";
 import { isCompanionRail, type ParcelRecordRailKey } from "./rail-keys.js";
 import type { ParcelRecordRow } from "./record-shape.js";
 import { placeKeyFromParts } from "./record-shape.js";
 
 export interface CadPropertyRow {
   prop_id: string;
+  tax_year: number | string | null;
   situs_address: string | null;
   situs_city: string | null;
   situs_zip: string | null;
@@ -36,11 +45,28 @@ export interface AtomPresenceRow {
   n: number;
 }
 
-const CAD_SOURCE = "cad_property";
+const CAD_SOURCE = "cad_property" as const;
 const ATOM_SOURCE = "hauska_mcp.atoms";
 
-function hasText(v: string | null | undefined): boolean {
+function hasText(v: unknown): boolean {
   return typeof v === "string" && v.trim().length > 0;
+}
+
+/** Null or blank string. An unexpected type (e.g. text[] exemption_codes) is not a CAD null. */
+function isCadNullText(v: unknown): boolean {
+  return v == null || (typeof v === "string" && v.trim().length === 0);
+}
+
+function isCadNullNumber(v: unknown): boolean {
+  return v == null || (typeof v === "string" && v.trim().length === 0);
+}
+
+function livingAreaIsPresentPositive(v: unknown): boolean {
+  return v != null && !(typeof v === "string" && v.trim().length === 0) && Number(v) > 0;
+}
+
+function livingAreaIsZero(v: unknown): boolean {
+  return v != null && !(typeof v === "string" && v.trim().length === 0) && Number(v) === 0;
 }
 
 function scalarValue(
@@ -65,6 +91,28 @@ function companionRows(
   };
 }
 
+/**
+ * Typed cad-null-verified emission. Reachable only from applyCadScalar, which
+ * is reachable only after ingestCadOntoRecords hits the map. Incomplete basis
+ * (missing tax_year) refuses rather than emitting a fabricated year.
+ */
+function cadNullVerified(
+  record: ParcelRecordRow,
+  cad: CadPropertyRow,
+  vintage: string,
+): ScalarAbsentVerifiedCell | null {
+  if (cad.tax_year == null) return null;
+  if (typeof cad.tax_year === "string" && cad.tax_year.trim().length === 0) return null;
+  const basis: CadNullVerifiedBasis = {
+    source: CAD_SOURCE,
+    countyFips: record.countyFips,
+    propId: cad.prop_id,
+    taxYear: cad.tax_year,
+    vintage,
+  };
+  return { kind: "absent-verified", basis };
+}
+
 function applyCadScalar(
   record: ParcelRecordRow,
   cad: CadPropertyRow,
@@ -72,33 +120,56 @@ function applyCadScalar(
 ): number {
   let moved = 0;
   const c = record.cells;
-  const stamp = (key: keyof typeof c, value: string | number | null) => {
+  const stampValue = (key: keyof typeof c, value: string | number | null) => {
     if (c[key].kind !== "unaccounted") return;
     (c as Record<string, ScalarCellState>)[key] = scalarValue(value, CAD_SOURCE, vintage);
     moved += 1;
   };
+  const stampAbsent = (key: keyof typeof c) => {
+    if (c[key].kind !== "unaccounted") return;
+    const next = cadNullVerified(record, cad, vintage);
+    if (!next) return;
+    (c as Record<string, ScalarCellState>)[key] = next;
+    moved += 1;
+  };
+  const stampText = (key: keyof typeof c, raw: unknown) => {
+    if (hasText(raw)) stampValue(key, (raw as string).trim());
+    else if (isCadNullText(raw)) stampAbsent(key);
+  };
+  const stampNumber = (key: keyof typeof c, raw: unknown) => {
+    if (isCadNullNumber(raw)) stampAbsent(key);
+    else if (raw != null) stampValue(key, raw as number);
+  };
 
-  stamp("apn", cad.prop_id);
-  if (hasText(cad.situs_address)) stamp("situsAddress", cad.situs_address!.trim());
-  if (hasText(cad.situs_city)) stamp("situsCity", cad.situs_city!.trim());
-  if (hasText(cad.situs_zip)) stamp("situsZip", cad.situs_zip!.trim());
-  if (hasText(cad.legal_description)) stamp("legalDescription", cad.legal_description!.trim());
-  if (hasText(cad.exemption_codes)) stamp("exemptionCodes", cad.exemption_codes!.trim());
+  stampValue("apn", cad.prop_id);
+  stampText("situsAddress", cad.situs_address);
+  stampText("situsCity", cad.situs_city);
+  stampText("situsZip", cad.situs_zip);
+  stampText("legalDescription", cad.legal_description);
+  stampText("exemptionCodes", cad.exemption_codes);
   if (hasText(cad.property_use_code)) {
-    stamp("landUseCode", cad.property_use_code!.trim());
-    stamp("landUseSource", "cad-roll");
+    stampValue("landUseCode", cad.property_use_code!.trim());
+    stampValue("landUseSource", "cad-roll");
+  } else if (isCadNullText(cad.property_use_code)) {
+    stampAbsent("landUseCode");
   }
-  if (cad.land_value != null) stamp("landValue", cad.land_value);
-  if (cad.improvement_value != null) stamp("improvementValue", cad.improvement_value);
-  if (cad.market_value != null) stamp("marketValue", cad.market_value);
-  if (cad.assessed_value != null) stamp("assessedValue", cad.assessed_value);
-  if (cad.year_built != null) stamp("yearBuilt", cad.year_built);
-  if (cad.living_area_sqft != null && cad.living_area_sqft > 0) {
-    stamp("livingAreaSqft", cad.living_area_sqft);
+  stampNumber("landValue", cad.land_value);
+  stampNumber("improvementValue", cad.improvement_value);
+  stampNumber("marketValue", cad.market_value);
+  stampNumber("assessedValue", cad.assessed_value);
+  stampNumber("yearBuilt", cad.year_built);
+  if (livingAreaIsPresentPositive(cad.living_area_sqft)) {
+    stampValue("livingAreaSqft", cad.living_area_sqft as number);
+  } else if (livingAreaIsZero(cad.living_area_sqft)) {
+    // existing >0 rule: 0 is not a CAD null and is not a value
+  } else if (isCadNullNumber(cad.living_area_sqft)) {
+    stampAbsent("livingAreaSqft");
   }
-  if (cad.land_acres != null) {
-    stamp("acreageAcres", cad.land_acres);
-    stamp("acreageMethod", "cad_property.land_acres");
+  if (isCadNullNumber(cad.land_acres)) {
+    stampAbsent("acreageAcres");
+  } else if (cad.land_acres != null) {
+    stampValue("acreageAcres", cad.land_acres);
+    stampValue("acreageMethod", "cad_property.land_acres");
   }
 
   return moved;
