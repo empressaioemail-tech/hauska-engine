@@ -16,9 +16,12 @@ export type {
 } from "./cell-state.js";
 export {
   isUnaccounted,
+  isEarnedCell,
   isPublishable,
   countCellState,
+  EARNED_CELL_KINDS,
 } from "./cell-state.js";
+export type { EarnedCellKind } from "./cell-state.js";
 
 export type {
   ParcelRecordRailKey,
@@ -34,9 +37,43 @@ export {
   ZONING_ENVELOPE_RAIL_KEYS,
   UNINCORPORATED_NOT_APPLICABLE_RAIL_KEYS,
   RAILS_ADDED_BEYOND_SEED,
+  RAILS_V2_DECLARED_AHEAD,
   isCompanionRail,
   isScalarRail,
+  railAccess,
 } from "./rail-keys.js";
+
+export type { RailAccessPair, RailDiscoverability, RailEntitlement, PublicRecordAcquiredBy } from "./access-pair.js";
+export {
+  PUBLIC_RAIL_ACCESS,
+  OWNER_RAIL_ACCESS,
+  TENANT_PRIVATE_ACCESS,
+  accessForPublicRecordRef,
+} from "./access-pair.js";
+
+export type {
+  RepresentableScalar,
+  ValueHistoryRow,
+  SalesHistoryRow,
+  P85StoreRef,
+  PublicRecordRefRow,
+  FloodwayVsFloodplain,
+  FloodCompanionRow,
+  OwnerRow,
+  UtilityKind,
+  UtilityServiceRow,
+  OssfRow,
+  AgValuationRow,
+  MineralRightsRow,
+  HoaDeedRestrictionsRow,
+  OverlayDistrictsRow,
+} from "./companion-shapes.js";
+
+export {
+  RAIL_LIVENESS_SQL,
+  deriveLiveRailKeys,
+  deriveDeclaredAheadRailKeys,
+} from "./liveness.js";
 
 export type {
   ScalarRecordCells,

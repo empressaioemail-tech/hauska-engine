@@ -63,8 +63,19 @@ export type CompanionCellState =
 
 export type AnyCellState = ScalarCellState | CompanionCellState;
 
+export const EARNED_CELL_KINDS = ["value", "absent-verified", "refused"] as const;
+export type EarnedCellKind = (typeof EARNED_CELL_KINDS)[number];
+
 export function isUnaccounted(state: AnyCellState): boolean {
   return state.kind === "unaccounted";
+}
+
+export function isEarnedCell(state: AnyCellState): boolean {
+  return (
+    state.kind === "value" ||
+    state.kind === "absent-verified" ||
+    state.kind === "refused"
+  );
 }
 
 export function isPublishable(state: AnyCellState): boolean {

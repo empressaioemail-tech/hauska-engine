@@ -1,9 +1,14 @@
 /**
- * Publish gate — refuse when any cell is unaccounted.
+ * Publish gate — refuse when any LIVE rail cell is unaccounted.
+ * Declared-ahead rails (no earned cell program-wide) are excluded and listed.
  */
 
 import type { AnyCellState } from "./cell-state.js";
 import { isUnaccounted } from "./cell-state.js";
+import {
+  deriveDeclaredAheadRailKeys,
+  deriveLiveRailKeys,
+} from "./liveness.js";
 import type { ParcelRecordRailKey } from "./rail-keys.js";
 import { PARCEL_RECORD_RAIL_KEYS } from "./rail-keys.js";
 import type { ParcelRecordRow } from "./record-shape.js";
@@ -13,6 +18,8 @@ export interface PublishGateVerdict {
   ok: boolean;
   unaccountedCount: number;
   unaccountedSamples: Array<{ placeKey: string; railKey: ParcelRecordRailKey }>;
+  /** Required. Rails that were not scored because they are not live. */
+  excludedDeclaredAhead: readonly ParcelRecordRailKey[];
 }
 
 export interface PublishGateOptions {
@@ -25,11 +32,14 @@ export function evaluatePublishGate(
   options: PublishGateOptions = {},
 ): PublishGateVerdict {
   const maxSamples = options.maxSamples ?? 20;
+  const live = new Set(deriveLiveRailKeys(records));
+  const excludedDeclaredAhead = deriveDeclaredAheadRailKeys(records);
   const unaccountedSamples: PublishGateVerdict["unaccountedSamples"] = [];
   let unaccountedCount = 0;
 
   for (const rec of records) {
     for (const { railKey, state } of flattenCellStates(rec)) {
+      if (!live.has(railKey)) continue;
       if (isUnaccounted(state)) {
         unaccountedCount += 1;
         if (unaccountedSamples.length < maxSamples) {
@@ -43,6 +53,7 @@ export function evaluatePublishGate(
     ok: unaccountedCount === 0,
     unaccountedCount,
     unaccountedSamples,
+    excludedDeclaredAhead,
   };
 }
 
@@ -51,7 +62,7 @@ export class PublishGateRefusedError extends Error {
 
   constructor(verdict: PublishGateVerdict) {
     super(
-      `publish gate refused: ${verdict.unaccountedCount} unaccounted cell(s) remain`,
+      `publish gate refused: ${verdict.unaccountedCount} unaccounted cell(s) remain on live rails; excludedDeclaredAhead=${verdict.excludedDeclaredAhead.join(",")}`,
     );
     this.name = "PublishGateRefusedError";
     this.verdict = verdict;

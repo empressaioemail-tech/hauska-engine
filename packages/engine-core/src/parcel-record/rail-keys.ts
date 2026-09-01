@@ -1,86 +1,94 @@
 /**
  * Closed parcel-record rail set — derived, not hand-authored.
  *
- * Sources (2026-09-01 PARCEL-RECORD card):
- *   - Tier1FacetPayload / BaseFacts (LDT nodeFacetBakeTier1Cli.ts)
- *   - Tier2EnvelopeFacet (LDT nodeFacetBakeTier2.ts)
- *   - COUNTY_RAIL_DECLARATION (LDT countyRailDimension.ts) — parcel grain, not county grid
- *   - CAD-SERVE-RECONCILE close (_inbox/2026-09-01_cad-serve-reconcile_close.json)
- *   - Dispatch seed list (floor, not ceiling)
- *
- * Owner is EXCLUDED — public-free roll bodies stripped 2026-09-01; owner-fact is paid.
- * MUD is NOT a separate rail — specialDistricts carries MUD/PUD/WCID/etc.
+ * v1 (52): PARCEL-RECORD card 2026-09-01.
+ * v2 (65): decision 2026-09-01_parcel_record_rails_v2_template. Every aspired
+ * data point gets a named rail now; declared-ahead rails stay unaccounted
+ * until sourced. Access is written on every row — owner is paid-tier
+ * explicitly, never inherited.
  */
+
+import {
+  OWNER_RAIL_ACCESS,
+  PUBLIC_RAIL_ACCESS,
+  type RailAccessPair,
+} from "./access-pair.js";
 
 export const PARCEL_RECORD_RAIL_META = [
   // --- CAD and identity (dispatch seed + CAD-SERVE additions) ---
-  { key: "apn", grain: "scalar", group: "cad" },
-  { key: "situsAddress", grain: "scalar", group: "cad" },
-  { key: "situsCity", grain: "scalar", group: "cad" },
-  { key: "situsState", grain: "scalar", group: "cad" },
-  { key: "situsZip", grain: "scalar", group: "cad" },
-  { key: "landUseCode", grain: "scalar", group: "cad" },
-  { key: "landUseDescription", grain: "scalar", group: "cad" },
-  { key: "landUseSource", grain: "scalar", group: "cad" },
-  { key: "landUseVintage", grain: "scalar", group: "cad" },
-  { key: "acreageAcres", grain: "scalar", group: "cad" },
-  { key: "acreageSqft", grain: "scalar", group: "cad" },
-  { key: "acreageMethod", grain: "scalar", group: "cad" },
-  { key: "yearBuilt", grain: "scalar", group: "cad" },
-  { key: "marketValue", grain: "scalar", group: "cad" },
-  { key: "assessedValue", grain: "scalar", group: "cad" },
-  { key: "landValue", grain: "scalar", group: "cad" },
-  { key: "improvementValue", grain: "scalar", group: "cad" },
-  { key: "livingAreaSqft", grain: "scalar", group: "cad" },
-  /** Added beyond dispatch seed — CAD-SERVE derivedFieldList. */
-  { key: "legalDescription", grain: "scalar", group: "cad" },
-  /** Added beyond dispatch seed — CAD-SERVE derivedFieldList. */
-  { key: "exemptionCodes", grain: "scalar", group: "cad" },
+  { key: "apn", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "situsAddress", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "situsCity", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "situsState", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "situsZip", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "landUseCode", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "landUseDescription", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "landUseSource", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "landUseVintage", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "acreageAcres", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "acreageSqft", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "acreageMethod", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "yearBuilt", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "marketValue", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "assessedValue", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "landValue", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "improvementValue", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "livingAreaSqft", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "legalDescription", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
+  { key: "exemptionCodes", grain: "scalar", group: "cad", access: PUBLIC_RAIL_ACCESS },
 
   // --- Jurisdiction ---
-  { key: "countyFips", grain: "scalar", group: "jurisdiction" },
-  { key: "cityLimits", grain: "scalar", group: "jurisdiction" },
-  { key: "etjStatus", grain: "scalar", group: "jurisdiction" },
+  { key: "countyFips", grain: "scalar", group: "jurisdiction", access: PUBLIC_RAIL_ACCESS },
+  { key: "cityLimits", grain: "scalar", group: "jurisdiction", access: PUBLIC_RAIL_ACCESS },
+  { key: "etjStatus", grain: "scalar", group: "jurisdiction", access: PUBLIC_RAIL_ACCESS },
+  { key: "schoolDistrict", grain: "scalar", group: "jurisdiction", access: PUBLIC_RAIL_ACCESS },
 
   // --- Zoning and envelope (Tier1 zoning + Tier2 envelope fields) ---
-  { key: "zoningDistrict", grain: "scalar", group: "zoning-envelope" },
-  { key: "zoningJurisdictionKey", grain: "scalar", group: "zoning-envelope" },
-  { key: "zoningProvenance", grain: "scalar", group: "zoning-envelope" },
-  { key: "envelopeStatus", grain: "scalar", group: "zoning-envelope" },
-  { key: "setbackFrontFt", grain: "scalar", group: "zoning-envelope" },
-  { key: "setbackSideFt", grain: "scalar", group: "zoning-envelope" },
-  { key: "setbackRearFt", grain: "scalar", group: "zoning-envelope" },
-  { key: "setbackCornerFt", grain: "scalar", group: "zoning-envelope" },
-  { key: "parcelAreaSqFt", grain: "scalar", group: "zoning-envelope" },
-  { key: "buildableAreaSqFt", grain: "scalar", group: "zoning-envelope" },
-  { key: "buildableAreaPct", grain: "scalar", group: "zoning-envelope" },
-  { key: "maxLotCoveragePct", grain: "scalar", group: "zoning-envelope" },
-  { key: "maxHeightFt", grain: "scalar", group: "zoning-envelope" },
-  { key: "maxFootprintSqFt", grain: "scalar", group: "zoning-envelope" },
-  { key: "citationUrl", grain: "scalar", group: "zoning-envelope" },
-  { key: "envelopeDisclosure", grain: "scalar", group: "zoning-envelope" },
-  { key: "edgeSignal", grain: "scalar", group: "zoning-envelope" },
+  { key: "zoningDistrict", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "zoningJurisdictionKey", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "zoningProvenance", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "envelopeStatus", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "setbackFrontFt", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "setbackSideFt", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "setbackRearFt", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "setbackCornerFt", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "parcelAreaSqFt", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "buildableAreaSqFt", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "buildableAreaPct", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "maxLotCoveragePct", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "maxHeightFt", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "maxFootprintSqFt", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "citationUrl", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "envelopeDisclosure", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "edgeSignal", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "maxImperviousCoverPct", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
+  { key: "treeProtection", grain: "scalar", group: "zoning-envelope", access: PUBLIC_RAIL_ACCESS },
 
   // --- Companion-bearing rails ---
-  { key: "setbackRules", grain: "companion", group: "companion" },
-  { key: "wells", grain: "companion", group: "companion" },
-  { key: "pipelines", grain: "companion", group: "companion" },
-  { key: "permits", grain: "companion", group: "companion" },
-  { key: "easements", grain: "companion", group: "companion" },
-  { key: "buildingFootprint", grain: "companion", group: "companion" },
-  /** MUD/PUD/WCID/etc. — one rail; MUD is not duplicated. */
-  { key: "specialDistricts", grain: "companion", group: "companion" },
-  { key: "flood", grain: "companion", group: "companion" },
+  { key: "setbackRules", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "wells", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "pipelines", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "permits", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "easements", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "buildingFootprint", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "specialDistricts", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "flood", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "owner", grain: "companion", group: "companion", access: OWNER_RAIL_ACCESS },
+  { key: "valueHistory", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "salesHistory", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "publicRecordRefs", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "ossf", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "utilityService", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "agValuation", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "mineralRights", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "hoaDeedRestrictions", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
+  { key: "overlayDistricts", grain: "companion", group: "companion", access: PUBLIC_RAIL_ACCESS },
 
   // --- Added from county rail register (parcel serve shape, not the 14-column grid) ---
-  /** County rail `geometry` / parcel-node spine. */
-  { key: "parcelGeometry", grain: "companion", group: "spine" },
-  /** County rail `roads` / road-node. */
-  { key: "roads", grain: "companion", group: "spine" },
-  /** parcel-terrain-model atom family. */
-  { key: "terrain", grain: "companion", group: "spine" },
-  /** County rail `rail-corridor` — railroad tracks, not RRC O&G. */
-  { key: "railCorridor", grain: "companion", group: "spine" },
+  { key: "parcelGeometry", grain: "companion", group: "spine", access: PUBLIC_RAIL_ACCESS },
+  { key: "roads", grain: "companion", group: "spine", access: PUBLIC_RAIL_ACCESS },
+  { key: "terrain", grain: "companion", group: "spine", access: PUBLIC_RAIL_ACCESS },
+  { key: "railCorridor", grain: "companion", group: "spine", access: PUBLIC_RAIL_ACCESS },
 ] as const;
 
 export type ParcelRecordRailKey =
@@ -107,23 +115,58 @@ export const PARCEL_RECORD_COMPANION_RAIL_KEYS = PARCEL_RECORD_RAIL_META.filter(
   (r) => r.grain === "companion",
 ).map((r) => r.key) as CompanionRailKey[];
 
-/** Scalar + envelope facet rails from Tier1/Tier2 serve shape. */
+/** Scalar + envelope facet rails from Tier1/Tier2 serve shape, including v2 scalars. */
 export const ZONING_ENVELOPE_RAIL_KEYS = PARCEL_RECORD_RAIL_META.filter(
   (r) => r.group === "zoning-envelope",
 ).map((r) => r.key) as readonly ParcelRecordRailKey[];
 
 /**
- * Rails that are structurally not-applicable outside city limits (dispatch + ruling).
- * Zoning, setbacks (companion), edges, envelope — NOT wells/permits/flood/etc.
+ * Frozen at the v1 members. MUST NOT derive from ZONING_ENVELOPE_RAIL_KEYS —
+ * the two v2 zoning-envelope scalars (maxImperviousCoverPct, treeProtection)
+ * would silently join and become not-applicable on unincorporated parcels.
+ * 17 v1 zoning-envelope rails + setbackRules.
  */
 export const UNINCORPORATED_NOT_APPLICABLE_RAIL_KEYS: readonly ParcelRecordRailKey[] = [
-  ...ZONING_ENVELOPE_RAIL_KEYS,
+  "zoningDistrict",
+  "zoningJurisdictionKey",
+  "zoningProvenance",
+  "envelopeStatus",
+  "setbackFrontFt",
+  "setbackSideFt",
+  "setbackRearFt",
+  "setbackCornerFt",
+  "parcelAreaSqFt",
+  "buildableAreaSqFt",
+  "buildableAreaPct",
+  "maxLotCoveragePct",
+  "maxHeightFt",
+  "maxFootprintSqFt",
+  "citationUrl",
+  "envelopeDisclosure",
+  "edgeSignal",
   "setbackRules",
+];
+
+/** The 13 rails declared ahead in v2. Start unaccounted everywhere. */
+export const RAILS_V2_DECLARED_AHEAD: readonly ParcelRecordRailKey[] = [
+  "owner",
+  "valueHistory",
+  "salesHistory",
+  "publicRecordRefs",
+  "ossf",
+  "utilityService",
+  "agValuation",
+  "mineralRights",
+  "hoaDeedRestrictions",
+  "overlayDistricts",
+  "schoolDistrict",
+  "maxImperviousCoverPct",
+  "treeProtection",
 ];
 
 export const PARCEL_RECORD_RAIL_COUNT = PARCEL_RECORD_RAIL_KEYS.length;
 
-/** Keys added beyond the dispatch card seed list. */
+/** Keys added beyond the v1 dispatch card seed list (v1 extras, not the v2 13). */
 export const RAILS_ADDED_BEYOND_SEED: readonly ParcelRecordRailKey[] = [
   "situsState",
   "legalDescription",
@@ -143,4 +186,12 @@ export function isCompanionRail(key: ParcelRecordRailKey): key is CompanionRailK
 
 export function isScalarRail(key: ParcelRecordRailKey): key is ScalarRailKey {
   return (PARCEL_RECORD_SCALAR_RAIL_KEYS as readonly string[]).includes(key);
+}
+
+export function railAccess(key: ParcelRecordRailKey): RailAccessPair {
+  const row = PARCEL_RECORD_RAIL_META.find((r) => r.key === key);
+  if (!row) {
+    throw new Error(`parcel-record rail metadata missing for ${key}`);
+  }
+  return row.access;
 }
