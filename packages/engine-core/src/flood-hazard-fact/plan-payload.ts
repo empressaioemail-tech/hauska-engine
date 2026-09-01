@@ -21,6 +21,7 @@ import {
 
 import type {
   CountyFloodHazardPlan,
+  FloodPlanPopulationIdentity,
   PlannedFloodHazard,
 } from "./plan-county-flood-hazard.js";
 import type { FloodCountyRunProvenance } from "./flood-hazard-fact-atoms.js";
@@ -43,6 +44,7 @@ export interface FloodPlanPayload {
   counts: CountyFloodHazardPlan["counts"];
   parcelsRead: number;
   planDigest: FloodPlanDigest;
+  populationIdentity?: FloodPlanPopulationIdentity;
   provenance?: FloodCountyRunProvenance;
   /** Present on NDJSON header line only. */
   format?: typeof FLOOD_PLAN_NDJSON_FORMAT;
@@ -93,6 +95,7 @@ export function buildFloodPlanPayload(
     counts: { ...plan.counts },
     parcelsRead: plan.parcelsRead,
     planDigest: digestFloodPlan(plan),
+    populationIdentity: plan.populationIdentity,
     ...(extras?.provenance ? { provenance: extras.provenance } : {}),
   };
 }
@@ -262,12 +265,36 @@ export function drainFloodPlanPayload(
     parcelsRead: payload.parcelsRead ?? payload.planned.length,
     emptyZoneIndex: Boolean(payload.emptyZoneIndex),
     planned: payload.planned,
-    counts: payload.counts ?? {
-      present: 0,
-      presentInSfha: 0,
-      presentOutside: 0,
-      absent: 0,
-      skippedUnusableKey: 0,
+    refused: [],
+    containment: {
+      contained: 0,
+      notContained: 0,
+      unmeasurable: 0,
+      emitted: 0,
+      refused: 0,
+      byReasonCode: {},
+      countingRule:
+        "--from-plan drain does not re-run containment; refused[] is empty on the artifact",
+    },
+    counts: {
+      present: payload.counts?.present ?? 0,
+      presentInSfha: payload.counts?.presentInSfha ?? 0,
+      presentOutside: payload.counts?.presentOutside ?? 0,
+      absent: payload.counts?.absent ?? 0,
+      refused: payload.counts?.refused ?? 0,
+      skippedUnusableKey: payload.counts?.skippedUnusableKey ?? 0,
+      skippedDuplicateKey: payload.counts?.skippedDuplicateKey ?? 0,
+    },
+    populationIdentity: {
+      parcelsRead: payload.parcelsRead ?? payload.planned.length,
+      skippedUnusableKey: payload.counts?.skippedUnusableKey ?? 0,
+      skippedDuplicateKey: payload.counts?.skippedDuplicateKey ?? 0,
+      contained: 0,
+      notContained: 0,
+      unmeasurable: 0,
+      sum: 0,
+      equation:
+        "--from-plan drain does not re-run containment or population identity",
     },
   };
 
