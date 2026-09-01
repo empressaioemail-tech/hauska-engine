@@ -327,7 +327,7 @@ describe("PgStorage", () => {
   it("writePropertyAtom persists zoning-fact jsonb and serves via getAtomByDid", async () => {
     const backend = new FakePgBackend();
     const storage = new PgStorage(backend.makeSql() as never);
-    const parcelNodeId = "17031:STUB";
+    const parcelNodeId = "17031:1";
     const propertyAtom = {
       entityType: "zoning-fact" as const,
       atomDid: `did:hauska:zoning-fact:${parcelNodeId}`,

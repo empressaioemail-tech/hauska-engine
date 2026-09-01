@@ -20,13 +20,21 @@ import {
   PARCEL_KEYED_PROPERTY_ENTITY_TYPES,
   appliesToLinksFromPropertyAtoms,
   assertCanonicalParcelEntityId,
+  assertPropertyWriteBoundary,
+  assertEdgesNotStarved,
   type PropertyAtomInstance,
   type RoadNodeAtomInstance,
   type StoredAtomInstance,
 } from "@hauska-engine/atoms";
 import postgres from "postgres";
 
-import { assertAndHeartbeatWriterLease } from "./atoms-writer-lease.js";
+import {
+  assertScopeOnAtoms,
+  isHeldLease,
+  LeaseRequiredError,
+  lockAndHeartbeatLease,
+  type HeldLease,
+} from "./atoms-writer-lease.js";
 import { InProcessIpfsPin } from "./in-process-cache.js";
 import {
   preparePropertyAtomRows,
@@ -215,6 +223,7 @@ export class PgStorage implements StoragePort {
     instance: PropertyAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {
     assertCanonicalParcelEntityId(instance.entityId);
+    assertPropertyWriteBoundary(instance);
     const atomDid =
       typeof instance.atomDid === "string" &&
       instance.atomDid.startsWith("did:hauska:")
@@ -275,20 +284,29 @@ export class PgStorage implements StoragePort {
 
   async writePropertyAtomsBatch(
     instances: ReadonlyArray<PropertyAtomInstance>,
+    lease?: HeldLease,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
     if (instances.length === 0) return [];
     for (const inst of instances) {
       assertCanonicalParcelEntityId(inst.entityId);
+      assertPropertyWriteBoundary(inst);
     }
-    // OPS-16 A-012: fail closed without the live DB lease. Named error
-    // ATOMS_WRITER_LEASE_NOT_HELD. Holder from ATOMS_WRITER_LEASE_HOLDER.
-    await assertAndHeartbeatWriterLease(this.sql);
+    if (!isHeldLease(lease)) {
+      throw new LeaseRequiredError();
+    }
+    assertScopeOnAtoms(lease, instances);
     const { rows, out } = await preparePropertyAtomRows(instances, this.ipfs, {
       dedupe: true,
     });
-    await upsertPropertyAtomRowsMulti(this.sql, rows);
     const links = appliesToLinksFromPropertyAtoms(instances);
-    if (links.length > 0) await this.writeAtomLinks(links);
+    assertEdgesNotStarved(instances, links.length);
+    await this.sql.begin(async (txn) => {
+      const sql = txn as unknown as postgres.Sql;
+      await lockAndHeartbeatLease(sql, lease);
+      assertScopeOnAtoms(lease, instances);
+      await upsertPropertyAtomRowsMulti(sql, rows);
+      if (links.length > 0) await this.writeAtomLinks(links, sql);
+    });
     return out;
   }
 
@@ -761,18 +779,22 @@ export class PgStorage implements StoragePort {
     return out;
   }
 
-  async writeAtomLinks(links: ReadonlyArray<AtomLink>): Promise<void> {
-    for (const link of links) {
-      const fromAtomDid = buildAtomDid(link.fromEntityType, link.fromEntityId).raw;
-      const toAtomDid = buildAtomDid(link.toEntityType, link.toEntityId).raw;
-      await this.sql`
-        INSERT INTO atom_links (from_atom_did, to_atom_did, link_type, context)
-        VALUES (
-          ${fromAtomDid},
-          ${toAtomDid},
-          ${link.linkType},
-          ${link.context ?? null}
-        )
+  async writeAtomLinks(
+    links: ReadonlyArray<AtomLink>,
+    sql: postgres.Sql = this.sql,
+  ): Promise<void> {
+    if (links.length === 0) return;
+    const insertRows = links.map((link) => ({
+      from_atom_did: buildAtomDid(link.fromEntityType, link.fromEntityId).raw,
+      to_atom_did: buildAtomDid(link.toEntityType, link.toEntityId).raw,
+      link_type: link.linkType,
+      context: link.context ?? null,
+    }));
+    const chunk = Math.floor(65_535 / 4);
+    for (let i = 0; i < insertRows.length; i += chunk) {
+      const slice = insertRows.slice(i, i + chunk);
+      await sql`
+        INSERT INTO atom_links ${sql(slice, "from_atom_did", "to_atom_did", "link_type", "context")}
         ON CONFLICT (from_atom_did, to_atom_did, link_type) DO NOTHING
       `;
     }

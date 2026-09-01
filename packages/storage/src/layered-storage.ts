@@ -43,8 +43,11 @@ export class LayeredStorage implements StoragePort {
     return this.primary.writePropertyAtom(instance);
   }
 
-  writePropertyAtomsBatch(instances: ReadonlyArray<PropertyAtomInstance>) {
-    return this.primary.writePropertyAtomsBatch(instances);
+  writePropertyAtomsBatch(
+    instances: ReadonlyArray<PropertyAtomInstance>,
+    lease?: import("./atoms-writer-lease.js").HeldLease,
+  ) {
+    return this.primary.writePropertyAtomsBatch(instances, lease);
   }
 
   async listPropertyAtomsByParcelNodeId(

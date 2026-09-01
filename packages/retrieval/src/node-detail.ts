@@ -13,6 +13,7 @@ import {
   type BoundaryEdgeAtomInstance,
   type StoredAtomInstance,
 } from "@hauska-engine/atoms";
+import { classifyBoundaryEdgeSetback } from "@hauska-engine/adapters";
 import type { StoragePort } from "@hauska-engine/storage";
 
 export const PARCEL_NODE_ID_RE = /^\d{5}:[A-Za-z0-9._-]+$/;
@@ -88,9 +89,26 @@ export function parseBoundaryEdgeId(
   };
 }
 
+function serveBoundarySetback(
+  setback: BoundaryEdgeAtomInstance["setback"],
+): BoundaryEdgeAtomInstance["setback"] | { kind: "no-setback-row"; reason: string } {
+  const verdict = classifyBoundaryEdgeSetback(setback);
+  if (verdict.disposition === "refused" || verdict.disposition === "unknown") {
+    return { kind: "no-setback-row", reason: verdict.basis };
+  }
+  return setback;
+}
+
+function markBoundaryEdgeForServe(
+  edge: BoundaryEdgeAtomInstance,
+): BoundaryEdgeAtomInstance {
+  return { ...edge, setback: serveBoundarySetback(edge.setback) };
+}
+
 function setbackLabel(setback: BoundaryEdgeAtomInstance["setback"]): string {
-  if ("feet" in setback) return `${setback.feet}ft`;
-  return setback.kind;
+  const served = serveBoundarySetback(setback);
+  if ("feet" in served) return `${served.feet}ft`;
+  return served.kind;
 }
 
 function boundarySummary(edge: BoundaryEdgeAtomInstance): Record<string, unknown> {
@@ -98,7 +116,7 @@ function boundarySummary(edge: BoundaryEdgeAtomInstance): Record<string, unknown
     edgeIndex: edge.edgeIndex,
     role: edge.role,
     adjacencyKind: edge.adjacencyKind,
-    setback: edge.setback,
+    setback: serveBoundarySetback(edge.setback),
     parcelNeighborPropId: edge.parcelNeighborPropId,
     facingRoad: edge.facingRoad,
     interior: {
@@ -182,7 +200,7 @@ export async function listBoundaryEdgesWire(
   return {
     available: true,
     parcelNodeId,
-    edges,
+    edges: edges.map(markBoundaryEdgeForServe),
     count: edges.length,
   };
 }
@@ -203,7 +221,7 @@ export async function buildParcelNodeDetail(
     provenance: {
       role: edge.role,
       adjacencyKind: edge.adjacencyKind,
-      setback: edge.setback,
+      setback: serveBoundarySetback(edge.setback),
       facingRoad: edge.facingRoad,
       parcelNeighborPropId: edge.parcelNeighborPropId,
     },
@@ -338,7 +356,7 @@ function detailFromBoundaryAtom(edge: BoundaryEdgeAtomInstance): PropertyNodeDet
     edges_out,
     edges_in,
     atom_counts_by_family: { "property-boundary-edge": 1 },
-    boundary_edge: edge,
+    boundary_edge: markBoundaryEdgeForServe(edge),
   };
 }
 

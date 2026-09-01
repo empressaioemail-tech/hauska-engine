@@ -10,6 +10,10 @@
 
 import { resolveCodifiedSetbacksForStamp } from "@hauska-engine/engine-core/property-reasoning";
 import {
+  classifyEnvelopeServe,
+  classifySetbackRuleAtom,
+} from "@hauska-engine/adapters";
+import {
   anyNotSpecified,
   buildToLineDisclosure,
   lookupNotSpecified,
@@ -58,9 +62,9 @@ export interface AtomChainSetbackRule {
   displayMeta?: AtomChainSetbackDisplayMeta | null;
   /** Future wire: per-axis not_specified from emit-setback-rule. */
   fieldProvenance?: {
-    front?: { notSpecified?: boolean };
-    side?: { notSpecified?: boolean };
-    rear?: { notSpecified?: boolean };
+    front?: { notSpecified?: boolean; atomDid?: string };
+    side?: { notSpecified?: boolean; atomDid?: string };
+    rear?: { notSpecified?: boolean; atomDid?: string };
   } | null;
 }
 
@@ -80,6 +84,13 @@ export interface AtomChainBuildableEnvelope {
   /** depth-warm honest decline — must surface on PE before generic pending. */
   warmVerifyDecline?: string;
   warmVerifyDeclineCode?: string;
+  reasoningChain?: {
+    inputAtomRefs?: ReadonlyArray<{
+      atomDid?: string;
+      entityType?: string;
+      role?: string;
+    }>;
+  };
 }
 
 export const DEPTH_WARM_PROMOTION_MARKER = "depth-warm-promoted-v1";
@@ -562,12 +573,25 @@ export function adaptAtomChainToBakedFacets(
   // carry cited atoms. Null when the adapter has no jurisdiction suffix.
   const jurisdictionKey = jurisdictionKeyFromSourceAdapter(zoningSourceAdapter);
 
-  const setbacks = mapSetbacks(rule, district);
+  const ruleVerdict = classifySetbackRuleAtom(rule);
+  const envelopeVerdict = classifyEnvelopeServe({
+    setbackRule: rule,
+    envelope: envAtom,
+  });
+  // Unknown / refused rules must not emit their numbers, and must not hide
+  // behind a district-table fallback. A missing rule still allows the
+  // existing Travis table-backed path (rule is null).
+  const setbacks =
+    rule && ruleVerdict.disposition === "value"
+      ? mapSetbacks(rule, district)
+      : null;
   const tableSetbacks =
-    setbacks ??
-    (hasDistrict && jurisdictionKey
-      ? resolveCodifiedSetbacksForStamp(jurisdictionKey, district)
-      : null);
+    rule && ruleVerdict.disposition !== "value"
+      ? null
+      : setbacks ??
+        (hasDistrict && jurisdictionKey
+          ? resolveCodifiedSetbacksForStamp(jurisdictionKey, district)
+          : null);
   const effectiveSetbacks = setbacks ?? tableSetbacks ?? undefined;
   const liveSetback = hasLiveAtomChainSetbackRule(
     parcelNodeId,
@@ -656,6 +680,30 @@ export function adaptAtomChainToBakedFacets(
         envelopeCovered = false;
       }
     }
+  }
+  if (
+    !envelope &&
+    (ruleVerdict.disposition === "unknown" ||
+      (rule && ruleVerdict.disposition === "refused") ||
+      (envAtom &&
+        envelopeVerdict.disposition !== "value" &&
+        outcomeKind === "buildable"))
+  ) {
+    const declineReason =
+      ruleVerdict.disposition === "unknown"
+        ? "setback-provenance-unknown"
+        : rule && ruleVerdict.disposition === "refused"
+          ? "setback-provenance-refused"
+          : "envelope-no-setback-rule";
+    envelope = {
+      status: "declined",
+      declineReason,
+      district: district ?? undefined,
+      approximate: true,
+      provisional: true,
+      disclosure: envelopeVerdict.basis,
+    };
+    envelopeCovered = false;
   }
   if (!envelope && !effectiveSetbacks) {
     envelope = {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildPresentFloodHazardFactAtom,
+  NON_CANONICAL_BINDING,
   ParcelEntityIdRejectedError,
 } from "@hauska-engine/atoms";
 
@@ -88,5 +89,21 @@ describe("writePropertyAtomsBatch Wave C identity (WDLL 11 C4)", () => {
     await expect(storage.writePropertyAtomsBatch([skipped])).rejects.toBeInstanceOf(
       ParcelEntityIdRejectedError,
     );
+  });
+
+  it("refuses a bare entityId as NON_CANONICAL_BINDING", async () => {
+    const storage = new InMemoryStorage();
+    const atom = buildPresentFloodHazardFactAtom(
+      {
+        parcelNodeId: "48021:27303",
+        inSpecialFloodHazardArea: false,
+        floodZone: null,
+      },
+      provenance,
+    );
+    const bare = { ...atom, entityId: "27303" };
+    await expect(storage.writePropertyAtomsBatch([bare])).rejects.toMatchObject({
+      code: NON_CANONICAL_BINDING,
+    });
   });
 });

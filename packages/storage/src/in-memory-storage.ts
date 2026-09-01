@@ -10,6 +10,8 @@
 import {
   appliesToLinksFromPropertyAtoms,
   assertCanonicalParcelEntityId,
+  assertEdgesNotStarved,
+  assertPropertyWriteBoundary,
   buildAtomDid,
   type AtomLink,
 } from "@hauska-engine/atoms";
@@ -70,6 +72,7 @@ export class InMemoryStorage implements StoragePort {
     instance: PropertyAtomInstance,
   ): Promise<{ atomDid: string; cid: string }> {
     assertCanonicalParcelEntityId(instance.entityId);
+    assertPropertyWriteBoundary(instance);
     const atomDid =
       typeof instance.atomDid === "string" &&
       instance.atomDid.startsWith("did:hauska:")
@@ -80,12 +83,14 @@ export class InMemoryStorage implements StoragePort {
     this.cids.set(atomDid, pin.cid);
     this.cache.set(atomDid, instance);
     const links = appliesToLinksFromPropertyAtoms([instance]);
+    assertEdgesNotStarved([instance], links.length);
     if (links.length > 0) await this.writeAtomLinks(links);
     return { atomDid, cid: pin.cid };
   }
 
   async writePropertyAtomsBatch(
     instances: ReadonlyArray<PropertyAtomInstance>,
+    _lease?: import("./atoms-writer-lease.js").HeldLease,
   ): Promise<ReadonlyArray<{ atomDid: string; cid: string }>> {
     const out: Array<{ atomDid: string; cid: string }> = [];
     for (const inst of instances) {

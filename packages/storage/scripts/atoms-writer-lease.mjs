@@ -1,32 +1,57 @@
 #!/usr/bin/env node
 /**
- * atoms-writer-lease.mjs — take / heartbeat / release / status the
- * database-enforced bulk-writer lease (OPS-16 A-012).
+ * atoms-writer-lease.mjs — v2 scoped take / release / lock-check.
  *
- *   DATABASE_URL=... node packages/storage/scripts/atoms-writer-lease.mjs take --holder=L16
- *   DATABASE_URL=... node packages/storage/scripts/atoms-writer-lease.mjs heartbeat --holder=L16
- *   DATABASE_URL=... node packages/storage/scripts/atoms-writer-lease.mjs release --holder=L16
- *   DATABASE_URL=... node packages/storage/scripts/atoms-writer-lease.mjs status
+ * v1 take|heartbeat|release|status with --holder is retired and exits 2.
+ *
+ *   DATABASE_URL=... node packages/storage/scripts/atoms-writer-lease.mjs \
+ *     take --entity-type=cad-parcel-roll --county=48029 --label=loader --run-id=UUID
+ *   DATABASE_URL=... node packages/storage/scripts/atoms-writer-lease.mjs \
+ *     release --token=UUID
  */
 
 import postgres from "postgres";
 
 import {
-  assertAndHeartbeatWriterLease,
-  readWriterLease,
-  releaseWriterLease,
+  ATOMS_WRITER_LEASE_V1_RETIRED,
+  releaseScopedLease,
+  takeScopedLease,
   takeWriterLease,
 } from "../src/atoms-writer-lease.ts";
 
 function parseArgs(argv) {
-  const out = { cmd: null, holder: null, ttlSec: 3600 };
+  const out = {
+    cmd: null,
+    entityType: null,
+    county: null,
+    label: null,
+    runId: null,
+    token: null,
+    scopeType: "write",
+    database: null,
+    ttlSec: 900,
+    v1Holder: false,
+  };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--holder") out.holder = String(argv[++i] || "").trim() || null;
-    else if (a.startsWith("--holder=")) out.holder = a.slice("--holder=".length).trim() || null;
-    else if (a === "--ttl-sec") out.ttlSec = Number(argv[++i] || 3600);
+    if (a === "--entity-type") out.entityType = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--entity-type=")) out.entityType = a.slice("--entity-type=".length).trim() || null;
+    else if (a === "--county") out.county = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--county=")) out.county = a.slice("--county=".length).trim() || null;
+    else if (a === "--label") out.label = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--label=")) out.label = a.slice("--label=".length).trim() || null;
+    else if (a === "--run-id") out.runId = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--run-id=")) out.runId = a.slice("--run-id=".length).trim() || null;
+    else if (a === "--token") out.token = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--token=")) out.token = a.slice("--token=".length).trim() || null;
+    else if (a === "--scope-type") out.scopeType = String(argv[++i] || "write").trim();
+    else if (a.startsWith("--scope-type=")) out.scopeType = a.slice("--scope-type=".length).trim();
+    else if (a === "--database") out.database = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--database=")) out.database = a.slice("--database=".length).trim() || null;
+    else if (a === "--ttl-sec") out.ttlSec = Number(argv[++i] || 900);
     else if (a.startsWith("--ttl-sec=")) out.ttlSec = Number(a.slice("--ttl-sec=".length));
+    else if (a === "--holder" || a.startsWith("--holder=")) out.v1Holder = true;
     else rest.push(a);
   }
   out.cmd = rest[0] ?? null;
@@ -43,47 +68,54 @@ if (!url) {
 const ssl =
   url.includes("sslmode=require") || url.includes("neon.tech") ? "require" : false;
 const sql = postgres(url, { ssl, max: 1 });
-
-const holder = args.holder || process.env.ATOMS_WRITER_LEASE_HOLDER?.trim() || null;
 const ttlMs = Math.max(1, Math.floor(args.ttlSec * 1000));
 
 try {
-  let result;
-  if (args.cmd === "take") {
-    if (!holder) {
-      console.error("FATAL: --holder or ATOMS_WRITER_LEASE_HOLDER required for take.");
-      process.exitCode = 1;
-    } else {
-      result = await takeWriterLease(sql, { holder, ttlMs });
-      console.log(JSON.stringify({ event: "atoms-writer-lease.taken", ...result }, null, 2));
-    }
-  } else if (args.cmd === "heartbeat") {
-    if (!holder) {
-      console.error("FATAL: --holder or ATOMS_WRITER_LEASE_HOLDER required for heartbeat.");
-      process.exitCode = 1;
-    } else {
-      result = await assertAndHeartbeatWriterLease(sql, { holder, ttlMs });
-      console.log(JSON.stringify({ event: "atoms-writer-lease.heartbeat", ...result }, null, 2));
-    }
+  if (args.v1Holder || args.cmd === "heartbeat" || args.cmd === "status") {
+    await takeWriterLease();
+  } else if (args.cmd === "take" && !args.entityType && !args.runId) {
+    await takeWriterLease();
+  } else if (args.cmd === "take") {
+    const scope =
+      args.scopeType === "heavy-scan"
+        ? { scope_type: "heavy-scan", database: args.database ?? "hauska_mcp" }
+        : {
+            scope_type: "write",
+            entity_type: args.entityType,
+            county_fips: args.county,
+          };
+    const result = await takeScopedLease(sql, {
+      scope,
+      holder_label: args.label ?? "atoms-writer",
+      run_id: args.runId,
+      ttlMs,
+    });
+    console.log(JSON.stringify({ event: "atoms-writer-lease.taken", ...result }, null, 2));
   } else if (args.cmd === "release") {
-    if (!holder) {
-      console.error("FATAL: --holder or ATOMS_WRITER_LEASE_HOLDER required for release.");
+    if (!args.token) {
+      console.error("FATAL: --token required for v2 release.");
       process.exitCode = 1;
     } else {
-      result = await releaseWriterLease(sql, { holder });
-      console.log(JSON.stringify({ event: "atoms-writer-lease.released", ...result }, null, 2));
+      await releaseScopedLease(sql, {
+        holder_token: args.token,
+        holder_label: args.label ?? "",
+        run_id: args.runId ?? "",
+        scope: {
+          scope_type: "write",
+          entity_type: args.entityType ?? "unknown",
+          county_fips: args.county ?? "00000",
+        },
+        expires: new Date().toISOString(),
+        stolen_from: null,
+      });
+      console.log(JSON.stringify({ event: "atoms-writer-lease.released", token: args.token }));
     }
-  } else if (args.cmd === "status") {
-    result = await readWriterLease(sql);
-    console.log(
-      JSON.stringify(
-        { event: "atoms-writer-lease.status", lease: result, now: new Date().toISOString() },
-        null,
-        2,
-      ),
-    );
+  } else if (args.cmd === "heartbeat" || args.cmd === "status") {
+    const err = new Error("v1 writer lease is retired");
+    err.code = ATOMS_WRITER_LEASE_V1_RETIRED;
+    throw err;
   } else {
-    console.error("FATAL: command must be take|heartbeat|release|status.");
+    console.error("FATAL: command must be take|release.");
     process.exitCode = 1;
   }
 } catch (err) {
@@ -94,7 +126,7 @@ try {
       message: err instanceof Error ? err.message : String(err),
     }),
   );
-  process.exitCode = 1;
+  process.exitCode = err && typeof err === "object" && err.code === ATOMS_WRITER_LEASE_V1_RETIRED ? 2 : 1;
 } finally {
   await sql.end({ timeout: 5 }).catch(() => {});
 }

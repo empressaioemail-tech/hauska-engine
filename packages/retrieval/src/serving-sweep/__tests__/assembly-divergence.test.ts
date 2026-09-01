@@ -190,8 +190,79 @@ describe("bulk chain assembly does not diverge from the live retrieval service",
       );
 
       expect(slots(bulk)).toEqual(slots(live as never));
+      expect(bulk.setbackServe).toEqual(
+        (live as { setbackServe: unknown }).setbackServe,
+      );
+      expect(bulk.envelopeServe).toEqual(
+        (live as { envelopeServe: unknown }).envelopeServe,
+      );
     });
   }
+
+  it("F-11 placeholder setback-rule is unknown on both implementations, not dropped", async () => {
+    const parcelNodeId = "48209:156346";
+    const atoms = [
+      zoningFact(parcelNodeId, "RS", "txgio-zoning-stamp:san-marcos-tx"),
+      setbackRule(
+        parcelNodeId,
+        "property-atom-proof",
+        "did:hauska:code-section:storage-port-proof/phase-1a",
+      ),
+      envelope(parcelNodeId),
+    ];
+    const storage = new InMemoryStorage();
+    for (const atom of atoms) {
+      await storage.writePropertyAtom(atom as never);
+    }
+    const live = await new HybridRetrieval(storage as never).getPropertyAtomChain(
+      parcelNodeId,
+    );
+    const rows = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
+    const bulk = assembleChain(
+      parcelNodeId,
+      dedupeParcelAtoms(parcelNodeId, rows as unknown as AtomLike[]),
+    );
+    expect(live.setbackRule).not.toBeNull();
+    expect(bulk.setbackRule).not.toBeNull();
+    expect(live.setbackServe.disposition).toBe("unknown");
+    expect(bulk.setbackServe.disposition).toBe("unknown");
+    expect(live.setbackServe.disposition).not.toBe("refused");
+    expect(live.envelopeServe.disposition).toBe("unknown");
+  });
+
+  it("F-11 McLennan envelope over zero rules is refused or names the cited DID", async () => {
+    const parcelNodeId = "48309:1";
+    const env = {
+      ...envelope(parcelNodeId),
+      reasoningChain: {
+        reasoningKind: "derived",
+        inputAtomRefs: [
+          {
+            atomDid: "did:hauska:setback-rule:48309:1",
+            role: "rule",
+            entityType: "setback-rule",
+          },
+        ],
+      },
+    };
+    const storage = new InMemoryStorage();
+    await storage.writePropertyAtom(zoningFact(parcelNodeId, "R-1", "txgio-zoning-stamp:waco-tx") as never);
+    await storage.writePropertyAtom(env as never);
+    const live = await new HybridRetrieval(storage as never).getPropertyAtomChain(
+      parcelNodeId,
+    );
+    const rows = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
+    const bulk = assembleChain(
+      parcelNodeId,
+      dedupeParcelAtoms(parcelNodeId, rows as unknown as AtomLike[]),
+    );
+    expect(live.buildableEnvelope).not.toBeNull();
+    expect(live.envelopeServe.disposition).toBe("refused");
+    expect(live.envelopeServe.namedRuleSource).toBe(
+      "did:hauska:setback-rule:48309:1",
+    );
+    expect(bulk.envelopeServe).toEqual(live.envelopeServe);
+  });
 
   it("dedupe prefers the canonical entityId over a suffixed sibling", () => {
     const canonical = zoningFact("48021:1007", "GC", "txgio-zoning-stamp:bastrop-city-tx");

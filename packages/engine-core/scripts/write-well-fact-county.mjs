@@ -20,7 +20,17 @@ import { writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
 import postgres from "postgres";
-import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
+import {
+  createPgStorage,
+  resolveSubstrateDatabaseUrl,
+  takeScopedLease,
+  releaseScopedLease,
+} from "@hauska-engine/storage";
+import {
+  consumeRunIdArg,
+  railLeaseArgs,
+  refuseApplyWithoutRunId,
+} from "./writer-apply-lease.mjs";
 
 import {
   STAGED_WELL_ADAPTER,
@@ -32,6 +42,7 @@ import {
   planCountyWellFacts,
   stagedWellTableExists,
   verifyStoredWellFactAtom,
+  assertNoChunkPkCollapse,
 } from "../src/well-fact/index.ts";
 
 const SOURCE_ADAPTER = STAGED_WELL_ADAPTER;
@@ -47,6 +58,7 @@ function parseArgs(argv) {
     limit: 0,
     out: null,
     listCounties: false,
+    runId: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -60,6 +72,10 @@ function parseArgs(argv) {
     else if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length));
     else if (a === "--out") out.out = String(argv[++i] || "").trim() || null;
     else if (a.startsWith("--out=")) out.out = a.slice("--out=".length).trim() || null;
+    else {
+      const next = consumeRunIdArg(a, argv, i, out);
+      if (next !== null) i = next;
+    }
   }
   return out;
 }
@@ -70,6 +86,9 @@ if (process.env.WELL_FACT_PATH !== "1") {
 }
 
 const args = parseArgs(process.argv.slice(2));
+if (refuseApplyWithoutRunId("well-fact-county.refused", args.apply, args.runId)) {
+  process.exit(2);
+}
 
 const poolUrl =
   process.env.CORTEX_DATABASE_URL?.trim() ||
@@ -260,6 +279,7 @@ try {
       wouldWriteNearParcel: plan.counts.nearParcel,
       wouldWriteAbsentByKind: plan.counts.absentByKind,
       skippedUnusableKey: plan.counts.skippedUnusableKey,
+      collapsedDuplicateWellKeys: plan.counts.collapsedDuplicateWellKeys,
       limitApplied: args.limit > 0 ? args.limit : null,
     };
 
@@ -305,9 +325,38 @@ try {
         }),
       );
     } else {
+      const lease = await takeScopedLease(
+        handle.sql,
+        railLeaseArgs({
+          entityType: "well-fact",
+          countyFips: args.county,
+          runId: args.runId,
+          holderFallback: "well-fact-writer",
+        }),
+      );
+      summary.lease = {
+        holder_token: lease.holder_token,
+        scope: lease.scope,
+        stolen_from: lease.stolen_from,
+      };
+      try {
       for (let i = 0; i < atoms.length; i += args.batch) {
         const slice = atoms.slice(i, i + args.batch);
-        await handle.storage.writePropertyAtomsBatch(slice);
+        const { plannedIn, writtenOut } = assertNoChunkPkCollapse(
+          slice.map((a) => a.entityId),
+        );
+        console.log(
+          JSON.stringify({
+            event: "well-fact-county.chunk",
+            county: args.county,
+            chunkIndex: i / args.batch,
+            plannedIn,
+            writtenOut,
+            plannedCount: slice.length,
+            uniquePkCount: writtenOut.length,
+          }),
+        );
+        await handle.storage.writePropertyAtomsBatch(slice, lease);
         summary.atomsWritten += slice.length;
 
         // Look rows up by the atoms PRIMARY KEY (`atom_did`), never by the
@@ -356,6 +405,9 @@ try {
             ofTotal: atoms.length,
           }),
         );
+      }
+      } finally {
+        await releaseScopedLease(handle.sql, lease);
       }
     }
   }

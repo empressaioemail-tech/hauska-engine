@@ -53,6 +53,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Retire road-class-setback-table (F-11)
+        run: node packages/engine-core/scripts/retire-road-class-setback-table.mjs
+
+      - name: Detect placeholder setback-rule citations (F-11)
+        run: node packages/engine-core/scripts/detect-placeholder-setback-citation.mjs
+
       - name: Geometry lane LLM grep gate (OPS-3 I1)
         run: |
           if rg -i '\b(llm|anthropic|openai|xai)\b|@ai-sdk/|generateText' \
