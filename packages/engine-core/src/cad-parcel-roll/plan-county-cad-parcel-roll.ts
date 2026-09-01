@@ -48,8 +48,7 @@ export interface PlannedPresentCadParcelRoll {
   joinPassedOwnerMatchGate: true;
   sourceFile: string;
   sourceVintage: string;
-  ownerName?: string;
-  ownerMailingAddress?: string;
+  /** Owner fields live on `owner-fact` (public-paid), never on cad-parcel-roll. */
   situsAddress?: string;
   situsCity?: string;
   situsZip?: string;
@@ -119,9 +118,7 @@ function hasAnyPresentClaim(row: CadPropertyRowInput): boolean {
     optNum(row.yearBuilt) !== undefined ||
     optNum(row.livingAreaSqft) !== undefined ||
     (row.landAcres !== null && row.landAcres !== undefined) ||
-    optStr(row.propertyUseCode) !== undefined ||
-    optStr(row.ownerName) !== undefined ||
-    optStr(row.ownerMailingAddress) !== undefined
+    optStr(row.propertyUseCode) !== undefined
   );
 }
 
@@ -193,10 +190,6 @@ export function planCountyCadParcelRoll(
       joinPassedOwnerMatchGate: true,
       sourceFile: row.sourceFile,
       sourceVintage: row.sourceVintage,
-      ...(optStr(row.ownerName) ? { ownerName: optStr(row.ownerName) } : {}),
-      ...(optStr(row.ownerMailingAddress)
-        ? { ownerMailingAddress: optStr(row.ownerMailingAddress) }
-        : {}),
       ...(optStr(row.situsAddress)
         ? { situsAddress: optStr(row.situsAddress) }
         : {}),

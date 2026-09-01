@@ -44,8 +44,7 @@ export interface PresentCadParcelRollObservation {
   keyKind: ParcelKeyKind;
   joinPassedOwnerMatchGate: boolean;
   sourceFile: string;
-  ownerName?: string;
-  ownerMailingAddress?: string;
+  /** Owner fields live on `owner-fact` (public-paid), never on cad-parcel-roll. */
   situsAddress?: string;
   situsCity?: string;
   situsZip?: string;
@@ -147,16 +146,6 @@ export function buildPresentCadParcelRollAtom(
     taxYear: observation.taxYear,
   });
 
-  const ownerFields =
-    observation.joinPassedOwnerMatchGate
-      ? {
-          ...(observation.ownerName ? { ownerName: observation.ownerName } : {}),
-          ...(observation.ownerMailingAddress
-            ? { ownerMailingAddress: observation.ownerMailingAddress }
-            : {}),
-        }
-      : {};
-
   const contractAtom = createCadParcelRoll({
     entityType: "cad-parcel-roll",
     atomDid,
@@ -168,7 +157,6 @@ export function buildPresentCadParcelRollAtom(
     joinPassedOwnerMatchGate: observation.joinPassedOwnerMatchGate,
     reasoningChain: { reasoningKind: "observed" },
     sourceTier: "cad-authoritative",
-    ...ownerFields,
     ...(observation.situsAddress
       ? { situsAddress: observation.situsAddress }
       : {}),
