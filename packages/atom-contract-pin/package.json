@@ -19,7 +19,7 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "@empressaio/atom-contract": "^1.22.0"
+    "@empressaio/atom-contract": "^1.30.0"
   },
   "devDependencies": {
     "typescript": "~5.7.2",
