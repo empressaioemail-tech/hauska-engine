@@ -330,6 +330,7 @@ describe("ingest existing CAD", () => {
 
     const cad: CadPropertyRow = {
       prop_id: "34137",
+      tax_year: 2025,
       situs_address: "908 PINE",
       situs_city: "BASTROP",
       situs_zip: "78602",
@@ -351,5 +352,232 @@ describe("ingest existing CAD", () => {
     expect(after.byState.value).toBeGreaterThan(before.byState.value ?? 0);
     expect(after.byState.unaccounted).toBeLessThan(before.byState.unaccounted ?? Infinity);
     expect(rec.cells.marketValue).toMatchObject({ kind: "value", value: 300_000 });
+    expect(rec.cells.exemptionCodes).toMatchObject({
+      kind: "absent-verified",
+      basis: {
+        source: "cad_property",
+        countyFips: "48021",
+        propId: "34137",
+        taxYear: 2025,
+        vintage: "2025",
+      },
+    });
+  });
+
+  function mclennanNullCad(overrides: Partial<CadPropertyRow> = {}): CadPropertyRow {
+    return {
+      prop_id: "1",
+      tax_year: 2025,
+      situs_address: "100 MAIN",
+      situs_city: "WACO",
+      situs_zip: "76701",
+      legal_description: "LOT 1",
+      exemption_codes: null,
+      land_value: 50_000,
+      improvement_value: 80_000,
+      market_value: 130_000,
+      assessed_value: null,
+      year_built: null,
+      living_area_sqft: null,
+      land_acres: null,
+      property_use_code: "A1",
+      ...overrides,
+    };
+  }
+
+  it("(a) matched row + null field -> absent-verified with the full basis", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48309",
+      propId: "1",
+      incorporated: true,
+    });
+    ingestCadOntoRecords([rec], new Map([["1", mclennanNullCad()]]), "2025-ingest");
+    const expectedBasis = {
+      source: "cad_property",
+      countyFips: "48309",
+      propId: "1",
+      taxYear: 2025,
+      vintage: "2025-ingest",
+    };
+    expect(rec.cells.assessedValue).toEqual({ kind: "absent-verified", basis: expectedBasis });
+    expect(rec.cells.livingAreaSqft).toEqual({ kind: "absent-verified", basis: expectedBasis });
+    expect(rec.cells.yearBuilt).toEqual({ kind: "absent-verified", basis: expectedBasis });
+    expect(rec.cells.acreageAcres).toEqual({ kind: "absent-verified", basis: expectedBasis });
+    expect(rec.cells.marketValue).toMatchObject({ kind: "value", value: 130_000 });
+  });
+
+  it("(b) join miss stays unaccounted even when a value exists under a different key", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48491",
+      propId: "R123456",
+      incorporated: true,
+    });
+    const numericCad = mclennanNullCad({
+      prop_id: "123456",
+      improvement_value: 220_000,
+      living_area_sqft: 2100,
+      assessed_value: 200_000,
+      year_built: 1998,
+      land_acres: 0.3,
+    });
+    ingestCadOntoRecords([rec], new Map([["123456", numericCad]]), "2025");
+    expect(rec.cells.improvementValue.kind).toBe("unaccounted");
+    expect(rec.cells.livingAreaSqft.kind).toBe("unaccounted");
+    expect(rec.cells.assessedValue.kind).toBe("unaccounted");
+    expect(rec.cells.apn.kind).toBe("unaccounted");
+    expect(rec.cells.marketValue.kind).toBe("unaccounted");
+  });
+
+  it("(b2) matched R-prefix row with null improvement DOES emit (live Williamson shape)", () => {
+    // Gap ledger section 7: identity join hits R-prefix; dollars live on numeric.
+    // The card fixture is (b). Live store is this. R6B must not read a moved
+    // improvement cell as proof the join-miss scope leaked.
+    const rec = instantiateParcelRecord({
+      countyFips: "48491",
+      propId: "R123456",
+      incorporated: true,
+    });
+    const rPrefix = mclennanNullCad({
+      prop_id: "R123456",
+      improvement_value: null,
+      living_area_sqft: null,
+      assessed_value: null,
+      market_value: 130_000,
+      land_acres: 0.3,
+    });
+    const numeric = mclennanNullCad({
+      prop_id: "123456",
+      improvement_value: 220_000,
+      living_area_sqft: 2100,
+      assessed_value: 200_000,
+    });
+    ingestCadOntoRecords(
+      [rec],
+      new Map([
+        ["R123456", rPrefix],
+        ["123456", numeric],
+      ]),
+      "2025",
+    );
+    expect(rec.cells.improvementValue.kind).toBe("absent-verified");
+    expect(rec.cells.livingAreaSqft.kind).toBe("absent-verified");
+    expect(rec.cells.marketValue).toMatchObject({ kind: "value", value: 130_000 });
+    expect(rec.cells.apn).toMatchObject({ kind: "value", value: "R123456" });
+  });
+
+  it("(c) blank-string field behaves as null", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48309",
+      propId: "1",
+      incorporated: true,
+    });
+    ingestCadOntoRecords(
+      [rec],
+      new Map([
+        [
+          "1",
+          mclennanNullCad({
+            situs_address: "   ",
+            assessed_value: "" as unknown as number,
+            living_area_sqft: "" as unknown as number,
+          }),
+        ],
+      ]),
+      "2025",
+    );
+    expect(rec.cells.situsAddress.kind).toBe("absent-verified");
+    expect(rec.cells.assessedValue.kind).toBe("absent-verified");
+    expect(rec.cells.livingAreaSqft.kind).toBe("absent-verified");
+  });
+
+  it("(d) re-ingest is idempotent: value stays value, absent-verified stays absent-verified", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48309",
+      propId: "1",
+      incorporated: true,
+    });
+    const cad = mclennanNullCad();
+    const first = ingestCadOntoRecords([rec], new Map([["1", cad]]), "2025");
+    expect(first.cellsMoved).toBeGreaterThan(0);
+    const assessed = rec.cells.assessedValue;
+    const market = rec.cells.marketValue;
+    const second = ingestCadOntoRecords([rec], new Map([["1", cad]]), "2025");
+    expect(second.cellsMoved).toBe(0);
+    expect(rec.cells.assessedValue).toEqual(assessed);
+    expect(rec.cells.marketValue).toEqual(market);
+    expect(rec.cells.assessedValue.kind).toBe("absent-verified");
+    expect(rec.cells.marketValue).toMatchObject({ kind: "value", value: 130_000 });
+  });
+
+  it("living_area 0 stays unaccounted; $0 stays value 0", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48055",
+      propId: "1",
+      incorporated: true,
+    });
+    ingestCadOntoRecords(
+      [rec],
+      new Map([
+        [
+          "1",
+          mclennanNullCad({
+            improvement_value: 0,
+            living_area_sqft: 0,
+            assessed_value: 90_000,
+            year_built: 1970,
+            land_acres: 0,
+          }),
+        ],
+      ]),
+      "2025",
+    );
+    expect(rec.cells.improvementValue).toMatchObject({ kind: "value", value: 0 });
+    expect(rec.cells.acreageAcres).toMatchObject({ kind: "value", value: 0 });
+    expect(rec.cells.livingAreaSqft.kind).toBe("unaccounted");
+  });
+
+  it("missing tax_year refuses the emission (cell stays unaccounted)", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48309",
+      propId: "1",
+      incorporated: true,
+    });
+    ingestCadOntoRecords([rec], new Map([["1", mclennanNullCad({ tax_year: null })]]), "2025");
+    expect(rec.cells.assessedValue.kind).toBe("unaccounted");
+    expect(rec.cells.livingAreaSqft.kind).toBe("unaccounted");
+    expect(rec.cells.marketValue).toMatchObject({ kind: "value", value: 130_000 });
+  });
+
+  it("does not export applyCadScalar or cadNullVerified (structural scoping)", async () => {
+    const mod = await import("../ingest-existing.js");
+    expect(mod.applyCadScalar).toBeUndefined();
+    expect(mod.cadNullVerified).toBeUndefined();
+    expect(typeof mod.ingestCadOntoRecords).toBe("function");
+  });
+
+  it("unexpected exemption_codes type stays unaccounted (not a CAD null)", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "1",
+      incorporated: true,
+    });
+    ingestCadOntoRecords(
+      [rec],
+      new Map([
+        [
+          "1",
+          mclennanNullCad({
+            exemption_codes: ["HS"] as unknown as string,
+            assessed_value: 90_000,
+            living_area_sqft: 1200,
+            year_built: 1980,
+            land_acres: 0.2,
+          }),
+        ],
+      ]),
+      "2025",
+    );
+    expect(rec.cells.exemptionCodes.kind).toBe("unaccounted");
+    expect(rec.cells.assessedValue).toMatchObject({ kind: "value", value: 90_000 });
   });
 });

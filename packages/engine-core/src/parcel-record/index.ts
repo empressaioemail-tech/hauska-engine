@@ -4,6 +4,7 @@
 
 export type {
   CellProvenance,
+  CadNullVerifiedBasis,
   ScalarValueCell,
   ScalarAbsentVerifiedCell,
   ScalarNotApplicableCell,
