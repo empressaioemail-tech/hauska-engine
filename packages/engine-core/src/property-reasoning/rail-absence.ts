@@ -21,14 +21,12 @@ export const EMPTY_RAIL = "EMPTY_RAIL";
 
 export const ABSENCE_STATES = ["not-applicable", "unmeasured", "absent-verified"] as const;
 export const ZONING_INHERITED_RAILS = ["setbacks", "edges", "envelope"] as const;
-export const T3_COUNTY_EASEMENT_ABSENCE_FIPS = ["48021", "48055", "48209", "48491"] as const;
 export const T3_EASEMENT_EVALUATED_AT = "2026-08-05T19:30:00.000Z";
 export const SERVED_RAILS = ["setbacks", "edges", "envelope", "utility-easement"] as const;
 
 export type AbsenceState = (typeof ABSENCE_STATES)[number];
 export type ZoningInheritedRail = (typeof ZONING_INHERITED_RAILS)[number];
 export type ServedRail = (typeof SERVED_RAILS)[number];
-export type T3EasementFips = (typeof T3_COUNTY_EASEMENT_ABSENCE_FIPS)[number];
 
 export type UnincorporatedNotApplicable = {
   state: "not-applicable";
@@ -63,7 +61,7 @@ export type CountyEasementAbsentVerified = {
   state: "absent-verified";
   rail: "utility-easement";
   scopeKind: "county";
-  countyFips: T3EasementFips;
+  countyFips: string;
   scopeSearched: string;
   reason: string;
   evaluatedAt: typeof T3_EASEMENT_EVALUATED_AT;
@@ -107,8 +105,8 @@ function isZoningRail(rail: string): rail is ZoningInheritedRail {
   return (ZONING_INHERITED_RAILS as readonly string[]).includes(rail);
 }
 
-function isT3Fips(fips: string): fips is T3EasementFips {
-  return (T3_COUNTY_EASEMENT_ABSENCE_FIPS as readonly string[]).includes(fips);
+function isAllowedFips(fips: string, allowlist: readonly string[]): boolean {
+  return allowlist.includes(fips);
 }
 
 /**
@@ -195,9 +193,13 @@ export function classifyParcelRail(input: {
 export function classifyCountyEasement(input: {
   countyFips: string;
   collectClose: CollectClose | null;
+  t3EasementFips: readonly string[];
 }): CountyEasementAbsentVerified {
-  const { countyFips, collectClose } = input;
-  if (!isT3Fips(countyFips)) {
+  const { countyFips, collectClose, t3EasementFips } = input;
+  if (!t3EasementFips || t3EasementFips.length === 0) {
+    refuse(COUNTY_EASEMENT_NOT_T3, "T3 easement FIPS allowlist is empty; membership is an input");
+  }
+  if (!isAllowedFips(countyFips, t3EasementFips)) {
     refuse(COUNTY_EASEMENT_NOT_T3, `county ${countyFips} is not a T3 easement-absence FIPS`);
   }
   if (!collectClose) {

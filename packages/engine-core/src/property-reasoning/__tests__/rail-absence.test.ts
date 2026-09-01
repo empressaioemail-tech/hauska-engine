@@ -13,6 +13,9 @@ import {
   unincorporatedOnly,
   VALUE_NOT_ABSENCE,
 } from "../rail-absence.js";
+import t3EasementAbsence from "../fixtures/t3-easement-absence-fips.json" with { type: "json" };
+
+const T3_FIPS = t3EasementAbsence.fips as readonly string[];
 
 const closeNone = {
   finding: "none-found" as const,
@@ -127,8 +130,12 @@ describe("classifyParcelRail", () => {
 
 describe("classifyCountyEasement", () => {
   it("T3 four counties are absent-verified at the T3 asOf", () => {
-    for (const fips of ["48021", "48055", "48209", "48491"] as const) {
-      const row = classifyCountyEasement({ countyFips: fips, collectClose: closeNone });
+    for (const fips of T3_FIPS) {
+      const row = classifyCountyEasement({
+        countyFips: fips,
+        collectClose: closeNone,
+        t3EasementFips: T3_FIPS,
+      });
       expect(row.state).toBe("absent-verified");
       expect(row.rail).toBe("utility-easement");
       expect(row.evaluatedAt).toBe(T3_EASEMENT_EVALUATED_AT);
@@ -136,9 +143,27 @@ describe("classifyCountyEasement", () => {
   });
 
   it("McLennan 48309 is COUNTY_EASEMENT_NOT_T3", () => {
-    expect(codeOf(() => classifyCountyEasement({ countyFips: "48309", collectClose: closeNone }))).toBe(
-      COUNTY_EASEMENT_NOT_T3,
-    );
+    expect(
+      codeOf(() =>
+        classifyCountyEasement({
+          countyFips: "48309",
+          collectClose: closeNone,
+          t3EasementFips: T3_FIPS,
+        }),
+      ),
+    ).toBe(COUNTY_EASEMENT_NOT_T3);
+  });
+
+  it("empty T3 allowlist is COUNTY_EASEMENT_NOT_T3", () => {
+    expect(
+      codeOf(() =>
+        classifyCountyEasement({
+          countyFips: "48021",
+          collectClose: closeNone,
+          t3EasementFips: [],
+        }),
+      ),
+    ).toBe(COUNTY_EASEMENT_NOT_T3);
   });
 });
 
@@ -167,7 +192,11 @@ describe("nameParcelRails / assertNamedAbsence", () => {
         collectClose: closeUnprobed,
         parcelNodeId,
       }),
-      classifyCountyEasement({ countyFips: "48055", collectClose: closeNone }),
+      classifyCountyEasement({
+        countyFips: "48055",
+        collectClose: closeNone,
+        t3EasementFips: T3_FIPS,
+      }),
     ];
     const named = nameParcelRails(rows, parcelNodeId);
     expect(assertNamedAbsence(named, "setbacks").verdict).toBe("not-applicable");
