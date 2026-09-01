@@ -3,6 +3,7 @@
  */
 
 import type { CompanionCellState, ScalarCellState } from "./cell-state.js";
+import type { PermitsCellState } from "./permits-field.js";
 import type {
   CompanionRailKey,
   ParcelRecordRailKey,
@@ -11,7 +12,9 @@ import type {
 import { PARCEL_RECORD_RAIL_KEYS, isCompanionRail } from "./rail-keys.js";
 
 export type ScalarRecordCells = { [K in ScalarRailKey]: ScalarCellState };
-export type CompanionRecordCells = { [K in CompanionRailKey]: CompanionCellState };
+export type CompanionRecordCells = {
+  [K in CompanionRailKey]: K extends "permits" ? PermitsCellState : CompanionCellState;
+};
 
 /** Closed column set — every rail required; no optional cells at compile time. */
 export type ParcelRecordCells = ScalarRecordCells & CompanionRecordCells;

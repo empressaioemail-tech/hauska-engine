@@ -5,7 +5,7 @@
  * (absent-verified + basis) must not render the same as sourced empty-set (value).
  */
 
-import type { CompanionCellState, CompanionValueCell, ScalarAbsentVerifiedCell } from "./cell-state.js";
+import type { CompanionCellState, CompanionValueCell, ScalarAbsentVerifiedCell, ScalarNotApplicableCell, ScalarRefusedCell, ScalarUnaccountedCell } from "./cell-state.js";
 
 /** One permit row in the companion table and on the served wire. */
 export interface ParcelPermitRow {
@@ -19,6 +19,24 @@ export interface ParcelPermitRow {
   /** Public deeplink when present. */
   sourceUrl: string | null;
 }
+
+export type SourcedEmptyPermitsCell = CompanionValueCell & { disposition: "empty-set" };
+export type SourcedRowsPermitsCell = CompanionValueCell & { disposition: "rows" };
+
+/**
+ * Permits column only — three honest states are distinct at compile time:
+ *   unsourced jurisdiction  → absent-verified (NOT empty-set)
+ *   sourced, zero found     → value + disposition "empty-set"
+ *   sourced, rows present   → value + disposition "rows"
+ * Unaccounted remains valid before ingest on a sourced jurisdiction.
+ */
+export type PermitsCellState =
+  | ScalarAbsentVerifiedCell
+  | SourcedEmptyPermitsCell
+  | SourcedRowsPermitsCell
+  | ScalarNotApplicableCell
+  | ScalarRefusedCell
+  | ScalarUnaccountedCell;
 
 /** Declared serve-shape field — renderAs is explicit so UI cannot collapse states. */
 export type PermitsServeField =

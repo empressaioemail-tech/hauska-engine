@@ -103,7 +103,13 @@ export {
   type NotApplicableAuditRow,
 } from "./not-applicable-audit.js";
 
-export type { ParcelPermitRow, PermitsServeField } from "./permits-field.js";
+export type {
+  ParcelPermitRow,
+  PermitsServeField,
+  PermitsCellState,
+  SourcedEmptyPermitsCell,
+  SourcedRowsPermitsCell,
+} from "./permits-field.js";
 export {
   unsourcedPermitsBasis,
   unresolvedPermitsBasis,

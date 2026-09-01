@@ -91,6 +91,30 @@ describe("permits column type distinction", () => {
       expect(true).toBe(true);
     }
   });
+
+  it("ParcelRecordCells.permits is PermitsCellState — unsourced kind ≠ empty-set disposition", () => {
+    const unsourced = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "1",
+      incorporated: true,
+      permitsJurisdictionKey: "bastrop_tx",
+      permitSourcing: texasCtxPermitSourcingWithAustin(),
+    });
+    expect(unsourced.cells.permits.kind).toBe("absent-verified");
+
+    const rec = instantiateParcelRecord({
+      countyFips: "48453",
+      propId: "128040103",
+      incorporated: true,
+      permitsJurisdictionKey: "austin_tx",
+      permitSourcing: texasCtxPermitSourcingWithAustin(),
+    });
+    applyPermitsToRecord(rec, [], AUSTIN_SODA_PERMIT_SOURCE, "2026-09-01T12:00:00Z");
+    expect(rec.cells.permits.kind).toBe("value");
+    if (rec.cells.permits.kind === "value") {
+      expect(rec.cells.permits.disposition).toBe("empty-set");
+    }
+  });
 });
 
 describe("Austin SODA tcad join", () => {
