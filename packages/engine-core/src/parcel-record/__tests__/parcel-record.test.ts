@@ -428,6 +428,43 @@ describe("ingest existing CAD", () => {
     expect(rec.cells.marketValue.kind).toBe("unaccounted");
   });
 
+  it("(b2) matched R-prefix row with null improvement DOES emit (live Williamson shape)", () => {
+    // Gap ledger section 7: identity join hits R-prefix; dollars live on numeric.
+    // The card fixture is (b). Live store is this. R6B must not read a moved
+    // improvement cell as proof the join-miss scope leaked.
+    const rec = instantiateParcelRecord({
+      countyFips: "48491",
+      propId: "R123456",
+      incorporated: true,
+    });
+    const rPrefix = mclennanNullCad({
+      prop_id: "R123456",
+      improvement_value: null,
+      living_area_sqft: null,
+      assessed_value: null,
+      market_value: 130_000,
+      land_acres: 0.3,
+    });
+    const numeric = mclennanNullCad({
+      prop_id: "123456",
+      improvement_value: 220_000,
+      living_area_sqft: 2100,
+      assessed_value: 200_000,
+    });
+    ingestCadOntoRecords(
+      [rec],
+      new Map([
+        ["R123456", rPrefix],
+        ["123456", numeric],
+      ]),
+      "2025",
+    );
+    expect(rec.cells.improvementValue.kind).toBe("absent-verified");
+    expect(rec.cells.livingAreaSqft.kind).toBe("absent-verified");
+    expect(rec.cells.marketValue).toMatchObject({ kind: "value", value: 130_000 });
+    expect(rec.cells.apn).toMatchObject({ kind: "value", value: "R123456" });
+  });
+
   it("(c) blank-string field behaves as null", () => {
     const rec = instantiateParcelRecord({
       countyFips: "48309",
