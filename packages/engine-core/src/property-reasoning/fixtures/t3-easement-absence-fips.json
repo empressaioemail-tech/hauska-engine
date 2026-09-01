@@ -1,0 +1,5 @@
+{
+  "fips": ["48021", "48055", "48209", "48491"],
+  "evaluatedAt": "2026-08-05T19:30:00.000Z",
+  "note": "T3 four-point probe counties. Lives in fixtures so the reasoning module stays jurisdiction-agnostic (WDLL 3.8)."
+}
