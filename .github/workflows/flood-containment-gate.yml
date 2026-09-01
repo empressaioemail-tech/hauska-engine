@@ -1,0 +1,141 @@
+# SS-W17 / P-45: the named CI executor for the flood sample-point containment
+# gate and the promoted adjudication harness.
+#
+# WHY A SEPARATE WORKFLOW. The enforcement doctrine's measured base rate is that
+# hook-shaped controls run 1-for-1 and protocol-step controls run 0-for-3. A
+# containment check that lives only in a merged module is a protocol step. This
+# file is the executor; the push/pull_request paths below are the trigger; a
+# non-zero exit is what fails.
+#
+# WHAT THIS JOB CANNOT DO. It grades the CODE legs against a committed fixture
+# of real production geometry. It cannot grade the live STORE, because this
+# repository has no database credentials in CI (grep 'secrets.' over
+# .github/workflows returns nothing). The live leg is run by hand or by the
+# planner and is named in the lane close as having no automatic trigger.
+name: flood-containment-gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/engine-core/src/flood-hazard-fact/**"
+      - "packages/engine-core/scripts/write-flood-hazard-fact-county.mjs"
+      - "packages/engine-core/src/__tests__/flood-*.test.ts"
+      - "packages/atoms/src/flood-hazard-fact-writer.ts"
+      - "packages/retrieval/src/flood-adjudication/**"
+      - "packages/retrieval/scripts/flood-adjudication-standing-check.mjs"
+      - ".github/workflows/flood-containment-gate.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/engine-core/src/flood-hazard-fact/**"
+      - "packages/engine-core/scripts/write-flood-hazard-fact-county.mjs"
+      - "packages/engine-core/src/__tests__/flood-*.test.ts"
+      - "packages/atoms/src/flood-hazard-fact-writer.ts"
+      - "packages/retrieval/src/flood-adjudication/**"
+      - "packages/retrieval/scripts/flood-adjudication-standing-check.mjs"
+      - ".github/workflows/flood-containment-gate.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: flood-containment-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flood-containment-gate:
+    name: containment gate + offline adjudication
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      # The containment predicate and its policy, including the four tests that
+      # observe the check FAILING on a real concave shape, a tile-centre
+      # sentinel, a (0,0), and a point in a hole.
+      - name: Containment predicate and gate policy
+        working-directory: packages/engine-core
+        run: pnpm exec vitest run src/__tests__/flood-sample-point-containment.test.ts
+
+      # The plan-assembly contract: refusals never enter plan.planned, the three
+      # states never collapse, and a refused parcel never reaches the resolver.
+      - name: Plan assembly under the containment gate
+        working-directory: packages/engine-core
+        run: pnpm exec vitest run src/__tests__/flood-plan-assembly.test.ts src/__tests__/flood-from-plan.test.ts
+
+      # The promoted adjudication harness, graded offline against 300 real
+      # Bastrop parcels of which 120 genuinely fail containment.
+      - name: Offline adjudication fixture (JS predicate vs recorded PostGIS)
+        working-directory: packages/retrieval
+        run: pnpm exec vitest run src/flood-adjudication
+
+      # The runner itself, not only its library. A grader that works while its
+      # CLI is broken is a control nobody can invoke.
+      - name: Standing check CLI, offline mode
+        run: |
+          node --import tsx \
+            packages/retrieval/scripts/flood-adjudication-standing-check.mjs \
+            --fixture packages/retrieval/src/flood-adjudication/__fixtures__/flood-containment-48021.json
+
+      # STRUCTURAL. Documenting that the writer must not fall back to a bbox
+      # centre is prose, and prose does not enforce. These greps fail the build
+      # if the gate is removed from the write path, which is the failure mode a
+      # test suite cannot see because deleting the call also deletes the test.
+      - name: Flood writer containment grep gate
+        run: |
+          WRITER=packages/engine-core/scripts/write-flood-hazard-fact-county.mjs
+          PLAN=packages/engine-core/src/flood-hazard-fact/plan-county-flood-hazard.ts
+          if grep -n 'geometryCentroid(p.geometry) ??' "$WRITER"; then
+            echo "FATAL: the writer re-introduced the silent bbox-centre fallback; the derivation must go through deriveFloodSamplePoint so it is named"
+            exit 1
+          fi
+          for sym in floodDeterminationGate classifySamplePointContainment deriveFloodSamplePoint isQueryableParcel; do
+            if ! grep -q "$sym" "$PLAN"; then
+              echo "FATAL: $PLAN must call $sym; the containment gate has been removed from the plan path"
+              exit 1
+            fi
+          done
+          if ! grep -q 'refused' "$PLAN"; then
+            echo "FATAL: $PLAN must carry a refusal path"
+            exit 1
+          fi
+          if grep -n 'samplePointContainment: ContainmentState' "$PLAN"; then
+            echo "FATAL: published records must be stamped EmittableContainmentState, not the full ContainmentState union"
+            exit 1
+          fi
+          echo "flood writer containment grep gate: clean"
+
+      # SOLE WRITE PATH. Today exactly one non-test caller builds a
+      # flood-hazard-fact atom, and it is the gated one. Nothing structural said
+      # so, which means the next caller would bypass the containment gate
+      # without breaking a single test. This makes a second caller a build
+      # failure instead of a review responsibility.
+      - name: Flood atom builders have exactly one gated caller
+        run: |
+          GATED=packages/engine-core/src/flood-hazard-fact/flood-hazard-fact-atoms.ts
+          OFFENDERS=$(grep -rln 'buildPresentFloodHazardFactAtom\|buildFloodHazardFactAbsenceAtom' \
+            --include='*.ts' --include='*.mjs' packages services \
+            | grep -v '__tests__' \
+            | grep -v '^packages/atoms/src/flood-hazard-fact-writer.ts$' \
+            | grep -v '^packages/atoms/src/index.ts$' \
+            | grep -v "^$GATED$" || true)
+          if [ -n "$OFFENDERS" ]; then
+            echo "FATAL: flood atom builders called outside the containment-gated path:"
+            echo "$OFFENDERS"
+            echo "Every flood-hazard-fact atom must be built through buildAtomForPlannedFloodHazard so it carries a sample-point containment stamp."
+            exit 1
+          fi
+          echo "flood atom sole-write-path gate: clean"

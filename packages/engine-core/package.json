@@ -35,6 +35,10 @@
       "types": "./src/envelope/index.ts",
       "import": "./src/envelope/index.ts"
     },
+    "./flood-hazard-fact": {
+      "types": "./src/flood-hazard-fact/index.ts",
+      "import": "./src/flood-hazard-fact/index.ts"
+    },
     "./map-layers": {
       "types": "./src/map-layers/index.ts",
       "import": "./src/map-layers/index.ts"
