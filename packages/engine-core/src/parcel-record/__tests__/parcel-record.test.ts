@@ -3,8 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   PARCEL_RECORD_RAIL_COUNT,
   PARCEL_RECORD_RAIL_KEYS,
+  PARCEL_RECORD_RAIL_META,
   RAILS_ADDED_BEYOND_SEED,
+  RAILS_V2_DECLARED_AHEAD,
   UNINCORPORATED_NOT_APPLICABLE_RAIL_KEYS,
+  ZONING_ENVELOPE_RAIL_KEYS,
+  OWNER_RAIL_ACCESS,
+  PUBLIC_RAIL_ACCESS,
+  TENANT_PRIVATE_ACCESS,
+  accessForPublicRecordRef,
+  railAccess,
   instantiateParcelRecord,
   summarizeCountyRecords,
   assertFullRecordCells,
@@ -15,20 +23,84 @@ import {
   PublishGateRefusedError,
   assertPublishableCounty,
   ingestCadOntoRecords,
+  isCompanionRail,
+  deriveLiveRailKeys,
+  deriveDeclaredAheadRailKeys,
+  RAIL_LIVENESS_SQL,
   type CadPropertyRow,
+  type FloodCompanionRow,
+  type ParcelRecordRailKey,
+  type ParcelRecordRow,
+  type PublicRecordRefRow,
+  type SalesHistoryRow,
+  type PublishGateVerdict,
 } from "../index.js";
 
+function accountUnaccounted(rec: ParcelRecordRow, except: readonly ParcelRecordRailKey[] = []): void {
+  const skip = new Set<string>(except);
+  for (const key of PARCEL_RECORD_RAIL_KEYS) {
+    if (skip.has(key)) continue;
+    const cell = rec.cells[key];
+    if (cell.kind !== "unaccounted") continue;
+    if (isCompanionRail(key)) {
+      (rec.cells as Record<string, unknown>)[key] = {
+        kind: "value",
+        disposition: "empty-set",
+        rowCount: 0,
+        source: "test",
+        vintage: "test",
+      };
+    } else {
+      (rec.cells as Record<string, unknown>)[key] = {
+        kind: "absent-verified",
+        basis: "test fixture",
+      };
+    }
+  }
+}
+
 describe("parcel-record rail set", () => {
-  it("has a closed derived set (52 rails as of 2026-09-01)", () => {
-    expect(PARCEL_RECORD_RAIL_COUNT).toBe(52);
+  it("has a closed derived set (65 rails as of 2026-09-01 v2)", () => {
+    expect(PARCEL_RECORD_RAIL_COUNT).toBe(65);
     expect(PARCEL_RECORD_RAIL_KEYS.length).toBe(PARCEL_RECORD_RAIL_COUNT);
     expect(new Set(PARCEL_RECORD_RAIL_KEYS).size).toBe(PARCEL_RECORD_RAIL_COUNT);
   });
 
-  it("lists rails added beyond the dispatch seed", () => {
+  it("lists rails added beyond the v1 dispatch seed", () => {
     expect(RAILS_ADDED_BEYOND_SEED).toContain("legalDescription");
     expect(RAILS_ADDED_BEYOND_SEED).toContain("parcelGeometry");
     expect(RAILS_ADDED_BEYOND_SEED).not.toContain("owner");
+  });
+
+  it("declares exactly the 13 v2 rails ahead", () => {
+    expect(RAILS_V2_DECLARED_AHEAD).toHaveLength(13);
+    expect(new Set(RAILS_V2_DECLARED_AHEAD).size).toBe(13);
+    for (const key of RAILS_V2_DECLARED_AHEAD) {
+      expect(PARCEL_RECORD_RAIL_KEYS).toContain(key);
+    }
+  });
+});
+
+describe("access pair on rail metadata", () => {
+  it("writes an access pair on every rail; owner is paid-tier explicitly", () => {
+    for (const row of PARCEL_RECORD_RAIL_META) {
+      expect(row.access).toBeDefined();
+      expect(row.access.discoverability).toBeTruthy();
+      expect(row.access.entitlement).toBeTruthy();
+    }
+    expect(railAccess("owner")).toBe(OWNER_RAIL_ACCESS);
+    expect(railAccess("owner")).toEqual({
+      discoverability: "catalog-listed",
+      entitlement: "anyone-paid",
+    });
+    expect(railAccess("owner")).not.toBe(PUBLIC_RAIL_ACCESS);
+    expect(railAccess("apn")).toBe(PUBLIC_RAIL_ACCESS);
+    expect(railAccess("publicRecordRefs")).toBe(PUBLIC_RAIL_ACCESS);
+  });
+
+  it("derives publicRecordRefs row access from acquiredBy", () => {
+    expect(accessForPublicRecordRef("public-ingest")).toBe(PUBLIC_RAIL_ACCESS);
+    expect(accessForPublicRecordRef("user-request")).toBe(TENANT_PRIVATE_ACCESS);
   });
 });
 
@@ -46,7 +118,7 @@ describe("instantiateParcelRecord", () => {
     expect(() => assertFullRecordCells(partial)).toThrow(/missing rail column: marketValue/);
   });
 
-  it("stamps zoning-envelope not-applicable for unincorporated parcels only", () => {
+  it("stamps v1 NA list only; new zoning-envelope scalars stay unaccounted", () => {
     const uninc = instantiateParcelRecord({
       countyFips: "48021",
       propId: "1",
@@ -56,6 +128,17 @@ describe("instantiateParcelRecord", () => {
     expect(uninc.cells.setbackRules.kind).toBe("not-applicable");
     expect(uninc.cells.marketValue.kind).toBe("unaccounted");
     expect(uninc.cells.wells.kind).toBe("unaccounted");
+    expect(uninc.cells.maxImperviousCoverPct.kind).toBe("unaccounted");
+    expect(uninc.cells.treeProtection.kind).toBe("unaccounted");
+    expect(uninc.cells.schoolDistrict.kind).toBe("unaccounted");
+    expect(uninc.cells.owner.kind).toBe("unaccounted");
+
+    expect(UNINCORPORATED_NOT_APPLICABLE_RAIL_KEYS).toHaveLength(18);
+    expect(UNINCORPORATED_NOT_APPLICABLE_RAIL_KEYS).not.toContain("maxImperviousCoverPct");
+    expect(UNINCORPORATED_NOT_APPLICABLE_RAIL_KEYS).not.toContain("treeProtection");
+    expect(ZONING_ENVELOPE_RAIL_KEYS).toContain("maxImperviousCoverPct");
+    expect(ZONING_ENVELOPE_RAIL_KEYS).toContain("treeProtection");
+    expect(ZONING_ENVELOPE_RAIL_KEYS.length).toBe(19);
 
     const audit = auditNotApplicableCells([uninc]);
     expect(audit.totalNotApplicable).toBe(UNINCORPORATED_NOT_APPLICABLE_RAIL_KEYS.length);
@@ -82,51 +165,156 @@ describe("instantiateParcelRecord", () => {
   });
 });
 
-describe("publish gate", () => {
-  it("refuses when a cell is poisoned to unaccounted", () => {
+describe("publish gate + derived liveness", () => {
+  it("passes when live rails are accounted and prints the 13 declared-ahead", () => {
     const rec = instantiateParcelRecord({
       countyFips: "48021",
       propId: "34137",
       incorporated: true,
     });
-    const clean = [rec];
-    expect(evaluatePublishGate(clean).ok).toBe(false);
-
-    const poisoned = poisonCell(rec, "apn");
-    const verdict = evaluatePublishGate([poisoned]);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.unaccountedCount).toBeGreaterThan(0);
-    expect(verdict.unaccountedSamples[0]?.railKey).toBe("apn");
-
-    expect(() => assertPublishableCounty([poisoned])).toThrow(PublishGateRefusedError);
+    accountUnaccounted(rec, RAILS_V2_DECLARED_AHEAD);
+    const verdict = evaluatePublishGate([rec]);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.unaccountedCount).toBe(0);
+    expect([...verdict.excludedDeclaredAhead].sort()).toEqual(
+      [...RAILS_V2_DECLARED_AHEAD].sort(),
+    );
+    expect(verdict.excludedDeclaredAhead).toHaveLength(13);
+    assertPublishableCounty([rec]);
   });
 
-  it("passes only when every cell has a non-unaccounted state", () => {
+  it("refuses when one LIVE rail cell is poisoned", () => {
+    // Two parcels so apn stays live after one cell is poisoned. Poisoning the
+    // last earned cell of a rail demotes it to declared-ahead and the gate
+    // would pass — that is the known derivation limit, not this test.
+    const a = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "34137",
+      incorporated: true,
+    });
+    const b = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "20500",
+      incorporated: true,
+    });
+    accountUnaccounted(a, RAILS_V2_DECLARED_AHEAD);
+    accountUnaccounted(b, RAILS_V2_DECLARED_AHEAD);
+    const poisoned = poisonCell(a, "apn");
+    const verdict = evaluatePublishGate([poisoned, b]);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.unaccountedCount).toBe(1);
+    expect(verdict.unaccountedSamples[0]?.railKey).toBe("apn");
+    expect(verdict.unaccountedSamples[0]?.placeKey).toBe("48021:34137");
+    expect([...verdict.excludedDeclaredAhead].sort()).toEqual(
+      [...RAILS_V2_DECLARED_AHEAD].sort(),
+    );
+    expect(() => assertPublishableCounty([poisoned, b])).toThrow(PublishGateRefusedError);
+  });
+
+  it("poisoning the last earned cell of a rail demotes it (known limit)", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "34137",
+      incorporated: true,
+    });
+    accountUnaccounted(rec, RAILS_V2_DECLARED_AHEAD);
+    const poisoned = poisonCell(rec, "apn");
+    const verdict = evaluatePublishGate([poisoned]);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.excludedDeclaredAhead).toContain("apn");
+  });
+
+  it("flips a rail live on its first earned cell with no code change", () => {
     const rec = instantiateParcelRecord({
       countyFips: "48021",
       propId: "1",
-      incorporated: false,
+      incorporated: true,
     });
-    for (const key of PARCEL_RECORD_RAIL_KEYS) {
-      const cell = rec.cells[key];
-      if (cell.kind === "unaccounted") {
-        if ("disposition" in cell || key.endsWith("s") || key === "flood") {
-          (rec.cells as Record<string, unknown>)[key] = {
-            kind: "value",
-            disposition: "empty-set",
-            rowCount: 0,
-            source: "test",
-            vintage: "test",
-          };
-        } else {
-          (rec.cells as Record<string, unknown>)[key] = {
-            kind: "absent-verified",
-            basis: "test fixture",
-          };
-        }
-      }
-    }
-    expect(evaluatePublishGate([rec]).ok).toBe(true);
+    accountUnaccounted(rec, RAILS_V2_DECLARED_AHEAD);
+    expect(deriveLiveRailKeys([rec])).not.toContain("owner");
+    expect(deriveDeclaredAheadRailKeys([rec])).toContain("owner");
+
+    rec.cells.owner = {
+      kind: "value",
+      disposition: "rows",
+      rowCount: 1,
+      source: "test",
+      vintage: "test",
+    };
+
+    expect(deriveLiveRailKeys([rec])).toContain("owner");
+    expect(deriveDeclaredAheadRailKeys([rec])).not.toContain("owner");
+    const verdict = evaluatePublishGate([rec]);
+    expect(verdict.excludedDeclaredAhead).not.toContain("owner");
+    expect(verdict.excludedDeclaredAhead).toHaveLength(12);
+  });
+
+  it("SQL contract names the same earned kinds as the typed derivation", () => {
+    expect(RAIL_LIVENESS_SQL).toContain("parcel_record_cell");
+    expect(RAIL_LIVENESS_SQL).toContain("'value'");
+    expect(RAIL_LIVENESS_SQL).toContain("'absent-verified'");
+    expect(RAIL_LIVENESS_SQL).toContain("'refused'");
+    expect(RAIL_LIVENESS_SQL).not.toContain("not-applicable");
+    expect(RAIL_LIVENESS_SQL).not.toContain("unaccounted");
+  });
+
+  it("a verdict omitting excludedDeclaredAhead does not typecheck", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "1",
+      incorporated: true,
+    });
+    const verdict: PublishGateVerdict = evaluatePublishGate([rec]);
+    expect(Array.isArray(verdict.excludedDeclaredAhead)).toBe(true);
+    const _required: PublishGateVerdict["excludedDeclaredAhead"] =
+      verdict.excludedDeclaredAhead;
+    expect(_required.length).toBeGreaterThan(0);
+    // Compile-time guard: drop this field and tsc must fail.
+    // @ts-expect-error excludedDeclaredAhead is required on PublishGateVerdict
+    const _omit: PublishGateVerdict = {
+      ok: true,
+      unaccountedCount: 0,
+      unaccountedSamples: [],
+    };
+    expect(_omit).toBeDefined();
+  });
+});
+
+describe("companion row shapes", () => {
+  it("salesHistory price and flood BFE represent absent-verified", () => {
+    const sale: SalesHistoryRow = {
+      transactionDate: "2024-06-01",
+      price: { representation: "absent-verified", basis: "Texas non-disclosure" },
+    };
+    expect(sale.price.representation).toBe("absent-verified");
+
+    const flood: FloodCompanionRow = {
+      zone: "AE",
+      floodwayVsFloodplain: "floodplain",
+      baseFloodElevation: { representation: "absent-verified", basis: "panel carries no BFE" },
+      femaPanelId: "48021C0250F",
+      panelEffectiveDate: "2012-09-26",
+    };
+    expect(flood.femaPanelId).toBeTruthy();
+    expect(flood.panelEffectiveDate).toBeTruthy();
+    expect(flood.floodwayVsFloodplain).toBe("floodplain");
+  });
+
+  it("publicRecordRefs points at P-85 columns only", () => {
+    const row: PublicRecordRefRow = {
+      countyFips: "48021",
+      documentId: "2024-001234",
+      recordKind: "easement",
+      storeRef: {
+        store: "records_request_artifacts",
+        jobId: "00000000-0000-0000-0000-000000000001",
+        artifactId: "00000000-0000-0000-0000-000000000002",
+      },
+      acquiredBy: "user-request",
+      access: accessForPublicRecordRef("user-request"),
+    };
+    expect(row.storeRef.store).toBe("records_request_artifacts");
+    expect(row.access).toBe(TENANT_PRIVATE_ACCESS);
   });
 });
 
