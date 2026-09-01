@@ -40,6 +40,12 @@ export {
 } from "./symnum.js";
 
 export {
+  assertNoChunkPkCollapse,
+  countWellFactPersistCollisions,
+  wellFactPersistDid,
+} from "./persist-key.js";
+
+export {
   buildAtomForPlannedWellFact,
   buildAtomsForWellFactPlan,
   buildCountyWellFactCoverageAtom,

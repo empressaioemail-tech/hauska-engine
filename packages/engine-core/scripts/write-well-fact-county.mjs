@@ -42,6 +42,7 @@ import {
   planCountyWellFacts,
   stagedWellTableExists,
   verifyStoredWellFactAtom,
+  assertNoChunkPkCollapse,
 } from "../src/well-fact/index.ts";
 
 const SOURCE_ADAPTER = STAGED_WELL_ADAPTER;
@@ -278,6 +279,7 @@ try {
       wouldWriteNearParcel: plan.counts.nearParcel,
       wouldWriteAbsentByKind: plan.counts.absentByKind,
       skippedUnusableKey: plan.counts.skippedUnusableKey,
+      collapsedDuplicateWellKeys: plan.counts.collapsedDuplicateWellKeys,
       limitApplied: args.limit > 0 ? args.limit : null,
     };
 
@@ -340,6 +342,20 @@ try {
       try {
       for (let i = 0; i < atoms.length; i += args.batch) {
         const slice = atoms.slice(i, i + args.batch);
+        const { plannedIn, writtenOut } = assertNoChunkPkCollapse(
+          slice.map((a) => a.entityId),
+        );
+        console.log(
+          JSON.stringify({
+            event: "well-fact-county.chunk",
+            county: args.county,
+            chunkIndex: i / args.batch,
+            plannedIn,
+            writtenOut,
+            plannedCount: slice.length,
+            uniquePkCount: writtenOut.length,
+          }),
+        );
         await handle.storage.writePropertyAtomsBatch(slice, lease);
         summary.atomsWritten += slice.length;
 
