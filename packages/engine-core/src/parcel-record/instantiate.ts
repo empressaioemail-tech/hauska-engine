@@ -3,6 +3,12 @@
  */
 
 import type { CompanionCellState, ScalarCellState } from "./cell-state.js";
+import type { PermitSourcingConfig } from "./config.js";
+import { isPermitJurisdictionSourced } from "./config.js";
+import {
+  unresolvedPermitsBasis,
+  unsourcedPermitsCell,
+} from "./permits-field.js";
 import {
   PARCEL_RECORD_COMPANION_RAIL_KEYS,
   PARCEL_RECORD_SCALAR_RAIL_KEYS,
@@ -35,6 +41,24 @@ export function companionNotApplicable(reason: string): CompanionCellState {
 
 const NOT_APPLICABLE_RAIL_SET = new Set<string>(UNINCORPORATED_NOT_APPLICABLE_RAIL_KEYS);
 
+function permitsCellAtInstantiate(input: InstantiateParcelInput): CompanionCellState {
+  const jurisdictionKey = input.permitsJurisdictionKey?.trim() || null;
+  if (!jurisdictionKey) {
+    return {
+      kind: "absent-verified",
+      basis: unresolvedPermitsBasis(),
+    };
+  }
+  const config = input.permitSourcing;
+  if (!config) {
+    return unsourcedPermitsCell(jurisdictionKey);
+  }
+  if (isPermitJurisdictionSourced(config, jurisdictionKey)) {
+    return companionUnaccounted();
+  }
+  return unsourcedPermitsCell(jurisdictionKey);
+}
+
 function cellForRailAtInstantiate(
   railKey: string,
   input: InstantiateParcelInput,
@@ -47,6 +71,9 @@ function cellForRailAtInstantiate(
       source: "instantiate",
       vintage: nowIso,
     };
+  }
+  if (railKey === "permits") {
+    return permitsCellAtInstantiate(input);
   }
   if (input.incorporated === false && NOT_APPLICABLE_RAIL_SET.has(railKey)) {
     return (PARCEL_RECORD_COMPANION_RAIL_KEYS as readonly string[]).includes(railKey)
@@ -81,6 +108,13 @@ export interface InstantiateParcelInput {
   propId: string;
   /** Must be measured per parcel — never scaled from county aggregates. */
   incorporated: boolean | null;
+  /**
+   * AHJ permit jurisdiction (e.g. austin_tx, bastrop_tx). When set and unsourced,
+   * permits stamps absent-verified — not unaccounted, not empty-set.
+   */
+  permitsJurisdictionKey?: string | null;
+  /** When omitted, sourced jurisdictions leave permits unaccounted until ingest. */
+  permitSourcing?: PermitSourcingConfig;
   nowIso?: string;
 }
 

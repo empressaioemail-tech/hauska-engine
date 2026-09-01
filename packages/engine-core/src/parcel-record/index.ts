@@ -55,6 +55,12 @@ export type { ParcelRecordProgramConfig } from "./config.js";
 export {
   createParcelRecordProgramConfig,
   texasCtxProgramConfig,
+  type PermitJurisdictionEntry,
+  type PermitSourcingConfig,
+  createPermitSourcingConfig,
+  texasCtxPermitSourcingUnsourced,
+  texasCtxPermitSourcingWithAustin,
+  isPermitJurisdictionSourced,
 } from "./config.js";
 
 export {
@@ -96,6 +102,34 @@ export {
   type NotApplicableAuditReport,
   type NotApplicableAuditRow,
 } from "./not-applicable-audit.js";
+
+export type { ParcelPermitRow, PermitsServeField } from "./permits-field.js";
+export {
+  unsourcedPermitsBasis,
+  unresolvedPermitsBasis,
+  unsourcedPermitsCell,
+  sourcedEmptyPermitsCell,
+  sourcedPermitsWithRowsCell,
+  isPermitsUnsourcedCell,
+  isPermitsSourcedEmptyCell,
+  isPermitsSourcedWithRowsCell,
+  permitsServeStatesAreDistinct,
+  projectPermitsServeField,
+} from "./permits-field.js";
+
+export {
+  AUSTIN_SODA_PERMIT_SOURCE,
+  TRAVIS_COUNTY_FIPS,
+  AUSTIN_TX_JURISDICTION,
+  tcadIdToTravisPropId,
+  placeKeyFromTcadId,
+  normalizeAustinSodaPermitRow,
+  indexPermitsByPlaceKey,
+  applyPermitsToRecord,
+  ingestPermitsOntoRecords,
+  type RawAustinSodaPermitRow,
+  type PermitsByPlaceKey,
+} from "./ingest-permits.js";
 
 /** Old county-rail ledger — read-only disposition for this card. */
 export const COUNTY_RAIL_LEDGER_DISPOSITION = {
