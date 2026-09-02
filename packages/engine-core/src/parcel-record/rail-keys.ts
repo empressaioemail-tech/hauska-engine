@@ -166,6 +166,48 @@ export const RAILS_V2_DECLARED_AHEAD: readonly ParcelRecordRailKey[] = [
 
 export const PARCEL_RECORD_RAIL_COUNT = PARCEL_RECORD_RAIL_KEYS.length;
 
+/**
+ * Considered and explicitly ruled OUT as new rail keys (CP2, 2026-09-02).
+ * CAD-SERVE-RECONCILE (_inbox/2026-09-01_cad-serve-reconcile_close.json
+ * pipelineWordLeaks) found these three served live and undeclared anywhere
+ * in this store: facets.zoning.verdict, facets.zoning.authority,
+ * facets.zoning.derivation.cityLimitsStatus.
+ *
+ * Investigated in this repo's vendored serve mirrors (nothing — the fields
+ * do not exist there either; the real computation lives in
+ * legacy-design-tools/artifacts/api-server, per
+ * _inbox/2026-08-22_p63-verdict-serve_cortex_cp1.json's "layer absence wire"
+ * schema: { status, verdict, authority, scopeSearched, asOf, basis,
+ * provenanceClass, source }). That schema is PIPELINE-STATE METADATA about
+ * an already-modeled fact, not a new fact about the parcel:
+ *   - zoning.verdict (absent-verified | lookup-failed | not-applicable) is a
+ *     near-subset restatement of zoningDistrict's own cell_state.kind
+ *     (value | absent-verified | not-applicable | refused | unaccounted).
+ *   - zoning.authority (e.g. "tad", "dcad", "none") restates the
+ *     CellProvenance.source already mandatory on every earned
+ *     zoningDistrict / zoningProvenance cell.
+ *   - zoning.derivation.cityLimitsStatus is a nested echo of the already
+ *     independently-accounted cityLimits / etjStatus rail values.
+ * Adding parallel rails for these would create a second, independently
+ * updatable representation of a fact this closed shape already accounts
+ * for — the internal-consistency drift ENFORCEMENT.md warns against (one
+ * upstream can fabricate both copies; ENFORCEMENT.md "How to write a check
+ * that actually checks"). The live defect CAD-SERVE-RECONCILE named
+ * ("unmeasured"/"unresolved" values outside the wire's own declared enum)
+ * is a SERVE-TIME vocabulary/mapping defect in legacy-design-tools
+ * translating cell_state.kind into that wire — tracked at
+ * _decisions/2026-09-01_serve_path_never_emits_pipeline_state.md — not a
+ * storage gap in parcel_record, and out of hauska-engine's reach.
+ *
+ * Named here, not silently dropped, per ENFORCEMENT.md "a missing column
+ * is invisible."
+ */
+export const ZONING_VERDICT_FIELDS_RULED_OUT = [
+  "zoning.verdict",
+  "zoning.authority",
+  "zoning.derivation.cityLimitsStatus",
+] as const;
+
 /** Keys added beyond the v1 dispatch card seed list (v1 extras, not the v2 13). */
 export const RAILS_ADDED_BEYOND_SEED: readonly ParcelRecordRailKey[] = [
   "situsState",

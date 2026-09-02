@@ -6,6 +6,7 @@ import {
   PARCEL_RECORD_RAIL_META,
   RAILS_ADDED_BEYOND_SEED,
   RAILS_V2_DECLARED_AHEAD,
+  ZONING_VERDICT_FIELDS_RULED_OUT,
   UNINCORPORATED_NOT_APPLICABLE_RAIL_KEYS,
   ZONING_ENVELOPE_RAIL_KEYS,
   OWNER_RAIL_ACCESS,
@@ -78,6 +79,14 @@ describe("parcel-record rail set", () => {
     for (const key of RAILS_V2_DECLARED_AHEAD) {
       expect(PARCEL_RECORD_RAIL_KEYS).toContain(key);
     }
+  });
+
+  it("names the three zoning-verdict fields ruled out as rails (CP2 decision, not silently dropped)", () => {
+    expect(ZONING_VERDICT_FIELDS_RULED_OUT).toEqual([
+      "zoning.verdict",
+      "zoning.authority",
+      "zoning.derivation.cityLimitsStatus",
+    ]);
   });
 });
 
@@ -222,6 +231,61 @@ describe("publish gate + derived liveness", () => {
     const verdict = evaluatePublishGate([poisoned]);
     expect(verdict.ok).toBe(true);
     expect(verdict.excludedDeclaredAhead).toContain("apn");
+  });
+
+  it("full-rail poison stays silent without prior-state info (opt-in only, no regression)", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "34137",
+      incorporated: true,
+    });
+    accountUnaccounted(rec, RAILS_V2_DECLARED_AHEAD);
+    const poisoned = poisonCell(rec, "apn");
+    const verdict = evaluatePublishGate([poisoned]); // no priorLiveRailKeys given
+    expect(verdict.excludedDeclaredAhead).toContain("apn");
+    expect(verdict.warnings).toHaveLength(0);
+  });
+
+  it("warns when a rail goes from live to fully poisoned, given prior liveness (WARN cross-check)", () => {
+    // Two parcels, both carrying an earned "apn" cell, so the rail is live
+    // in the first evaluation.
+    const a = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "34137",
+      incorporated: true,
+    });
+    const b = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "20500",
+      incorporated: true,
+    });
+    accountUnaccounted(a, RAILS_V2_DECLARED_AHEAD);
+    accountUnaccounted(b, RAILS_V2_DECLARED_AHEAD);
+
+    const before = evaluatePublishGate([a, b]);
+    expect(before.excludedDeclaredAhead).not.toContain("apn");
+    expect(before.warnings).toHaveLength(0);
+
+    // Every earned "apn" cell in the record set is poisoned — the rail goes
+    // from live to fully unaccounted, not "never attempted".
+    const priorLiveRailKeys = PARCEL_RECORD_RAIL_KEYS.filter(
+      (k) => !before.excludedDeclaredAhead.includes(k),
+    );
+    const poisonedA = poisonCell(a, "apn");
+    const poisonedB = poisonCell(b, "apn");
+    const after = evaluatePublishGate([poisonedA, poisonedB], { priorLiveRailKeys });
+
+    expect(after.ok).toBe(true); // WARN, not a refusal — same accept-and-warn decision as declared-ahead
+    expect(after.excludedDeclaredAhead).toContain("apn");
+    expect(after.warnings).toContainEqual({
+      kind: "full-rail-poison",
+      railKey: "apn",
+      detail: expect.stringContaining('rail "apn"'),
+    });
+    // A rail that really was never attempted (a declared-ahead rail) must
+    // NOT warn just because it is also in priorLiveRailKeys' complement —
+    // only rails present in priorLiveRailKeys can warn.
+    expect(after.warnings.map((w) => w.railKey)).not.toContain("owner");
   });
 
   it("flips a rail live on its first earned cell with no code change", () => {
