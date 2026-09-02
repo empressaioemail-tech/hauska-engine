@@ -115,15 +115,25 @@ export {
   PublishGateRefusedError,
   poisonCell,
   allRailKeys,
+  evaluateRailGate,
   type PublishGateVerdict,
   type PublishGateOptions,
   type PublishGateWarning,
+  type RailGateVerdict,
+  type RailGateOptions,
 } from "./publish-gate.js";
 
 export {
   loadCountyParcelRecords,
+  loadCountyRailCells,
+  loadCountyRailCellsPage,
+  countyRailCellsFirstAfter,
+  DEFAULT_RAIL_CELL_PAGE_SIZE,
   type ParcelRecordSqlClient,
   type LoadCountyParcelRecordsResult,
+  type RailCell,
+  type RailCellPage,
+  type LoadCountyRailCellsResult,
 } from "./load.js";
 
 export {
