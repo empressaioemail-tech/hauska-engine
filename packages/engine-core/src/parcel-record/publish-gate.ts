@@ -4,11 +4,12 @@
  */
 
 import type { AnyCellState } from "./cell-state.js";
-import { isUnaccounted } from "./cell-state.js";
+import { isEarnedCell, isUnaccounted } from "./cell-state.js";
 import {
   deriveDeclaredAheadRailKeys,
   deriveLiveRailKeys,
 } from "./liveness.js";
+import type { RailCell } from "./load.js";
 import type { ParcelRecordRailKey } from "./rail-keys.js";
 import { PARCEL_RECORD_RAIL_KEYS } from "./rail-keys.js";
 import type { ParcelRecordRow } from "./record-shape.js";
@@ -135,4 +136,74 @@ export function poisonCell(
 
 export function allRailKeys(): readonly ParcelRecordRailKey[] {
   return PARCEL_RECORD_RAIL_KEYS;
+}
+
+/**
+ * Verdict for ONE (county, rail) pair — same shape as PublishGateVerdict
+ * (ok/unaccountedCount/excludedDeclaredAhead/warnings) so a B-READER
+ * allowlist consumer written against one generalizes to the other, but
+ * computed from a single rail's cells rather than a full multi-rail record
+ * set. PARCEL-B-GATE-SCHED (F-01): the whole-county evaluatePublishGate
+ * requires every ParcelRecordRow to carry all 65 rails (assertFullRecordCells),
+ * so a rail-scoped caller cannot construct a valid input without fabricating
+ * the other 64 rails -- which would corrupt deriveLiveRailKeys' cross-record
+ * liveness computation for rails never actually loaded, and would misreport
+ * excludedDeclaredAhead as covering rails this call never touched. Liveness
+ * is naturally decomposable per rail (a rail is "live" iff at least one
+ * record's cell for THAT rail is earned; that definition does not reference
+ * any other rail), so this is a genuine narrowing of the same primitives
+ * (isEarnedCell/isUnaccounted), not a redesign of the gate's semantics.
+ */
+export interface RailGateVerdict {
+  ok: boolean;
+  railKey: ParcelRecordRailKey;
+  cellCount: number;
+  unaccountedCount: number;
+  unaccountedSamples: Array<{ placeKey: string }>;
+  /** Required, same as PublishGateVerdict: [railKey] when the rail has zero earned cells county-wide, else []. */
+  excludedDeclaredAhead: readonly ParcelRecordRailKey[];
+}
+
+export interface RailGateOptions {
+  maxSamples?: number;
+}
+
+export function evaluateRailGate(
+  cells: readonly RailCell[],
+  railKey: ParcelRecordRailKey,
+  options: RailGateOptions = {},
+): RailGateVerdict {
+  const maxSamples = options.maxSamples ?? 20;
+  const live = cells.some((c) => isEarnedCell(c.state));
+
+  if (!live) {
+    return {
+      ok: true,
+      railKey,
+      cellCount: cells.length,
+      unaccountedCount: 0,
+      unaccountedSamples: [],
+      excludedDeclaredAhead: [railKey],
+    };
+  }
+
+  const unaccountedSamples: RailGateVerdict["unaccountedSamples"] = [];
+  let unaccountedCount = 0;
+  for (const cell of cells) {
+    if (isUnaccounted(cell.state)) {
+      unaccountedCount += 1;
+      if (unaccountedSamples.length < maxSamples) {
+        unaccountedSamples.push({ placeKey: cell.placeKey });
+      }
+    }
+  }
+
+  return {
+    ok: unaccountedCount === 0,
+    railKey,
+    cellCount: cells.length,
+    unaccountedCount,
+    unaccountedSamples,
+    excludedDeclaredAhead: [],
+  };
 }
