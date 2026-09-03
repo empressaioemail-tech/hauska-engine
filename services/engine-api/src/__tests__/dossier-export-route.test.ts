@@ -25,6 +25,10 @@ vi.mock("@hauska-engine/engine-core/site-plan", () => ({
         bytes: FAKE_PDF,
         contentType: "application/pdf",
       });
+      const verdictIncluded = !!(opts.content as { verdictLine?: string }).verdictLine;
+      const briefFactCount = (opts.content as { brief?: { sections: Array<{ facts: unknown[] }> } }).brief
+        ? 2
+        : 0;
       const atom = {
         entityType: "parcel-terrain-model",
         atomDid: `pterrain_dossier_${opts.parcelNodeId}`,
@@ -39,6 +43,12 @@ vi.mock("@hauska-engine/engine-core/site-plan", () => ({
             pageCount: 5,
             dossierPageCount: 2,
             sitePlanAppended: true,
+            // P-90 item 7: the stored artifact entry carries the same
+            // verdictIncluded/briefFactCount the real dossier-author.ts
+            // writes (property-instances.ts:407-409) — the download route
+            // reads these to refuse a hollow stored artifact.
+            verdictIncluded,
+            briefFactCount,
           },
         },
       };
@@ -48,9 +58,9 @@ vi.mock("@hauska-engine/engine-core/site-plan", () => ({
         pageCount: 5,
         dossierPageCount: 2,
         sitePlanAppended: true,
-        verdictIncluded: !!(opts.content as { verdictLine?: string }).verdictLine,
+        verdictIncluded,
         briefSectionCount: 1,
-        briefFactCount: 2,
+        briefFactCount,
         chatSummaryIncluded: !!(opts.content as { chatSummary?: unknown }).chatSummary,
         notesIncluded: !!(opts.content as { notes?: string }).notes,
         setbackHonestAbsence: !opts.setback,
@@ -159,7 +169,7 @@ describe("dossier-export routes", () => {
     const refresh = await app.request(`/${parcelNodeId}/dossier-export/refresh`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify(fullBody),
     });
     expect(refresh.status).toBe(201);
 
@@ -174,6 +184,31 @@ describe("dossier-export routes", () => {
     expect(meta.status).toBe(200);
     const metaBody = (await meta.json()) as { artifacts: Record<string, { ref: string }> };
     expect(metaBody.artifacts["pdf-dossier"]!.ref).toContain("memory://");
+  });
+
+  it("GET download: violates then refuses a stored artifact that is present but hollow (P-90 item 7)", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = memoryArtifactStore();
+    const app = buildParcelTerrainRoutes(nullResolver, storage, artifactStore);
+
+    // Violate: refresh with no verdict and no brief facts, so the stored
+    // artifact record is present but honestly records itself as hollow.
+    const refresh = await app.request(`/${parcelNodeId}/dossier-export/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(refresh.status).toBe(201);
+    const refreshBody = (await refresh.json()) as { verdictIncluded: boolean; briefFactCount: number };
+    expect(refreshBody.verdictIncluded).toBe(false);
+    expect(refreshBody.briefFactCount).toBe(0);
+
+    const download = await app.request(`/${parcelNodeId}/dossier-export/download`);
+    expect(download.status).toBe(422);
+    const text = await download.text();
+    expect(text).not.toContain("%PDF");
+    const body = JSON.parse(text) as { error: string };
+    expect(body.error).toBe("pipeline_output_absent");
   });
 
   it("passes the parcel's setback-rule atom through when one is on file (same lookup as site-plan export)", async () => {

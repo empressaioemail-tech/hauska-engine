@@ -137,6 +137,10 @@ export const FLOOD_DRAINAGE_BACKDROP_LINE =
 export interface FloodDrainageDescriptor {
   address?: string;
   countyName?: string;
+  /** Caller-forwarded deep link to the live Smart Site record (P-90 item 5).
+   * Printed verbatim on sheet 1's footer when present; simply omitted (no
+   * chip) when absent — an enhancement link, not a core fact class. */
+  liveViewUrl?: string;
 }
 
 export interface EmitPdfFloodDrainageOptions {
@@ -876,6 +880,7 @@ function drawFdFooter(
   generatedAtIso: string,
   imagery: AerialImageryResult,
   gradientComposited: boolean,
+  liveViewUrl?: string,
 ): void {
   const ruleY = page1FooterRuleYFd();
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
@@ -965,6 +970,17 @@ function drawFdFooter(
       font: F.body,
       color: TOKENS.neutral600,
     });
+    // Live-view deep link (P-90 item 5) — same baseline, left-aligned,
+    // printed only when the caller forwarded one.
+    if (liveViewUrl) {
+      page.drawText(liveViewUrl, {
+        x: MARGIN_X,
+        y: labelY - pt(13),
+        size: TYPE.scaleRatioLine,
+        font: F.body,
+        color: TOKENS.neutral600,
+      });
+    }
   }
 }
 
@@ -1261,6 +1277,7 @@ export async function emitPdfFloodDrainage(
       generatedAt,
       imagery,
       gradientPng !== undefined,
+      descriptor.liveViewUrl,
     );
     drawFinePrint(page, 1, fdFinePrint(study, 1, imagery), F, marks);
   }

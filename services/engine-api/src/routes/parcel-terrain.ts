@@ -150,6 +150,9 @@ const dossierRefreshBody = z.object({
     })
     .optional(),
   notes: z.string().max(4000).optional(),
+  // Live Smart Site deep link (P-90 item 5) — caller-forwarded only, printed
+  // verbatim when present, silently omitted (no chip) when absent.
+  liveViewUrl: z.string().max(500).optional(),
 });
 
 interface ReadableArtifactStore extends TerrainArtifactStore {
@@ -451,6 +454,7 @@ export function buildParcelTerrainRoutes(
           brief: parsed.data.brief,
           chatSummary: parsed.data.chatSummary,
           notes: parsed.data.notes,
+          liveViewUrl: parsed.data.liveViewUrl,
         },
         resolver,
         setback,
@@ -498,6 +502,17 @@ export function buildParcelTerrainRoutes(
         error: "artifact_unavailable",
         message: artifact?.deferredReason ?? "No pdf-dossier artifact for this parcel",
       }, 404);
+    }
+    // P-90 item 7: a stored artifact CAN be present and still hollow (no
+    // verdict, no cited brief facts) — refuse the download instead of
+    // streaming a hollow PDF, the same fail-closed shape MCP's
+    // isStoredDossierArtifactHollow enforces on its own leg.
+    if (artifact.verdictIncluded === false || (artifact.briefFactCount ?? 0) === 0) {
+      return c.json({
+        error: "pipeline_output_absent",
+        message:
+          "Stored X-ray artifact is hollow (missing verdict or brief facts) and cannot be downloaded. Refresh with a resolved brief first.",
+      }, 422);
     }
     const bytes = await artifactStore.get(artifact.ref);
     if (!bytes) {

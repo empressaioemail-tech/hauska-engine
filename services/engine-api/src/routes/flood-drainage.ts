@@ -63,6 +63,9 @@ const refreshBody = z.object({
   address: z.string().max(200).optional(),
   countyName: z.string().max(120).optional(),
   rainfallDepthInches: z.number().positive().max(60).optional(),
+  // Live Smart Site deep link (P-90 item 5) — caller-forwarded only, printed
+  // verbatim when present, silently omitted (no chip) when absent.
+  liveViewUrl: z.string().max(500).optional(),
   // Test/operator seams — same as the sibling terrain/site-plan routes;
   // explicit, never a hidden county-specific fallback.
   bboxOverride: bbox.optional(),
@@ -96,8 +99,12 @@ export function buildFloodDrainageRoutes(
         resolutionMeters: parsed.data.resolutionMeters,
         rainfallDepthInches: parsed.data.rainfallDepthInches,
         descriptor:
-          parsed.data.address || parsed.data.countyName
-            ? { address: parsed.data.address, countyName: parsed.data.countyName }
+          parsed.data.address || parsed.data.countyName || parsed.data.liveViewUrl
+            ? {
+                address: parsed.data.address,
+                countyName: parsed.data.countyName,
+                liveViewUrl: parsed.data.liveViewUrl,
+              }
             : undefined,
       });
       return c.json(
