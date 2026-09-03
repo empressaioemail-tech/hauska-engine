@@ -102,7 +102,7 @@ export async function authorParcelPropertyDossierExport(
       countyName: options.content.countyName ?? composed?.model.summary.countyName,
     },
     composed
-      ? { sitePlan: { model: composed.model, aerial: { fetchImage: options.fetchAerialImage } } }
+      ? { sitePlan: { model: composed.model } }
       : { sitePlanUnavailableReason },
   );
 

@@ -131,7 +131,9 @@ describe("authorParcelPropertyDossierExport", { timeout: 60_000 }, () => {
     });
 
     expect(result.sitePlanAppended).toBe(true);
-    expect(result.pageCount).toBe(result.dossierPageCount + 3);
+    // P-90 item 3: the dossier appends exactly ONE site-plan sheet (the
+    // drawing), not the standalone export's full 3+ sheet set.
+    expect(result.pageCount).toBe(result.dossierPageCount + 1);
     expect(result.verdictIncluded).toBe(true);
     expect(result.briefFactCount).toBe(1);
     expect(result.chatSummaryIncluded).toBe(true);

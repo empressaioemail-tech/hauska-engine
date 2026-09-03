@@ -297,6 +297,11 @@ export interface EmitPdfSitePlanOptions {
   /** Renumber printed sheet labels for a host document (dossier append).
    * Default: standalone `{ startAt: 1, total: TOTAL_SHEETS }`. */
   numbering?: SheetNumbering;
+  /** "drawing-only" emits ONLY the page-1 SITE PLAN drawing sheet — no
+   * SUMMARY pages, no AERIAL page, no aerial fetch. Used by the property
+   * dossier (P-90 item 3: exactly one appended sheet). Default "all" keeps
+   * the standalone pdf-site-plan export's full 3+ sheet set unchanged. */
+  sheets?: "all" | "drawing-only";
 }
 
 /** §14: keyed mark registry — a duplicate (page, kind, key) is never drawn twice. */
@@ -2500,12 +2505,18 @@ function drawAerialPage(
     tolFeet != null
       ? { label: "REGISTER", value: `±${tolFeet.toFixed(1)} FT`, color: ACCENT_TYPE }
       : { label: "REGISTER", chip: CHIP_UNAVAILABLE };
+  // P-90 item 4: CAPTURED was a permanent, unconditional CHIP_UNAVAILABLE
+  // stub — never wired to any real ESRI capture-date field, so it fired on
+  // every single aerial sheet regardless of data availability (unlike
+  // REGISTER above, which computes a real value or honestly chips). ESRI
+  // World Imagery does not expose a reliable per-tile capture date through
+  // this integration, so the stat is dropped rather than fabricated.
   drawSheetHeader(
     page,
     model,
     F,
     sitePlanSheetEyebrow("AERIAL", aerialLabel.no, aerialLabel.total),
-    [{ label: "IMAGERY", value: "ESRI" }, { label: "CAPTURED", chip: CHIP_UNAVAILABLE }, registerStat],
+    [{ label: "IMAGERY", value: "ESRI" }, registerStat],
     null,
   );
 
@@ -2651,6 +2662,11 @@ export async function emitPdfSitePlan(
       ? numbering.startAt + flowPlan.segmentTableSheet
       : numbering.startAt + 1;
 
+  // "drawing-only" (P-90 item 3): the dossier append wants exactly one
+  // sheet. No aerial fetch, no SUMMARY/AERIAL pages — page 1 still prints
+  // whatever numbering.total the host document gives it.
+  const drawingOnly = options.sheets === "drawing-only";
+
   // AERIAL (sheet 3) imagery fetch — started first so the bounded network
   // wait (default 8s cap) overlaps the vector rendering of sheets 1–2.
   // §21 footer stack, bottom up: fine print (6 lines) → legend band (space-3
@@ -2663,10 +2679,12 @@ export async function emitPdfSitePlan(
   const aerialRect = aerialImageRect(headerRuleY(), aerialFooterBandTop);
   const mercBbox = computeAerialMercatorBbox(model.ringLocal, model.bboxWgs84, aerialRect.width / aerialRect.height);
   const aerialUrl = buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox));
-  const aerialPromise = fetchAerialImagery(aerialUrl, {
-    fetchImage: options.aerial?.fetchImage,
-    timeoutMs: options.aerial?.timeoutMs,
-  });
+  const aerialPromise = drawingOnly
+    ? null
+    : fetchAerialImagery(aerialUrl, {
+        fetchImage: options.aerial?.fetchImage,
+        timeoutMs: options.aerial?.timeoutMs,
+      });
 
   // PAGE 1 — drawing.
   const page1 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
@@ -2694,66 +2712,76 @@ export async function emitPdfSitePlan(
   // sheets (overflow rule): every sheet repeats the standard header, sections
   // flow inside the content frame, tables split only between rows with the
   // header row repeated and the section heading suffixed "(CONTINUED)".
-  for (let j = 0; j < summaryCount; j++) {
-    const localPage = 2 + j;
-    const printedNo = numbering.startAt + 1 + j;
-    const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    let cursor = drawSheetHeader(page, model, F, sitePlanSheetEyebrow("SUMMARY", printedNo, total), null, [
-      `SP-${model.parcelNodeId.replace(/:/g, "-")}`,
-      model.parcelNodeId,
-    ]);
-    for (const op of flowPlan.sheets[j]!.ops) {
-      cursor = drawSummaryFlowOp(page, localPage, op, cursor, layout, F, marks, rhythm, numbering);
+  // Skipped entirely in drawing-only mode (P-90 item 3).
+  if (!drawingOnly) {
+    for (let j = 0; j < summaryCount; j++) {
+      const localPage = 2 + j;
+      const printedNo = numbering.startAt + 1 + j;
+      const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+      let cursor = drawSheetHeader(page, model, F, sitePlanSheetEyebrow("SUMMARY", printedNo, total), null, [
+        `SP-${model.parcelNodeId.replace(/:/g, "-")}`,
+        model.parcelNodeId,
+      ]);
+      for (const op of flowPlan.sheets[j]!.ops) {
+        cursor = drawSummaryFlowOp(page, localPage, op, cursor, layout, F, marks, rhythm, numbering);
+      }
+      drawFinePrint(
+        page,
+        localPage,
+        buildFinePrint(model, 2, { movedSegs, numbering, label: { no: printedNo, total }, segmentTableSheetNo }),
+        F,
+        marks,
+      );
     }
-    drawFinePrint(
-      page,
-      localPage,
-      buildFinePrint(model, 2, { movedSegs, numbering, label: { no: printedNo, total }, segmentTableSheetNo }),
-      F,
-      marks,
-    );
   }
 
   // PAGE 3 — aerial context. The fetch is bounded and never throws; §20
   // (v1.2) embeds the orthophoto in NATURAL COLOR — no duotone tint, no
   // processing pass; legibility over full colour comes from the paper
   // outlines behind ring/type. A decode failure degrades to the honest §17
-  // path, never a failed export.
-  let imagery = await aerialPromise;
-  let aerialPng: PDFImage | undefined;
-  if (imagery.ok) {
-    try {
-      aerialPng = await doc.embedPng(imagery.bytes);
-    } catch (error) {
-      imagery = {
-        ok: false,
-        reason: `imagery decode failed: ${error instanceof Error ? error.message : String(error)}`,
-        url: imagery.url,
-      };
+  // path, never a failed export. Skipped entirely in drawing-only mode.
+  let imagery: AerialImageryResult | undefined;
+  if (!drawingOnly) {
+    imagery = await aerialPromise!;
+    let aerialPng: PDFImage | undefined;
+    if (imagery.ok) {
+      try {
+        aerialPng = await doc.embedPng(imagery.bytes);
+      } catch (error) {
+        imagery = {
+          ok: false,
+          reason: `imagery decode failed: ${error instanceof Error ? error.message : String(error)}`,
+          url: imagery.url,
+        };
+      }
     }
+    drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks, rhythm, numbering, aerialLocalPage, {
+      no: aerialNo,
+      total,
+    });
   }
-  drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks, rhythm, numbering, aerialLocalPage, {
-    no: aerialNo,
-    total,
-  });
 
   const bytes = await doc.save({ useObjectStreams: false });
   return {
     bytes,
     pageCount: doc.getPageCount(),
     fontNote: FONT_NOTE,
-    aerial: imagery.ok
-      ? { imageryEmbedded: true, sourceUrl: imagery.url }
-      : { imageryEmbedded: false, sourceUrl: imagery.url, unavailableReason: imagery.reason },
+    aerial: drawingOnly
+      ? { imageryEmbedded: false, sourceUrl: "", unavailableReason: "aerial sheet not included (drawing-only append)" }
+      : imagery!.ok
+        ? { imageryEmbedded: true, sourceUrl: imagery!.url }
+        : { imageryEmbedded: false, sourceUrl: imagery!.url, unavailableReason: imagery!.reason },
     marks: marks.marks,
     rhythm: rhythm.rows,
     page1Frame,
-    summarySheets: flowPlan.sheets.map((_, j) => ({
-      localPage: 2 + j,
-      printedNo: numbering.startAt + 1 + j,
-      frameTopY: flowPlan.frameTopY,
-      frameBottomY: flowPlan.frameBottomY,
-    })),
+    summarySheets: drawingOnly
+      ? []
+      : flowPlan.sheets.map((_, j) => ({
+          localPage: 2 + j,
+          printedNo: numbering.startAt + 1 + j,
+          frameTopY: flowPlan.frameTopY,
+          frameBottomY: flowPlan.frameBottomY,
+        })),
   };
 }
 

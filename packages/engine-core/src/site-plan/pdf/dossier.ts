@@ -18,7 +18,6 @@ import {
   PAGE_HEIGHT,
   PAGE_WIDTH,
   cityFromAddress,
-  countSitePlanSheets,
   drawChipOnLineBox,
   drawFinePrint,
   drawHairlineRule,
@@ -30,7 +29,6 @@ import {
   streetOnly,
   trackedWidth,
   wrapTextToWidth,
-  type EmitPdfSitePlanOptions,
   type Fonts,
   type PdfSitePlanResult,
   type SheetMark,
@@ -53,12 +51,12 @@ import { SPACE, STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js"
  *   3. AI RESEARCH SUMMARY (when present) — user-saved AI content, visually
  *      distinct via a muted rule + suppressed label; no new colors.
  *   4. OWNER NOTES (when present) — plain wrapped text.
- *   5. APPENDED SITE-PLAN SHEETS — the SAME site-plan sheet set
- *      `emitPdfSitePlan` produces (3+ sheets; overflow pagination may insert
- *      summary continuation sheets, sized via `countSitePlanSheets`),
- *      renumbered "Sheet N of TOTAL" across the whole document via the
- *      render.ts numbering seam. A missing site-plan capability NEVER fails
- *      the export — the dossier pages still emit with an honest note.
+ *   5. APPENDED SITE-PLAN SHEET — exactly ONE sheet (the drawing only; P-90
+ *      item 3), via `emitPdfSitePlan`'s `sheets: "drawing-only"` mode — no
+ *      SUMMARY or AERIAL pages, no aerial fetch. Renumbered "Sheet N of
+ *      TOTAL" across the whole document via the render.ts numbering seam.
+ *      A missing site-plan capability NEVER fails the export — the dossier
+ *      pages still emit with an honest note.
  *
  * All user-supplied text is sanitized server-side (control characters
  * stripped, lengths capped, glyphs outside the embedded Barlow coverage
@@ -90,6 +88,10 @@ export interface DossierContentInput {
   brief?: { sections: DossierBriefSectionInput[] };
   chatSummary?: { summary: string; savedAt: string; disclaimer?: string };
   notes?: string;
+  /** Caller-forwarded deep link to the live Smart Site record (P-90 item 5).
+   * Printed verbatim on the cover when present; simply omitted (no chip)
+   * when absent — an enhancement link, not a core fact class. */
+  liveViewUrl?: string;
 }
 
 /** Server-side caps (the route's zod schema caps requests earlier; these hold
@@ -108,6 +110,7 @@ export const DOSSIER_CAPS = {
   chatSavedAt: 64,
   chatDisclaimer: 600,
   notes: 4000,
+  liveViewUrl: 500,
   maxSections: 16,
   maxFactsPerSection: 60,
 } as const;
@@ -173,6 +176,7 @@ export interface DossierContent {
   sections: Array<{ id: string; title: string; facts: Array<Required<Pick<DossierBriefFactInput, "label">> & Omit<DossierBriefFactInput, "label">> }>;
   chatSummary?: { summary: string; savedAt: string; disclaimer?: string };
   notes?: string;
+  liveViewUrl?: string;
 }
 
 export function sanitizeDossierContent(input: DossierContentInput): DossierContent {
@@ -203,6 +207,7 @@ export function sanitizeDossierContent(input: DossierContentInput): DossierConte
     address: sanitizeDossierText(input.address, C.address),
     countyName: sanitizeDossierText(input.countyName, C.countyName),
     verdictLine: sanitizeDossierText(input.verdictLine, C.verdictLine),
+    liveViewUrl: sanitizeDossierText(input.liveViewUrl, C.liveViewUrl),
     sections,
     chatSummary:
       input.chatSummary && chatSummaryText
@@ -221,9 +226,11 @@ export function sanitizeDossierContent(input: DossierContentInput): DossierConte
 // ─────────────────────────────────────────────────────────────────────────
 export interface EmitPdfDossierOptions {
   /** The parcel's site-plan model (same composition path as the site-plan
-   * export). When present, the 3 site-plan sheets are appended and the whole
-   * document renumbers. */
-  sitePlan?: { model: SitePlanModel; aerial?: EmitPdfSitePlanOptions["aerial"] };
+   * export). When present, ONE site-plan sheet (the drawing) is appended and
+   * the whole document renumbers (P-90 item 3) — no aerial fetch, so there
+   * is no aerial option here; see EmitPdfSitePlanOptions for the standalone
+   * export's own aerial seam. */
+  sitePlan?: { model: SitePlanModel };
   /** Honest reason the site plan could not be authored (rendered on the
    * cover fine print). Ignored when `sitePlan` is present. */
   sitePlanUnavailableReason?: string;
@@ -625,17 +632,18 @@ export async function emitPdfDossier(
     plannedPages.push(...planTextPages("notes", notesLines));
   }
   const dossierPageCount = plannedPages.length;
-  // Overflow pagination (2026-07-29): the site plan's sheet count is model-
-  // specific (summary continuation sheets may be inserted) — measure it,
-  // never assume TOTAL_SHEETS.
-  const sitePlanSheets = options.sitePlan ? await countSitePlanSheets(options.sitePlan.model) : 0;
+  // P-90 item 3: the dossier appends exactly ONE site-plan sheet (the
+  // drawing) — no measurement pass needed, the count is always 1. The
+  // standalone pdf-site-plan export (countSitePlanSheets, still 3+ sheets
+  // with overflow) is unaffected.
+  const sitePlanSheets = options.sitePlan ? 1 : 0;
   const total = dossierPageCount + sitePlanSheets;
 
   // Kick off the appended site plan (renumbered) now that totals are known.
   const sitePlanRender: Promise<PdfSitePlanResult> | null = options.sitePlan
     ? emitPdfSitePlan(options.sitePlan.model, {
-        aerial: options.sitePlan.aerial,
         numbering: { startAt: dossierPageCount + 1, total },
+        sheets: "drawing-only",
       })
     : null;
 
@@ -768,9 +776,12 @@ export async function emitPdfDossier(
         pageNo,
         options.sitePlan
           ? {
-              label: "Site-plan sheets",
-              value: `sheets ${dossierPageCount + 1}–${total} appended`,
-              grey: "drawing · summary · aerial context",
+              // P-90 item 3: exactly one sheet (the drawing) is appended —
+              // the label, value, and qualifier all say so honestly, never
+              // the standalone export's full drawing/summary/aerial set.
+              label: "Site-plan sheet",
+              value: `sheet ${total} appended`,
+              grey: "drawing only",
             }
           : {
               label: "Site-plan sheets",
@@ -793,6 +804,20 @@ export async function emitPdfDossier(
         color: TOKENS.neutral600,
       });
       marks.once(pageNo, "generated-stamp", "stamp");
+
+      // Live-view deep link (P-90 item 5) — same fixed baseline as the
+      // generated stamp, left-aligned, printed only when the caller forwarded
+      // one. No chip on absence: an enhancement link, not a core fact class.
+      if (content.liveViewUrl) {
+        page.drawText(content.liveViewUrl, {
+          x: MARGIN_X,
+          y: contentFloorY() + pt(4),
+          size: TYPE.scaleRatioLine,
+          font: F.body,
+          color: TOKENS.neutral600,
+        });
+        marks.once(pageNo, "live-view-url", "link");
+      }
     }
 
     if (planned.kind === "brief") {
