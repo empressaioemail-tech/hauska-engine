@@ -338,7 +338,15 @@ export type TerrainExportFormat =
    * The companion json artifact caches the study payload the PE dock
    * visualizes — same run, never a second computation. */
   | "pdf-flood-drainage"
-  | "json-flood-drainage-study";
+  | "json-flood-drainage-study"
+  /** Feasibility Study report (P-32 wave 1, 2026-09-04): composed multi-
+   * section document reusing the SAME SitePlanModel and Sheet-Standard
+   * primitives as pdf-dossier, plus direct atom reads (zoning, setback,
+   * envelope, flood, CAD roll, land use, owner, special district, wells,
+   * pipelines, footprint) the MCP atom-chain cannot reach. The json artifact
+   * caches the composed FeasibilityModel so a re-render never re-queries. */
+  | "pdf-feasibility"
+  | "json-feasibility-model";
 
 /**
  * Engine overlay on published `@empressaio/atom-contract/property`
@@ -422,6 +430,15 @@ export interface ParcelTerrainModelAtomInstance extends EnginePropertyPersistenc
          * water-gradient raster shipped in the study payload / composited
          * onto sheet 1. False = degenerate field, honestly absent. */
         gradientIncluded?: boolean;
+        /** pdf-feasibility / json-feasibility-model only: composition record.
+         * Mirrors pdf-dossier's honesty-flag shape — a missing capability
+         * NEVER fails the report, it ships the section honest-absent. */
+        feasibilitySectionCount?: number;
+        feasibilityOpenItemCount?: number;
+        feasibilitySupersededRunNoted?: boolean;
+        narrativeGrounded?: boolean;
+        narrativeIsDeterministicSkeleton?: boolean;
+        whoServesMeasured?: boolean;
       }
     >
   >;

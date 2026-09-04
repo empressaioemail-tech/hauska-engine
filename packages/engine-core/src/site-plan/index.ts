@@ -85,6 +85,31 @@ export {
 } from "./dossier-author.js";
 
 export {
+  authorParcelFeasibilityExport,
+  type AuthorParcelFeasibilityExportOptions,
+  type AuthorParcelFeasibilityExportResult,
+} from "./feasibility-author.js";
+
+export {
+  composeFeasibilityModel,
+  present as presentFeasibilityFact,
+  absent as absentFeasibilityFact,
+  type ComposeFeasibilityModelOptions,
+  type FeasibilityFactState,
+  type FeasibilityModel,
+  type WhoServesResolver,
+} from "./feasibility-model.js";
+
+export {
+  emitPdfFeasibility,
+  deterministicNarrative,
+  deterministicVerdictHeadline,
+  feasibilityModelToBriefSections,
+  type EmitPdfFeasibilityOptions,
+  type PdfFeasibilityResult,
+} from "./pdf/feasibility.js";
+
+export {
   DEFAULT_DRAINAGE_RESOLUTION_METERS,
   DEFAULT_RAINFALL_CITATION,
   DEFAULT_RAINFALL_DEPTH_INCHES,

@@ -263,20 +263,25 @@ export interface PdfDossierResult {
 // Page plan (measure pass): totals must be known before any fine print or
 // "SHEET N OF TOTAL" eyebrow is drawn, so pagination is computed first with
 // the same wrap + line-box math the draw pass uses.
+//
+// EXPORTED (P-32, 2026-09-04) for the Feasibility assembler (pdf/feasibility.ts),
+// a sibling document that reuses the SAME grouped-fact-page rendering rather
+// than re-deriving it — same reuse discipline as render.ts's own shared
+// primitives block. Behavior here is unchanged; only visibility widened.
 // ─────────────────────────────────────────────────────────────────────────
-interface PlannedFactRow {
+export interface PlannedFactRow {
   label: string;
   valueLines: string[];
   greyLines: string[];
   chip: boolean;
 }
 
-interface PlannedGroup {
+export interface PlannedGroup {
   heading: string;
   rows: PlannedFactRow[];
 }
 
-type PlannedPage =
+export type PlannedPage =
   | { kind: "cover" }
   | { kind: "brief"; groups: PlannedGroup[] }
   | { kind: "chat"; lines: string[]; first: boolean }
@@ -286,19 +291,19 @@ const LABEL_COL = pt(200);
 /** Fine-print reserve: 9 wrapped lines + a space-4 gap. Dossier fine print
  * can carry a user disclaimer (≤600 chars) on top of the standing lines, so
  * the reserve is deeper than the site plan's 6-line band. */
-function contentFloorY(): number {
+export function contentFloorY(): number {
   return MARGIN_BOTTOM + LB.finePrint.lineBoxHeight * 9 + pt(SPACE.s4);
 }
 
-function sectionHeadingCost(): number {
+export function sectionHeadingCost(): number {
   return pt(SPACE.s6) + LB.groupHeading.lineBoxHeight + pt(SPACE.s2);
 }
 
-function rowCost(lines: number): number {
+export function rowCost(lines: number): number {
   return pt(SPACE.s2) + lines * LB.kvRow.lineBoxHeight + pt(SPACE.s2);
 }
 
-function planFactRow(fact: DossierContent["sections"][number]["facts"][number], F: Fonts): PlannedFactRow {
+export function planFactRow(fact: DossierContent["sections"][number]["facts"][number], F: Fonts): PlannedFactRow {
   const right = PAGE_WIDTH - MARGIN_X;
   const valueX = MARGIN_X + LABEL_COL;
   const greyText = [fact.source, fact.vintage].filter((p): p is string => !!p).join(" · ");
@@ -322,7 +327,7 @@ function planFactRow(fact: DossierContent["sections"][number]["facts"][number], 
   return { label: fact.label, valueLines, greyLines, chip: false };
 }
 
-function planBriefPages(content: DossierContent, F: Fonts): PlannedPage[] {
+export function planBriefPages(content: DossierContent, F: Fonts): PlannedPage[] {
   if (content.sections.length === 0) return [];
   const pages: PlannedPage[] = [];
   const floor = contentFloorY();
@@ -367,7 +372,7 @@ function planBriefPages(content: DossierContent, F: Fonts): PlannedPage[] {
 
 /** Wrap a multi-paragraph user text into drawable lines (blank line between
  * paragraphs preserved as an empty string). */
-function wrapUserText(text: string, F: Fonts): string[] {
+export function wrapUserText(text: string, F: Fonts): string[] {
   const width = PAGE_WIDTH - MARGIN_X * 2;
   const out: string[] = [];
   for (const para of text.split("\n")) {
@@ -381,7 +386,7 @@ function wrapUserText(text: string, F: Fonts): string[] {
   return out;
 }
 
-function planTextPages(kind: "chat" | "notes", lines: string[]): PlannedPage[] {
+export function planTextPages(kind: "chat" | "notes", lines: string[]): PlannedPage[] {
   const floor = contentFloorY();
   // Heading + (for chat) AI label + muted rule sit above the text block.
   const chromeCost = sectionHeadingCost() + (kind === "chat" ? LB.subline.lineBoxHeight + pt(SPACE.s3) : 0);
@@ -408,7 +413,7 @@ function planTextPages(kind: "chat" | "notes", lines: string[]): PlannedPage[] {
 const INK = TOKENS.text;
 const ACCENT = TOKENS.accent;
 
-function drawDossierHeader(
+export function drawDossierHeader(
   page: PDFPage,
   content: DossierContent,
   F: Fonts,
@@ -518,7 +523,7 @@ function drawKvRow(
   return placed.nextRuleY;
 }
 
-function drawBriefFactRow(
+export function drawBriefFactRow(
   page: PDFPage,
   pageNo: number,
   row: PlannedFactRow,

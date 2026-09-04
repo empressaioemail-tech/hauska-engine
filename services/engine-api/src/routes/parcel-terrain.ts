@@ -16,6 +16,7 @@ import {
   type TerrainArtifactStore,
 } from "@hauska-engine/engine-core/parcel-terrain";
 import {
+  authorParcelFeasibilityExport,
   authorParcelPropertyDossierExport,
   authorParcelSitePlanExport,
 } from "@hauska-engine/engine-core/site-plan";
@@ -153,6 +154,39 @@ const dossierRefreshBody = z.object({
   // Live Smart Site deep link (P-90 item 5) — caller-forwarded only, printed
   // verbatim when present, silently omitted (no chip) when absent.
   liveViewUrl: z.string().max(500).optional(),
+});
+
+const feasibilityRefreshBody = z.object({
+  // Same geometry seams as dossier-export/refresh — one composition path.
+  bboxOverride: bbox.optional(),
+  ringOverride: z.array(z.tuple([z.number(), z.number()])).optional(),
+  resolutionMeters: z.number().positive().optional(),
+  contourIntervalMeters: z.number().positive().optional(),
+  frontEdgeIndex: z.number().int().nonnegative().optional(),
+  skirtDepthFeet: z.number().positive().optional(),
+  streetAnchors: z
+    .array(
+      z.object({
+        name: z.string(),
+        points: z.array(z.tuple([z.number(), z.number()])).min(2),
+        sourceRef: z.string().optional(),
+      }),
+    )
+    .optional(),
+  address: z.string().max(200).optional(),
+  countyName: z.string().max(120).optional(),
+  centroidOverride: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
+  floodStudyAvailable: z.boolean().optional(),
+  liveViewUrl: z.string().max(500).optional(),
+  // Caller-supplied, already-generated narrative (item 7) — the engine never
+  // calls an LLM itself. Absent = the deterministic skeleton renders.
+  narrativeOverride: z
+    .object({
+      text: z.string().max(20000),
+      generatedBy: z.string().max(120),
+      generatedAt: z.string().max(64),
+    })
+    .optional(),
 });
 
 interface ReadableArtifactStore extends TerrainArtifactStore {
@@ -524,6 +558,88 @@ export function buildParcelTerrainRoutes(
     const safeNodeId = c.req.param("parcelNodeId").replace(/[^a-zA-Z0-9._-]/g, "_");
     c.header("Content-Type", "application/pdf");
     c.header("Content-Disposition", `attachment; filename="${safeNodeId}.pdf-dossier.pdf"`);
+    return c.body(Buffer.from(bytes));
+  });
+
+  // P-32 wave 1 — Feasibility Study. Same shape as dossier-export above;
+  // engine-side atom composition (feasibility-model.ts) replaces the
+  // caller-supplied brief. No PE (hauska-map) wiring in this wave — this
+  // route exists so the report is genuinely invokable and live-verifiable
+  // end to end within this repo; the PE gating leg is wave 2.
+  app.post("/:parcelNodeId/feasibility-export/refresh", async (c) => {
+    const parsed = feasibilityRefreshBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: "invalid_request", details: parsed.error.flatten() }, 400);
+    const parcelNodeId = c.req.param("parcelNodeId");
+    const setbackCandidate = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
+      (candidate) => candidate.entityType === "setback-rule",
+    );
+    const setback =
+      setbackCandidate && setbackCandidate.entityType === "setback-rule" ? setbackCandidate : undefined;
+    try {
+      const result = await authorParcelFeasibilityExport({
+        parcelNodeId,
+        bboxOverride: parsed.data.bboxOverride,
+        ringOverride: parsed.data.ringOverride,
+        resolutionMeters: parsed.data.resolutionMeters,
+        contourIntervalMeters: parsed.data.contourIntervalMeters,
+        frontEdgeIndex: parsed.data.frontEdgeIndex,
+        skirtDepthFeet: parsed.data.skirtDepthFeet,
+        streetAnchors: parsed.data.streetAnchors,
+        descriptor: { address: parsed.data.address, countyName: parsed.data.countyName },
+        centroidOverride: parsed.data.centroidOverride,
+        floodStudyAvailable: parsed.data.floodStudyAvailable,
+        liveViewUrl: parsed.data.liveViewUrl,
+        narrativeOverride: parsed.data.narrativeOverride,
+        resolver,
+        setback,
+        storage,
+        artifactStore,
+      });
+      return c.json({
+        atom: result.atom,
+        artifacts: { "pdf-feasibility": result.atom.artifacts["pdf-feasibility"] },
+        pageCount: result.pageCount,
+        feasibilityPageCount: result.feasibilityPageCount,
+        sitePlanAppended: result.sitePlanAppended,
+        sitePlanUnavailableReason: result.sitePlanUnavailableReason,
+        sectionCount: result.sectionCount,
+        openItemCount: result.openItemCount,
+        narrativeIsDeterministicSkeleton: result.narrativeIsDeterministicSkeleton,
+      }, 201);
+    } catch (error) {
+      return c.json({
+        error: "feasibility_export_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }, 422);
+    }
+  });
+  app.get("/:parcelNodeId/feasibility-export", async (c) => {
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+      .find((candidate) => candidate.entityType === "parcel-terrain-model");
+    if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
+    return c.json({ atom, artifacts: { "pdf-feasibility": atom.artifacts["pdf-feasibility"] } });
+  });
+  app.get("/:parcelNodeId/feasibility-export/download", async (c) => {
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+      .find((candidate) => candidate.entityType === "parcel-terrain-model");
+    if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
+    const artifact = atom.artifacts["pdf-feasibility"];
+    if (!artifact || artifact.deferred) {
+      return c.json({
+        error: "artifact_unavailable",
+        message: artifact?.deferredReason ?? "No pdf-feasibility artifact for this parcel",
+      }, 404);
+    }
+    const bytes = await artifactStore.get(artifact.ref);
+    if (!bytes) {
+      return c.json({
+        error: "artifact_evicted",
+        message: "Artifact bytes are no longer on this instance; call feasibility-export/refresh again",
+      }, 410);
+    }
+    const safeNodeId = c.req.param("parcelNodeId").replace(/[^a-zA-Z0-9._-]/g, "_");
+    c.header("Content-Type", "application/pdf");
+    c.header("Content-Disposition", `attachment; filename="${safeNodeId}.pdf-feasibility.pdf"`);
     return c.body(Buffer.from(bytes));
   });
 
