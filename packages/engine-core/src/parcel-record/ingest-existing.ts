@@ -28,7 +28,7 @@ export interface CadPropertyRow {
   situs_city: string | null;
   situs_zip: string | null;
   legal_description: string | null;
-  exemption_codes: string | null;
+  exemption_codes: string | readonly string[] | null;
   land_value: number | null;
   improvement_value: number | null;
   market_value: number | null;
@@ -48,13 +48,36 @@ export interface AtomPresenceRow {
 const CAD_SOURCE = "cad_property" as const;
 const ATOM_SOURCE = "hauska_mcp.atoms";
 
+/**
+ * True if v carries real text — a non-blank string, or (cad_property.exemption_codes
+ * is a real Postgres text[]; live-sampled 2026-09-04, ~18% of rows) an array holding
+ * at least one non-blank string element.
+ */
 function hasText(v: unknown): boolean {
+  if (Array.isArray(v)) return v.some((el) => typeof el === "string" && el.trim().length > 0);
   return typeof v === "string" && v.trim().length > 0;
 }
 
-/** Null or blank string. An unexpected type (e.g. text[] exemption_codes) is not a CAD null. */
+/**
+ * Null or blank string, or an array with no non-blank string element (an empty
+ * text[] or one holding only blanks). The array case used to fall through both
+ * this and hasText — neither a value nor a CAD null — leaving the cell stuck
+ * unaccounted forever regardless of what the CAD roll actually held.
+ */
 function isCadNullText(v: unknown): boolean {
+  if (Array.isArray(v)) return !v.some((el) => typeof el === "string" && el.trim().length > 0);
   return v == null || (typeof v === "string" && v.trim().length === 0);
+}
+
+/** Comma-joined, trimmed, blank-filtered — same array a text[] column hands back. */
+function normalizeCadText(raw: unknown): string {
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((el): el is string => typeof el === "string" && el.trim().length > 0)
+      .map((el) => el.trim())
+      .join(",");
+  }
+  return (raw as string).trim();
 }
 
 function isCadNullNumber(v: unknown): boolean {
@@ -133,7 +156,7 @@ function applyCadScalar(
     moved += 1;
   };
   const stampText = (key: keyof typeof c, raw: unknown) => {
-    if (hasText(raw)) stampValue(key, (raw as string).trim());
+    if (hasText(raw)) stampValue(key, normalizeCadText(raw));
     else if (isCadNullText(raw)) stampAbsent(key);
   };
   const stampNumber = (key: keyof typeof c, raw: unknown) => {
@@ -152,6 +175,9 @@ function applyCadScalar(
     stampValue("landUseSource", "cad-roll");
   } else if (isCadNullText(cad.property_use_code)) {
     stampAbsent("landUseCode");
+    // landUseSource describes landUseCode's provenance; a verified-absent code
+    // has a verified-absent source too, not an unresolved one.
+    stampAbsent("landUseSource");
   }
   stampNumber("landValue", cad.land_value);
   stampNumber("improvementValue", cad.improvement_value);
@@ -167,6 +193,9 @@ function applyCadScalar(
   }
   if (isCadNullNumber(cad.land_acres)) {
     stampAbsent("acreageAcres");
+    // acreageMethod describes acreageAcres's provenance; same reasoning as
+    // landUseSource above.
+    stampAbsent("acreageMethod");
   } else if (cad.land_acres != null) {
     stampValue("acreageAcres", cad.land_acres);
     stampValue("acreageMethod", "cad_property.land_acres");

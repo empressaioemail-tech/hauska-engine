@@ -619,7 +619,7 @@ describe("ingest existing CAD", () => {
     expect(typeof mod.ingestCadOntoRecords).toBe("function");
   });
 
-  it("unexpected exemption_codes type stays unaccounted (not a CAD null)", () => {
+  it("exemption_codes text[] (the real cad_property shape) becomes a joined value", () => {
     const rec = instantiateParcelRecord({
       countyFips: "48021",
       propId: "1",
@@ -631,7 +631,7 @@ describe("ingest existing CAD", () => {
         [
           "1",
           mclennanNullCad({
-            exemption_codes: ["HS"] as unknown as string,
+            exemption_codes: ["HS", "OV65"],
             assessed_value: 90_000,
             living_area_sqft: 1200,
             year_built: 1980,
@@ -641,7 +641,51 @@ describe("ingest existing CAD", () => {
       ]),
       "2025",
     );
-    expect(rec.cells.exemptionCodes.kind).toBe("unaccounted");
+    expect(rec.cells.exemptionCodes).toMatchObject({ kind: "value", value: "HS,OV65" });
     expect(rec.cells.assessedValue).toMatchObject({ kind: "value", value: 90_000 });
+  });
+
+  it("exemption_codes empty text[] behaves as a CAD null, not unaccounted", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "1",
+      incorporated: true,
+    });
+    ingestCadOntoRecords(
+      [rec],
+      new Map([["1", mclennanNullCad({ exemption_codes: [] })]]),
+      "2025",
+    );
+    expect(rec.cells.exemptionCodes.kind).toBe("absent-verified");
+  });
+
+  it("landUseSource resolves to absent-verified alongside a null property_use_code", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "1",
+      incorporated: true,
+    });
+    ingestCadOntoRecords(
+      [rec],
+      new Map([["1", mclennanNullCad({ property_use_code: null })]]),
+      "2025",
+    );
+    expect(rec.cells.landUseCode.kind).toBe("absent-verified");
+    expect(rec.cells.landUseSource.kind).toBe("absent-verified");
+  });
+
+  it("acreageMethod resolves to absent-verified alongside a null land_acres", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48021",
+      propId: "1",
+      incorporated: true,
+    });
+    ingestCadOntoRecords(
+      [rec],
+      new Map([["1", mclennanNullCad({ land_acres: null })]]),
+      "2025",
+    );
+    expect(rec.cells.acreageAcres.kind).toBe("absent-verified");
+    expect(rec.cells.acreageMethod.kind).toBe("absent-verified");
   });
 });
