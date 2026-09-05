@@ -26,9 +26,22 @@ export type CadNullVerifiedBasis = {
   vintage: string;
 };
 
+/**
+ * Basis recorded when no cad_property row was observed for this propId in
+ * any tax year the ingest query scanned for that county — a confirmed join
+ * miss, not a matched row with a null field. No taxYear: there is no row to
+ * attribute one to. See _decisions/2026-09-05_cad_join_miss_becomes_absent_verified.md.
+ */
+export type CadJoinMissBasis = {
+  source: "cad_property";
+  countyFips: string;
+  propId: string;
+  vintage: string;
+};
+
 export type ScalarAbsentVerifiedCell = {
   kind: "absent-verified";
-  basis: string | CadNullVerifiedBasis;
+  basis: string | CadNullVerifiedBasis | CadJoinMissBasis;
 };
 
 export type ScalarNotApplicableCell = {

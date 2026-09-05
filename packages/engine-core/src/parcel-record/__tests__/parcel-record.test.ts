@@ -470,7 +470,14 @@ describe("ingest existing CAD", () => {
     expect(rec.cells.marketValue).toMatchObject({ kind: "value", value: 130_000 });
   });
 
-  it("(b) join miss stays unaccounted even when a value exists under a different key", () => {
+  it("(b) join miss becomes absent-verified with a join-miss basis, and never leaks a value from a different key", () => {
+    // Reversed 2026-09-05: a genuine join miss now earns absent-verified
+    // instead of staying unaccounted forever. See
+    // _decisions/2026-09-05_cad_join_miss_becomes_absent_verified.md. The
+    // invariant this falsifier still protects: a value that exists under a
+    // DIFFERENT key must never leak onto this record — it must get the
+    // join-miss basis (no taxYear), not the other key's matched-row value
+    // or its taxYear.
     const rec = instantiateParcelRecord({
       countyFips: "48491",
       propId: "R123456",
@@ -485,11 +492,21 @@ describe("ingest existing CAD", () => {
       land_acres: 0.3,
     });
     ingestCadOntoRecords([rec], new Map([["123456", numericCad]]), "2025");
-    expect(rec.cells.improvementValue.kind).toBe("unaccounted");
-    expect(rec.cells.livingAreaSqft.kind).toBe("unaccounted");
-    expect(rec.cells.assessedValue.kind).toBe("unaccounted");
+    const expectedBasis = {
+      source: "cad_property",
+      countyFips: "48491",
+      propId: "R123456",
+      vintage: "2025",
+    };
+    expect(rec.cells.improvementValue).toEqual({ kind: "absent-verified", basis: expectedBasis });
+    expect(rec.cells.livingAreaSqft).toEqual({ kind: "absent-verified", basis: expectedBasis });
+    expect(rec.cells.assessedValue).toEqual({ kind: "absent-verified", basis: expectedBasis });
+    expect(rec.cells.yearBuilt).toEqual({ kind: "absent-verified", basis: expectedBasis });
+    expect(rec.cells.acreageAcres).toEqual({ kind: "absent-verified", basis: expectedBasis });
+    // apn has no absent path (never emitted on a matched row's own null
+    // field either) and stays unaccounted; it never echoes record.propId.
     expect(rec.cells.apn.kind).toBe("unaccounted");
-    expect(rec.cells.marketValue.kind).toBe("unaccounted");
+    expect(rec.cells.marketValue).toEqual({ kind: "absent-verified", basis: expectedBasis });
   });
 
   it("(b2) matched R-prefix row with null improvement DOES emit (live Williamson shape)", () => {
@@ -612,10 +629,12 @@ describe("ingest existing CAD", () => {
     expect(rec.cells.marketValue).toMatchObject({ kind: "value", value: 130_000 });
   });
 
-  it("does not export applyCadScalar or cadNullVerified (structural scoping)", async () => {
+  it("does not export applyCadScalar, cadNullVerified, applyCadJoinMiss, or cadJoinMissVerified (structural scoping)", async () => {
     const mod = await import("../ingest-existing.js");
     expect(mod.applyCadScalar).toBeUndefined();
     expect(mod.cadNullVerified).toBeUndefined();
+    expect(mod.applyCadJoinMiss).toBeUndefined();
+    expect(mod.cadJoinMissVerified).toBeUndefined();
     expect(typeof mod.ingestCadOntoRecords).toBe("function");
   });
 
