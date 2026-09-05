@@ -6,12 +6,16 @@
  *   - atoms (DATABASE_URL / hauska_mcp) for atom-family companions
  *
  * cad-null-verified: a MATCHED latest CAD row with a null/blank scalar emits
- * absent-verified. A join miss never reaches that emission (structural:
- * applyCadScalar is only called after cadByProp.get hits). living_area 0
- * stays unaccounted. $0 stays value 0.
+ * absent-verified. cad-join-miss-verified: no cad_property row observed for
+ * this propId in any tax year the ingest query scanned for that county also
+ * emits absent-verified, with a distinct basis carrying no taxYear (there is
+ * no row to attribute one to) — see
+ * _decisions/2026-09-05_cad_join_miss_becomes_absent_verified.md. living_area
+ * 0 stays unaccounted. $0 stays value 0.
  */
 
 import type {
+  CadJoinMissBasis,
   CadNullVerifiedBasis,
   CompanionCellState,
   ScalarAbsentVerifiedCell,
@@ -204,6 +208,57 @@ function applyCadScalar(
   return moved;
 }
 
+/**
+ * Typed cad-join-miss-verified emission. Reachable only from
+ * applyCadJoinMiss, which is reachable only when cadByProp.get misses for
+ * this propId. Distinct basis shape from cadNullVerified: no taxYear, since
+ * no row was found to read one from.
+ */
+function cadJoinMissVerified(
+  record: ParcelRecordRow,
+  vintage: string,
+): ScalarAbsentVerifiedCell {
+  const basis: CadJoinMissBasis = {
+    source: CAD_SOURCE,
+    countyFips: record.countyFips,
+    propId: record.propId,
+    vintage,
+  };
+  return { kind: "absent-verified", basis };
+}
+
+/**
+ * A genuine join miss: no cad_property row for this propId in any tax year
+ * CAD_ROWS_SQL observed for this county. Stamps the same CAD-scalar fields
+ * applyCadScalar would leave absent-verified for a matched row with a
+ * null/blank field — never a value, since there is no row to read one from.
+ */
+function applyCadJoinMiss(record: ParcelRecordRow, vintage: string): number {
+  let moved = 0;
+  const c = record.cells;
+  const stampAbsent = (key: keyof typeof c) => {
+    if (c[key].kind !== "unaccounted") return;
+    (c as Record<string, ScalarCellState>)[key] = cadJoinMissVerified(record, vintage);
+    moved += 1;
+  };
+
+  stampAbsent("situsAddress");
+  stampAbsent("situsCity");
+  stampAbsent("situsZip");
+  stampAbsent("legalDescription");
+  stampAbsent("exemptionCodes");
+  stampAbsent("landUseCode");
+  stampAbsent("landValue");
+  stampAbsent("improvementValue");
+  stampAbsent("marketValue");
+  stampAbsent("assessedValue");
+  stampAbsent("yearBuilt");
+  stampAbsent("livingAreaSqft");
+  stampAbsent("acreageAcres");
+
+  return moved;
+}
+
 const ENTITY_TYPE_TO_RAIL: Record<string, ParcelRecordRailKey> = {
   "parcel-node": "parcelGeometry",
   "flood-hazard-fact": "flood",
@@ -282,8 +337,9 @@ export function ingestCadOntoRecords(
   let parcelsTouched = 0;
   for (const rec of records) {
     const cad = cadByProp.get(rec.propId);
-    if (!cad) continue;
-    const n = applyCadScalar(rec, cad, vintage);
+    const n = cad
+      ? applyCadScalar(rec, cad, vintage)
+      : applyCadJoinMiss(rec, vintage);
     if (n > 0) {
       cellsMoved += n;
       parcelsTouched += 1;
