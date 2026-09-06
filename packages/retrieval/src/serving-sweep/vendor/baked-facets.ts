@@ -178,14 +178,20 @@ export interface BakedCardModel {
    * Shared B3 vocabulary kind — same enum PDF SUMMARY uses for this parcel's
    * envelope inputs (pending | provisional | buildable-with-area | …).
    */
-  buildableDisplayKind:
+  // NOT a verbatim vendor line -- see VENDOR-DRIFT-PATCH below. This whole
+  // file is separately, substantially stale vs current hauska-map (tracked,
+  // not fixed here); this one member was added only so it compiles against
+  // the just-synced buildable-display-vocab.ts vendor copy, which can now
+  // return "not-applicable".
+  buildableDisplayKind: // VENDOR-DRIFT-PATCH: added "not-applicable" (see comment above)
     | "absent"
     | "loading"
     | "pending"
     | "provisional"
     | "buildable-with-area"
     | "declined-consume"
-    | "not_specified";
+    | "not_specified"
+    | "not-applicable";
   /** Stable cross-surface probe token (map card ↔ inspect ↔ PDF). */
   buildableAgreementToken: string;
   /** Provenance: parcel + land-use source and vintage for the citation line. */
