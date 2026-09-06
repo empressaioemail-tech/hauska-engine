@@ -36,6 +36,17 @@ class FakePgBackend {
   readonly atoms = new Map<string, AtomRow>();
   readonly links = new Map<string, unknown>();
   readonly jurisdictionStatus = new Map<string, unknown>();
+  readonly geomBbox = new Map<
+    string,
+    {
+      entity_type: string;
+      county_fips: string | null;
+      west_lng: number;
+      south_lat: number;
+      east_lng: number;
+      north_lat: number;
+    }
+  >();
 
   makeSql() {
     const backend = this;
@@ -66,7 +77,7 @@ class FakePgBackend {
         return { __sqlFrag: text, params };
       }
 
-      if (text.startsWith("INSERT INTO atoms")) {
+      if (text.startsWith("INSERT INTO atoms (")) {
         const paramsCopy = [...params];
         const rawBody = paramsCopy[11];
         const body =
@@ -120,6 +131,30 @@ class FakePgBackend {
           body: storedBody,
           access_policy,
         });
+        return Promise.resolve([]);
+      }
+
+      if (text.startsWith("INSERT INTO atoms_geom_bbox")) {
+        const [dids, entityTypes, countyFipsArr, west, south, east, north] =
+          params as [
+            string[],
+            string[],
+            (string | null)[],
+            number[],
+            number[],
+            number[],
+            number[],
+          ];
+        for (let i = 0; i < dids.length; i++) {
+          backend.geomBbox.set(dids[i]!, {
+            entity_type: entityTypes[i]!,
+            county_fips: countyFipsArr[i] ?? null,
+            west_lng: west[i]!,
+            south_lat: south[i]!,
+            east_lng: east[i]!,
+            north_lat: north[i]!,
+          });
+        }
         return Promise.resolve([]);
       }
 
@@ -472,6 +507,219 @@ describe("PgStorage", () => {
       district: "RS-1",
       parcelNodeId,
     });
+  });
+
+  it("writePropertyAtom upserts atoms_geom_bbox for a road-node write (migration 012)", async () => {
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    const roadNodeId = "48055:road:1";
+    const roadAtom = {
+      entityType: "road-node" as const,
+      atomDid: `did:hauska:road-node:${roadNodeId}`,
+      entityId: roadNodeId,
+      roadNodeId,
+      countyFips: "48055",
+      jurisdictionTenant: "tx_48055",
+      fetchedAt: "2026-09-06T00:00:00.000Z",
+      extractedAt: "2026-09-06T00:00:00.000Z",
+      sourceAdapter: "test",
+      sourceUrl: "https://example.invalid/road",
+      contentHash: "road-hash",
+      accessPolicy: "public-free" as const,
+      atomTier: "data" as const,
+      status: "active" as const,
+      versionStamp: "v1",
+      centerline: {
+        type: "LineString" as const,
+        coordinates: [
+          [-97.72, 29.9],
+          [-97.6, 29.95],
+        ] as const,
+      },
+      // Minimal stand-ins for the rest of RoadNodeAtomInstance's contract
+      // fields — this test only exercises the geom_bbox write-path hook,
+      // not full road-node semantics.
+    };
+    await storage.writePropertyAtom(roadAtom as never);
+    const row = backend.geomBbox.get(roadAtom.atomDid);
+    expect(row).toEqual({
+      entity_type: "road-node",
+      county_fips: "48055",
+      west_lng: -97.72,
+      east_lng: -97.6,
+      south_lat: 29.9,
+      north_lat: 29.95,
+    });
+  });
+
+  it("writePropertyAtom upserts atoms_geom_bbox for a building-footprint write (migration 012)", async () => {
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    const parcelNodeId = "48021:1";
+    const footprintAtom = {
+      entityType: "building-footprint" as const,
+      atomDid: `did:hauska:building-footprint:${parcelNodeId}`,
+      entityId: parcelNodeId,
+      parcelNodeId,
+      jurisdictionTenant: "tx_48021",
+      fetchedAt: "2026-09-06T00:00:00.000Z",
+      extractedAt: "2026-09-06T00:00:00.000Z",
+      sourceAdapter: "test",
+      sourceUrl: "https://example.invalid/footprint",
+      contentHash: "footprint-hash",
+      accessPolicy: "public-free" as const,
+      atomTier: "data" as const,
+      status: "active" as const,
+      versionStamp: "v1",
+      footprintGeometry: {
+        type: "Polygon" as const,
+        coordinates: [
+          [
+            [-97.38, 30.1],
+            [-97.37, 30.11],
+            [-97.375, 30.105],
+          ],
+        ],
+      },
+    };
+    await storage.writePropertyAtom(footprintAtom as never);
+    const row = backend.geomBbox.get(footprintAtom.atomDid);
+    expect(row).toEqual({
+      entity_type: "building-footprint",
+      county_fips: "48021",
+      west_lng: -97.38,
+      east_lng: -97.37,
+      south_lat: 30.1,
+      north_lat: 30.11,
+    });
+  });
+
+  it("writePropertyAtom does NOT touch atoms_geom_bbox for an unrelated entity type (falsifier)", async () => {
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    const parcelNodeId = "48021:2";
+    const zoningAtom = {
+      entityType: "zoning-fact" as const,
+      atomDid: `did:hauska:zoning-fact:${parcelNodeId}`,
+      entityId: parcelNodeId,
+      jurisdictionTenant: "tx_48021",
+      parcelNodeId,
+      fetchedAt: "2026-09-06T00:00:00.000Z",
+      extractedAt: "2026-09-06T00:00:00.000Z",
+      sourceAdapter: "test",
+      sourceUrl: "https://example.invalid/zoning",
+      sourceCitation: "stub",
+      contentHash: "abc124",
+      accessPolicy: "public-free" as const,
+      atomTier: "data" as const,
+      status: "active" as const,
+      versionStamp: "v1",
+      district: "RS-1",
+      matchBasis: "exact" as const,
+      reasoningChain: { reasoningKind: "observed" as const },
+      readContract: {
+        axes: {
+          assertedConfidence: createWidthedConfidence({
+            estimate: 0.9,
+            n: 0,
+            intervalWidth: 0.12,
+            provenance: "asserted",
+          }),
+          calibratedConfidence: createWidthedConfidence({
+            estimate: 0.9,
+            n: 0,
+            intervalWidth: 0.12,
+            provenance: "asserted",
+          }),
+          consequence: {
+            kind: "not-applicable" as const,
+            reason: "test",
+            assertedAt: "2026-09-06T00:00:00.000Z",
+          },
+        },
+        assembledAt: "2026-09-06T00:00:00.000Z",
+      },
+    };
+    await storage.writePropertyAtom(zoningAtom);
+    expect(backend.geomBbox.size).toBe(0);
+  });
+
+  it("listRoadAtomsNearBbox falls back to the legacy jsonb scan when atoms_geom_bbox doesn't exist (no regression for pre-012 databases)", async () => {
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    const roadNodeId = "48055:road:1";
+    const roadBody = {
+      entityType: "road-node",
+      atomDid: `did:hauska:road-node:${roadNodeId}`,
+      entityId: roadNodeId,
+      roadNodeId,
+      countyFips: "48055",
+      status: "active",
+      centerline: { type: "LineString", coordinates: [[-97.72, 29.9], [-97.6, 29.95]] },
+    };
+    backend.atoms.set(roadBody.atomDid, {
+      atom_did: roadBody.atomDid,
+      cid: "cid-road",
+      content_hash: "hash-road",
+      entity_type: "road-node",
+      entity_id: roadNodeId,
+      jurisdiction_tenant: "tx_48055",
+      section_number: null,
+      subsection_path: null,
+      source_adapter: "test",
+      source_url: "https://example.invalid/road",
+      fetched_at: "2026-09-06T00:00:00.000Z",
+      body: roadBody,
+      access_policy: "public-free",
+    });
+    const result = await storage.listRoadAtomsNearBbox("48055", {
+      westLng: -97.8,
+      southLat: 29.8,
+      eastLng: -97.5,
+      northLat: 30.0,
+    });
+    expect(result.map((r) => r.roadNodeId)).toContain(roadNodeId);
+  });
+
+  it("listBuildingFootprintsNearBbox falls back to the legacy jsonb scan when atoms_geom_bbox doesn't exist (no regression for pre-012 databases)", async () => {
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    const parcelNodeId = "48021:1";
+    const footprintBody = {
+      entityType: "building-footprint",
+      atomDid: `did:hauska:building-footprint:${parcelNodeId}`,
+      entityId: parcelNodeId,
+      parcelNodeId,
+      status: "active",
+      footprintGeometry: {
+        type: "Polygon",
+        coordinates: [[[-97.38, 30.1], [-97.37, 30.11], [-97.375, 30.105]]],
+      },
+    };
+    backend.atoms.set(footprintBody.atomDid, {
+      atom_did: footprintBody.atomDid,
+      cid: "cid-footprint",
+      content_hash: "hash-footprint",
+      entity_type: "building-footprint",
+      entity_id: parcelNodeId,
+      jurisdiction_tenant: "tx_48021",
+      section_number: null,
+      subsection_path: null,
+      source_adapter: "test",
+      source_url: "https://example.invalid/footprint",
+      fetched_at: "2026-09-06T00:00:00.000Z",
+      body: footprintBody,
+      access_policy: "public-free",
+    });
+    const result = await storage.listBuildingFootprintsNearBbox("48021", {
+      westLng: -97.5,
+      southLat: 30.0,
+      eastLng: -97.3,
+      northLat: 30.2,
+    });
+    expect(result.map((r) => (r as { parcelNodeId?: string }).parcelNodeId)).toContain(
+      parcelNodeId,
+    );
   });
 
   it("listPropertyAtomsByParcelNodeId returns parcel-keyed families including flood-hazard-fact and owner-fact", async () => {

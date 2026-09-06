@@ -35,6 +35,12 @@ import {
   lockAndHeartbeatLease,
   type HeldLease,
 } from "./atoms-writer-lease.js";
+import {
+  geomBboxRowFromInstance,
+  geomBboxRowsFromInstances,
+  upsertGeomBboxRows,
+  type GeomBboxSourceInstance,
+} from "./geom-bbox-index.js";
 import { InProcessIpfsPin } from "./in-process-cache.js";
 import {
   preparePropertyAtomRows,
@@ -279,6 +285,10 @@ export class PgStorage implements StoragePort {
 
     const links = appliesToLinksFromPropertyAtoms([instance]);
     if (links.length > 0) await this.writeAtomLinks(links);
+    const geomBboxRow = geomBboxRowFromInstance(
+      instance as unknown as GeomBboxSourceInstance & Record<string, unknown>,
+    );
+    if (geomBboxRow) await upsertGeomBboxRows(this.sql, [geomBboxRow]);
     return { atomDid, cid: pin.cid };
   }
 
@@ -300,12 +310,16 @@ export class PgStorage implements StoragePort {
     });
     const links = appliesToLinksFromPropertyAtoms(instances);
     assertEdgesNotStarved(instances, links.length);
+    const geomBboxRows = geomBboxRowsFromInstances(
+      instances as unknown as ReadonlyArray<Record<string, unknown>>,
+    );
     await this.sql.begin(async (txn) => {
       const sql = txn as unknown as postgres.Sql;
       await lockAndHeartbeatLease(sql, lease);
       assertScopeOnAtoms(lease, instances);
       await upsertPropertyAtomRowsMulti(sql, rows);
       if (links.length > 0) await this.writeAtomLinks(links, sql);
+      await upsertGeomBboxRows(sql, geomBboxRows);
     });
     return out;
   }
@@ -467,22 +481,66 @@ export class PgStorage implements StoragePort {
       typeof opts?.limit === "number" && Number.isFinite(opts.limit)
         ? Math.max(1, Math.min(Math.floor(opts.limit), 2000))
         : 500;
-    const rows = await this.sql<AtomBodyRow[]>`
-      SELECT body
-      FROM atoms
-      WHERE entity_type = 'road-node'
-        AND body->>'countyFips' = ${countyFips}
-        AND COALESCE(body->>'status', 'active') = 'active'
-        AND EXISTS (
-          SELECT 1
-          FROM jsonb_array_elements(body->'centerline'->'coordinates') AS pt
-          WHERE (pt->>0)::float8 BETWEEN ${bbox.westLng} AND ${bbox.eastLng}
-            AND (pt->>1)::float8 BETWEEN ${bbox.southLat} AND ${bbox.northLat}
-        )
-      ORDER BY jsonb_array_length(COALESCE(body->'centerline'->'coordinates', '[]'::jsonb)) DESC,
-               updated_at DESC
-      LIMIT ${limit}
+    // Precomputed-bbox fast path (migration 012): the raw per-point jsonb
+    // EXISTS scan below measured 24.5s for a real Caldwell-county (48055)
+    // query — comfortably past a 10s proxy timeout (the reported 504).
+    // atoms_geom_bbox holds a scalar bbox per road-node atom kept current
+    // by the write path (pg-storage.ts writePropertyAtom(sBatch)) and a
+    // one-time backfill (scripts/backfill-geom-bbox.mjs). The backfill is
+    // per-county and NOT complete for every county yet (contention on the
+    // shared substrate made a full nationwide pass impractical to run in
+    // one sitting) — checking only "does the table exist" would silently
+    // return ZERO roads for every not-yet-backfilled county the moment
+    // this ships, a far worse regression than the 504 it fixes. Checking
+    // per-county coverage instead means each county safely falls back to
+    // the (still correct, just slower) old scan until ITS OWN backfill
+    // has landed, and flips to the fast path automatically once it has —
+    // a real per-county canary-then-shift, not a single global cutover.
+    const reg = await this.sql<Array<{ reg: string | null }>>`
+      SELECT to_regclass('public.atoms_geom_bbox') AS reg
     `;
+    const covered = reg[0]?.reg
+      ? await this.sql<Array<{ present: boolean }>>`
+          SELECT EXISTS (
+            SELECT 1 FROM atoms_geom_bbox
+            WHERE entity_type = 'road-node' AND county_fips = ${countyFips}
+            LIMIT 1
+          ) AS present
+        `
+      : [{ present: false }];
+    const rows = covered[0]?.present
+      ? await this.sql<AtomBodyRow[]>`
+          SELECT a.body
+          FROM atoms a
+          JOIN atoms_geom_bbox g ON g.atom_did = a.atom_did
+          WHERE a.entity_type = 'road-node'
+            AND g.entity_type = 'road-node'
+            AND g.county_fips = ${countyFips}
+            AND COALESCE(a.body->>'status', 'active') = 'active'
+            AND g.west_lng <= ${bbox.eastLng}
+            AND g.east_lng >= ${bbox.westLng}
+            AND g.south_lat <= ${bbox.northLat}
+            AND g.north_lat >= ${bbox.southLat}
+          ORDER BY jsonb_array_length(COALESCE(a.body->'centerline'->'coordinates', '[]'::jsonb)) DESC,
+                   a.updated_at DESC
+          LIMIT ${limit}
+        `
+      : await this.sql<AtomBodyRow[]>`
+          SELECT body
+          FROM atoms
+          WHERE entity_type = 'road-node'
+            AND body->>'countyFips' = ${countyFips}
+            AND COALESCE(body->>'status', 'active') = 'active'
+            AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(body->'centerline'->'coordinates') AS pt
+              WHERE (pt->>0)::float8 BETWEEN ${bbox.westLng} AND ${bbox.eastLng}
+                AND (pt->>1)::float8 BETWEEN ${bbox.southLat} AND ${bbox.northLat}
+            )
+          ORDER BY jsonb_array_length(COALESCE(body->'centerline'->'coordinates', '[]'::jsonb)) DESC,
+                   updated_at DESC
+          LIMIT ${limit}
+        `;
     const out: RoadNodeAtomInstance[] = [];
     for (const row of rows) {
       const inst = parseStoredAtom(row.body);
@@ -506,6 +564,20 @@ export class PgStorage implements StoragePort {
         ? Math.max(1, Math.min(Math.floor(opts.limit), 2000))
         : 500;
     const parcelPrefix = `${countyFips}:%`;
+    // Migration 012 fixed the real bottleneck here: this filter had ZERO
+    // index support at all (unlike road-node, which already had
+    // atoms_road_county_fips_idx) — a bare county-scoped scan alone
+    // measured >90s (EXPLAIN: parallel bitmap scan of ~3.5M rows
+    // nationwide) before this per-point EXISTS geometry check ever ran.
+    // atoms_building_footprint_parcel_node_idx narrows to the county
+    // first. Unlike road-node, building-footprint rings are small (a
+    // handful of points per building) — measured 533ms for a real
+    // 176-match bbox in a 65k-footprint county post-index, comfortably
+    // under a 10s proxy timeout — so this does NOT also need the
+    // atoms_geom_bbox precomputed-bbox side table road-node required;
+    // adding that JOIN here would just make results silently empty until
+    // building-footprint atoms were separately backfilled into it, for a
+    // path that's already fast without it.
     const rows = await this.sql<AtomBodyRow[]>`
       SELECT body
       FROM atoms
