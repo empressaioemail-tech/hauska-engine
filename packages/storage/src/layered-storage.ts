@@ -302,6 +302,11 @@ export class LayeredStorage implements StoragePort {
   }
 
   async countAtoms(): Promise<number> {
+    // primaryCount is an n_live_tup estimate on Postgres as of the
+    // 2026-09-06 countAtoms() hardening (see PgStorage.countAtoms()), not
+    // an exact count — fine here, since the cap below is a safety
+    // threshold and production's real primary count is many orders of
+    // magnitude past it either way.
     const snapshotCount = await this.snapshot.countAtoms();
     const primaryCount = await this.primary.countAtoms();
     if (primaryCount === 0) return snapshotCount;

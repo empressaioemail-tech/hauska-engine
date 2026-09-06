@@ -322,6 +322,47 @@ describe("PgStorage", () => {
     expect(await storage.estimateAtomCount()).toBe(1);
   });
 
+  it("countAtoms() reads pg_stat_user_tables too (2026-09-06 hardening), never a real COUNT(*)", async () => {
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    await storage.writeAtom(buildStoragePortProofAtom());
+    expect(await storage.countAtoms()).toBe(1);
+  });
+
+  it("countAtoms() issues pg_stat_user_tables, never SELECT COUNT(*) FROM atoms (falsifier for the incident this hardens against)", async () => {
+    const backend = new FakePgBackend();
+    const calls: string[] = [];
+    const baseSql = backend.makeSql();
+    const spySql = ((
+      strings: TemplateStringsArray | readonly unknown[],
+      ...params: unknown[]
+    ) => {
+      if (Array.isArray(strings) && "raw" in strings) {
+        const text = (strings as TemplateStringsArray)
+          .join("?")
+          .replace(/\s+/g, " ")
+          .trim();
+        calls.push(text);
+      }
+      return (baseSql as unknown as (...args: unknown[]) => unknown)(
+        strings,
+        ...params,
+      );
+    }) as unknown as typeof baseSql;
+    Object.assign(spySql, baseSql);
+
+    const storage = new PgStorage(spySql as never);
+    await storage.writeAtom(buildStoragePortProofAtom());
+    calls.length = 0;
+
+    await storage.countAtoms();
+
+    expect(
+      calls.some((c) => c.startsWith("SELECT n_live_tup FROM pg_stat_user_tables")),
+    ).toBe(true);
+    expect(calls.some((c) => c.includes("COUNT(*)"))).toBe(false);
+  });
+
   it("estimateAtomCount() issues pg_stat_user_tables, never SELECT COUNT(*) FROM atoms", async () => {
     const backend = new FakePgBackend();
     const calls: string[] = [];

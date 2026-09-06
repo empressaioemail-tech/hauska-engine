@@ -1154,17 +1154,33 @@ export class PgStorage implements StoragePort {
     `;
   }
 
+  /**
+   * n_live_tup instead of a real COUNT(*) (2026-09-06 hardening): this was
+   * a plain unbounded `SELECT COUNT(*) FROM atoms`, and a real production
+   * incident tonight found a still-unidentified caller hitting it every
+   * ~30s, each call taking minutes on this 100M+-row table and piling up
+   * concurrently — real, sustained I/O contention on shared compute, not
+   * a one-off slow query. Exhaustive checks ruled out every call site
+   * still on main (retrieval-api, mcp-server, factory-control,
+   * hauska-engine-api) and left the caller unnamed; hardening the
+   * function itself protects the shared substrate regardless of who
+   * calls it or whether it resurfaces from an unmerged branch later.
+   * Delegates to estimateAtomCount() below — this is now an
+   * autovacuum/autoanalyze-maintained estimate, not an exact count (can
+   * lag real time by hours/days on a quiet table). Nothing on main
+   * needed exactness here (this method's only remaining callers were
+   * LayeredStorage's own composition and tests); a caller that genuinely
+   * needs an exact total should count a narrower, indexed slice, not the
+   * whole table.
+   */
   async countAtoms(): Promise<number> {
-    const rows = await this.sql<[{ count: string }]>`
-      SELECT COUNT(*)::text AS count FROM atoms
-    `;
-    return Number(rows[0]?.count ?? 0);
+    return this.estimateAtomCount();
   }
 
   /**
-   * EXISTS + LIMIT 1 instead of countAtoms()'s full COUNT(*) — stops at the
-   * first row found via any index, independent of table size. Safe for a
-   * recurring health-check path against a 100M+ row table.
+   * EXISTS + LIMIT 1 — stops at the first row found via any index,
+   * independent of table size. Safe for a recurring health-check path
+   * against a 100M+ row table.
    */
   async hasAtoms(): Promise<boolean> {
     const rows = await this.sql<[{ present: boolean }]>`
@@ -1174,9 +1190,10 @@ export class PgStorage implements StoragePort {
   }
 
   /**
-   * pg_stat_user_tables.n_live_tup instead of countAtoms()'s COUNT(*) — an
+   * pg_stat_user_tables.n_live_tup instead of a real COUNT(*) — an
    * autovacuum/autoanalyze-maintained estimate, not a scan. Safe to run on
-   * every instance start regardless of table size.
+   * every instance start regardless of table size (also backs countAtoms()
+   * above as of the 2026-09-06 hardening).
    */
   async estimateAtomCount(): Promise<number> {
     const rows = await this.sql<[{ n_live_tup: string | null }]>`
