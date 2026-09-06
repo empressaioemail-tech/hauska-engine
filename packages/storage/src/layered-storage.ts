@@ -336,4 +336,11 @@ export class LayeredStorage implements StoragePort {
     if (await this.snapshot.hasAtoms()) return true;
     return this.primary.hasAtoms();
   }
+
+  /** Exact snapshot count (cheap, in-memory) plus the primary's own estimate. */
+  async estimateAtomCount(): Promise<number> {
+    const snapshotCount = await this.snapshot.countAtoms();
+    const primaryEstimate = await this.primary.estimateAtomCount();
+    return snapshotCount + primaryEstimate;
+  }
 }
