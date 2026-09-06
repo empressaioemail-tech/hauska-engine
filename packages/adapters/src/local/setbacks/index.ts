@@ -28,6 +28,15 @@ import pflugervilleTx from "./pflugerville-tx.json" with { type: "json" };
 import sanAntonioTx from "./san-antonio-tx.json" with { type: "json" };
 import utahUnincorporated from "./utah-unincorporated.json" with { type: "json" };
 import idahoUnincorporated from "./idaho-unincorporated.json" with { type: "json" };
+// 2026-09-06 item-6 setback transcription (boundary-envelope atom program,
+// OPS-19b): Waco/Round Rock/Kyle land as-is per operator go-ahead. Georgetown
+// (adopted-but-not-yet-effective rewrite) and San Marcos (legacy-vs-current
+// district coverage unconfirmed against the live GIS zoning layer) are
+// deliberately withheld pending the caveats each needs resolved first — see
+// doc_repo for the full research handoff.
+import wacoTx from "./waco-tx.json" with { type: "json" };
+import roundRockTx from "./round-rock-tx.json" with { type: "json" };
+import kyleTx from "./kyle-tx.json" with { type: "json" };
 
 export type { SetbackDistrict, SetbackTable } from "./table-types.js";
 import type { SetbackDistrict, SetbackTable } from "./table-types.js";
@@ -55,6 +64,9 @@ const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = {
   "san-antonio-tx": sanAntonioTx as SetbackTable,
   "utah-unincorporated": utahUnincorporated as SetbackTable,
   "idaho-unincorporated": idahoUnincorporated as SetbackTable,
+  "waco-tx": wacoTx as SetbackTable,
+  "round-rock-tx": roundRockTx as SetbackTable,
+  "kyle-tx": kyleTx as SetbackTable,
 };
 
 export const SETBACK_JURISDICTION_KEYS = Object.keys(SETBACK_TABLES);
