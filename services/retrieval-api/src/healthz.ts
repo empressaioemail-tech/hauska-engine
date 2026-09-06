@@ -17,6 +17,15 @@ export interface HealthzDb {
 
 export interface HealthzCorpus {
   ok: boolean;
+  /**
+   * 1 when at least one atom is present, 0 otherwise — a presence flag, not
+   * an exact count. Kept numeric (rather than a bare boolean) so the JSON
+   * shape and the `corpus=N` log signal below stay stable for existing
+   * consumers/alerts; the `corpus>0` threshold behaves identically either
+   * way. Backed by storage.hasAtoms() (EXISTS + LIMIT 1), never
+   * countAtoms() (full COUNT(*)) — this runs on every recurring health
+   * check, countAtoms() does not belong on this path.
+   */
   atomCount: number;
   source: string;
 }
@@ -34,7 +43,7 @@ export interface HealthzOptions {
 
 const DB_SOURCE = "probe:substrate-neon SELECT 1";
 const DB_NOT_CONFIGURED_SOURCE = "env:SUBSTRATE_DATABASE_URL|DATABASE_URL";
-const CORPUS_SOURCE = "storage:countAtoms";
+const CORPUS_SOURCE = "storage:hasAtoms";
 
 export async function buildHealthzPayload(
   options: HealthzOptions,
@@ -65,10 +74,10 @@ export async function buildHealthzPayload(
         };
   }
 
-  const atomCount = await options.storage.countAtoms();
+  const hasAtoms = await options.storage.hasAtoms();
   const corpus: HealthzCorpus = {
-    ok: atomCount > 0,
-    atomCount,
+    ok: hasAtoms,
+    atomCount: hasAtoms ? 1 : 0,
     source: CORPUS_SOURCE,
   };
 

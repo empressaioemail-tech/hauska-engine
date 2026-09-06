@@ -330,4 +330,10 @@ export class LayeredStorage implements StoragePort {
 
     return snapshotCount + primaryCount;
   }
+
+  /** Short-circuits on the snapshot before ever asking the primary. */
+  async hasAtoms(): Promise<boolean> {
+    if (await this.snapshot.hasAtoms()) return true;
+    return this.primary.hasAtoms();
+  }
 }

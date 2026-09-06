@@ -598,4 +598,8 @@ export class InMemoryStorage implements StoragePort {
   async countAtoms(): Promise<number> {
     return this.atoms.size;
   }
+
+  async hasAtoms(): Promise<boolean> {
+    return this.atoms.size > 0;
+  }
 }
