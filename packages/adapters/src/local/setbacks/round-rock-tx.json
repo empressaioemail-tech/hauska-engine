@@ -1,0 +1,264 @@
+{
+  "$schema": "./schema.json",
+  "jurisdictionKey": "round-rock-tx",
+  "jurisdictionDisplayName": "City of Round Rock, TX",
+  "note": "Codified from City of Round Rock Zoning and Development Code, Code of Ordinances Part III (2018 Edition), Chapter 2, Article II (Residential Districts), Section 2-26 (Residential Lot and Building Dimensional Standards), retrieved via http://roundrock-tx.elaws.us/code/coor_ptiii_ch2_artii_sec2-26 (a Municode-licensed eLaws mirror of the same codified text). Round Rock's own Municode-hosted library.municode.com pages returned HTTP 403 to every automated fetch attempt on 2026-09-06 and could not be independently rendered, so no field here reaches 'human-verified'; all are 'asserted'. Section 2-26's currency was cross-checked against the primary legislative record for the ordinance cited in its history line, Ord. No. O-2019-0080 (City of Round Rock Legistar File #2019-0080; Planning and Zoning Commission public hearing 2019-01-09), retrieved as a PDF directly from roundrock.legistar.com on 2026-09-06: that ordinance only corrected accessory-structure and patio rear-setback encroachment language and did not touch the core front/side/rear/height/coverage numbers reported here. No evidence of a later amendment to Section 2-26's core dimensional table was found between 2019 and the 2026-09-06 access date. The SF-R/SF-1/SF-2/SF-3 core table cells were retrieved in three independent fetch passes against the eLaws page (two direct, one via an independent reader-proxy retrieval path) that agreed digit-for-digit on every value. SHIPPED rows: SF-R, SF-1, SF-2, SF-3, the four Article II single-family districts whose Section 2-26 row reduces to a flat, non-contextual scalar. side_corner_ft on all four rows is DERIVED, not separately tabulated: Chapter 1 definitions, Section 1-50 ('Front Lot Line'), state 'In cases where two or more lot lines abut an existing or dedicated street, all such lot lines are considered front lot lines for the purposes of calculating building setbacks,' so a corner lot's second street-facing lot line takes the same 'minimum setback from street (ROW)' value as the front; Article II tabulates no separate, smaller corner-side figure the way Austin/Pflugerville/San Antonio do in this directory. max_height_ft is the NON-BINDING SENTINEL 999 on all four rows: Section 2-26 caps principal-building height in STORIES ONLY (2.5 stories for SF-R/SF-1/SF-2; 2 stories for SF-3) and no companion feet-based cap was found in Section 2-26, Chapter 1 definitions, or elsewhere in the Code of Ordinances after a genuine search; a stories-to-feet conversion was deliberately not fabricated. max_impervious_pct is the established non-binding sentinel 100 (per the pflugerville-tx.json precedent in this directory) on all four rows: Section 2-26 has no impervious-cover row at all, only 'maximum lot coverage for buildings' (captured for real as max_lot_coverage_pct); no separate district-level impervious-cover standard was found elsewhere in the Code of Ordinances (checked Chapter 14 Environment and Chapter 8 Zoning Development Standards) after search, which reads as a genuine absence rather than an unsearched gap. SF-3's side_ft table cell reads '0 ft./12 ft.' (an optional zero-lot-line pairing: one side may be 0 ft. if the opposite side is at least 12 ft.); 12 is reported here as the enforceable governing value, per the same convention san-antonio-tx.json in this directory uses for conditional cells (retain the larger governing figure, disclose the condition in the field's provenance quote). OMITTED: AG, SF-D, MH, TF, TH, SR, MF-1, MF-2 (present in Section 2-26's table but out of scope for this single-family-focused pass), all overlay districts, and all of Articles III-VII (commercial, employment/industrial, public/civic, mixed-use/PUD, overlay). SF-D was dropped rather than forced into this table because its governing front setback is not a fixed scalar: Section 2-17 states 'the front setback from the street shall be the same as adjacent buildings +/- 5 feet,' a contextual rule that Section 2-26's flat 15 ft. row does not actually control for SF-D.",
+  "districts": [
+    {
+      "district_name": "SF-R Single-Family Rural",
+      "front_ft": 50,
+      "rear_ft": 50,
+      "side_ft": 20,
+      "side_corner_ft": 50,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 10,
+      "max_impervious_pct": 100,
+      "citation_url": "http://roundrock-tx.elaws.us/code/coor_ptiii_ch2_artii_sec2-26",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-R column: Minimum setback from street (ROW) 50 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "rear_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-R column: Minimum rear setback 50 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "side_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-R column: Minimum side setback 20 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "side_corner_ft": {
+          "atom_did": "round_rock_tx/zdc/1-50/1-50",
+          "section_number": "1-50",
+          "quote": "Front Lot Line definition (Sec. 1-50): 'In cases where two or more lot lines abut an existing or dedicated street, all such lot lines are considered front lot lines for the purposes of calculating building setbacks.' Applied to SF-R's Sec. 2-26 minimum setback from street (ROW) of 50 ft.; Article II tabulates no separate, smaller corner-side figure.",
+          "confidence": 0.7,
+          "verification_state": "asserted"
+        },
+        "max_height_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Sec. 2-26 table caps SF-R principal-building height at '2.5 stories' only; no companion feet-based maximum found in Sec. 2-26, Chapter 1 definitions, or elsewhere in the Code of Ordinances after search. 999 is a non-binding sentinel, not a real value.",
+          "confidence": 0.75,
+          "verification_state": "asserted",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-R column: Maximum lot coverage for buildings 10%.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "max_impervious_pct": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Sec. 2-26's dimensional table has no impervious-cover row for SF-R; only 'maximum lot coverage for buildings' is tabulated (captured separately as max_lot_coverage_pct). No district-level impervious-cover standard was found elsewhere in the Code of Ordinances after search. 100 is the established non-binding sentinel used elsewhere in this directory (pflugerville-tx.json) for this same absence.",
+          "confidence": 0.75,
+          "verification_state": "asserted",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "SF-1 Single-Family Large Lot",
+      "front_ft": 30,
+      "rear_ft": 20,
+      "side_ft": 5,
+      "side_corner_ft": 30,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 40,
+      "max_impervious_pct": 100,
+      "citation_url": "http://roundrock-tx.elaws.us/code/coor_ptiii_ch2_artii_sec2-26",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-1 column: Minimum setback from street (ROW) 30 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "rear_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-1 column: Minimum rear setback 20 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "side_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-1 column: Minimum side setback 5 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "side_corner_ft": {
+          "atom_did": "round_rock_tx/zdc/1-50/1-50",
+          "section_number": "1-50",
+          "quote": "Front Lot Line definition (Sec. 1-50): 'In cases where two or more lot lines abut an existing or dedicated street, all such lot lines are considered front lot lines for the purposes of calculating building setbacks.' Applied to SF-1's Sec. 2-26 minimum setback from street (ROW) of 30 ft.; Article II tabulates no separate, smaller corner-side figure.",
+          "confidence": 0.7,
+          "verification_state": "asserted"
+        },
+        "max_height_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Sec. 2-26 table caps SF-1 principal-building height at '2.5 stories' only; no companion feet-based maximum found in Sec. 2-26, Chapter 1 definitions, or elsewhere in the Code of Ordinances after search. 999 is a non-binding sentinel, not a real value.",
+          "confidence": 0.75,
+          "verification_state": "asserted",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-1 column: Maximum lot coverage for buildings 40%.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "max_impervious_pct": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Sec. 2-26's dimensional table has no impervious-cover row for SF-1; only 'maximum lot coverage for buildings' is tabulated (captured separately as max_lot_coverage_pct). No district-level impervious-cover standard was found elsewhere in the Code of Ordinances after search. 100 is the established non-binding sentinel used elsewhere in this directory (pflugerville-tx.json) for this same absence.",
+          "confidence": 0.75,
+          "verification_state": "asserted",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "SF-2 Single-Family Standard Lot",
+      "front_ft": 20,
+      "rear_ft": 20,
+      "side_ft": 5,
+      "side_corner_ft": 20,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 40,
+      "max_impervious_pct": 100,
+      "citation_url": "http://roundrock-tx.elaws.us/code/coor_ptiii_ch2_artii_sec2-26",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-2 column: Minimum setback from street (ROW) 20 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "rear_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-2 column: Minimum rear setback 20 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "side_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-2 column: Minimum side setback 5 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "side_corner_ft": {
+          "atom_did": "round_rock_tx/zdc/1-50/1-50",
+          "section_number": "1-50",
+          "quote": "Front Lot Line definition (Sec. 1-50): 'In cases where two or more lot lines abut an existing or dedicated street, all such lot lines are considered front lot lines for the purposes of calculating building setbacks.' Applied to SF-2's Sec. 2-26 minimum setback from street (ROW) of 20 ft.; Article II tabulates no separate, smaller corner-side figure.",
+          "confidence": 0.7,
+          "verification_state": "asserted"
+        },
+        "max_height_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Sec. 2-26 table caps SF-2 principal-building height at '2.5 stories' only; no companion feet-based maximum found in Sec. 2-26, Chapter 1 definitions, or elsewhere in the Code of Ordinances after search. 999 is a non-binding sentinel, not a real value.",
+          "confidence": 0.75,
+          "verification_state": "asserted",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-2 column: Maximum lot coverage for buildings 40%.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "max_impervious_pct": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Sec. 2-26's dimensional table has no impervious-cover row for SF-2; only 'maximum lot coverage for buildings' is tabulated (captured separately as max_lot_coverage_pct). No district-level impervious-cover standard was found elsewhere in the Code of Ordinances after search. 100 is the established non-binding sentinel used elsewhere in this directory (pflugerville-tx.json) for this same absence.",
+          "confidence": 0.75,
+          "verification_state": "asserted",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "SF-3 Single-Family Mixed Lot",
+      "front_ft": 15,
+      "rear_ft": 15,
+      "side_ft": 12,
+      "side_corner_ft": 15,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 50,
+      "max_impervious_pct": 100,
+      "citation_url": "http://roundrock-tx.elaws.us/code/coor_ptiii_ch2_artii_sec2-26",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-3 column: Minimum setback from street (ROW) 15 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "rear_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-3 column: Minimum rear setback 15 ft.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "side_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-3 column: Minimum side setback '0 ft./12 ft.' -- an optional zero-lot-line pairing where one side may be 0 ft. if the opposite side is at least 12 ft. 12 is reported as the enforceable governing value for this scalar field; the zero-lot-line option is disclosed here rather than encoded.",
+          "confidence": 0.65,
+          "verification_state": "asserted"
+        },
+        "side_corner_ft": {
+          "atom_did": "round_rock_tx/zdc/1-50/1-50",
+          "section_number": "1-50",
+          "quote": "Front Lot Line definition (Sec. 1-50): 'In cases where two or more lot lines abut an existing or dedicated street, all such lot lines are considered front lot lines for the purposes of calculating building setbacks.' Applied to SF-3's Sec. 2-26 minimum setback from street (ROW) of 15 ft.; Article II tabulates no separate, smaller corner-side figure.",
+          "confidence": 0.7,
+          "verification_state": "asserted"
+        },
+        "max_height_ft": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Sec. 2-26 table caps SF-3 principal-building height at '2 stories' only; no companion feet-based maximum found in Sec. 2-26, Chapter 1 definitions, or elsewhere in the Code of Ordinances after search. 999 is a non-binding sentinel, not a real value.",
+          "confidence": 0.75,
+          "verification_state": "asserted",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Residential Lot and Building Dimensional Standards table, SF-3 column: Maximum lot coverage for buildings 50%.",
+          "confidence": 0.75,
+          "verification_state": "asserted"
+        },
+        "max_impervious_pct": {
+          "atom_did": "round_rock_tx/zdc/2-26/2-26",
+          "section_number": "2-26",
+          "quote": "Sec. 2-26's dimensional table has no impervious-cover row for SF-3; only 'maximum lot coverage for buildings' is tabulated (captured separately as max_lot_coverage_pct). No district-level impervious-cover standard was found elsewhere in the Code of Ordinances after search. 100 is the established non-binding sentinel used elsewhere in this directory (pflugerville-tx.json) for this same absence.",
+          "confidence": 0.75,
+          "verification_state": "asserted",
+          "not_specified": true
+        }
+      }
+    }
+  ]
+}

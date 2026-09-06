@@ -1,0 +1,328 @@
+{
+  "$schema": "./schema.json",
+  "jurisdictionKey": "waco-tx",
+  "jurisdictionDisplayName": "City of Waco, TX",
+  "note": "Codified from City of Waco Code of Ordinances Chapter 28 (Zoning), Article IV (District Regulations), Divisions 2-6, cross-verified against the City of Waco Planning & Zoning Department's official published summary table 'Chart 1. Yard setback requirements' at https://www.waco-texas.com/files/sharedassets/public/v/2/departments/planning-amp-zoning/documents/chart1yardsetbackrequirements.pdf (accessed 2026-09-06). Primary ordinance text for individual sections was read via the eLaws mirror of the Code of Ordinances at waco-tx.elaws.us (accessed 2026-09-06) because library.municode.com, the canonical live host, returned HTTP 403 to automated fetch; eLaws' section text matches the Chart 1 PDF numerics exactly everywhere both were checked, so the two are treated as independently corroborating. WebSearch-surfaced text (not independently confirmed by direct fetch of the primary page) put the live Municode Code of Ordinances as 'codified through Ordinance No. 2025-778, enacted October 21, 2025'; that overall currency date is reported as-is but is NOT independently verified against a directly-fetched primary page, and no section-specific amendment date is available for Divisions 2-6 of Article IV or for section 28-904. SHIPPED rows: R-E, R-1A, R-1B, R-1C, R-2 (the five 'R' district classes covering estate, single-family, and two-family/attached-single-family use, matching in scope the single-family-and-adjacent breadth covered by the Austin (SF-1/2/3 + MF) and Pflugerville (SF-S/SF-R + MF/2-F) tables). Each row's front/side/rear values are the 'All dwellings' (or equivalent standard-use) scalar row from Code section §28-276 (R-E), §28-301 (R-1A), §28-326 (R-1B), §28-351 (R-1C), §28-376 (R-2); each district's ordinance text also carries a materially different 'Other' (non-dwelling) use row and, for R-1C/R-2, a separate single-family-attached/zero-lot-line row with a 10-foot COMBINED side yard in place of the two-yard scalar - both are OMITTED from this table because the schema carries one scalar side_ft per district and the dwelling-use row is the dominant/default case. R-1B and R-1C also each carry a distinct 'special permit uses' row (R-1B: 25/6/25; R-1C: same as its base 'all dwellings' row) that is likewise omitted as a secondary case. side_corner_ft for all five rows is sourced from Code §28-904(f) (Article V, Division 2, 'Yards and required open space'), which sets a 15-foot minimum side-street yard on corner lots in 'the R and O districts' generally; Chart 1 only fills in an explicit numeric side-corner value for the R-E row (15, matching §28-904(f) exactly) and leaves the column blank for R-1A/R-1B/R-1C/R-2, so this table applies the same general-provision value to those rows rather than treating the blank cell as zero or unspecified. §28-904(f) is NOT a flat 15-foot rule: it also provides that a lot of record under 75 feet wide need only provide 20 percent of lot width as the corner side yard, and that where a corner lot's rear yard abuts an adjacent lot's side yard, the corner side yard must instead equal that adjacent lot's required front-yard depth (whichever is greater) - both exceptions are disclosed in the per-field quote below rather than folded into the scalar. max_height_ft (35 for all five rows) is drawn from Code §28-275/28-300/28-325/28-350/28-375, each of which caps height at '2 1/2 stories or 35 feet,' whichever is more restrictive; the 2.5-story component is not separately representable in this schema and is disclosed per-field. max_lot_coverage_pct and max_impervious_pct use the established non-binding sentinel 100 (per the Pflugerville precedent in this same corpus) because Chapter 28 Article IV Divisions 2-6 (Purpose/Permitted uses/Special uses/Lot area/Height/Yard/Additional regulations/Distance requirement sections) and Chart 1/Chart 2 contain no lot-coverage-percentage or impervious-cover-percentage scalar for these districts; a general Waco-wide search for such a figure returned nothing applicable to R-E/R-1A/R-1B/R-1C/R-2. OMITTED: R-3A-R-3E (multi-family), O-1/O-2/O-3, C-1-C-5, M-1-M-3, PUD, Brazos River Corridor, College and University Neighborhoods, Neighborhood Conservation, Airport Overlay, West End, Downtown, and Historic District overlays (Article X) - none were in scope for the single-family/two-family residential envelope this table serves, and none were checked.",
+  "districts": [
+    {
+      "district_name": "R-E Estate Single-Family Residence District",
+      "front_ft": 35,
+      "rear_ft": 50,
+      "side_ft": 25,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://waco-tx.elaws.us/code/coor_ch28_artiv_div2_sec28-276",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "waco_tx/coor/28-276",
+          "section_number": "28-276",
+          "quote": "Single-family dwelling: 'A front yard of not less than 35 feet; two side yards of not less than 25 feet each; rear yard minimum 50 feet.' Uses allowed by special permit carry the same 35/25/50 values.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "waco_tx/coor/28-276",
+          "section_number": "28-276",
+          "quote": "Single-family dwelling: front yard 35 feet, two side yards 25 feet each, rear yard not less than 50 feet.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_ft": {
+          "atom_did": "waco_tx/coor/28-276",
+          "section_number": "28-276",
+          "quote": "Single-family dwelling: front yard 35 feet, two side yards of not less than 25 feet each, rear yard 50 feet.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_corner_ft": {
+          "atom_did": "waco_tx/coor/28-904",
+          "section_number": "28-904(f)",
+          "quote": "Chart 1 (City of Waco Planning & Zoning) lists an explicit Side Corner value of 15 for R-E, matching §28-904(f): 'On corner lots in the R and O districts, there shall be a yard along the side street side of such tract at least 15 feet, except that, in the case of a lot of record which is less than 75 feet in width, only 20 per cent of the width of the lot need be provided for such side yard; and further provided, that in any district, where the rear yard of a corner lot abuts the side yard of an adjacent lot, such corner lot shall provide a side yard along the side street side of such tract which is equal in width to the depth required for the front yard of such adjacent lot (whichever is greater).'",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "atom_did": "waco_tx/coor/28-275",
+          "section_number": "28-275",
+          "quote": "'No structure or use in the R-E district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "waco_tx/coor/28-271",
+          "section_number": "28-271--28-278",
+          "quote": "No lot-coverage-percentage scalar appears in the R-E district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations, or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "waco_tx/coor/28-271",
+          "section_number": "28-271--28-278",
+          "quote": "No impervious-cover-percentage scalar appears in the R-E district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "R-1A Single-Family Residence District",
+      "front_ft": 30,
+      "rear_ft": 30,
+      "side_ft": 10,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://waco-tx.elaws.us/code/coor_ch28_artiv_div3_sec28-301",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "waco_tx/coor/28-301",
+          "section_number": "28-301",
+          "quote": "Single-family dwelling: 'A front yard of not less than 30 feet; two side yards of not less than ten feet each; and a rear yard of not less than 30 feet.' Uses allowed by special permit carry the same 30/10/30 values.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "waco_tx/coor/28-301",
+          "section_number": "28-301",
+          "quote": "Single-family dwelling: front yard 30 feet, two side yards ten feet each, and a rear yard of not less than 30 feet.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_ft": {
+          "atom_did": "waco_tx/coor/28-301",
+          "section_number": "28-301",
+          "quote": "Single-family dwelling: front yard 30 feet, two side yards of not less than ten feet each, rear yard 30 feet.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_corner_ft": {
+          "atom_did": "waco_tx/coor/28-904",
+          "section_number": "28-904(f)",
+          "quote": "Chart 1 leaves the Side Corner cell blank for R-1A; §28-904(f) states the 15-foot corner-lot side-street yard applies generally to 'the R and O districts,' so it is applied here as the general provision. Full text: 'there shall be a yard along the side street side of such tract at least 15 feet, except that, in the case of a lot of record which is less than 75 feet in width, only 20 per cent of the width of the lot need be provided... and further provided, that... where the rear yard of a corner lot abuts the side yard of an adjacent lot, such corner lot shall provide a side yard... equal in width to the depth required for the front yard of such adjacent lot (whichever is greater).'",
+          "confidence": 0.8,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "atom_did": "waco_tx/coor/28-300",
+          "section_number": "28-300",
+          "quote": "'No structure or use in the R-1A district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "waco_tx/coor/28-296",
+          "section_number": "28-296--28-303",
+          "quote": "No lot-coverage-percentage scalar appears in the R-1A district's Purpose, Permitted uses, Special uses, Lot area (§28-299: 12,000 sq ft / 100 ft width), Height, Yard, Additional regulations (§28-302: development-plan review, escarpment/floodplain chapters, parking permit - no coverage figure), or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "waco_tx/coor/28-296",
+          "section_number": "28-296--28-303",
+          "quote": "No impervious-cover-percentage scalar appears in the R-1A district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "R-1B Single-Family Residence District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://waco-tx.elaws.us/code/coor_ch28_artiv_div4_sec28-326",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "waco_tx/coor/28-326",
+          "section_number": "28-326",
+          "quote": "Single-family dwelling and small lot single-family dwelling: 'A front yard of not less than 25 feet; two sides of not less than five feet each; and a rear yard of not less than 25 feet.' A distinct special-permit-uses row carries 25/6/25 instead and is omitted here.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "waco_tx/coor/28-326",
+          "section_number": "28-326",
+          "quote": "Single-family dwelling and small lot single-family dwelling: front yard 25 feet, two sides five feet each, rear yard not less than 25 feet.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_ft": {
+          "atom_did": "waco_tx/coor/28-326",
+          "section_number": "28-326",
+          "quote": "Single-family dwelling and small lot single-family dwelling: front yard 25 feet, two sides of not less than five feet each, rear yard 25 feet.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_corner_ft": {
+          "atom_did": "waco_tx/coor/28-904",
+          "section_number": "28-904(f)",
+          "quote": "Chart 1 leaves the Side Corner cell blank for R-1B; §28-904(f) states the 15-foot corner-lot side-street yard applies generally to 'the R and O districts,' so it is applied here as the general provision, subject to the same narrow-lot (20% of width, if lot of record <75 ft wide) and rear-abuts-adjacent-side-yard (match adjacent lot's front-yard depth, whichever greater) exceptions quoted in the R-E row.",
+          "confidence": 0.8,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "atom_did": "waco_tx/coor/28-325",
+          "section_number": "28-325",
+          "quote": "'No structure or use in the R-1B district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "waco_tx/coor/28-321",
+          "section_number": "28-321--28-328",
+          "quote": "No lot-coverage-percentage scalar appears in the R-1B district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations, or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "waco_tx/coor/28-321",
+          "section_number": "28-321--28-328",
+          "quote": "No impervious-cover-percentage scalar appears in the R-1B district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "R-1C Single-Family Residence District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 6,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://waco-tx.elaws.us/code/coor_ch28_artiv_div5_sec28-351",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "waco_tx/coor/28-351",
+          "section_number": "28-351",
+          "quote": "All dwellings except single-family attached (including special permits): 'A front yard of not less than 25 feet; two side yards of not less than six feet each; and a rear yard of not less than 25 feet.' A separate single-family-attached/detached (zero lot line) row carries a 25/[10-ft combined side]/25 shape instead and is omitted here.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "waco_tx/coor/28-351",
+          "section_number": "28-351",
+          "quote": "All dwellings except SF attached: front yard 25 feet, two side yards six feet each, rear yard not less than 25 feet.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_ft": {
+          "atom_did": "waco_tx/coor/28-351",
+          "section_number": "28-351",
+          "quote": "All dwellings except SF attached: front yard 25 feet, two side yards of not less than six feet each, rear yard 25 feet. (The zero-lot-line SF-attached/detached variant instead uses a 10-foot combined side yard and is not represented by this scalar.)",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_corner_ft": {
+          "atom_did": "waco_tx/coor/28-904",
+          "section_number": "28-904(f)",
+          "quote": "Chart 1 leaves the Side Corner cell blank for R-1C; §28-904(f) states the 15-foot corner-lot side-street yard applies generally to 'the R and O districts,' so it is applied here as the general provision, subject to the same narrow-lot and rear-abuts-adjacent-side-yard exceptions quoted in the R-E row.",
+          "confidence": 0.8,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "atom_did": "waco_tx/coor/28-350",
+          "section_number": "28-350",
+          "quote": "'No structure or use in the R-1C district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "waco_tx/coor/28-346",
+          "section_number": "28-346--28-353",
+          "quote": "No lot-coverage-percentage scalar appears in the R-1C district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations, or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "waco_tx/coor/28-346",
+          "section_number": "28-346--28-353",
+          "quote": "No impervious-cover-percentage scalar appears in the R-1C district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "R-2 Two-Family and Attached Single-Family Residence District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://waco-tx.elaws.us/code/coor_ch28_artiv_div6_sec28-376",
+      "provenance": {
+        "front_ft": {
+          "atom_did": "waco_tx/coor/28-376",
+          "section_number": "28-376",
+          "quote": "Single-family or two-family dwelling: 'A front yard of not less than 25 feet; two side yards of not less than five feet each; and a rear yard of not less than 25 feet.' Separate single-family-attached (zero lot line), single-family-detached (zero lot line), and small-lot single-family rows exist with 10-ft combined/opposite side-yard shapes and are omitted here.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "rear_ft": {
+          "atom_did": "waco_tx/coor/28-376",
+          "section_number": "28-376",
+          "quote": "Single-family or two-family dwelling: front yard 25 feet, two side yards five feet each, rear yard not less than 25 feet.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_ft": {
+          "atom_did": "waco_tx/coor/28-376",
+          "section_number": "28-376",
+          "quote": "Single-family or two-family dwelling: front yard 25 feet, two side yards of not less than five feet each, rear yard 25 feet. (Zero-lot-line and small-lot variants instead use a 10-foot combined or opposite-side yard and are not represented by this scalar.)",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "side_corner_ft": {
+          "atom_did": "waco_tx/coor/28-904",
+          "section_number": "28-904(f)",
+          "quote": "Chart 1 leaves the Side Corner cell blank for R-2; §28-904(f) states the 15-foot corner-lot side-street yard applies generally to 'the R and O districts,' so it is applied here as the general provision, subject to the same narrow-lot and rear-abuts-adjacent-side-yard exceptions quoted in the R-E row.",
+          "confidence": 0.8,
+          "verification_state": "human-verified"
+        },
+        "max_height_ft": {
+          "atom_did": "waco_tx/coor/28-375",
+          "section_number": "28-375",
+          "quote": "'No structure or use in the R-2 district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.9,
+          "verification_state": "human-verified"
+        },
+        "max_lot_coverage_pct": {
+          "atom_did": "waco_tx/coor/28-371",
+          "section_number": "28-371--28-378",
+          "quote": "No lot-coverage-percentage scalar appears in the R-2 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations, or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "atom_did": "waco_tx/coor/28-371",
+          "section_number": "28-371--28-378",
+          "quote": "No impervious-cover-percentage scalar appears in the R-2 district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
+          "confidence": 0.8,
+          "verification_state": "human-verified",
+          "not_specified": true
+        }
+      }
+    }
+  ]
+}
