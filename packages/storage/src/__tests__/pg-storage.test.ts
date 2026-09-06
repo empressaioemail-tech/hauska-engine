@@ -201,6 +201,10 @@ class FakePgBackend {
         return Promise.resolve([{ count: String(backend.atoms.size) }]);
       }
 
+      if (text.startsWith("SELECT EXISTS (SELECT 1 FROM atoms LIMIT 1)")) {
+        return Promise.resolve([{ present: backend.atoms.size > 0 }]);
+      }
+
       if (text.startsWith("SELECT atom_did FROM atoms ORDER BY atom_did")) {
         return Promise.resolve(
           [...backend.atoms.keys()].map((atom_did) => ({ atom_did })),
@@ -259,6 +263,51 @@ describe("PgStorage", () => {
 
     const roundTrip = await storage.getAtomByDid(STORAGE_PORT_PROOF_ATOM_DID);
     expect(roundTrip?.entityId).toBe(proof.entityId);
+  });
+
+  it("hasAtoms() reflects presence via EXISTS, true after a write and false on an empty backend", async () => {
+    const emptyBackend = new FakePgBackend();
+    const emptyStorage = new PgStorage(emptyBackend.makeSql() as never);
+    expect(await emptyStorage.hasAtoms()).toBe(false);
+
+    const backend = new FakePgBackend();
+    const storage = new PgStorage(backend.makeSql() as never);
+    await storage.writeAtom(buildStoragePortProofAtom());
+    expect(await storage.hasAtoms()).toBe(true);
+  });
+
+  it("hasAtoms() issues EXISTS + LIMIT 1, never SELECT COUNT(*) FROM atoms", async () => {
+    const backend = new FakePgBackend();
+    const calls: string[] = [];
+    const baseSql = backend.makeSql();
+    const spySql = ((
+      strings: TemplateStringsArray | readonly unknown[],
+      ...params: unknown[]
+    ) => {
+      if (Array.isArray(strings) && "raw" in strings) {
+        const text = (strings as TemplateStringsArray)
+          .join("?")
+          .replace(/\s+/g, " ")
+          .trim();
+        calls.push(text);
+      }
+      return (baseSql as unknown as (...args: unknown[]) => unknown)(
+        strings,
+        ...params,
+      );
+    }) as unknown as typeof baseSql;
+    Object.assign(spySql, baseSql);
+
+    const storage = new PgStorage(spySql as never);
+    await storage.writeAtom(buildStoragePortProofAtom());
+    calls.length = 0;
+
+    await storage.hasAtoms();
+
+    expect(calls.some((c) => c.startsWith("SELECT EXISTS (SELECT 1 FROM atoms LIMIT 1)"))).toBe(
+      true,
+    );
+    expect(calls.some((c) => c.includes("COUNT(*)"))).toBe(false);
   });
 
   it("finds the proof atom via search token", async () => {

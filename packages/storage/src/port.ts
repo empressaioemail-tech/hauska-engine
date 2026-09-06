@@ -322,4 +322,12 @@ export interface StoragePort {
 
   /** Total atom instances loaded in this back-end (all entity types). */
   countAtoms(): Promise<number>;
+
+  /**
+   * Cheap presence check: does this back-end hold at least one atom?
+   * For a liveness/health check that only needs `count > 0` — never use
+   * `countAtoms()` for that, it is a full-table COUNT(*) on a 100M+ row
+   * Postgres backend and must not run on a recurring health-check path.
+   */
+  hasAtoms(): Promise<boolean>;
 }

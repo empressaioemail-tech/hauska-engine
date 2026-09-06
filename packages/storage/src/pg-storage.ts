@@ -1089,6 +1089,18 @@ export class PgStorage implements StoragePort {
     return Number(rows[0]?.count ?? 0);
   }
 
+  /**
+   * EXISTS + LIMIT 1 instead of countAtoms()'s full COUNT(*) — stops at the
+   * first row found via any index, independent of table size. Safe for a
+   * recurring health-check path against a 100M+ row table.
+   */
+  async hasAtoms(): Promise<boolean> {
+    const rows = await this.sql<[{ present: boolean }]>`
+      SELECT EXISTS (SELECT 1 FROM atoms LIMIT 1) AS present
+    `;
+    return rows[0]?.present ?? false;
+  }
+
   /** Return all atom DIDs currently stored in Postgres. */
   async listAtomDids(): Promise<ReadonlyArray<string>> {
     const rows = await this.sql<AtomDidRow[]>`

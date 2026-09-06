@@ -114,6 +114,22 @@ describe("GET /healthz", () => {
     expect(res.status).toBe(200);
   });
 
+  it("never calls countAtoms() -- healthz must use the cheap hasAtoms() path, not a full COUNT(*)", async () => {
+    const storage = new InMemoryStorage();
+    await storage.writeAtoms([testSection({ entityId: "test/6", contentHash: "pqr" })]);
+    const countAtomsSpy = vi
+      .spyOn(storage, "countAtoms")
+      .mockRejectedValue(new Error("countAtoms() must not run on the healthz path"));
+
+    const app = buildApp({ storage, apiKey: "" });
+    const res = await app.request("/healthz");
+
+    expect(countAtomsSpy).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.corpus).toMatchObject({ ok: true, atomCount: 1 });
+  });
+
   it("serves /healthz/ for Cloud Run GFE workaround", async () => {
     const storage = new InMemoryStorage();
     await storage.writeAtoms([testSection({ entityId: "test/5", contentHash: "mno" })]);
