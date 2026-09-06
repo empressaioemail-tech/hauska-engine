@@ -41,7 +41,13 @@ const ssl =
     ? "require"
     : false;
 
-const sql = postgres(url, { ssl, max: 1 });
+// hauska_mcp got a 2-minute DATABASE-level statement_timeout default
+// (2026-09-06, countAtoms() recurrence hardening) -- a migration's own DDL
+// (e.g. an index build over a large table, like 012's building-footprint
+// index which took several minutes) can legitimately run longer. This is a
+// deliberate, operator-run migration tool, not a stray caller the new
+// default is meant to catch -- opt back out per session.
+const sql = postgres(url, { ssl, max: 1, connection: { statement_timeout: "0" } });
 
 try {
   const migrationSql = await readFile(migrationPath, "utf8");
