@@ -242,7 +242,17 @@ export interface EnginePropertyPersistence {
 export type EnvelopeHonestOutcome =
   | { kind: "buildable"; areaSqFt: number }
   | { kind: "no-buildable-area"; reason: string }
-  | { kind: "provisional-front-edge"; reason: string };
+  | { kind: "provisional-front-edge"; reason: string }
+  /**
+   * No zoning ordinance exists to derive a setback from (unincorporated
+   * land — counties do not zone). This is a scope statement, not a claim
+   * about buildability: it means no zoning-setback-derived envelope
+   * opinion was computed, never "the whole parcel is buildable" — this
+   * atom chain doesn't account for floodplain, easements, OSSF setbacks,
+   * or any other real constraint, so asserting a buildable area here would
+   * be a claim no computation backed.
+   */
+  | { kind: "not-applicable"; reason: string };
 
 /** Dimensional helper used by setback table resolution (maps to contract front/side/rear). */
 export interface SetbackDimensions {
