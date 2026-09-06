@@ -50,7 +50,19 @@ if (!url) {
   process.exit(1);
 }
 
-const sql = postgres(url, { ssl: "require", max: 1, prepare: false });
+// hauska_mcp got a 2-minute DATABASE-level statement_timeout default
+// (2026-09-06, countAtoms() recurrence hardening) — generous for normal
+// serving-path queries but tighter than this script's own real per-batch
+// cost can run under heavy contention (measured up to ~6min/batch earlier
+// tonight). This is a deliberate, known long-running admin script, not a
+// stray caller the new default is meant to catch — opt back out per
+// session rather than fight the new default silently.
+const sql = postgres(url, {
+  ssl: "require",
+  max: 1,
+  prepare: false,
+  connection: { statement_timeout: "0" },
+});
 
 const isRoadNode = args.entityType === "road-node";
 
