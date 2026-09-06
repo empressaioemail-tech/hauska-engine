@@ -108,7 +108,8 @@ export type FloodZoneSummaryInput =
 export type EnvelopeOutcomeInput =
   | { kind: "buildable"; areaSqFt: number }
   | { kind: "no-buildable-area"; reason: string }
-  | { kind: "provisional-front-edge"; reason: string };
+  | { kind: "provisional-front-edge"; reason: string }
+  | { kind: "not-applicable"; reason: string };
 
 export interface ComposeSitePlanModelInputs {
   parcelNodeId: string;

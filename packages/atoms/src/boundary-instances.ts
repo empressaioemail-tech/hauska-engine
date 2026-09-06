@@ -46,7 +46,13 @@ export interface BoundaryResolvedSetback {
 }
 
 export interface BoundarySetbackAbsence {
-  kind: "no-setback-row" | "unmapped-adjacency";
+  /**
+   * "not-applicable": no zoning ordinance exists to derive a setback from
+   * (unincorporated land). Distinct from "no-setback-row" (a genuinely
+   * missing ordinance-chart row for a KNOWN zoned district — a real gap,
+   * not an absence of zoning itself).
+   */
+  kind: "no-setback-row" | "unmapped-adjacency" | "not-applicable";
   reason: string;
 }
 
