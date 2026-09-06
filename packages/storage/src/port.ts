@@ -320,14 +320,28 @@ export interface StoragePort {
 
   upsertJurisdictionStatus(snapshot: JurisdictionStatusSnapshot): Promise<void>;
 
-  /** Total atom instances loaded in this back-end (all entity types). */
+  /**
+   * Total atom instances loaded in this back-end (all entity types).
+   *
+   * On Postgres (2026-09-06 hardening) this is `pg_stat_user_tables.n_live_tup`
+   * — the SAME statistics-based estimate `estimateAtomCount()` uses, not an
+   * exact `COUNT(*)`. It used to be a plain unbounded full-table scan; a real
+   * incident found a still-unidentified caller hitting it every ~30s, each
+   * call taking minutes on a 100M+-row table and piling up concurrently
+   * against shared compute. Every legitimate caller left on main only needed
+   * an approximate/observability number anyway (nothing correctness-critical
+   * called this), so the interface method's exactness guarantee is gone on
+   * Postgres — a caller that genuinely needs an exact total should count a
+   * narrower, indexed slice, not the whole table. `InMemoryStorage` stays
+   * exact (a Map size lookup is cheap regardless).
+   */
   countAtoms(): Promise<number>;
 
   /**
    * Cheap presence check: does this back-end hold at least one atom?
    * For a liveness/health check that only needs `count > 0` — never use
-   * `countAtoms()` for that, it is a full-table COUNT(*) on a 100M+ row
-   * Postgres backend and must not run on a recurring health-check path.
+   * `countAtoms()` for that; even hardened to an estimate, `hasAtoms()` is
+   * the one actually documented and tested for a recurring health-check path.
    */
   hasAtoms(): Promise<boolean>;
 
@@ -336,9 +350,9 @@ export interface StoragePort {
    * dashboards) — not correctness-critical code. On Postgres this reads
    * `pg_stat_user_tables.n_live_tup`, a statistics-based estimate updated by
    * autovacuum/autoanalyze (can lag real time by hours/days on a quiet
-   * table), never `countAtoms()`'s full COUNT(*). Every Cloud Run instance
-   * start (deploy, autoscale-out, cold start after scale-to-zero) runs
-   * whatever this backs, so it must stay cheap regardless of table size.
+   * table) — same query `countAtoms()` now uses on Postgres. Every Cloud Run
+   * instance start (deploy, autoscale-out, cold start after scale-to-zero)
+   * runs whatever this backs, so it must stay cheap regardless of table size.
    */
   estimateAtomCount(): Promise<number>;
 }
