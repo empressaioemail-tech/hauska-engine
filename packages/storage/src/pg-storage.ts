@@ -1101,6 +1101,19 @@ export class PgStorage implements StoragePort {
     return rows[0]?.present ?? false;
   }
 
+  /**
+   * pg_stat_user_tables.n_live_tup instead of countAtoms()'s COUNT(*) — an
+   * autovacuum/autoanalyze-maintained estimate, not a scan. Safe to run on
+   * every instance start regardless of table size.
+   */
+  async estimateAtomCount(): Promise<number> {
+    const rows = await this.sql<[{ n_live_tup: string | null }]>`
+      SELECT n_live_tup FROM pg_stat_user_tables
+      WHERE schemaname = 'public' AND relname = 'atoms'
+    `;
+    return Number(rows[0]?.n_live_tup ?? 0);
+  }
+
   /** Return all atom DIDs currently stored in Postgres. */
   async listAtomDids(): Promise<ReadonlyArray<string>> {
     const rows = await this.sql<AtomDidRow[]>`

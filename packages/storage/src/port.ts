@@ -330,4 +330,15 @@ export interface StoragePort {
    * Postgres backend and must not run on a recurring health-check path.
    */
   hasAtoms(): Promise<boolean>;
+
+  /**
+   * Cheap, approximate atom count for observability (boot/startup logs,
+   * dashboards) — not correctness-critical code. On Postgres this reads
+   * `pg_stat_user_tables.n_live_tup`, a statistics-based estimate updated by
+   * autovacuum/autoanalyze (can lag real time by hours/days on a quiet
+   * table), never `countAtoms()`'s full COUNT(*). Every Cloud Run instance
+   * start (deploy, autoscale-out, cold start after scale-to-zero) runs
+   * whatever this backs, so it must stay cheap regardless of table size.
+   */
+  estimateAtomCount(): Promise<number>;
 }

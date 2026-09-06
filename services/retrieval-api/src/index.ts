@@ -120,8 +120,12 @@ if (isMain) {
     calibrationOverlay: overlayHandle?.port ?? null,
   });
   // Listen before expensive substrate telemetry — Cloud Run's startup probe
-  // is a TCP check on PORT. countAtoms() against a 100M-row heap can exceed
-  // the default 240s single-attempt window on cold boot.
+  // is a TCP check on PORT. Every instance start (deploy, autoscale-out,
+  // cold start after scale-to-zero) reaches this block, so it must stay
+  // cheap regardless of table size: estimateAtomCount() (pg_stat_user_tables
+  // estimate), never countAtoms() (full COUNT(*) — the exact query that
+  // running on the recurring /healthz path took down cache hit ratio; see
+  // healthz.ts). This log is informational only, no threshold reads it.
   startServer(app, port);
 
   void (async () => {
@@ -136,7 +140,7 @@ if (isMain) {
           layered: boot.mode === "layered",
           calibrationOverlay: Boolean(overlayHandle),
           jurisdictions: (await storage.listJurisdictionStatus()).length,
-          atomCount: await storage.countAtoms(),
+          atomCountEstimate: await storage.estimateAtomCount(),
           memoryLimitMib,
           ts: new Date().toISOString(),
         }),
