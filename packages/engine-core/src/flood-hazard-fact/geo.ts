@@ -142,6 +142,15 @@ export function ringCentroid(
   return [sx / n, sy / n];
 }
 
+/**
+ * Third centroid: Polygon uses the de-duplicated vertex mean; MultiPolygon
+ * returns null (honest refusal of N parts). Point stays the point.
+ *
+ * Not a merge of the other two copies. well-fact double-counts the RFC 7946
+ * closing vertex on every closed ring and returns null on MultiPolygon.
+ * The previous flood copy de-duplicated Polygon correctly then silently
+ * answered for part one of a MultiPolygon.
+ */
 export function geometryCentroid(geometry: unknown): LngLat | null {
   if (!geometry || typeof geometry !== "object") return null;
   const g = geometry as { type?: string; coordinates?: unknown };
@@ -154,23 +163,69 @@ export function geometryCentroid(geometry: unknown): LngLat | null {
     const outer = asRing(g.coordinates[0]);
     return outer ? ringCentroid(outer) : null;
   }
-  if (g.type === "MultiPolygon" && Array.isArray(g.coordinates)) {
-    const first = g.coordinates[0];
-    if (Array.isArray(first)) {
-      const outer = asRing(first[0]);
-      return outer ? ringCentroid(outer) : null;
-    }
+  if (g.type === "MultiPolygon") {
+    return null;
   }
   return null;
 }
 
-export function isSfhaFlag(sfhaTf: string | null | undefined): boolean {
-  return sfhaTf === "T" || sfhaTf === "t" || sfhaTf === "true";
+/**
+ * FEMA NFHL S_FLD_HAZ_AR SFHA_TF domain: the literal strings "T" and "F".
+ * Source in this repo (READ, not memory): packages/adapters/src/federal/fema-nfhl.ts
+ * lines 112-115 (FEMA stamps SFHA_TF as the literal strings T or F).
+ * Fixtures in src/__tests__/fixtures/flood-pip-cases.ts use only T and F.
+ *
+ * Input type on FloodZoneFeature.sfhaTf is `string | null`. The cheapest
+ * satisfier of the old predicate (`=== "T" || === "t" || === "true"`) on that
+ * type is any other string, or null: all of those returned false, so a hazard
+ * flag failed open. Unrecognised values raise.
+ */
+export type SfhaFlag = "sfha" | "not-sfha";
+
+export class UnrecognisedSfhaFlagError extends Error {
+  readonly sfhaTf: string | null;
+  constructor(sfhaTf: string | null) {
+    const rendered = sfhaTf === null ? "null" : JSON.stringify(sfhaTf);
+    super(
+      `unrecognised NFHL SFHA_TF ${rendered}; domain is the literal strings T and F`,
+    );
+    this.name = "UnrecognisedSfhaFlagError";
+    this.sfhaTf = sfhaTf;
+  }
+}
+
+export function parseSfhaTf(sfhaTf: string | null): SfhaFlag {
+  if (sfhaTf === "T") return "sfha";
+  if (sfhaTf === "F") return "not-sfha";
+  throw new UnrecognisedSfhaFlagError(sfhaTf);
+}
+
+/** True only for parsed SFHA. Unrecognised values raise; they are not false. */
+export function isSfhaFlag(sfhaTf: string | null): boolean {
+  return parseSfhaTf(sfhaTf) === "sfha";
 }
 
 /**
- * Find the first zone polygon containing the point. Prefers SFHA zones when
- * multiple intersect (stricter finding wins).
+ * Overlap comparison, after every candidate flag has been parsed:
+ * 1. Any unrecognised SFHA_TF raises. No preference, no array-order fallback.
+ * 2. Mixed SFHA and non-SFHA: the first SFHA in candidate (array) order wins.
+ * 3. All non-SFHA: the first candidate is an honest non-SFHA return.
+ */
+export function pickPreferredFloodZone(
+  candidates: ReadonlyArray<FloodZoneFeature>,
+): FloodZoneFeature | null {
+  if (candidates.length === 0) return null;
+  const parsed: Array<{ zone: FloodZoneFeature; flag: SfhaFlag }> = [];
+  for (const zone of candidates) {
+    parsed.push({ zone, flag: parseSfhaTf(zone.sfhaTf) });
+  }
+  const sfha = parsed.find((p) => p.flag === "sfha");
+  return sfha ? sfha.zone : parsed[0]!.zone;
+}
+
+/**
+ * Find a zone polygon containing the point. Parses every overlapping flag
+ * before preferring; see pickPreferredFloodZone for the comparison.
  */
 export function findZoneAtPoint(
   lng: number,
@@ -195,7 +250,5 @@ export function findZoneAtPoint(
     }
     if (pointInGeoJson(lng, lat, z.geometry)) candidates.push(z);
   }
-  if (candidates.length === 0) return null;
-  const sfha = candidates.find((c) => isSfhaFlag(c.sfhaTf));
-  return sfha ?? candidates[0]!;
+  return pickPreferredFloodZone(candidates);
 }

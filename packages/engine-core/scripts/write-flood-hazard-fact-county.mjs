@@ -41,6 +41,7 @@ import {
   filterZonesByBBox,
   firstZoneVintageInBBox,
   geometryCentroid,
+  loadTxgioParcelRingStore,
   planCountyFloodHazard,
   planCountyFloodHazardPostgis,
   probeFloodZoneGeomReadiness,
@@ -436,6 +437,7 @@ const summary = {
   planCandidatesRejectedByJs: null,
   planCandidateLimitHits: null,
   planDigest: null,
+  loadParcelRingsMs: null,
 };
 
 try {
@@ -482,6 +484,8 @@ try {
     const parcels = [];
     const tLoadParcels = performance.now();
     let lastFeature = -1;
+    let multipartCentroidNullLoaded = 0;
+    let nullGeomLoaded = 0;
     while (true) {
       if (args.limit > 0 && parcels.length >= args.limit) break;
       const remaining =
@@ -500,14 +504,16 @@ try {
       if (page.length === 0) break;
       for (const p of page) {
         if (args.limit > 0 && parcels.length >= args.limit) break;
-        const centroid =
-          geometryCentroid(p.geometry) ??
-          (Number.isFinite(p.west_lng) && Number.isFinite(p.south_lat)
-            ? [
-                (Number(p.west_lng) + Number(p.east_lng)) / 2,
-                (Number(p.south_lat) + Number(p.north_lat)) / 2,
-              ]
-            : null);
+        // Null is unmeasurable (missing geom, or MultiPolygon refusal).
+        // Do not substitute bbox midpoint: that re-opens W-4 by answering
+        // for a different point after geometryCentroid correctly returned null.
+        const centroid = geometryCentroid(p.geometry);
+        const geomType =
+          p.geometry && typeof p.geometry === "object" ? p.geometry.type : null;
+        if (p.geometry == null) nullGeomLoaded += 1;
+        if (geomType === "MultiPolygon" && centroid == null) {
+          multipartCentroidNullLoaded += 1;
+        }
         parcels.push({
           parcelKey: p.prop_id ?? `_feature-${p.feature_index}`,
           centroid,
@@ -517,6 +523,16 @@ try {
       if (page.length < pageSize) break;
     }
     summary.loadParcelsMs = Math.round(performance.now() - tLoadParcels);
+    summary.multipartCentroidNullLoaded = multipartCentroidNullLoaded;
+    summary.nullGeomLoaded = nullGeomLoaded;
+
+    const tLoadRings = performance.now();
+    const ringStore = await loadTxgioParcelRingStore(
+      sql,
+      args.county,
+      parcels.map((p) => p.parcelKey),
+    );
+    summary.loadParcelRingsMs = Math.round(performance.now() - tLoadRings);
 
     const pad = 0.02;
     const countyZoneBbox = {
@@ -612,6 +628,7 @@ try {
       plan = planCountyFloodHazard(parcels, zones, {
         countyFips: args.county,
         grid,
+        ringStore,
       });
       summary.planMs = Math.round(performance.now() - tPlan);
     } else {
@@ -621,6 +638,7 @@ try {
         countyFips: args.county,
         bbox: countyZoneBbox,
         backend: planBackend,
+        ringStore,
         ...(args.planBatch > 0 ? { batchSize: args.planBatch } : {}),
         onBatch: (info) => {
           console.log(
@@ -653,6 +671,7 @@ try {
     }
 
     summary.planDigest = digestFloodPlan(plan);
+    const identity = plan.populationIdentity;
     summary.plan = {
       parcelsRead: plan.parcelsRead,
       zonesIndexed: plan.zonesIndexed,
@@ -662,8 +681,22 @@ try {
       wouldWritePresentInSfha: plan.counts.presentInSfha,
       wouldWritePresentOutside: plan.counts.presentOutside,
       wouldWriteAbsent: plan.counts.absent,
+      wouldWriteRefused: plan.counts.refused,
       skippedUnusableKey: plan.counts.skippedUnusableKey,
+      skippedDuplicateKey: plan.counts.skippedDuplicateKey,
+      containment: plan.containment,
+      populationIdentity: identity,
+      multipartCentroidNullLoaded,
+      nullGeomLoaded,
     };
+    console.log(
+      JSON.stringify({
+        event: "flood-hazard-fact-county.population-identity",
+        county: args.county,
+        ok: identity.sum === identity.parcelsRead,
+        equation: identity.equation,
+      }),
+    );
 
     const provenance = {
       sourceAdapter: SOURCE_ADAPTER,

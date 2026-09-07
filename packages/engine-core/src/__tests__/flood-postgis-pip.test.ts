@@ -32,6 +32,7 @@ import {
   planCountyFloodHazardPostgis,
   probeFloodZoneGeomReadiness,
 } from "../flood-hazard-fact/postgis-flood-plan.js";
+import { memoryStoreContainingCentroids } from "../flood-hazard-fact/containment.js";
 import {
   PIP_CASES,
   PIP_EXPECTED_DIVERGENCES,
@@ -44,6 +45,11 @@ import {
 } from "./fixtures/flood-pip-cases.js";
 
 const TEST_URL = process.env.FLOOD_POSTGIS_TEST_URL?.trim();
+
+const PIP_RING_STORE = memoryStoreContainingCentroids(
+  PIP_FIXTURE_COUNTY,
+  PIP_PARCELS,
+);
 
 describe("incumbent JS point-in-polygon semantics", () => {
   it("linear scan produces the documented verdict on every adversarial case", () => {
@@ -150,6 +156,7 @@ describe.skipIf(!TEST_URL)("PostGIS flood PIP — adversarial cases", () => {
   it("pure PostGIS matches the documented ST_Contains verdicts", async () => {
     const result = await planCountyFloodHazardPostgis(sql, PIP_PARCELS, {
       countyFips: PIP_FIXTURE_COUNTY,
+      ringStore: PIP_RING_STORE,
       bbox: PIP_FIXTURE_BBOX,
       backend: "postgis",
       table: PIP_FIXTURE_TABLE,
@@ -168,12 +175,14 @@ describe.skipIf(!TEST_URL)("PostGIS flood PIP — adversarial cases", () => {
   it("point-major and zone-major agree on every case", async () => {
     const zoneMajor = await planCountyFloodHazardPostgis(sql, PIP_PARCELS, {
       countyFips: PIP_FIXTURE_COUNTY,
+      ringStore: PIP_RING_STORE,
       bbox: PIP_FIXTURE_BBOX,
       backend: "postgis",
       table: PIP_FIXTURE_TABLE,
     });
     const pointMajor = await planCountyFloodHazardPostgis(sql, PIP_PARCELS, {
       countyFips: PIP_FIXTURE_COUNTY,
+      ringStore: PIP_RING_STORE,
       bbox: PIP_FIXTURE_BBOX,
       backend: "postgis-point",
       table: PIP_FIXTURE_TABLE,
@@ -184,6 +193,7 @@ describe.skipIf(!TEST_URL)("PostGIS flood PIP — adversarial cases", () => {
   it("hybrid reproduces the JS verdict on every case, boundary included", async () => {
     const result = await planCountyFloodHazardPostgis(sql, PIP_PARCELS, {
       countyFips: PIP_FIXTURE_COUNTY,
+      ringStore: PIP_RING_STORE,
       bbox: PIP_FIXTURE_BBOX,
       backend: "hybrid",
       table: PIP_FIXTURE_TABLE,
@@ -203,6 +213,7 @@ describe.skipIf(!TEST_URL)("PostGIS flood PIP — adversarial cases", () => {
   it("pure PostGIS differs from JS ONLY on the boundary-incident point", async () => {
     const result = await planCountyFloodHazardPostgis(sql, PIP_PARCELS, {
       countyFips: PIP_FIXTURE_COUNTY,
+      ringStore: PIP_RING_STORE,
       bbox: PIP_FIXTURE_BBOX,
       backend: "postgis",
       table: PIP_FIXTURE_TABLE,
@@ -223,6 +234,7 @@ describe.skipIf(!TEST_URL)("PostGIS flood PIP — adversarial cases", () => {
         [{ parcelKey: "P08", centroid: [8, 8] }],
         {
           countyFips: PIP_FIXTURE_COUNTY,
+          ringStore: PIP_RING_STORE,
           bbox: PIP_FIXTURE_BBOX,
           backend: "postgis",
           table: PIP_FIXTURE_TABLE,
@@ -237,6 +249,7 @@ describe.skipIf(!TEST_URL)("PostGIS flood PIP — adversarial cases", () => {
   it("batching does not change the plan", async () => {
     const one = await planCountyFloodHazardPostgis(sql, PIP_PARCELS, {
       countyFips: PIP_FIXTURE_COUNTY,
+      ringStore: PIP_RING_STORE,
       bbox: PIP_FIXTURE_BBOX,
       backend: "postgis",
       table: PIP_FIXTURE_TABLE,
@@ -244,6 +257,7 @@ describe.skipIf(!TEST_URL)("PostGIS flood PIP — adversarial cases", () => {
     });
     const all = await planCountyFloodHazardPostgis(sql, PIP_PARCELS, {
       countyFips: PIP_FIXTURE_COUNTY,
+      ringStore: PIP_RING_STORE,
       bbox: PIP_FIXTURE_BBOX,
       backend: "postgis",
       table: PIP_FIXTURE_TABLE,
