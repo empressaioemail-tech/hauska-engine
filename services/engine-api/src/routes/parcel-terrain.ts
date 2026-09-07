@@ -177,7 +177,6 @@ const feasibilityRefreshBody = z.object({
   address: z.string().max(200).optional(),
   countyName: z.string().max(120).optional(),
   centroidOverride: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
-  floodStudyAvailable: z.boolean().optional(),
   // item 19 — a flood-drainage-study flow exit the caller already has on
   // file for this parcel. Absent = the discharge-point section ships
   // honest-absent; the engine never runs its own D8 pass here.
@@ -609,7 +608,14 @@ export function buildParcelTerrainRoutes(
         streetAnchors: parsed.data.streetAnchors,
         descriptor: { address: parsed.data.address, countyName: parsed.data.countyName },
         centroidOverride: parsed.data.centroidOverride,
-        floodStudyAvailable: parsed.data.floodStudyAvailable,
+        // R3/R5 (2026-09-07): the real parcel-scoped drainage study, read
+        // fresh when the persisted one is stale or missing — replaces the
+        // caller-supplied floodStudyAvailable boolean nothing ever checked.
+        // Same resolver/storage/artifactStore this route already uses for
+        // the site-plan geometry; fetchDem/runWorker/fetchRainfall default
+        // to the real adapters, same as the Flood-Drainage report's own
+        // route does today.
+        drainage: { runWhenStale: true },
         dischargeExitPoint: parsed.data.dischargeExitPoint,
         dischargeResolver: parsed.data.dischargeExitPoint
           ? createCountyHydrographyDischargeResolver()

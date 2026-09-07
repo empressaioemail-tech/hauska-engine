@@ -8,8 +8,9 @@ import {
 import {
   absent as absentFact,
   present as presentFact,
-  type FeasibilityModel,
+  type JurisdictionFacts,
 } from "../feasibility-model.js";
+import type { ParcelReportModel } from "../report-model.js";
 
 /**
  * P-120 item 6, consuming side.
@@ -21,29 +22,32 @@ import {
  * with citation derived by the caller scanning for its own `[key]` markers.
  */
 
-function modelFixture(overrides: Partial<FeasibilityModel> = {}): FeasibilityModel {
+function modelFixture(overrides: Partial<ParcelReportModel["facts"]> = {}): ParcelReportModel {
+  const jurisdiction: JurisdictionFacts = {
+    countyFips: "48021",
+    countyName: "Bastrop",
+    cityLimitsStatus: "unresolved",
+    etjStatus: "unresolved",
+  };
   return {
     parcelNodeId: "48021:47595",
-    sitePlan: {} as FeasibilityModel["sitePlan"],
-    jurisdiction: {
-      countyFips: "48021",
-      countyName: "Bastrop",
-      cityLimitsStatus: "unresolved",
-      etjStatus: "unresolved",
+    geometry: { status: "absent", reason: "not composed in this fixture" },
+    drainage: { status: "absent", reason: "not composed in this fixture" },
+    package: { verdict: "", narrativeSkeleton: "", openItems: [], dataQuality: { supersededNotes: [] } },
+    facts: {
+      jurisdiction,
+      parcelOwnership: absentFact("No CAD roll row on file."),
+      flood: presentFact({ zone: "X", inSpecialFloodHazardArea: false } as never),
+      specialDistricts: absentFact("No special-district atom on file."),
+      wellsPipelines: absentFact("No well or pipeline atom on file."),
+      terrain: presentFact({ elevationRangeMeters: { min: 119.2, max: 121 }, contourIntervalMeters: 1 }),
+      utilities: absentFact("No utility service rail reached this parcel."),
+      hoa: { searchStatus: "not-searched" },
+      footprint: absentFact("No building-footprint atom on file."),
+      dischargePoint: absentFact("No county hydrography source registered."),
+      ...overrides,
     },
-    parcelOwnership: absentFact("No CAD roll row on file."),
-    flood: presentFact({ zone: "X", inSpecialFloodHazardArea: false } as never),
-    specialDistricts: absentFact("No special-district atom on file."),
-    wellsPipelines: absentFact("No well or pipeline atom on file."),
-    terrain: { elevationRangeMeters: { min: 119.2, max: 121 }, contourIntervalMeters: 1 },
-    utilities: absentFact("No utility service rail reached this parcel."),
-    hoa: { searchStatus: "not-searched" },
-    footprint: absentFact("No building-footprint atom on file."),
-    dischargePoint: absentFact("No county hydrography source registered."),
-    dataQuality: { supersededNotes: [] } as never,
-    openItems: [],
-    ...overrides,
-  } as FeasibilityModel;
+  };
 }
 
 const config = { baseUrl: "https://api.example/api/brokerage/v1", apiKey: "svc-key-123" };
@@ -79,9 +83,9 @@ describe("buildNarrativeFacts: what the model is allowed to see", () => {
   it("passes fact-state sections through unchanged", () => {
     const model = modelFixture();
     const facts = buildNarrativeFacts(model);
-    expect(facts.flood).toBe(model.flood);
-    expect(facts.parcelOwnership).toBe(model.parcelOwnership);
-    expect(facts.footprint).toBe(model.footprint);
+    expect(facts.flood).toBe(model.facts.flood);
+    expect(facts.parcelOwnership).toBe(model.facts.parcelOwnership);
+    expect(facts.footprint).toBe(model.facts.footprint);
   });
 
   it("HONESTY: an unsearched HOA is ABSENT, never a present 'no restrictions' fact", () => {

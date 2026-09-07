@@ -1,14 +1,14 @@
 import type { ParcelTerrainModelAtomInstance } from "@hauska-engine/atoms";
 
-import {
-  composeSitePlanModelForParcel,
-  type AuthorParcelSitePlanExportOptions,
-  type ComposeSitePlanModelForParcelResult,
-} from "./author.js";
+import type { AuthorParcelSitePlanExportOptions } from "./author.js";
 import type { DischargePointResolver } from "./discharge-point.js";
-import { composeFeasibilityModel, type WhoServesResolver } from "./feasibility-model.js";
+import type { WhoServesResolver } from "./feasibility-model.js";
+import {
+  composeParcelReport,
+  type ComposeParcelReportOptions,
+  type ReadableTerrainArtifactStore,
+} from "./report-model.js";
 import { emitPdfFeasibility, type PdfFeasibilityResult } from "./pdf/feasibility.js";
-import { sitePlanUnavailableFromError } from "./site-plan-unavailable.js";
 import {
   fetchFeasibilityNarrative,
   type NarrativeFallbackReason,
@@ -16,28 +16,31 @@ import {
 } from "./narrative-section-client.js";
 
 /**
- * FEASIBILITY STUDY export authoring (P-32 wave 1, 2026-09-04).
+ * FEASIBILITY STUDY export authoring (P-32 wave 1, 2026-09-04; re-cut onto
+ * `composeParcelReport` 2026-09-07, R1/R3/R5).
  *
- * Same shape as `authorParcelPropertyDossierExport`: composes the site-plan
- * model (one geometry truth, shared with every other report), then the
- * Feasibility model (this report's own direct atom reads), then the PDF,
- * then persists bytes + a record onto the SAME `parcel-terrain-model` atom
- * every report type reuses — never a second entity type.
+ * Composes the ONE parcel report model (geometry + every fact family +
+ * drainage, `report-model.ts`), then the PDF, then persists bytes + a
+ * record onto the SAME `parcel-terrain-model` atom every report type reuses
+ * — never a second entity type.
  *
- * HONEST-DEGRADE CONTRACT, same as the dossier: a missing site-plan
- * capability never fails the report. A missing who-serves centroid or a
- * failing who-serves read never fails the report either (feasibility-model's
- * own contract) — the utilities section ships honest-absent instead.
+ * HONEST-DEGRADE CONTRACT: unlike before this re-cut, a missing site-plan
+ * capability no longer fails the whole report (R2) — `composeParcelReport`
+ * degrades `model.geometry` to a declared absence and every dependent
+ * section follows suit; the document still renders. A missing who-serves
+ * centroid or a failing who-serves read never fails the report either
+ * (report-model.ts's own contract) — the utilities section ships
+ * honest-absent instead.
  */
 export interface AuthorParcelFeasibilityExportOptions
-  extends Omit<AuthorParcelSitePlanExportOptions, "descriptor"> {
+  extends Omit<AuthorParcelSitePlanExportOptions, "descriptor" | "artifactStore"> {
+  artifactStore: ReadableTerrainArtifactStore;
   descriptor?: { address?: string; countyName?: string };
   whoServes?: WhoServesResolver;
   /** Parcel centroid for the who-serves point read. Derived from the ring
    * when omitted and a ring is available; the read is skipped (honest
    * absence) when neither is supplied. */
   centroidOverride?: { latitude: number; longitude: number };
-  floodStudyAvailable?: boolean;
   /** item 19 — a flood-drainage-study flow exit the caller already has on
    * file for this parcel. Omit to skip (honest absence). */
   dischargeExitPoint?: { lat: number; lng: number };
@@ -55,6 +58,15 @@ export interface AuthorParcelFeasibilityExportOptions
   narrativeSection?: NarrativeSectionConfig;
   /** Recorded documents to cite into the narrative (P-120 item 16). */
   courthouseDocuments?: ReadonlyArray<{ citation: string; excerpt: string }>;
+  /**
+   * R3/R5 — the real parcel-scoped drainage study. Omit entirely to compose
+   * without it (drainage ships honest-absent, zero extra IO cost — the
+   * default). Pass `{ runWhenStale: true, ...RunFloodDrainageStudyOptions }`
+   * to have this export read a fresh study when the persisted one is stale
+   * or missing (the real production route does this; unit tests generally
+   * should not, to stay off the network — see report-model.ts's module doc).
+   */
+  drainage?: ComposeParcelReportOptions["drainage"];
 }
 
 export interface AuthorParcelFeasibilityExportResult {
@@ -75,76 +87,32 @@ export interface AuthorParcelFeasibilityExportResult {
   narrativeFallbackReason?: NarrativeFallbackReason;
   /** Fact categories the generated narrative actually marked. */
   narrativeCitedSections?: ReadonlyArray<string>;
-}
-
-function centroidOfRing(ringWgs84: ReadonlyArray<[number, number]>): { latitude: number; longitude: number } {
-  const n = ringWgs84.length;
-  let sumLng = 0;
-  let sumLat = 0;
-  for (const [lng, lat] of ringWgs84) {
-    sumLng += lng;
-    sumLat += lat;
-  }
-  return { longitude: sumLng / n, latitude: sumLat / n };
+  /** True when `model.geometry` composed successfully. False means the
+   * document still shipped (R2) but every geometry-derived section is a
+   * declared absence — surfaced so a caller can distinguish "complete
+   * report" from "report shipped with the geometry section down". */
+  geometryComposed: boolean;
+  /** True when `model.drainage` resolved to a real study (persisted or
+   * freshly run) rather than honest absence. */
+  drainageComposed: boolean;
 }
 
 export async function authorParcelFeasibilityExport(
   options: AuthorParcelFeasibilityExportOptions,
 ): Promise<AuthorParcelFeasibilityExportResult> {
-  // 1) Site-plan model composition — best effort, never fatal. Same pattern
-  // as the dossier author.
-  let composed: ComposeSitePlanModelForParcelResult | undefined;
-  let sitePlanUnavailableReason: string | undefined;
-  let sitePlanUnavailableDetail: string | undefined;
-  try {
-    composed = await composeSitePlanModelForParcel({
-      ...options,
-      descriptor: options.descriptor,
-    });
-  } catch (error) {
-    composed = undefined;
-    const unavailable = sitePlanUnavailableFromError(error);
-    sitePlanUnavailableReason = unavailable.summary;
-    sitePlanUnavailableDetail = unavailable.detail;
-  }
-
-  if (!composed) {
-    // The Feasibility model REQUIRES a SitePlanModel (it reads
-    // summary/setback fields directly, unlike the dossier which degrades to
-    // a cover-only page). Fail closed with the honest reason rather than
-    // emit a report with fabricated geometry-derived fields.
-    throw new Error(
-      // The verbatim underlying cause rides along after the sheet-safe
-      // summary, so the 422 body and the logs carry the real reason instead
-      // of the generic one. This is what the operator actually needs to read.
-      `Feasibility report requires a resolvable site plan; none was available: ${sitePlanUnavailableReason}` +
-        (sitePlanUnavailableDetail ? ` (${sitePlanUnavailableDetail})` : ""),
-    );
-  }
-
-  // 2) Centroid for the who-serves read: caller override, else derived from
-  // the resolved ring, never fabricated.
-  const centroid =
-    options.centroidOverride ??
-    (options.ringOverride ? centroidOfRing(options.ringOverride) : undefined);
-
-  // 3) Feasibility model composition (direct atom reads).
-  const model = await composeFeasibilityModel({
-    parcelNodeId: options.parcelNodeId,
-    storage: options.storage,
-    sitePlan: composed.model,
-    centroid,
-    whoServes: options.whoServes,
-    floodStudyAvailable: options.floodStudyAvailable,
-    dischargeExitPoint: options.dischargeExitPoint,
-    dischargeResolver: options.dischargeResolver,
+  // 1) The one composition: geometry + every fact family + drainage. Never
+  // fatal (R2) — a geometry failure degrades `model.geometry` and every
+  // dependent section rather than throwing.
+  const { model, freshDrainageStudy } = await composeParcelReport({
+    ...options,
+    descriptor: options.descriptor,
   });
 
-  // 3b) Generated narrative (item 6). A caller-supplied override always
-  // wins; otherwise, when configured, ask the briefing engine. Any failure
-  // leaves `narrativeOverride` undefined, which is exactly the skeleton path
-  // this function already had — the fallback is the pre-existing behaviour,
-  // not a new one, and it is now labelled.
+  // 2) Generated narrative (item 6). A caller-supplied override always wins;
+  // otherwise, when configured, ask the briefing engine. Any failure leaves
+  // `narrativeOverride` undefined, which falls back to
+  // `model.package.narrativeSkeleton` — the pre-existing behaviour, now
+  // labelled.
   let narrativeOverride = options.narrativeOverride;
   let narrativeFallbackReason: NarrativeFallbackReason | undefined;
   let narrativeCitedSections: ReadonlyArray<string> | undefined;
@@ -162,30 +130,24 @@ export async function authorParcelFeasibilityExport(
         narrativeFallbackReason = generated.reason;
       }
     } else {
-      // The absent-config path must ALSO name itself. Previously this branch
-      // did not exist: with no config the client was never called, so the
-      // report came back `narrativeIsDeterministicSkeleton: true` carrying no
-      // reason at all. That is silent degradation, which the doctrine
-      // prohibits outright — a degraded answer presented as complete is the
-      // defect; a degraded answer labelled as degraded is honest. It is the
-      // worse shape here because the report still looks correct.
-      //
-      // It also starved `not-configured`: the client only reaches that branch
-      // when a config object is passed carrying empty strings, and
-      // `narrativeSectionFromEnv` returns undefined rather than empties, so
-      // the value was unreachable in production by construction.
+      // The absent-config path must ALSO name itself — a degraded answer
+      // presented as complete is the defect; labelled is honest.
       narrativeFallbackReason = "not-configured";
     }
   }
 
-  // 4) Assemble the PDF.
+  // 3) Assemble the PDF from the manifest over the composed model.
   const pdf: PdfFeasibilityResult = await emitPdfFeasibility(model, {
-    sitePlan: { model: composed.model },
+    sitePlan: model.geometry.status === "present" ? { model: model.geometry.model } : undefined,
+    sitePlanUnavailableReason: model.geometry.status === "absent" ? model.geometry.reason : undefined,
     liveViewUrl: options.liveViewUrl,
     narrativeOverride,
+    descriptorOverride: options.descriptor,
   });
 
-  // 5) Persist bytes + record on the shared parcel-terrain-model atom.
+  // 4) Persist bytes + record on the shared parcel-terrain-model atom. When
+  // this composition computed a NEW drainage study (cache miss or stale),
+  // persist it here too — composition itself stayed read-only.
   const ref = await options.artifactStore.put({
     parcelNodeId: options.parcelNodeId,
     format: "pdf-feasibility",
@@ -197,6 +159,7 @@ export async function authorParcelFeasibilityExport(
     (candidate): candidate is ParcelTerrainModelAtomInstance => candidate.entityType === "parcel-terrain-model",
   );
   const fetchedAt = new Date().toISOString();
+  const geometryPresent = model.geometry.status === "present";
   const atom: ParcelTerrainModelAtomInstance =
     existing ?? {
       entityType: "parcel-terrain-model",
@@ -206,9 +169,9 @@ export async function authorParcelFeasibilityExport(
       jurisdictionTenant: "property-spine",
       fetchedAt,
       extractedAt: fetchedAt,
-      sourceAdapter: "usgs:3dep-dem",
-      sourceUrl: composed.demFetch.endpoint,
-      sourceCitation: "USGS 3DEP",
+      sourceAdapter: geometryPresent ? "usgs:3dep-dem" : "feasibility:no-terrain-resolved",
+      sourceUrl: "",
+      sourceCitation: geometryPresent ? "USGS 3DEP" : "no terrain data resolved for this export",
       accessPolicy: "public-paid",
       atomTier: "data",
       status: "active",
@@ -217,23 +180,26 @@ export async function authorParcelFeasibilityExport(
         reasoningKind: "derived",
         derivationMethod: "parcel-terrain-mesh-ifc-v1",
         inputAtomRefs: [
-          { atomDid: composed.resolvedSourceRef, role: "reference-field", citationLabel: "usgs-3dep-dem" },
+          {
+            atomDid: geometryPresent ? "composed-site-plan" : "feasibility:no-terrain-resolved",
+            role: "reference-field",
+            citationLabel: "usgs-3dep-dem",
+          },
         ],
       },
       artifacts: {},
       coverage: {
-        coverageFraction: 1 - composed.dem.nodataCount / (composed.dem.width * composed.dem.height),
-        nodataCount: composed.dem.nodataCount,
-        totalCells: composed.dem.width * composed.dem.height,
-        resolutionMetersRequested: composed.resolutionMetersRequested,
-        resolutionMetersActual: composed.demFetch.resolutionMetersActual,
-        resolutionMetersAdapted: composed.resolutionMetersAdapted,
-        touchesNodata: composed.dem.nodataCount > 0,
+        coverageFraction: 0,
+        nodataCount: 0,
+        totalCells: 0,
+        resolutionMetersRequested: null,
+        resolutionMetersActual: null,
+        touchesNodata: false,
       },
       confidence: {
-        value: 0.6,
+        value: geometryPresent ? 0.6 : 0.3,
         kind: "asserted",
-        provenance: "USGS 3DEP DEM field; calibration pending",
+        provenance: geometryPresent ? "USGS 3DEP DEM field; calibration pending" : "feasibility-only record; geometry composition failed on this run",
         n: 0,
         intervalWidth: 1,
       },
@@ -248,13 +214,37 @@ export async function authorParcelFeasibilityExport(
     ...(pdf.sitePlanUnavailableReason ? { sitePlanUnavailableReason: pdf.sitePlanUnavailableReason } : {}),
     feasibilitySectionCount: pdf.sectionCount,
     feasibilityOpenItemCount: pdf.openItemCount,
-    feasibilitySupersededRunNoted: model.dataQuality.supersededNotes.length > 0,
+    feasibilitySupersededRunNoted: model.package.dataQuality.supersededNotes.length > 0,
     narrativeGrounded: pdf.narrativeGrounded,
     narrativeIsDeterministicSkeleton: pdf.narrativeIsDeterministicSkeleton,
     ...(narrativeFallbackReason ? { narrativeFallbackReason } : {}),
     ...(narrativeCitedSections ? { narrativeCitedSections: [...narrativeCitedSections] } : {}),
-    whoServesMeasured: model.utilities.status === "present",
+    whoServesMeasured: model.facts.utilities.status === "present",
   };
+
+  // A freshly-computed drainage study is persisted onto the SAME shared
+  // atom, in the SAME shape `authorParcelFloodDrainageReport` already writes
+  // — one persisted study regardless of which report computed it.
+  if (freshDrainageStudy) {
+    const studyBytes = new TextEncoder().encode(JSON.stringify(freshDrainageStudy));
+    const studyRef = await options.artifactStore.put({
+      parcelNodeId: options.parcelNodeId,
+      format: "json-flood-drainage-study",
+      bytes: studyBytes,
+      contentType: "application/json",
+    });
+    atom.artifacts["json-flood-drainage-study"] = {
+      format: "json-flood-drainage-study",
+      ref: studyRef,
+      byteCount: studyBytes.byteLength,
+      ...(freshDrainageStudy.honestEmpty ? { honestEmpty: true, honestEmptyReason: freshDrainageStudy.honestEmpty.reason } : {}),
+      rainfallDepthInches: freshDrainageStudy.rainfallDepthInches,
+      rainfallSource: freshDrainageStudy.rainfallSource,
+      computationLibrary: freshDrainageStudy.computation.library,
+      flowExitCount: freshDrainageStudy.stats.flowExitCount,
+      gradientIncluded: !!freshDrainageStudy.gradient,
+    };
+  }
 
   await options.storage.writePropertyAtom(atom);
 
@@ -269,5 +259,7 @@ export async function authorParcelFeasibilityExport(
     narrativeIsDeterministicSkeleton: pdf.narrativeIsDeterministicSkeleton,
     ...(narrativeFallbackReason ? { narrativeFallbackReason } : {}),
     ...(narrativeCitedSections ? { narrativeCitedSections } : {}),
+    geometryComposed: geometryPresent,
+    drainageComposed: model.drainage.status === "present",
   };
 }

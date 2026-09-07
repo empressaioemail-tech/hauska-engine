@@ -1,4 +1,4 @@
-import type { FeasibilityModel } from "./feasibility-model.js";
+import type { ParcelReportModel } from "./report-model.js";
 
 /**
  * OPS-16 P-120 item 6 — hauska-engine's consuming side of the Feasibility
@@ -84,31 +84,34 @@ const SERVER_NO_CONTENT_GENERATED_BY = "rules-v1";
  *
  * Most sections are already `FeasibilityFactState<T>`, which IS the
  * `{ status: "present" | "absent", … }` shape the endpoint expects, so they
- * pass through untouched. Three sections are not fact-states and are wrapped
+ * pass through untouched. Two sections are not fact-states and are wrapped
  * here, each on its own honest reading:
  *
  * - `jurisdiction` is present when a county is actually known. `cityLimitsStatus`
  *   and `etjStatus` ride along as the literal `"unresolved"` they are, so the
  *   model can say they are unresolved rather than guess a value.
- * - `terrain` is present whenever an elevation range was derived from the DEM.
  * - `hoa` is ABSENT unless a document is actually mounted. `searchStatus:
  *   "not-searched"` is the absence of a search, not a finding of no
  *   restrictions, and must never be handed to the model as a present fact.
+ *
+ * `terrain` is now itself `FeasibilityFactState`-shaped upstream (it depends
+ * on the parcel's composed geometry, which can be absent — R2), so it passes
+ * through untouched too, same as flood/parcelOwnership/etc.
  */
-export function buildNarrativeFacts(model: FeasibilityModel): Record<string, unknown> {
-  const jurisdictionKnown = model.jurisdiction.countyFips !== null;
-  const hoaCitation = model.hoa.mountedDocumentCitation;
+export function buildNarrativeFacts(model: ParcelReportModel): Record<string, unknown> {
+  const jurisdictionKnown = model.facts.jurisdiction.countyFips !== null;
+  const hoaCitation = model.facts.hoa.mountedDocumentCitation;
 
   return {
     jurisdiction: jurisdictionKnown
-      ? { status: "present", ...model.jurisdiction }
+      ? { status: "present", ...model.facts.jurisdiction }
       : { status: "absent", reason: "No county could be resolved for this parcel." },
-    parcelOwnership: model.parcelOwnership,
-    flood: model.flood,
-    specialDistricts: model.specialDistricts,
-    wellsPipelines: model.wellsPipelines,
-    terrain: { status: "present", ...model.terrain },
-    utilities: model.utilities,
+    parcelOwnership: model.facts.parcelOwnership,
+    flood: model.facts.flood,
+    specialDistricts: model.facts.specialDistricts,
+    wellsPipelines: model.facts.wellsPipelines,
+    terrain: model.facts.terrain,
+    utilities: model.facts.utilities,
     hoa: hoaCitation
       ? { status: "present", mountedDocumentCitation: hoaCitation }
       : {
@@ -116,8 +119,8 @@ export function buildNarrativeFacts(model: FeasibilityModel): Record<string, unk
           reason:
             "Recorded restrictions and HOA documents have not been searched for this parcel.",
         },
-    footprint: model.footprint,
-    dischargePoint: model.dischargePoint,
+    footprint: model.facts.footprint,
+    dischargePoint: model.facts.dischargePoint,
   };
 }
 
@@ -147,7 +150,7 @@ export function deriveCitedSections(
  * skeleton and SAY it did.
  */
 export async function fetchFeasibilityNarrative(input: {
-  model: FeasibilityModel;
+  model: ParcelReportModel;
   config: NarrativeSectionConfig;
   courthouseDocuments?: ReadonlyArray<{ citation: string; excerpt: string }>;
 }): Promise<
