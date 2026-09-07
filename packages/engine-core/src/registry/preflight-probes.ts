@@ -35,6 +35,7 @@ import type {
   PreflightDeps,
 } from "./onboard-preflight.js";
 import type { CertGradeContext, ParcelGradeResult } from "./cert-grade-core.js";
+import type { ParcelRecordSqlClient } from "../parcel-record/load.js";
 
 /** The shape of cert-grade-core.ts's gradeOneParcelInQueryMode (or an equivalent grader). */
 export type GradeOneParcelFn = (
@@ -152,19 +153,38 @@ export interface ServePathHealthDeps {
   /** Injectable fetch (tests stub this; defaults to global fetch). */
   readonly fetchImpl?: typeof fetch;
   readonly timeoutMs?: number;
+  /**
+   * ADR-031: the parcel_record ledger, not the atom chain, is what "may
+   * serve." This SQL client (matches parcel-record/load.ts's minimal
+   * duck-typed contract — a real `postgres()` instance satisfies it as-is)
+   * lets step (d) verify the ledger is reachable and has a real row count
+   * for this row's county. Optional: when absent, step (d) is an honestly-
+   * named not-configured partial rather than a fabricated pass, same
+   * pattern as every other DI probe in this module.
+   */
+  readonly ledgerSql?: ParcelRecordSqlClient;
 }
 
 /**
- * Check 6 — serve-path health against the deployed retrieval-api:
+ * Check 6 — serve-path health against the deployed retrieval-api and the
+ * ADR-031 record ledger:
  *   (a) GET /health/search expects 2xx
  *   (b) authed GET /search expects 200 (401 -> named decline; this exact
  *       silent-401 class caused a production outage 2026-08-03)
  *   (c) authed GET /property-nodes/<sample parcel>/atom-chain expects 200
+ *   (d) parcel_record has at least one row for this row's county (ADR-031:
+ *       "only the record is gateable, serving reads only gated cells" — a
+ *       county with an unreachable or empty ledger cannot back that claim
+ *       regardless of atom-chain health)
  *
- * Ledger-write probing is a named partial: the coverage ledger lives in
- * map/cortex Neon, not this repo, so it is not wireable from engine. The
- * check passes/fails on (a)-(c) only; the partial is always named in detail
- * so a PASS never silently implies ledger-write health.
+ * Step (d) only runs when `ledgerSql` is supplied. Earlier language here
+ * claimed the ledger was "not wireable from engine (lives in map/cortex
+ * Neon)" -- that was stale even before ADR-031: parcel_record lives in its
+ * own separate database (FACTORY_DATABASE_URL), already read from engine
+ * by parcel-record/load.ts. Without `ledgerSql` configured, (d) is an
+ * honestly-named not-configured partial (never a silent implied pass) --
+ * consistent with every other probe in this file, not a claim of
+ * impossibility.
  */
 export function buildServePathHealthProbe(
   deps: ServePathHealthDeps,
@@ -172,8 +192,8 @@ export function buildServePathHealthProbe(
   const fetchImpl = deps.fetchImpl ?? fetch;
   const timeoutMs = deps.timeoutMs ?? 10_000;
   const base = deps.baseUrl.replace(/\/$/, "");
-  const partialNote =
-    "ledger-write probe: not wireable from engine (ledger lives in map/cortex Neon)";
+  const notConfiguredNote =
+    "ledger-read probe (parcel_record): not configured this run (ledgerSql absent)";
 
   return async (row) => {
     // (a) GET /health/search — expects 2xx.
@@ -261,7 +281,32 @@ export function buildServePathHealthProbe(
       };
     }
 
-    return { reachable: true, detail: partialNote };
+    // (d) parcel_record ledger reachability + non-empty for this county.
+    if (!deps.ledgerSql) {
+      return { reachable: true, detail: notConfiguredNote };
+    }
+    let ledgerCount: number;
+    try {
+      const rows = await deps.ledgerSql<{ n: string | number }>`
+        SELECT count(*) AS n FROM parcel_record WHERE county_fips = ${row.fips}
+      `;
+      ledgerCount = Number(rows[0]?.n ?? 0);
+    } catch (err) {
+      return {
+        reachable: false,
+        detail: `serve path unhealthy: parcel_record ledger unreachable: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    if (ledgerCount === 0) {
+      return {
+        reachable: false,
+        detail: `serve path unhealthy: parcel_record has 0 rows for county ${row.fips} — ADR-031's "only the record is gateable" cannot hold for an empty ledger`,
+      };
+    }
+    return {
+      reachable: true,
+      detail: `ledger-read probe (parcel_record): reachable, ${ledgerCount} row(s) for county ${row.fips}`,
+    };
   };
 }
 
@@ -436,6 +481,13 @@ export interface OnboardPreflightDepsInput {
   readonly fetchImpl?: typeof fetch;
   readonly gradeOneParcel: GradeOneParcelFn;
   readonly loadRoads: (fips: string) => Promise<unknown[]>;
+  /**
+   * ADR-031 parcel_record ledger sql client (FACTORY_DATABASE_URL) for
+   * check 6's step (d). Absent means step (d) is an honestly-named
+   * not-configured partial, same as every other DI probe here when its
+   * creds are missing.
+   */
+  readonly ledgerSql?: ParcelRecordSqlClient;
 }
 
 /**
@@ -616,6 +668,7 @@ export function buildOnboardPreflightDeps(input: OnboardPreflightDepsInput): Pre
       apiKey: input.retrievalApiKey!,
       loadSample: loadDeterministicSample,
       fetchImpl,
+      ledgerSql: input.ledgerSql,
     });
   }
 
