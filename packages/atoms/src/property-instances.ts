@@ -160,6 +160,14 @@ export {
  * — RRC T-4 pipeline LINE proximity from staged `tx_rrc_pipeline`, NOT railroad
  * tracks / NTAD NARN and NOT PHMSA NPMS). entityId = bare parcelNodeId.
  *
+ * 1.21.0 registration wave adds `property-boundary-edge` (27f S2-U2 / WDLL
+ * 4-5 — per-parcel boundary edges with role/adjacency/setback/interior-frame
+ * data; real writer and serving code have existed since before registration,
+ * see `boundary-instances.ts`). Unlike `road-node`, it IS `parcelNodeId`-keyed
+ * (each edge atom carries its parent parcel's id) even though a parcel
+ * normally has several edge atoms (one per boundary side), so it stays in
+ * {@link PARCEL_KEYED_PROPERTY_ENTITY_TYPES} rather than being filtered out.
+ *
  * `owner-fact` is the ONLY entry in this list that is not `public-free`. Its
  * contract schema pins `public-paid` and rejects anything else, so the gate —
  * not this list — is what keeps owner identity off the free tier.
@@ -184,7 +192,8 @@ export type PropertyEntityType =
   | "well-fact"
   | "special-district-fact"
   | "road-node"
-  | "rrc-pipeline-fact";
+  | "rrc-pipeline-fact"
+  | "property-boundary-edge";
 
 export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "parcel-node",
@@ -203,6 +212,7 @@ export const PROPERTY_ENTITY_TYPES: ReadonlyArray<PropertyEntityType> = [
   "special-district-fact",
   "road-node",
   "rrc-pipeline-fact",
+  "property-boundary-edge",
 ];
 
 /**

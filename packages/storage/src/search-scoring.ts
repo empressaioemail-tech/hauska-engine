@@ -21,10 +21,10 @@ export function buildSnippet(inst: StoredAtomInstance): string {
   }
   // Derive from the registry rather than re-listing property types here — a
   // hardcoded copy silently drops newly registered families out of search.
-  if (
-    isPropertyEntityType(inst.entityType) ||
-    inst.entityType === "property-boundary-edge"
-  ) {
+  // property-boundary-edge no longer needs a manual carve-out: it was
+  // registered in PROPERTY_ENTITY_TYPES (contract 1.21.0), so
+  // isPropertyEntityType already covers it.
+  if (isPropertyEntityType(inst.entityType)) {
     const property = inst as PropertyAtomInstance;
     return `${property.entityType} ${property.parcelNodeId} ${property.sourceCitation}`;
   }
