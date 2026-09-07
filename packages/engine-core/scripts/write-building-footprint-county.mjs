@@ -151,6 +151,29 @@ async function readParcelRoster() {
   `;
 }
 
+// Same aggregate, scoped to one county via WHERE instead of GROUP BY over
+// the whole table. The unscoped roster query aggregates all 253 counties'
+// rows every time even though the county path only ever reads ONE row back
+// out of it -- measured in isolation at 309.7s against the live txgio_parcel
+// table (a --limit=200 dry-run that only built 5 atoms still took 306.7s
+// wall time, all of it this query). WHERE on the already-indexed county_fips
+// column this script's own per-page parcel reads already rely on.
+async function readParcelRosterForCounty(countyFips) {
+  const [row] = await sql`
+    SELECT county_fips,
+           count(*)::int AS rows,
+           count(DISTINCT feature_index)::int AS features,
+           min(west_lng)::float8 AS west_lng,
+           min(south_lat)::float8 AS south_lat,
+           max(east_lng)::float8 AS east_lng,
+           max(north_lat)::float8 AS north_lat
+    FROM txgio_parcel
+    WHERE county_fips = ${countyFips}
+    GROUP BY county_fips
+  `;
+  return row ?? null;
+}
+
 if (args.listCounties) {
   try {
     const roster = await readParcelRoster();
@@ -218,9 +241,13 @@ const summary = {
 };
 
 try {
-  const roster = await readParcelRoster();
-  const row = roster.find((r) => r.county_fips === args.county);
+  const row = await readParcelRosterForCounty(args.county);
   if (!row) {
+    // Fall back to the full unscoped roster only to build the diagnostic
+    // "here's what IS loaded" list -- this is the rare (typo / genuinely
+    // not-yet-loaded county) path, so paying the full-table aggregate cost
+    // here is fine; the common, fast path above never touches it.
+    const roster = await readParcelRoster();
     console.error(
       JSON.stringify({
         event: "building-footprint-county.parcels-not-loaded",
@@ -366,6 +393,28 @@ try {
       mlEmptyBbox: plan.mlEmptyBbox,
       atomsWouldWrite: plan.planned.length,
     };
+
+    // Touch-rate: of every footprint STAGED for this county, what fraction
+    // touched at least one parcel's envelope at all (regardless of whether
+    // the eventual overlap-ratio attach succeeded)? This is a coverage
+    // signal distinct from the present-atom ratio (present atoms / parcels):
+    // a low touch-rate means the staged ML layer itself barely reaches this
+    // county's parcels (a real, upstream coverage gap), whereas a low
+    // present-ratio with a HIGH touch-rate would point at the join/attach
+    // logic instead. Only meaningful on the staged county path -- the
+    // --fixture/ml-probe path has no staged-county total to divide by.
+    if (!args.fixture && summary.storeTruth.stagedCountyRows > 0) {
+      summary.footprint.touchRate = {
+        footprintsStagedTotal: summary.storeTruth.stagedCountyRows,
+        footprintsTouchingAnyParcel: summary.storeTruth.uniqueCandidateFootprints,
+        rate:
+          Math.round(
+            (summary.storeTruth.uniqueCandidateFootprints /
+              summary.storeTruth.stagedCountyRows) *
+              10000,
+          ) / 10000,
+      };
+    }
 
     summary.plan = {
       parcelsRead: plan.parcelsRead,

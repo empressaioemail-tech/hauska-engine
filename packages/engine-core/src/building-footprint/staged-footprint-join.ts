@@ -265,7 +265,14 @@ export async function loadStagedEnvelopeCandidates(
 ): Promise<StagedEnvelopeCandidateRow[]> {
   const table = assertTableIdent(opts.table ?? STAGED_FOOTPRINT_TABLE);
   const sqlText = stagedEnvelopeCandidatesSql(table);
-  const batchSize = Math.max(1, opts.batchSize ?? 200);
+  // Bind params are two arrays regardless of batch size (postgres.js sends
+  // each envelope column as a single array parameter, not one placeholder
+  // per row), so a larger batch is just fewer round trips over the same
+  // total candidate rows -- not a bigger query plan or a param-count risk.
+  // 200 meant ~131 sequential round trips for a 26k-parcel county; measured
+  // as the dominant cost of a 415s Caldwell dry-run under tonight's ambient
+  // DB contention, well above the real join computation itself.
+  const batchSize = Math.max(1, opts.batchSize ?? 2000);
   const out: StagedEnvelopeCandidateRow[] = [];
 
   for (let i = 0; i < opts.envelopes.length; i += batchSize) {
