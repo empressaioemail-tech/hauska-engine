@@ -200,6 +200,42 @@ describe("emitPdfFeasibility", () => {
     expect(decoded).not.toContain("sits in 48029.");
     expect(decoded).toContain("sits in an unresolved county.");
   });
+
+  it("item 19 — a real named discharge point renders cited, distance included", async () => {
+    const sitePlan = buildSitePlanModel();
+    const model = await composeFeasibilityModel({
+      parcelNodeId: "48029:105129",
+      storage: fakeStorage([]),
+      sitePlan,
+      dischargeExitPoint: { lat: 30.1269, lng: -97.3305 },
+      dischargeResolver: {
+        resolve: async () => ({
+          status: "present",
+          point: {
+            name: "Piney Creek",
+            featureType: "STREAM/RIVER",
+            distanceMeters: 41,
+            sourceUrl: "https://maps.co.bastrop.tx.us/server/rest/services/Hydrography/Creeks_Streams/MapServer/0",
+            layerName: "Bastrop County Creeks & Streams",
+          },
+        }),
+      },
+    });
+    const result = await emitPdfFeasibility(model);
+    const decoded = decodeAllContentStreams(result.bytes);
+    expect(decoded).toContain("Named downstream discharge point");
+    expect(decoded).toContain("Piney Creek");
+    expect(decoded).toContain("41 m from modeled exit");
+  });
+
+  it("item 19 — honest UNAVAILABLE, never a fabricated name, when no exit point was supplied", async () => {
+    const sitePlan = buildSitePlanModel();
+    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
+    const result = await emitPdfFeasibility(model);
+    const decoded = decodeAllContentStreams(result.bytes);
+    expect(decoded).toContain("Named downstream discharge point");
+    expect(decoded).toContain("No flood-drainage-study flow exit was supplied");
+  });
 });
 
 const FEASIBILITY_HEADING_CHECK = { narrative: "NARRATIVE" };

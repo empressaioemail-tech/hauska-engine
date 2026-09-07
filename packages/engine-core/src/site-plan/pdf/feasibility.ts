@@ -158,11 +158,12 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
   });
 
   const flood = model.flood;
+  const dp = model.dischargePoint;
   sections.push({
     id: "flood",
     title: "Flood and drainage",
-    facts:
-      flood.status === "present"
+    facts: [
+      ...(flood.status === "present"
         ? [
             factOrChip("Flood zone", flood.floodZone ?? (flood.inSpecialFloodHazardArea ? "In SFHA" : "Zone X (outside mapped hazard)")),
             factOrChip("Base flood elevation", flood.baseFloodElevation != null ? `${flood.baseFloodElevation} ft` : undefined),
@@ -170,7 +171,22 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
               absentReason: flood.studyAvailable ? undefined : "No parcel-scoped drainage study is on file for this parcel.",
             }),
           ]
-        : [factOrChip("Flood and drainage", undefined, { absentReason: flood.reason })],
+        : [factOrChip("Flood and drainage", undefined, { absentReason: flood.reason })]),
+      // item 19 — independent of flood-hazard-fact presence: this comes
+      // from the D8 flow model + county hydrography, not the atom above.
+      factOrChip(
+        "Named downstream discharge point",
+        dp.status === "present" ? dp.point.name : undefined,
+        {
+          source: dp.status === "present" ? dp.point.sourceUrl : undefined,
+          vintage:
+            dp.status === "present"
+              ? `${Math.round(dp.point.distanceMeters)} m from modeled exit`
+              : undefined,
+          absentReason: dp.status === "absent" ? dp.reason : undefined,
+        },
+      ),
+    ],
   });
 
   const sd = model.specialDistricts;

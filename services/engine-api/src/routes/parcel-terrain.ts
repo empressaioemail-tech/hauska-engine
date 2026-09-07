@@ -19,6 +19,7 @@ import {
   authorParcelFeasibilityExport,
   authorParcelPropertyDossierExport,
   authorParcelSitePlanExport,
+  createCountyHydrographyDischargeResolver,
 } from "@hauska-engine/engine-core/site-plan";
 import {
   GcsTerrainArtifactStore,
@@ -177,6 +178,10 @@ const feasibilityRefreshBody = z.object({
   countyName: z.string().max(120).optional(),
   centroidOverride: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
   floodStudyAvailable: z.boolean().optional(),
+  // item 19 — a flood-drainage-study flow exit the caller already has on
+  // file for this parcel. Absent = the discharge-point section ships
+  // honest-absent; the engine never runs its own D8 pass here.
+  dischargeExitPoint: z.object({ lat: z.number(), lng: z.number() }).optional(),
   liveViewUrl: z.string().max(500).optional(),
   // Caller-supplied, already-generated narrative (item 7) — the engine never
   // calls an LLM itself. Absent = the deterministic skeleton renders.
@@ -588,6 +593,10 @@ export function buildParcelTerrainRoutes(
         descriptor: { address: parsed.data.address, countyName: parsed.data.countyName },
         centroidOverride: parsed.data.centroidOverride,
         floodStudyAvailable: parsed.data.floodStudyAvailable,
+        dischargeExitPoint: parsed.data.dischargeExitPoint,
+        dischargeResolver: parsed.data.dischargeExitPoint
+          ? createCountyHydrographyDischargeResolver()
+          : undefined,
         liveViewUrl: parsed.data.liveViewUrl,
         narrativeOverride: parsed.data.narrativeOverride,
         resolver,

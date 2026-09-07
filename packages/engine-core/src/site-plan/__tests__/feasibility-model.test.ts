@@ -263,4 +263,59 @@ describe("composeFeasibilityModel", () => {
     expect(model.wellsPipelines.status).toBe("absent");
     expect(model.openItems.map((i) => i.section)).toContain("wellsPipelines");
   });
+
+  // item 19: named downstream discharge point — a comprehensiveness section,
+  // independent of flood-hazard-fact presence and never auto-generating an
+  // open item (a coverage limitation, not something the customer can fix).
+  it("item 19: absent (no open item) when no exit point or resolver was supplied", async () => {
+    const sitePlan = buildSitePlanModel();
+    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
+    expect(model.dischargePoint.status).toBe("absent");
+    expect(model.openItems.map((i) => i.section)).not.toContain("dischargePoint");
+  });
+
+  it("item 19: present when a resolver finds a real named feature near the supplied exit point", async () => {
+    const sitePlan = buildSitePlanModel();
+    const model = await composeFeasibilityModel({
+      parcelNodeId: "48029:105129",
+      storage: fakeStorage([]),
+      sitePlan,
+      dischargeExitPoint: { lat: 30.1269, lng: -97.3305 },
+      dischargeResolver: {
+        resolve: async () => ({
+          status: "present",
+          point: {
+            name: "Piney Creek",
+            featureType: "STREAM/RIVER",
+            distanceMeters: 41,
+            sourceUrl: "https://maps.co.bastrop.tx.us/.../Creeks_Streams/MapServer/0",
+            layerName: "Bastrop County Creeks & Streams",
+          },
+        }),
+      },
+    });
+    expect(model.dischargePoint.status).toBe("present");
+    if (model.dischargePoint.status === "present") {
+      expect(model.dischargePoint.point.name).toBe("Piney Creek");
+    }
+  });
+
+  it("item 19: does not block the report when the resolver throws", async () => {
+    const sitePlan = buildSitePlanModel();
+    const model = await composeFeasibilityModel({
+      parcelNodeId: "48029:105129",
+      storage: fakeStorage([]),
+      sitePlan,
+      dischargeExitPoint: { lat: 30.1269, lng: -97.3305 },
+      dischargeResolver: {
+        resolve: async () => {
+          throw new Error("upstream timeout");
+        },
+      },
+    });
+    expect(model.dischargePoint.status).toBe("absent");
+    if (model.dischargePoint.status === "absent") {
+      expect(model.dischargePoint.reason).toContain("upstream timeout");
+    }
+  });
 });
