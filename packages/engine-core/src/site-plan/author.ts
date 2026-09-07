@@ -28,6 +28,7 @@ import { emitDxfSitePlan, emitIfcSitePlan } from "./emitters.js";
 import type { AerialImageFetcher } from "./pdf/aerial.js";
 import { emitPdfSitePlan } from "./pdf/render.js";
 import { resolveAttachingRoadNodes } from "./resolve-attaching-roads.js";
+import { resolveTerrainWindowBbox } from "./terrain-window.js";
 import { prepareBoundaryEdgesForExport } from "./prepare-boundary-edges-for-export.js";
 import { resolveSitusAddressForExport } from "./resolve-situs-for-export.js";
 import {
@@ -258,6 +259,14 @@ export interface ComposeSitePlanModelForParcelResult {
   resolutionMetersRequested: number;
   resolutionMetersAdapted: number;
   contourIntervalMeters: number;
+  /**
+   * True when the parcel sat below the adapter's per-axis DEM pixel floor and
+   * terrain was fetched over a widened window. Surfaced so the caller can
+   * declare it rather than let it pass silently.
+   */
+  terrainWindowExpanded: boolean;
+  /** Why the window was widened. Present only when expanded. */
+  terrainWindowReason?: string;
 }
 
 export async function composeSitePlanModelForParcel(
@@ -280,21 +289,30 @@ export async function composeSitePlanModelForParcel(
   }
 
   const resolutionMetersRequested = options.resolutionMeters ?? DEFAULT_TERRAIN_RESOLUTION_METERS;
-  const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(resolved.bbox, resolutionMetersRequested);
+  // A parcel narrower than the adapter's per-axis pixel floor cannot be
+  // fetched at its own bbox. Widen the DEM window rather than let the
+  // adapter's (correct) fetch refusal kill the whole sheet — and with it the
+  // Feasibility report, which requires a site plan. No-op for any parcel
+  // already above the floor. See `terrain-window.ts` for the full rationale.
+  const terrainWindow = resolveTerrainWindowBbox(resolved.bbox, resolutionMetersRequested);
+  // One bbox for the DEM, the mesh, the contours and the local-ENU frame:
+  // these four must agree, so the window is used for all of them or none.
+  const terrainBbox = terrainWindow.bbox;
+  const { resolutionMetersAdapted } = selectAdaptiveResolutionMeters(terrainBbox, resolutionMetersRequested);
   const contourIntervalMeters = options.contourIntervalMeters ?? 1;
   const fetchDem = options.fetchDem ?? fetchUsgs3depDem;
-  const demFetch = await fetchDem(resolved.bbox, {
+  const demFetch = await fetchDem(terrainBbox, {
     resolutionMeters: resolutionMetersAdapted,
     resolveActualResolution: true,
   });
   const dem = await (options.parseDem ?? parseDemBytes)(demFetch.bytes);
-  const mesh = buildTerrainMeshGeometry(dem, resolved.bbox);
+  const mesh = buildTerrainMeshGeometry(dem, terrainBbox);
 
   // Authoritative 1-ft contour tier where covered (Bastrop), else honest
   // 3DEP-derived fallback. Mesh Z (above) is untouched — 3DEP only.
   const contourSource = await resolveContourSource({
     dem,
-    bbox: resolved.bbox,
+    bbox: terrainBbox,
     contourIntervalMeters,
   });
 
@@ -420,7 +438,9 @@ export async function composeSitePlanModelForParcel(
 
   const model = composeSitePlanModel({
     parcelNodeId: options.parcelNodeId,
-    bbox: resolved.bbox,
+    // Same window the DEM/mesh/contours used: this bbox is the local-ENU
+    // frame anchor, so a mismatch here would misregister the whole drawing.
+    bbox: terrainBbox,
     ringWgs84,
     dem,
     contourIntervalMeters,
@@ -478,6 +498,8 @@ export async function composeSitePlanModelForParcel(
     resolutionMetersRequested,
     resolutionMetersAdapted,
     contourIntervalMeters,
+    terrainWindowExpanded: terrainWindow.expanded,
+    ...(terrainWindow.reason ? { terrainWindowReason: terrainWindow.reason } : {}),
   };
 }
 
@@ -556,6 +578,14 @@ export async function authorParcelSitePlanExport(
       resolutionMetersActual: demFetch.resolutionMetersActual,
       resolutionMetersAdapted,
       touchesNodata: dem.nodataCount > 0,
+      // Declared, not silent: this parcel was below the DEM pixel floor and
+      // its terrain came from a widened window.
+      ...(composed.terrainWindowExpanded
+        ? {
+            terrainWindowExpanded: true,
+            terrainWindowReason: composed.terrainWindowReason,
+          }
+        : {}),
       contourSource: {
         tier: contourSource.provenance.tier,
         source: contourSource.provenance.source,

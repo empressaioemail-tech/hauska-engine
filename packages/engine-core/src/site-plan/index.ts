@@ -45,6 +45,17 @@ export {
 } from "./resolve-attaching-roads.js";
 
 export {
+  resolveTerrainWindowBbox,
+  requiredWindowExtentMeters,
+  type TerrainWindowResult,
+} from "./terrain-window.js";
+
+export {
+  sitePlanUnavailableFromError,
+  type SitePlanUnavailable,
+} from "./site-plan-unavailable.js";
+
+export {
   anyNotSpecified,
   formatSetbackEdgeLabel,
   formatSetbackSummaryLine,
