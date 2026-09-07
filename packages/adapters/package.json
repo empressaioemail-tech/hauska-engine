@@ -120,7 +120,6 @@
       "import": "./src/portal/permit-outcomes/index.ts"
     }
   },
-
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
@@ -128,7 +127,7 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "@empressaio/setback-corpus": "^1.0.1"
+    "@empressaio/setback-corpus": "^1.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
