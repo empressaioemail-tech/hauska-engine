@@ -8,6 +8,7 @@ import {
 import type { DischargePointResolver } from "./discharge-point.js";
 import { composeFeasibilityModel, type WhoServesResolver } from "./feasibility-model.js";
 import { emitPdfFeasibility, type PdfFeasibilityResult } from "./pdf/feasibility.js";
+import { sitePlanUnavailableFromError } from "./site-plan-unavailable.js";
 
 /**
  * FEASIBILITY STUDY export authoring (P-32 wave 1, 2026-09-04).
@@ -51,17 +52,6 @@ export interface AuthorParcelFeasibilityExportResult {
   narrativeIsDeterministicSkeleton: boolean;
 }
 
-function sitePlanUnavailableReasonFromError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/geometry unavailable|no boundary ring|resolver/i.test(message)) {
-    return "parcel geometry could not be resolved for this parcel";
-  }
-  if (/dem|elevation|3dep/i.test(message)) {
-    return "terrain elevation data could not be fetched for this parcel";
-  }
-  return "site-plan authoring failed for this parcel";
-}
-
 function centroidOfRing(ringWgs84: ReadonlyArray<[number, number]>): { latitude: number; longitude: number } {
   const n = ringWgs84.length;
   let sumLng = 0;
@@ -80,6 +70,7 @@ export async function authorParcelFeasibilityExport(
   // as the dossier author.
   let composed: ComposeSitePlanModelForParcelResult | undefined;
   let sitePlanUnavailableReason: string | undefined;
+  let sitePlanUnavailableDetail: string | undefined;
   try {
     composed = await composeSitePlanModelForParcel({
       ...options,
@@ -87,7 +78,9 @@ export async function authorParcelFeasibilityExport(
     });
   } catch (error) {
     composed = undefined;
-    sitePlanUnavailableReason = sitePlanUnavailableReasonFromError(error);
+    const unavailable = sitePlanUnavailableFromError(error);
+    sitePlanUnavailableReason = unavailable.summary;
+    sitePlanUnavailableDetail = unavailable.detail;
   }
 
   if (!composed) {
@@ -96,7 +89,11 @@ export async function authorParcelFeasibilityExport(
     // a cover-only page). Fail closed with the honest reason rather than
     // emit a report with fabricated geometry-derived fields.
     throw new Error(
-      `Feasibility report requires a resolvable site plan; none was available: ${sitePlanUnavailableReason}`,
+      // The verbatim underlying cause rides along after the sheet-safe
+      // summary, so the 422 body and the logs carry the real reason instead
+      // of the generic one. This is what the operator actually needs to read.
+      `Feasibility report requires a resolvable site plan; none was available: ${sitePlanUnavailableReason}` +
+        (sitePlanUnavailableDetail ? ` (${sitePlanUnavailableDetail})` : ""),
     );
   }
 

@@ -10,6 +10,7 @@ import {
   type DossierContentInput,
   type PdfDossierResult,
 } from "./pdf/dossier.js";
+import { sitePlanUnavailableFromError } from "./site-plan-unavailable.js";
 
 /**
  * PROPERTY DOSSIER export authoring (2026-07-29).
@@ -56,19 +57,6 @@ export interface AuthorParcelPropertyDossierExportResult {
   floodZoneHonestUnavailable?: boolean;
 }
 
-/** §11-safe honest reason from a composition failure: the machine detail
- * stays out of the sheet; the full error is returned for the API response. */
-function sitePlanUnavailableReasonFromError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/geometry unavailable|no boundary ring|resolver/i.test(message)) {
-    return "parcel geometry could not be resolved for this parcel";
-  }
-  if (/dem|elevation|3dep/i.test(message)) {
-    return "terrain elevation data could not be fetched for this parcel";
-  }
-  return "site-plan authoring failed for this parcel";
-}
-
 export async function authorParcelPropertyDossierExport(
   options: AuthorParcelPropertyDossierExportOptions,
 ): Promise<AuthorParcelPropertyDossierExportResult> {
@@ -87,7 +75,7 @@ export async function authorParcelPropertyDossierExport(
     });
   } catch (error) {
     composed = undefined;
-    sitePlanUnavailableReason = sitePlanUnavailableReasonFromError(error);
+    sitePlanUnavailableReason = sitePlanUnavailableFromError(error).summary;
   }
 
   // 2) Assemble the dossier (sheets appended when composition succeeded).
