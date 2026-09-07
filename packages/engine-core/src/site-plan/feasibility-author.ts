@@ -148,17 +148,33 @@ export async function authorParcelFeasibilityExport(
   let narrativeOverride = options.narrativeOverride;
   let narrativeFallbackReason: NarrativeFallbackReason | undefined;
   let narrativeCitedSections: ReadonlyArray<string> | undefined;
-  if (!narrativeOverride && options.narrativeSection) {
-    const generated = await fetchFeasibilityNarrative({
-      model,
-      config: options.narrativeSection,
-      courthouseDocuments: options.courthouseDocuments,
-    });
-    if (generated.ok) {
-      narrativeOverride = generated.outcome.narrativeOverride;
-      narrativeCitedSections = generated.outcome.citedSections;
+  if (!narrativeOverride) {
+    if (options.narrativeSection) {
+      const generated = await fetchFeasibilityNarrative({
+        model,
+        config: options.narrativeSection,
+        courthouseDocuments: options.courthouseDocuments,
+      });
+      if (generated.ok) {
+        narrativeOverride = generated.outcome.narrativeOverride;
+        narrativeCitedSections = generated.outcome.citedSections;
+      } else {
+        narrativeFallbackReason = generated.reason;
+      }
     } else {
-      narrativeFallbackReason = generated.reason;
+      // The absent-config path must ALSO name itself. Previously this branch
+      // did not exist: with no config the client was never called, so the
+      // report came back `narrativeIsDeterministicSkeleton: true` carrying no
+      // reason at all. That is silent degradation, which the doctrine
+      // prohibits outright — a degraded answer presented as complete is the
+      // defect; a degraded answer labelled as degraded is honest. It is the
+      // worse shape here because the report still looks correct.
+      //
+      // It also starved `not-configured`: the client only reaches that branch
+      // when a config object is passed carrying empty strings, and
+      // `narrativeSectionFromEnv` returns undefined rather than empties, so
+      // the value was unreachable in production by construction.
+      narrativeFallbackReason = "not-configured";
     }
   }
 
