@@ -1,42 +1,29 @@
 /**
  * Per-jurisdiction setback table loader.
  *
- * Loads the hand-curated `<jurisdiction>.json` tables (locked decision
- * #9) and exposes them through a typed lookup. The briefing engine
- * (DA-PI-3) calls {@link getSetbackTable} keyed by the resolved
- * jurisdiction key when it builds dimensional-rule prose.
+ * 2026-09-07: repointed to the published `@empressaio/setback-corpus`
+ * package (item 4, setback-corpus consumer repointing) — the raw tables
+ * this file used to vendor locally now live there as the single source of
+ * truth shared with legacy-design-tools, proven equivalent by
+ * `__tests__/corpus-divergence.test.ts` before this swap landed. The local
+ * `<jurisdiction>.json` files stay on disk, untouched, ONLY as that test's
+ * comparison baseline until they're formally retired — do not import them
+ * from anywhere else in this package.
  *
- * Adding a new jurisdiction:
- *   1. Drop a `<jurisdiction-key>.json` next to this file.
- *   2. Append the import + entry to the SETBACK_TABLES record below.
+ * This file keeps every jurisdiction-specific ROUTING/business rule that
+ * was always engine-local (Bastrop per-parcel-record precedence, repealed
+ * B3 Place Type filtering, BDC district classification, the elgin-tx
+ * alias) — the corpus package is deliberately pure data and was never the
+ * place for any of that.
+ *
+ * The briefing engine (DA-PI-3) calls {@link getSetbackTable} keyed by the
+ * resolved jurisdiction key when it builds dimensional-rule prose.
+ *
+ * Adding a new jurisdiction: add it to `@empressaio/setback-corpus`
+ * (see that package's own README), bump the dependency version here, and
+ * add its key to `VENDORED_JURISDICTION_KEYS` below.
  */
-
-// elgin-development-code.json RATIFIED 2026-08-04 by operator (after
-// planner row-verification vs corpus atoms; see doc_repo
-// _sessions/2026-08-03_elgin_foundation_and_city_code_refs). Operator
-// directives: conditional cells route to their governing district's values
-// in display (see governed_by fields); story/corner rule details render in
-// the detail/X-ray surface from provenance notes.
-import elginDevelopmentCode from "./elgin-development-code.json" with { type: "json" };
-import grandCountyUt from "./grand-county-ut.json" with { type: "json" };
-import lemhiCountyId from "./lemhi-county-id.json" with { type: "json" };
-import bastropTx from "./bastrop-tx.json" with { type: "json" };
-import bastropCityTx from "./bastrop-city-tx.json" with { type: "json" };
-import bastropDevelopmentCode from "./bastrop-development-code.json" with { type: "json" };
-import austinTx from "./austin-tx.json" with { type: "json" };
-import pflugervilleTx from "./pflugerville-tx.json" with { type: "json" };
-import sanAntonioTx from "./san-antonio-tx.json" with { type: "json" };
-import utahUnincorporated from "./utah-unincorporated.json" with { type: "json" };
-import idahoUnincorporated from "./idaho-unincorporated.json" with { type: "json" };
-// 2026-09-06 item-6 setback transcription (boundary-envelope atom program,
-// OPS-19b): Waco/Round Rock/Kyle land as-is per operator go-ahead. Georgetown
-// (adopted-but-not-yet-effective rewrite) and San Marcos (legacy-vs-current
-// district coverage unconfirmed against the live GIS zoning layer) are
-// deliberately withheld pending the caveats each needs resolved first — see
-// doc_repo for the full research handoff.
-import wacoTx from "./waco-tx.json" with { type: "json" };
-import roundRockTx from "./round-rock-tx.json" with { type: "json" };
-import kyleTx from "./kyle-tx.json" with { type: "json" };
+import { getSetbackTable as getCorpusSetbackTable } from "@empressaio/setback-corpus";
 
 export type { SetbackDistrict, SetbackTable } from "./table-types.js";
 import type { SetbackDistrict, SetbackTable } from "./table-types.js";
@@ -45,29 +32,43 @@ import {
   setbackTableFromBastropPerParcelRecord,
 } from "./bastrop-per-parcel-record.js";
 
-const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = {
-  "grand-county-ut": grandCountyUt as SetbackTable,
-  "lemhi-county-id": lemhiCountyId as SetbackTable,
-  "bastrop-tx": bastropTx as SetbackTable,
-  // Historical B3 Place Type rows (REPEALED by Ord. 2026-06 / 2026-04-14).
-  // Kept for C1 hash-lock + archival getSetbackTable("bastrop-city-tx") only.
-  // getSetbackTableForZoning MUST NOT serve these as current law (WDLL STEP 3).
-  "bastrop-city-tx": bastropCityTx as SetbackTable,
-  // CURRENT City of Bastrop Euclidean setbacks (BDC Sec. 14.02.003 / Ord. 2026-06).
-  // Sole authoring survivor for city Euclidean VALUES (WDLL STEP 3 item 1+3).
-  "bastrop-development-code": bastropDevelopmentCode as SetbackTable,
-  "elgin-development-code": elginDevelopmentCode as SetbackTable,
-  // Tier-1 stamps cityKey/jurisdictionKey as elgin-tx — alias to the ratified table.
-  "elgin-tx": elginDevelopmentCode as SetbackTable,
-  "austin-tx": austinTx as SetbackTable,
-  "pflugerville-tx": pflugervilleTx as SetbackTable,
-  "san-antonio-tx": sanAntonioTx as SetbackTable,
-  "utah-unincorporated": utahUnincorporated as SetbackTable,
-  "idaho-unincorporated": idahoUnincorporated as SetbackTable,
-  "waco-tx": wacoTx as SetbackTable,
-  "round-rock-tx": roundRockTx as SetbackTable,
-  "kyle-tx": kyleTx as SetbackTable,
-};
+/**
+ * The jurisdictions this package actually serves — a curated subset of the
+ * published corpus, matching this repo's own onboarding history (item-6
+ * setback transcription, OPS-19b: Waco/Round Rock/Kyle land as-is per
+ * operator go-ahead; Elgin ratified 2026-08-04; Georgetown/San Marcos
+ * deliberately withheld pending their own caveats — see doc_repo). Not
+ * every corpus jurisdiction is meant to be reachable here.
+ */
+const VENDORED_JURISDICTION_KEYS = [
+  "grand-county-ut",
+  "lemhi-county-id",
+  "bastrop-tx",
+  "bastrop-city-tx",
+  "bastrop-development-code",
+  "elgin-development-code",
+  "elgin-tx",
+  "austin-tx",
+  "pflugerville-tx",
+  "san-antonio-tx",
+  "utah-unincorporated",
+  "idaho-unincorporated",
+  "waco-tx",
+  "round-rock-tx",
+  "kyle-tx",
+] as const;
+
+const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = Object.fromEntries(
+  VENDORED_JURISDICTION_KEYS.map((key) => {
+    const table = getCorpusSetbackTable(key);
+    if (!table) {
+      throw new Error(
+        `@empressaio/setback-corpus does not carry "${key}", which this package still vendors locally — repoint regressed.`,
+      );
+    }
+    return [key, table as SetbackTable];
+  }),
+);
 
 export const SETBACK_JURISDICTION_KEYS = Object.keys(SETBACK_TABLES);
 
