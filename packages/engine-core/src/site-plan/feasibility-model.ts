@@ -241,13 +241,25 @@ export async function composeFeasibilityModel(
   const landUse = atoms.find((a): a is LandUseFactAtomInstance => a.entityType === "land-use-fact");
   const owner = atoms.find((a): a is OwnerFactAtomInstance => a.entityType === "owner-fact");
   const flood = atoms.find((a): a is FloodHazardFactAtomInstance => a.entityType === "flood-hazard-fact");
+  // well-fact / special-district-fact / rrc-pipeline-fact / building-footprint
+  // all persist an honest "checked, found nothing" row as a real atom with an
+  // `absence` field set, rather than simply having no row at all — the same
+  // shape flood-hazard-fact and the others above do NOT use. Filtering on
+  // entityType alone (as this file did until now) reads that honest-absence
+  // row as a present fact, e.g. rendering "Well 1: on file" for a parcel with
+  // no well on record. Excluding `absence`-carrying rows here is required for
+  // every list-composed atom type below.
   const specialDistricts = atoms.filter(
-    (a): a is SpecialDistrictFactAtomInstance => a.entityType === "special-district-fact",
+    (a): a is SpecialDistrictFactAtomInstance => a.entityType === "special-district-fact" && !a.absence,
   );
-  const wells = atoms.filter((a): a is WellFactAtomInstance => a.entityType === "well-fact");
-  const pipeline = atoms.find((a): a is RrcPipelineFactAtomInstance => a.entityType === "rrc-pipeline-fact");
+  const wells = atoms.filter(
+    (a): a is WellFactAtomInstance => a.entityType === "well-fact" && !a.absence,
+  );
+  const pipeline = atoms.find(
+    (a): a is RrcPipelineFactAtomInstance => a.entityType === "rrc-pipeline-fact" && !a.absence,
+  );
   const footprints = atoms.filter(
-    (a): a is BuildingFootprintAtomInstance => a.entityType === "building-footprint",
+    (a): a is BuildingFootprintAtomInstance => a.entityType === "building-footprint" && !a.absence,
   );
   // zoning/setback/envelope are already resolved on the caller-supplied
   // SitePlanModel (one geometry truth); read here only to source-cite them.

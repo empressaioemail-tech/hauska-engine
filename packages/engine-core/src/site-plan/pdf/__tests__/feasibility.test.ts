@@ -131,6 +131,75 @@ describe("emitPdfFeasibility", () => {
     const decoded = decodeAllContentStreams(result.bytes);
     expect(decoded).toContain("https://smartsite.cloud/share?g=test-feasibility");
   });
+
+  // item 14, defect 4: every parcel-and-ownership fact shares one citation
+  // (po.sourceCitation/asOfIso) — only Market value was wired to show it,
+  // leaving Legal description/Land use/Owner/Assessed value/Year built/
+  // Living area with none on the same sheet, same section weight.
+  it("item 14 — every parcel-and-ownership fact carries the shared citation, not just market value", async () => {
+    const sitePlan = buildSitePlanModel();
+    const cadRoll = {
+      entityType: "cad-parcel-roll" as const,
+      atomDid: "cad_1",
+      parcelNodeId: "48029:105129",
+      taxYear: 2025,
+      countyFips: "48029",
+      propId: "105129",
+      keyKind: "prop_id" as const,
+      joinPassedOwnerMatchGate: true,
+      reasoningChain: { reasoningKind: "observed" as const },
+      sourceTier: "county-cad" as const,
+      legalDescription: "LOT 4 BLK 2 SAMPLE SUB",
+      marketValue: 350000,
+      assessedValue: 350000,
+      yearBuilt: 1905,
+      livingAreaSqft: 2408,
+      situsAddress: "1127 N PINE ST",
+      accessPolicy: "public-free" as const,
+      sourceCitation: "cad_property county 48029, taxYears 2025",
+      extractedAt: "2026-08-12T17:19:40.095Z",
+      verificationStatus: "machine" as const,
+      sourceAdapter: "cad-roll:bexar",
+      evaluatedAt: "2026-08-01T00:00:00Z",
+      atomTier: "data" as const,
+      entityId: "48029:105129",
+      jurisdictionTenant: "property-spine",
+      fetchedAt: "2026-08-01T00:00:00Z",
+      sourceUrl: "",
+      contentHash: "",
+      status: "active" as const,
+    };
+    const model = await composeFeasibilityModel({
+      parcelNodeId: "48029:105129",
+      storage: fakeStorage([cadRoll as unknown as PropertyAtomInstance]),
+      sitePlan,
+    });
+    const result = await emitPdfFeasibility(model);
+    const decoded = decodeAllContentStreams(result.bytes);
+    // Substring match: the citation source text must appear more than once
+    // — once would mean only one fact (market value) still carries it.
+    const occurrences = decoded.split("cad_property county 48029").length - 1;
+    expect(occurrences).toBeGreaterThan(1);
+  });
+
+  // item 14, defect: County fell back to the raw FIPS code ("48021") when no
+  // county name was on file, violating format.ts's own countyDisplayName
+  // rule (§11: a raw FIPS code never prints). Same leak in the narrative.
+  it("item 14 — never prints a raw county FIPS code when the county name is unresolved", async () => {
+    const sitePlan = buildSitePlanModel();
+    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
+    // This fixture's sitePlan already has a real county name (Bexar County),
+    // so force the unresolved-name case directly on the composed model.
+    const unresolvedModel = { ...model, jurisdiction: { ...model.jurisdiction, countyName: undefined, countyFips: "48029" } };
+    const result = await emitPdfFeasibility(unresolvedModel);
+    const decoded = decodeAllContentStreams(result.bytes);
+    // The parcelNodeId ("48029:105129") legitimately contains the FIPS
+    // prefix elsewhere on the sheet — the bug was the raw code standing in
+    // for the county NAME specifically, in the narrative's "sits in ..."
+    // clause and the County fact row.
+    expect(decoded).not.toContain("sits in 48029.");
+    expect(decoded).toContain("sits in an unresolved county.");
+  });
 });
 
 const FEASIBILITY_HEADING_CHECK = { narrative: "NARRATIVE" };
