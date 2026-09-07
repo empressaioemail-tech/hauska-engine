@@ -107,12 +107,68 @@ const CITED_NARRATIVE = {
 };
 
 describe("Feasibility narrative wiring (P-120 item 6)", () => {
-  it("with no config, stays on the skeleton and reports no fallback reason", async () => {
-    // Pre-existing behaviour must be untouched when the feature is off.
+  it("with no config, the skeleton is DECLARED, not silent", async () => {
+    // This test previously asserted `narrativeFallbackReason` was undefined
+    // here, which pinned a real defect as a specification: with no config the
+    // client was never called, so the report came back looking complete and
+    // naming nothing. Caught by doc-repo-26 in review, not by this suite,
+    // because the suite was asserting the bug. The value the system produced
+    // was checked against itself instead of against the doctrine, which is
+    // exactly the failure the enforcement rules name.
     const result = await authorParcelFeasibilityExport(baseOptions() as any);
     expect(result.narrativeIsDeterministicSkeleton).toBe(true);
-    expect(result.narrativeFallbackReason).toBeUndefined();
+    expect(result.narrativeFallbackReason).toBe("not-configured");
     expect(result.pageCount).toBeGreaterThan(0);
+  });
+
+  it("NO PATH reaches the skeleton without saying why", async () => {
+    // The general invariant, rather than one more instance of it. Whenever
+    // the report falls back, something must name the cause.
+    const cases: Array<Record<string, unknown>> = [
+      {}, // unconfigured
+      {
+        narrativeSection: {
+          baseUrl: "https://api.example/api/brokerage/v1",
+          apiKey: "svc",
+          fetchImpl: narrativeFetch({}, false).impl,
+        },
+      }, // configured but upstream failed
+      {
+        narrativeSection: {
+          baseUrl: "https://api.example/api/brokerage/v1",
+          apiKey: "svc",
+          fetchImpl: narrativeFetch({
+            narrative: "Fluent and uncited.",
+            generatedBy: "grok",
+            generatedAt: "2026-09-07T19:00:00.000Z",
+          }).impl,
+        },
+      }, // configured, answered, refused for lack of citation
+    ];
+    for (const extra of cases) {
+      const result = await authorParcelFeasibilityExport({
+        ...baseOptions(),
+        ...extra,
+      } as any);
+      expect(result.narrativeIsDeterministicSkeleton).toBe(true);
+      expect(result.narrativeFallbackReason).toBeTruthy();
+    }
+  });
+
+  it("a real generated narrative carries NO fallback reason", async () => {
+    // Guards the guard: if a reason were emitted unconditionally the test
+    // above would pass while meaning nothing.
+    const f = narrativeFetch(CITED_NARRATIVE);
+    const result = await authorParcelFeasibilityExport({
+      ...baseOptions(),
+      narrativeSection: {
+        baseUrl: "https://api.example/api/brokerage/v1",
+        apiKey: "svc",
+        fetchImpl: f.impl,
+      },
+    } as any);
+    expect(result.narrativeIsDeterministicSkeleton).toBe(false);
+    expect(result.narrativeFallbackReason).toBeUndefined();
   });
 
   it("WIRING: with config, the author actually calls the endpoint", async () => {
