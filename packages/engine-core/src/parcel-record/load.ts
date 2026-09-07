@@ -189,9 +189,10 @@ export async function loadCountyRailCellsPage(
      ORDER BY place_key
      LIMIT ${pageSize}
   `;
+  const lastRow = rows[rows.length - 1];
   return {
     cells: rows.map((r) => ({ placeKey: r.place_key, state: r.cell_state })),
-    nextAfter: rows.length === pageSize ? rows[rows.length - 1].place_key : null,
+    nextAfter: rows.length === pageSize && lastRow ? lastRow.place_key : null,
   };
 }
 
@@ -221,10 +222,20 @@ export async function loadCountyRailCells(
   railKey: ParcelRecordRailKey,
   pageSize: number = DEFAULT_RAIL_CELL_PAGE_SIZE,
 ): Promise<LoadCountyRailCellsResult> {
-  const [{ count: parcelRowCountRaw }] = await sql<{ count: string | number }>`
+  const [countRow] = await sql<{ count: string | number }>`
     SELECT count(*) AS count FROM parcel_record WHERE county_fips = ${countyFips}
   `;
-  const parcelRowCount = Number(parcelRowCountRaw);
+  // count(*) with no GROUP BY always returns exactly one row; a missing row
+  // here means the query itself is broken, not that the county has zero
+  // parcels -- fail loud rather than silently treat it as parcelRowCount 0
+  // (this file's own rule: never default a field whose correct value is
+  // unknown).
+  if (!countRow) {
+    throw new Error(
+      `loadCountyRailCells: county ${countyFips} count(*) query returned no rows`,
+    );
+  }
+  const parcelRowCount = Number(countRow.count);
 
   const cells: RailCell[] = [];
   let after = countyRailCellsFirstAfter(countyFips);
