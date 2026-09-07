@@ -20,7 +20,11 @@
  *   TXGIO_DATABASE_URL=...ldt-deployment... \
  *   DATABASE_URL=...hauska_mcp... \
  *     pnpm --filter @hauska-engine/engine-core run write-parcel-node-county -- \
- *       --county=48261 [--apply] [--batch=500] [--limit=0] [--out=path.json]
+ *       --county=48261 [--apply --run-id=<factory-run-id>] [--batch=500] [--limit=0] [--out=path.json]
+ *
+ * --apply REQUIRES --run-id (a Factory runs row) -- writePropertyAtomsBatch
+ * takes a v2 scoped lease (OPS-19 F-02 / P-83), minted from that run id, for
+ * every batch it writes, including orphan retirement. Dry-run needs neither.
  *
  * DRY RUN IS THE DEFAULT and it PREDICTS the apply. It reads the same rows,
  * builds the same plan, and reports atoms-that-would-be-written broken out by
@@ -71,7 +75,12 @@ import { writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
 import postgres from "postgres";
-import { createPgStorage, resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
+import {
+  createPgStorage,
+  resolveSubstrateDatabaseUrl,
+  takeScopedLease,
+  releaseScopedLease,
+} from "@hauska-engine/storage";
 
 import {
   assertNoActiveOrphans,
@@ -80,6 +89,11 @@ import {
   reconcileCountyParcelNodes,
   verifyStoredParcelNodeAtom,
 } from "../src/parcel-node/index.ts";
+import {
+  consumeRunIdArg,
+  railLeaseArgs,
+  refuseApplyWithoutRunId,
+} from "./writer-apply-lease.mjs";
 
 const SOURCE_ADAPTER = "txgio-stratmap-bulk-v1";
 const SOURCE_URL = "https://data.geographic.texas.gov/";
@@ -94,6 +108,7 @@ function parseArgs(argv) {
     listCounties: false,
     keyKind: null,
     tier: "txgio-stratmap",
+    runId: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -111,6 +126,10 @@ function parseArgs(argv) {
     else if (a.startsWith("--key-kind=")) out.keyKind = a.slice("--key-kind=".length).trim();
     else if (a === "--tier") out.tier = String(argv[++i] || "").trim();
     else if (a.startsWith("--tier=")) out.tier = a.slice("--tier=".length).trim();
+    else {
+      const next = consumeRunIdArg(a, argv, i, out);
+      if (next !== null) i = next;
+    }
   }
   return out;
 }
@@ -121,6 +140,9 @@ if (process.env.PARCEL_NODE_PATH !== "1") {
 }
 
 const args = parseArgs(process.argv.slice(2));
+if (refuseApplyWithoutRunId("parcel-node-county.refused", args.apply, args.runId)) {
+  process.exit(2);
+}
 
 const txgioUrl =
   process.env.TXGIO_DATABASE_URL?.trim() ||
@@ -443,9 +465,24 @@ try {
         }),
       );
     } else {
+      const lease = await takeScopedLease(
+        handle.sql,
+        railLeaseArgs({
+          entityType: "parcel-node",
+          countyFips: args.county,
+          runId: args.runId,
+          holderFallback: "parcel-node-writer",
+        }),
+      );
+      summary.lease = {
+        holder_token: lease.holder_token,
+        scope: lease.scope,
+        stolen_from: lease.stolen_from,
+      };
+      try {
       for (let i = 0; i < atoms.length; i += args.batch) {
         const slice = atoms.slice(i, i + args.batch);
-        await handle.storage.writePropertyAtomsBatch(slice);
+        await handle.storage.writePropertyAtomsBatch(slice, lease);
         summary.atomsWritten += slice.length;
 
         // ---- Write-then-verify on the STORED BYTES (Geometry Law rule 3).
@@ -510,7 +547,7 @@ try {
       if (retireAtoms.length > 0) {
         for (let i = 0; i < retireAtoms.length; i += args.batch) {
           const slice = retireAtoms.slice(i, i + args.batch);
-          await handle.storage.writePropertyAtomsBatch(slice);
+          await handle.storage.writePropertyAtomsBatch(slice, lease);
           summary.orphansRetired += slice.length;
         }
         console.log(
@@ -544,6 +581,9 @@ try {
               `still active: ${JSON.stringify(verdict.stillActive)}`,
           );
         }
+      }
+      } finally {
+        await releaseScopedLease(handle.sql, lease);
       }
     }
   }
