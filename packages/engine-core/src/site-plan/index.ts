@@ -56,6 +56,15 @@ export {
 } from "./site-plan-unavailable.js";
 
 export {
+  fetchFeasibilityNarrative,
+  buildNarrativeFacts,
+  deriveCitedSections,
+  type NarrativeSectionConfig,
+  type NarrativeSectionOutcome,
+  type NarrativeFallbackReason,
+} from "./narrative-section-client.js";
+
+export {
   anyNotSpecified,
   formatSetbackEdgeLabel,
   formatSetbackSummaryLine,

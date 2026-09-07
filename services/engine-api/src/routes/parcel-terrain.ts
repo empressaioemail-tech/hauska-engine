@@ -248,6 +248,23 @@ function artifactStoreFromEnv(env: NodeJS.ProcessEnv = process.env): ReadableArt
 export { artifactStoreFromEnv };
 
 /**
+ * OPS-16 P-120 item 6. Config for the Feasibility narrative generator
+ * (`POST /research/narrative-section` on legacy-design-tools).
+ *
+ * Returns undefined unless BOTH the base URL and the service key are set, so
+ * an unconfigured deployment stays on the deterministic skeleton rather than
+ * issuing unauthenticated calls. The report never fails for want of this.
+ */
+export function narrativeSectionFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): { baseUrl: string; apiKey: string } | undefined {
+  const baseUrl = env.BROKERAGE_API_BASE_URL?.trim();
+  const apiKey = env.SERVICE_API_KEY?.trim();
+  if (!baseUrl || !apiKey) return undefined;
+  return { baseUrl, apiKey };
+}
+
+/**
  * Site-plan / terrain export must read property atoms from Postgres in
  * production. Defaulting to InMemoryStorage made every parcel look like
  * setback_rule_missing (false refusal) even when atoms were on file.
@@ -599,6 +616,7 @@ export function buildParcelTerrainRoutes(
           : undefined,
         liveViewUrl: parsed.data.liveViewUrl,
         narrativeOverride: parsed.data.narrativeOverride,
+        narrativeSection: narrativeSectionFromEnv(),
         resolver,
         setback,
         storage,
@@ -614,6 +632,15 @@ export function buildParcelTerrainRoutes(
         sectionCount: result.sectionCount,
         openItemCount: result.openItemCount,
         narrativeIsDeterministicSkeleton: result.narrativeIsDeterministicSkeleton,
+        // Declared degradation: WHY the skeleton was used, and what the
+        // generated narrative actually cited. A bare boolean does not say
+        // whether the feature is off, misconfigured, or refused this run.
+        ...(result.narrativeFallbackReason
+          ? { narrativeFallbackReason: result.narrativeFallbackReason }
+          : {}),
+        ...(result.narrativeCitedSections
+          ? { narrativeCitedSections: result.narrativeCitedSections }
+          : {}),
       }, 201);
     } catch (error) {
       return c.json({
