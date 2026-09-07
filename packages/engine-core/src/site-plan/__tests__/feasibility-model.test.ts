@@ -224,4 +224,43 @@ describe("composeFeasibilityModel", () => {
     expect(model.dataQuality.supersededNotes.length).toBe(1);
     expect(model.dataQuality.supersededNotes[0]).toContain("supersedes");
   });
+
+  // item 14, defect 9: well-fact (and the sibling list-composed atom types —
+  // special-district-fact, rrc-pipeline-fact, building-footprint) persist an
+  // honest "checked, found nothing" row as a real atom carrying an `absence`
+  // field, rather than having no row at all. Filtering on entityType alone
+  // read that row as a present fact and rendered "Well 1: on file" for a
+  // parcel with no well on record — a real fabrication, not a detail gap.
+  it("an absence-shaped well-fact atom (no well on or near the parcel) reads as absent, never a fabricated present well", async () => {
+    const sitePlan = buildSitePlanModel();
+    const absentWellAtom = {
+      entityType: "well-fact" as const,
+      atomDid: "wlfact_1",
+      parcelNodeId: "48029:105129",
+      wellKey: "none",
+      absence: { kind: "no-well-on-or-near", reason: "no Texas RRC surface well on or within 152 m of parcel geometry" },
+      reasoningChain: { reasoningKind: "observed" as const },
+      sourceTier: "texas-rrc-gis" as const,
+      accessPolicy: "public-free" as const,
+      sourceCitation: "Texas RRC surface wells staged in tx_rrc_well (first-party statewide)",
+      extractedAt: "2026-08-31T19:55:57.048Z",
+      verificationStatus: "machine" as const,
+      sourceAdapter: "tx-rrc-well-staged-v1",
+      evaluatedAt: "2026-08-31T19:55:57.048Z",
+      atomTier: "data" as const,
+      entityId: "48029:105129:none",
+      jurisdictionTenant: "tx_48029",
+      fetchedAt: "2026-08-31T19:55:57.048Z",
+      sourceUrl: "tx_rrc_well",
+      contentHash: "",
+      status: "active" as const,
+    };
+    const model = await composeFeasibilityModel({
+      parcelNodeId: "48029:105129",
+      storage: fakeStorage([absentWellAtom as unknown as PropertyAtomInstance]),
+      sitePlan,
+    });
+    expect(model.wellsPipelines.status).toBe("absent");
+    expect(model.openItems.map((i) => i.section)).toContain("wellsPipelines");
+  });
 });

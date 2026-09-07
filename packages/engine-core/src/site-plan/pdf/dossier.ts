@@ -2,7 +2,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFPage } from "pdf-lib";
 
 import type { SitePlanModel } from "../site-model.js";
-import { CHIP_UNAVAILABLE, countyDisplayName } from "./format.js";
+import { CHIP_NOT_REQUESTED, CHIP_UNAVAILABLE, countyDisplayName } from "./format.js";
 import {
   RhythmCapture,
   placeRowBelowRule,
@@ -303,16 +303,24 @@ export function rowCost(lines: number): number {
   return pt(SPACE.s2) + lines * LB.kvRow.lineBoxHeight + pt(SPACE.s2);
 }
 
-export function planFactRow(fact: DossierContent["sections"][number]["facts"][number], F: Fonts): PlannedFactRow {
+export function planFactRow(
+  fact: DossierContent["sections"][number]["facts"][number],
+  F: Fonts,
+  genericAbsentReason: string = DOSSIER_FACT_VALUE_ABSENT_REASON,
+): PlannedFactRow {
   const right = PAGE_WIDTH - MARGIN_X;
   const valueX = MARGIN_X + LABEL_COL;
   const greyText = [fact.source, fact.vintage].filter((p): p is string => !!p).join(" · ");
   if (!fact.value) {
     const chipW =
       trackedWidth(F.displayMedium, CHIP_UNAVAILABLE, TYPE.chip, TRACKING.chip) + pt(14) + pt(8);
+    // item 14: the generic line is caller-swappable (see genericAbsentReason)
+    // so this phrase never collides with an engine-derived atom absence,
+    // which is a different meaning wearing the same chip (feasibility.ts
+    // supplies its own generic line via planBriefPages' third argument).
     const reason = greyText
-      ? `${DOSSIER_FACT_VALUE_ABSENT_REASON} ${greyText}`
-      : DOSSIER_FACT_VALUE_ABSENT_REASON;
+      ? `${genericAbsentReason} ${greyText}`
+      : genericAbsentReason;
     return {
       label: fact.label,
       valueLines: [],
@@ -327,7 +335,11 @@ export function planFactRow(fact: DossierContent["sections"][number]["facts"][nu
   return { label: fact.label, valueLines, greyLines, chip: false };
 }
 
-export function planBriefPages(content: DossierContent, F: Fonts): PlannedPage[] {
+export function planBriefPages(
+  content: DossierContent,
+  F: Fonts,
+  genericAbsentReason: string = DOSSIER_FACT_VALUE_ABSENT_REASON,
+): PlannedPage[] {
   if (content.sections.length === 0) return [];
   const pages: PlannedPage[] = [];
   const floor = contentFloorY();
@@ -349,7 +361,7 @@ export function planBriefPages(content: DossierContent, F: Fonts): PlannedPage[]
     current = { heading, rows: [] };
     cursor -= sectionHeadingCost();
     for (const fact of section.facts) {
-      const row = planFactRow(fact, F);
+      const row = planFactRow(fact, F, genericAbsentReason);
       const lines = Math.max(1, row.valueLines.length + row.greyLines.length, row.chip ? Math.max(1, row.greyLines.length) : 0);
       if (cursor - rowCost(lines) < floor) {
         // Page break mid-section: close this page, reopen the section as CONTINUED.
@@ -481,7 +493,7 @@ export function drawDossierHeader(
 function drawKvRow(
   page: PDFPage,
   pageNo: number,
-  row: { label: string; value?: string; chip?: boolean; grey?: string },
+  row: { label: string; value?: string; chip?: boolean; chipLabel?: string; grey?: string },
   ruleY: number,
   F: Fonts,
   rhythm: RhythmCapture,
@@ -489,9 +501,10 @@ function drawKvRow(
   const left = MARGIN_X;
   const right = PAGE_WIDTH - MARGIN_X;
   const valueX = left + LABEL_COL;
+  const chipText = row.chipLabel ?? CHIP_UNAVAILABLE;
   let vx = valueX;
   if (row.chip) {
-    vx += trackedWidth(F.displayMedium, CHIP_UNAVAILABLE, TYPE.chip, TRACKING.chip) + pt(14) + pt(8);
+    vx += trackedWidth(F.displayMedium, chipText, TYPE.chip, TRACKING.chip) + pt(14) + pt(8);
   }
   if (row.value) vx += F.body.widthOfTextAtSize(row.value, TYPE.rowValue) + pt(8);
   const greySize = row.chip ? pt(12) : TYPE.rowQualifier;
@@ -504,7 +517,7 @@ function drawKvRow(
   page.drawText(row.label, { x: left, y: placed.baselines[0]!, size: TYPE.rowLabel, font: F.body, color: TOKENS.neutral600 });
   let dx = valueX;
   if (row.chip) {
-    dx = drawChipOnLineBox(page, CHIP_UNAVAILABLE, dx, placed.boxTopY, LB.kvRow, "solid", F) + pt(8);
+    dx = drawChipOnLineBox(page, chipText, dx, placed.boxTopY, LB.kvRow, "solid", F) + pt(8);
   }
   if (row.value) {
     page.drawText(row.value, { x: dx, y: placed.baselines[0]!, size: TYPE.rowValue, font: F.body, color: INK });
@@ -585,9 +598,9 @@ function dossierFinePrint(
   chatDisclaimer?: string,
 ): string {
   const sentences: string[] = [DOSSIER_COMPILATION_LINE, SITE_PLAN_HONESTY_LINE, DOSSIER_NOT_LEGAL_ADVICE];
-  if (pageKind === "cover" && flags.verdictIncluded) {
-    sentences.push(DOSSIER_VERDICT_QUALIFIER);
-  }
+  // The verdict qualifier is already drawn once, directly under the VERDICT
+  // headline (item 14: it was also being appended here, duplicating the
+  // same caption into the bottom disclaimer block where it doesn't belong).
   if (flags.userContent && (pageKind === "cover" || pageKind === "chat" || pageKind === "notes")) {
     sentences.push(DOSSIER_USER_CONTENT_DISCLOSURE);
   }
@@ -663,7 +676,10 @@ export async function emitPdfDossier(
   const rhythm = new RhythmCapture();
   const generatedAt = options.generatedAtIso ?? new Date().toISOString();
   const stamp = `generated ${generatedAt.slice(0, 16).replace("T", " ")}Z`;
-  const docId = `PD-${content.parcelNodeId.replace(/:/g, "-")}`;
+  // "XR-" maps to the customer-facing product name, "Smart Site X-Ray" — the
+  // same way FS-/FD- map to Feasibility Study/Flood & Drainage (item 14: the
+  // old "PD-" prefix was this file's internal name, dossier, leaking through).
+  const docId = `XR-${content.parcelNodeId.replace(/:/g, "-")}`;
   const rightMeta = [docId, content.parcelNodeId];
 
   const chatPages = plannedPages.filter((p) => p.kind === "chat").length;
@@ -728,7 +744,7 @@ export async function emitPdfDossier(
         cursor = drawKvRow(
           page,
           pageNo,
-          { label: "Verdict", chip: true, grey: DOSSIER_VERDICT_ABSENT_REASON },
+          { label: "Verdict", chip: true, chipLabel: CHIP_NOT_REQUESTED, grey: DOSSIER_VERDICT_ABSENT_REASON },
           cursor,
           F,
           rhythm,
@@ -747,7 +763,7 @@ export async function emitPdfDossier(
               value: `${factCount} fact${factCount === 1 ? "" : "s"} in ${content.sections.length} section${content.sections.length === 1 ? "" : "s"}`,
               grey: briefPages === 1 ? "sheet 2" : `sheets 2–${1 + briefPages}`,
             }
-          : { label: "Brief facts", chip: true, grey: "No brief facts were carried in the request." },
+          : { label: "Brief facts", chip: true, chipLabel: CHIP_NOT_REQUESTED, grey: "No brief facts were carried in the request." },
         contentsRule,
         F,
         rhythm,
@@ -761,7 +777,7 @@ export async function emitPdfDossier(
               value: content.chatSummary.savedAt ? `saved ${content.chatSummary.savedAt.slice(0, 10)}` : "included",
               grey: "user-saved AI content, rendered verbatim",
             }
-          : { label: "AI research summary", chip: true, grey: "No saved AI summary was carried in the request." },
+          : { label: "AI research summary", chip: true, chipLabel: CHIP_NOT_REQUESTED, grey: "No saved AI summary was carried in the request." },
         contentsRule,
         F,
         rhythm,
@@ -771,7 +787,7 @@ export async function emitPdfDossier(
         pageNo,
         content.notes
           ? { label: "Owner notes", value: "included", grey: "user-supplied text, rendered verbatim" }
-          : { label: "Owner notes", chip: true, grey: "No owner notes were carried in the request." },
+          : { label: "Owner notes", chip: true, chipLabel: CHIP_NOT_REQUESTED, grey: "No owner notes were carried in the request." },
         contentsRule,
         F,
         rhythm,

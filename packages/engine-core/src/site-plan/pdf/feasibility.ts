@@ -2,7 +2,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFPage } from "pdf-lib";
 
 import type { FeasibilityModel } from "../feasibility-model.js";
-import { countyDisplayName } from "./format.js";
+import { REASON, countyDisplayName } from "./format.js";
 import { RhythmCapture, placeRowBelowRule, type RhythmRow } from "./line-box.js";
 import { SITE_PLAN_HONESTY_LINE } from "./provenance.js";
 import {
@@ -79,6 +79,12 @@ export const FEASIBILITY_NARRATIVE_DISCLOSURE =
   "Narrative is a deterministic summary of the sections above unless a generated narrative was supplied; either way it is not verified against outside sources.";
 export const FEASIBILITY_GIS_REFERENCE_NOTE =
   "County GIS reference sheets are not included: every fact above carries its own source citation natively.";
+/** item 14: distinct from dossier.ts's own `DOSSIER_FACT_VALUE_ABSENT_REASON`
+ * ("No value carried in the brief for this fact.") — that phrase describes a
+ * CALLER choosing not to send an optional field, which is not what an absent
+ * fact here means. Every Feasibility absence is the engine looking for a
+ * real atom and finding none; this assembler's own generic line says so. */
+export const FEASIBILITY_FACT_VALUE_ABSENT_REASON = "No matching record was found for this fact.";
 
 // ─────────────────────────────────────────────────────────────────────────
 // FeasibilityModel → the grouped-fact section shape `planBriefPages` and
@@ -103,7 +109,9 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
     id: "jurisdiction",
     title: "Location and jurisdiction",
     facts: [
-      factOrChip("County", model.jurisdiction.countyName ?? model.jurisdiction.countyFips ?? undefined),
+      factOrChip("County", countyDisplayName(model.jurisdiction.countyName) ?? countyDisplayName(model.jurisdiction.countyFips), {
+        absentReason: REASON.noCountyName,
+      }),
       factOrChip("City limits", "Unresolved", { absentReason: "No city-limits or ETJ data source is wired for this county yet." }),
       factOrChip("ETJ status", "Unresolved", { absentReason: "No city-limits or ETJ data source is wired for this county yet." }),
     ],
@@ -116,13 +124,16 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
     facts:
       po.status === "present"
         ? [
-            factOrChip("Legal description", po.legalDescription),
-            factOrChip("Land use", po.landUseLabel ?? po.landUseCode),
-            factOrChip("Owner", po.ownerName, { vintage: po.absenteeOwner ? "mailing differs from situs" : undefined }),
+            factOrChip("Legal description", po.legalDescription, { source: po.sourceCitation, vintage: po.asOfIso }),
+            factOrChip("Land use", po.landUseLabel ?? po.landUseCode, { source: po.sourceCitation, vintage: po.asOfIso }),
+            factOrChip("Owner", po.ownerName, {
+              source: po.sourceCitation,
+              vintage: po.absenteeOwner ? "mailing differs from situs" : po.asOfIso,
+            }),
             factOrChip("Market value", po.marketValue != null ? `$${po.marketValue.toLocaleString()}` : undefined, { source: po.sourceCitation, vintage: po.asOfIso }),
-            factOrChip("Assessed value", po.assessedValue != null ? `$${po.assessedValue.toLocaleString()}` : undefined),
-            factOrChip("Year built", po.yearBuilt),
-            factOrChip("Living area", po.livingAreaSqft != null ? `${po.livingAreaSqft.toLocaleString()} sq ft` : undefined),
+            factOrChip("Assessed value", po.assessedValue != null ? `$${po.assessedValue.toLocaleString()}` : undefined, { source: po.sourceCitation, vintage: po.asOfIso }),
+            factOrChip("Year built", po.yearBuilt, { source: po.sourceCitation, vintage: po.asOfIso }),
+            factOrChip("Living area", po.livingAreaSqft != null ? `${po.livingAreaSqft.toLocaleString()} sq ft` : undefined, { source: po.sourceCitation, vintage: po.asOfIso }),
           ]
         : [factOrChip("Parcel and ownership", undefined, { absentReason: po.reason })],
   });
@@ -136,7 +147,10 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
       factOrChip("Lot area", `${sp.lotAreaSqFt.toLocaleString()} sq ft`),
       factOrChip("Buildable area", sp.buildablePdfLabel, { vintage: sp.buildableAreaHonestNote }),
       factOrChip(
-        "Setbacks",
+        // Matches the existing row-label convention in dossier.ts/render.ts
+        // (item 14): the label carries the axis order so the bare number
+        // triplet never needs the site-plan drawing to decode it.
+        "Setbacks F / S / R",
         model.sitePlan.setback.honestAbsence ? undefined : model.sitePlan.setback.displayLine,
         { absentReason: model.sitePlan.setback.honestAbsenceReason },
       ),
@@ -277,7 +291,7 @@ export function deterministicNarrative(model: FeasibilityModel): string {
   const paragraphs: string[] = [];
 
   paragraphs.push(
-    `This parcel (${model.parcelNodeId}) sits in ${model.jurisdiction.countyName ?? model.jurisdiction.countyFips ?? "an unresolved county"}. ` +
+    `This parcel (${model.parcelNodeId}) sits in ${countyDisplayName(model.jurisdiction.countyName) ?? countyDisplayName(model.jurisdiction.countyFips) ?? "an unresolved county"}. ` +
       `City-limits and ETJ status are not yet resolved for this jurisdiction. ` +
       `Zoning reads ${sp.zoningDistrict ?? "not on file"}, on a lot of ${sp.lotAreaSqFt.toLocaleString()} square feet.`,
   );
@@ -360,7 +374,7 @@ export async function emitPdfFeasibility(
   };
 
   const plannedPages: PlannedPage[] = [{ kind: "cover" }];
-  plannedPages.push(...planBriefPages(content, F));
+  plannedPages.push(...planBriefPages(content, F, FEASIBILITY_FACT_VALUE_ABSENT_REASON));
   const narrativeLines = content.notes ? wrapUserText(content.notes, F) : [];
   if (narrativeLines.length > 0) {
     plannedPages.push(...planTextPages("notes", narrativeLines));
@@ -461,7 +475,7 @@ export async function emitPdfFeasibility(
           greyLines: [
             options.narrativeOverride
               ? `generated ${options.narrativeOverride.generatedBy}`
-              : "deterministic skeleton, cited to the facts above",
+              : "a plain summary of the facts above, with a citation for each sentence",
           ],
           chip: false,
         },

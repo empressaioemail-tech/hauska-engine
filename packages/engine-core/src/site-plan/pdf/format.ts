@@ -61,7 +61,9 @@ export function formatMetersRange(min: number, max: number): string {
   return `${min.toFixed(1)} – ${formatMeters(max)}`;
 }
 
-/** Setbacks F / S / R value line with primes: "15' / 5' / 15'" (§12). */
+/** Setbacks F / S / R value line with primes: "15' / 5' / 15'" (§12). The
+ * row this renders into is always labeled "Setbacks F / S / R" (render.ts,
+ * dossier.ts) — the label carries the axis order, not the value string. */
 export function formatSetbacksFSR(front: number, side: number, rear: number): string {
   return `${formatFeetPrime(front)} / ${formatFeetPrime(side)} / ${formatFeetPrime(rear)}`;
 }
@@ -70,6 +72,11 @@ export function formatSetbacksFSR(front: number, side: number, rear: number): st
 // Chips (§6) — identical wording every time, no second spelling of a state.
 // ─────────────────────────────────────────────────────────────────────────
 export const CHIP_UNAVAILABLE = "UNAVAILABLE";
+/** Distinct from `CHIP_UNAVAILABLE`: the caller simply did not include this
+ * optional field in the request, as opposed to the engine looking for a
+ * fact on file and finding none. Same visual treatment, different word, so
+ * the two absence meanings never collide under one label (item 14). */
+export const CHIP_NOT_REQUESTED = "NOT REQUESTED";
 export const CHIP_FIXTURE_LABEL = "FIXTURE LABEL";
 export const CHIP_NO_ADDRESS = "NO ADDRESS";
 
