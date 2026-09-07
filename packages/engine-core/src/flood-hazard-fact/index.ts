@@ -3,6 +3,25 @@
  */
 
 export {
+  classifySamplePointContainment,
+  countTestableRings,
+  deriveFloodSamplePoint,
+  emptyContainmentTally,
+  floodDeterminationGate,
+  tallyContainment,
+  type ContainmentState,
+  type ContainmentTally,
+  type ContainmentVerdict,
+  type EmittableContainmentState,
+  type FloodEmitReasonCode,
+  type FloodRefusalReasonCode,
+  type FloodDeterminationDecision,
+  type FloodDeterminationGateResult,
+  type SamplePoint,
+  type SamplePointDerivation,
+} from "./containment.js";
+
+export {
   bboxContainsPoint,
   bboxIntersects,
   filterZonesByBBox,
@@ -29,6 +48,7 @@ export {
 export {
   assembleCountyFloodHazardPlan,
   hasUsableCentroid,
+  isQueryableParcel,
   planCountyFloodHazard,
   selectPlannableParcels,
   type CountyFloodHazardPlan,
@@ -38,6 +58,7 @@ export {
   type PlannedAbsentFloodHazard,
   type PlannedFloodHazard,
   type PlannedPresentFloodHazard,
+  type RefusedFloodHazard,
   type ResolvedFloodZone,
 } from "./plan-county-flood-hazard.js";
 
@@ -63,6 +84,8 @@ export {
   buildCountyFloodHazardCoverageAtom,
   verifyStoredFloodHazardFactAtom,
   type FloodCountyRunProvenance,
+  type FloodHazardFactAtomWithSampling,
+  type FloodSamplingProvenance,
   type StoredFloodHazardVerdict,
 } from "./flood-hazard-fact-atoms.js";
 

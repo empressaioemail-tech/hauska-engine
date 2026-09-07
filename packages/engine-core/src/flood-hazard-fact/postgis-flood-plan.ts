@@ -26,7 +26,7 @@ import type { Sql } from "postgres";
 import { pointInGeoJson, type BBox } from "./geo.js";
 import {
   assembleCountyFloodHazardPlan,
-  hasUsableCentroid,
+  isQueryableParcel,
   selectPlannableParcels,
   type CountyFloodHazardPlan,
   type FloodParcelInput,
@@ -405,10 +405,13 @@ export async function planCountyFloodHazardPostgis(
     selection.items.length,
   ).fill(null);
 
+  // A parcel the containment gate REFUSED never reaches FEMA. Skipping it here
+  // rather than discarding its answer later is the fail-closed shape: the value
+  // is not computed at all, so there is nothing to leak into a record.
   const queryable: number[] = [];
   if (zonesIndexed > 0) {
     for (let i = 0; i < selection.items.length; i++) {
-      if (hasUsableCentroid(selection.items[i]!)) queryable.push(i);
+      if (isQueryableParcel(selection.items[i]!)) queryable.push(i);
     }
   }
 
