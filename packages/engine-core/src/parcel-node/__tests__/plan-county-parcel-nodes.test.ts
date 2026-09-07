@@ -332,6 +332,59 @@ describe("planCountyParcelNodes — crosswalk counties", () => {
   });
 });
 
+describe("planCountyParcelNodes — prop_id_then_geo_id_cascade (per-parcel fallback)", () => {
+  const CASCADE_POLICY = {
+    countyFips: "48453",
+    keyKind: "prop_id_then_geo_id_cascade",
+    geometrySourceTier: "txgio-stratmap",
+  } as const;
+
+  it("keys on prop_id when it is usable, exactly like the plain prop_id policy", () => {
+    const rows = tiledFeature(1, "110167", 2, simplePolygon(), "10-0017-2321-00000-3");
+    const plan = planCountyParcelNodes(rows, CASCADE_POLICY);
+    expect(plan.counts.resolved).toBe(1);
+    expect(plan.planned[0]!.parcelKey).toBe("110167");
+    expect(plan.planned[0]!.keyKind).toBe("prop_id");
+  });
+
+  it("falls back to geo_id for a specific parcel whose prop_id is the placeholder, without affecting other parcels", () => {
+    const badPropIdRows = tiledFeature(1, "0", 2, simplePolygon(), "10-0017-2321-00000-3");
+    const goodPropIdRows = tiledFeature(2, "110167", 2, simplePolygon(), "10-0017-2322-00000-4");
+    const plan = planCountyParcelNodes([...badPropIdRows, ...goodPropIdRows], CASCADE_POLICY);
+    expect(plan.counts.resolved).toBe(2);
+
+    const byKey = new Map(plan.planned.map((p) => [p.parcelKey, p]));
+    // Feature 1's prop_id ("0") is the placeholder -> falls back to geo_id.
+    expect(byKey.get("10-0017-2321-00000-3")!.keyKind).toBe("geo_id_crosswalk");
+    // Feature 2's prop_id is usable -> stays on prop_id, geo_id never consulted.
+    expect(byKey.get("110167")!.keyKind).toBe("prop_id");
+  });
+
+  it("emits parcel-key-unresolved (not a guessed join) when BOTH prop_id and geo_id fail for a parcel", () => {
+    const rows = tiledFeature(1, "0", 2, simplePolygon(), null);
+    const plan = planCountyParcelNodes(rows, CASCADE_POLICY);
+    expect(plan.counts.absentByKind["parcel-key-unresolved"]).toBe(1);
+    expect(plan.planned[0]!.reason).toMatch(/every tier failed/);
+    expect(plan.planned[0]!.reason).toMatch(/no usable prop_id token/);
+    expect(plan.planned[0]!.reason).toMatch(/no usable geo_id_crosswalk token/);
+  });
+
+  it("falls back to geo_id when prop_id contains characters the contract does not admit", () => {
+    const rows = tiledFeature(1, "bad id/with slash", 2, simplePolygon(), "10-0017-2321-00000-3");
+    const plan = planCountyParcelNodes(rows, CASCADE_POLICY);
+    expect(plan.counts.resolved).toBe(1);
+    expect(plan.planned[0]!.keyKind).toBe("geo_id_crosswalk");
+    expect(plan.planned[0]!.parcelKey).toBe("10-0017-2321-00000-3");
+  });
+
+  it("normalizes the resolved token the same way regardless of which tier resolved it", () => {
+    const rows = tiledFeature(1, "0", 2, simplePolygon(), "007");
+    const plan = planCountyParcelNodes(rows, CASCADE_POLICY);
+    expect(plan.planned[0]!.parcelKey).toBe("7");
+    expect(plan.planned[0]!.keyKind).toBe("geo_id_crosswalk");
+  });
+});
+
 describe("classifyGeometryShape — mirrors the serving path's reducibility ruling", () => {
   it("classifies each shape the way parcel-geometry-resolver does", () => {
     expect(classifyGeometryShape(simplePolygon()).kind).toBe("reducible");
