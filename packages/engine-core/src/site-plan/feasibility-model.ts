@@ -13,6 +13,7 @@ import type {
 } from "@hauska-engine/atoms";
 import type { StoragePort } from "@hauska-engine/storage";
 
+import type { DischargePointResolver, NamedDischargePoint } from "./discharge-point.js";
 import type { SitePlanModel } from "./site-model.js";
 
 /**
@@ -89,6 +90,15 @@ export interface FloodFacts {
    * wins and the coarser one is named as superseded, not appended. */
   supersedesScreeningFact?: boolean;
   studyAvailable: boolean;
+}
+
+// ── item 19: named downstream discharge point ───────────────────────────
+// A separate top-level section, not nested in FloodFacts: its presence
+// depends on a flood-drainage-study flow exit and the county-hydrography
+// registry, not on flood-hazard-fact atom presence — those are independent
+// facts and must be free to disagree on present/absent.
+export interface DischargePointFacts {
+  point: NamedDischargePoint;
 }
 
 // ── Section 7: special districts ────────────────────────────────────────
@@ -173,6 +183,12 @@ export interface FeasibilityModel {
   utilities: FeasibilityFactState<UtilityWhoServesFacts>;
   hoa: HoaFacts;
   footprint: FeasibilityFactState<FootprintFacts>;
+  /** item 19 — comprehensiveness, not core: absence here (no exit point
+   * supplied, or no county-hydrography source registered yet) does NOT
+   * generate an open item the way flood/wells/utilities absence does —
+   * this is a coverage limitation, not something the customer can go
+   * confirm themselves. */
+  dischargePoint: FeasibilityFactState<DischargePointFacts>;
   dataQuality: DataQualityNote;
   /** Generated from every OTHER section's absence/reason above — item 6.
    * Never hand-populated by a caller. */
@@ -227,6 +243,15 @@ export interface ComposeFeasibilityModelOptions {
   /** Persisted D8 flood-drainage study, if the caller already has one on
    * file for this parcel (read once by the author, never re-computed here). */
   floodStudyAvailable?: boolean;
+  /** item 19 — a flood-drainage-study flow exit the caller already computed
+   * (this file never runs its own D8 pass). Omit to skip (honest absence,
+   * never a blocking failure or a re-derived computation). */
+  dischargeExitPoint?: { lat: number; lng: number };
+  /** item 19 — injected resolver for the county-hydrography name lookup,
+   * mirroring this file's existing `whoServes` pattern: an interface at the
+   * boundary, never a direct import of the adapter's live-fetch path from
+   * here. Omit to skip even when an exit point is supplied. */
+  dischargeResolver?: DischargePointResolver;
 }
 
 export async function composeFeasibilityModel(
@@ -373,6 +398,27 @@ export async function composeFeasibilityModel(
         })
       : absent("No building-footprint atom on file for this parcel.");
 
+  let dischargePoint: FeasibilityFactState<DischargePointFacts>;
+  if (!options.dischargeExitPoint || !options.dischargeResolver) {
+    dischargePoint = absent(
+      "No flood-drainage-study flow exit was supplied for this parcel.",
+    );
+  } else {
+    try {
+      const result = await options.dischargeResolver.resolve(options.dischargeExitPoint);
+      dischargePoint =
+        result.status === "present"
+          ? present<DischargePointFacts>({ point: result.point })
+          : absent(result.reason);
+    } catch (error) {
+      // Same discipline as utilities/whoServes (item 8): a lookup failure
+      // never blocks the export.
+      dischargePoint = absent(
+        `Discharge-point lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   const dataQuality: DataQualityNote = {
     supersededNotes:
       floodModel.status === "present" && floodModel.supersedesScreeningFact
@@ -392,6 +438,7 @@ export async function composeFeasibilityModel(
     utilities,
     hoa,
     footprint: footprintModel,
+    dischargePoint,
     dataQuality,
   };
 

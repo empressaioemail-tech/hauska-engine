@@ -98,7 +98,15 @@ export {
   type FeasibilityFactState,
   type FeasibilityModel,
   type WhoServesResolver,
+  type DischargePointFacts,
 } from "./feasibility-model.js";
+
+export {
+  createCountyHydrographyDischargeResolver,
+  type DischargePointResolver,
+  type NamedDischargePoint,
+  type NamedDischargePointResult,
+} from "./discharge-point.js";
 
 export {
   emitPdfFeasibility,

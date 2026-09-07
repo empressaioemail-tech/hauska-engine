@@ -5,6 +5,7 @@ import {
   type AuthorParcelSitePlanExportOptions,
   type ComposeSitePlanModelForParcelResult,
 } from "./author.js";
+import type { DischargePointResolver } from "./discharge-point.js";
 import { composeFeasibilityModel, type WhoServesResolver } from "./feasibility-model.js";
 import { emitPdfFeasibility, type PdfFeasibilityResult } from "./pdf/feasibility.js";
 
@@ -31,6 +32,10 @@ export interface AuthorParcelFeasibilityExportOptions
    * absence) when neither is supplied. */
   centroidOverride?: { latitude: number; longitude: number };
   floodStudyAvailable?: boolean;
+  /** item 19 — a flood-drainage-study flow exit the caller already has on
+   * file for this parcel. Omit to skip (honest absence). */
+  dischargeExitPoint?: { lat: number; lng: number };
+  dischargeResolver?: DischargePointResolver;
   liveViewUrl?: string;
   narrativeOverride?: { text: string; generatedBy: string; generatedAt: string };
 }
@@ -109,6 +114,8 @@ export async function authorParcelFeasibilityExport(
     centroid,
     whoServes: options.whoServes,
     floodStudyAvailable: options.floodStudyAvailable,
+    dischargeExitPoint: options.dischargeExitPoint,
+    dischargeResolver: options.dischargeResolver,
   });
 
   // 4) Assemble the PDF.
