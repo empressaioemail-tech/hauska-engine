@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { DOWNTOWN_DRILL_MANIFEST_PROP_IDS } from "../src/boundary-primitive/fixtures/bastropDowntownDrill.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const batchScript = join(HERE, "depth-warm-bastrop-batch.mjs");
+const batchScript = join(HERE, "depth-warm-city-batch.mjs");
 const dryRun = process.argv.includes("--dry-run");
 const results = [];
 
@@ -14,6 +14,7 @@ for (const propId of DOWNTOWN_DRILL_MANIFEST_PROP_IDS) {
   const parcelNodeId = `48021:${propId}`;
   const args = [
     batchScript,
+    "--row-id=Bastrop",
     "--parcel",
     parcelNodeId,
     "--force-repromote",
