@@ -77,8 +77,20 @@ export interface CountyKeyPolicy {
    * (48491) and Hays (48209) are the known real instances: their TxGIO prop_ids
    * do NOT correspond to their CAD roll, and a prior R-strip fabricated another
    * property's land use onto ~97k and ~78k parcels respectively.
+   * `prop_id_then_geo_id_cascade` — a PER-PARCEL fallback: try `prop_id`
+   * first, fall back to `geo_id` only for the specific parcel where `prop_id`
+   * is unusable, rather than one static tier for the whole county. For a
+   * county with a real but partial prop_id bad-rate (Travis: 51.47%, both
+   * fields present on the source row per-parcel), a single static tier either
+   * wrongly joins the parcels prop_id WOULD have resolved correctly (plain
+   * `geo_id_crosswalk`) or leaves them unresolved for no reason (plain
+   * `prop_id`, which is also unsafe county-wide given the known bad rate).
+   * This is engine-local, not part of the published `ParcelKeyKind` contract
+   * type -- same reasoning as `unresolved` above: it describes a per-county
+   * STRATEGY, never an individual resolved parcel's actual key kind, which
+   * is always one of the two real contract values.
    */
-  keyKind: ParcelKeyKind | "unresolved";
+  keyKind: ParcelKeyKind | "unresolved" | "prop_id_then_geo_id_cascade";
   /** Which source published the ring. Never `absent` for a loaded county. */
   geometrySourceTier: "txgio-stratmap" | "county-arcgis-override";
 }
@@ -381,31 +393,49 @@ export function planCountyParcelNodes(
       continue;
     }
 
-    const rawToken =
-      policy.keyKind === "geo_id_crosswalk" ? row.geoId : row.propId;
-    if (!isUsableKeyToken(rawToken)) {
-      features.push({
-        featureIndex,
-        row,
-        parcelKey: null,
-        keyKind: policy.keyKind,
-        keyProblem:
-          `source row carries no usable ${policy.keyKind} token ` +
-          `(value ${JSON.stringify(rawToken)}); a placeholder or blank id is not an account`,
-      });
-      continue;
+    // The tiers to try, in order, for this feature. A static policy
+    // ("prop_id" / "geo_id_crosswalk") tries exactly one tier, unchanged
+    // from before. The cascade policy tries prop_id first and only
+    // consults geo_id for a feature where prop_id specifically failed --
+    // never the other way, and never a whole-county fallback.
+    const tiers: ReadonlyArray<{ kind: ParcelKeyKind; token: string | null }> =
+      policy.keyKind === "prop_id_then_geo_id_cascade"
+        ? [
+            { kind: "prop_id", token: row.propId },
+            { kind: "geo_id_crosswalk", token: row.geoId },
+          ]
+        : [{ kind: policy.keyKind, token: policy.keyKind === "geo_id_crosswalk" ? row.geoId : row.propId }];
+
+    let resolved: { keyKind: ParcelKeyKind; normalized: string } | null = null;
+    const tierProblems: string[] = [];
+    for (const tier of tiers) {
+      if (!isUsableKeyToken(tier.token)) {
+        tierProblems.push(
+          `no usable ${tier.kind} token (value ${JSON.stringify(tier.token)}); a placeholder or blank id is not an account`,
+        );
+        continue;
+      }
+      const normalized = normalizeParcelKeyToken(tier.token);
+      if (!KEY_TOKEN_PATTERN.test(normalized)) {
+        tierProblems.push(
+          `${tier.kind} token ${JSON.stringify(tier.token)} contains characters the parcelNodeId contract does not admit`,
+        );
+        continue;
+      }
+      resolved = { keyKind: tier.kind, normalized };
+      break;
     }
 
-    const normalized = normalizeParcelKeyToken(rawToken);
-    if (!KEY_TOKEN_PATTERN.test(normalized)) {
+    if (!resolved) {
       features.push({
         featureIndex,
         row,
         parcelKey: null,
-        keyKind: policy.keyKind,
+        keyKind: tiers[0]!.kind,
         keyProblem:
-          `source ${policy.keyKind} token ${JSON.stringify(rawToken)} contains characters ` +
-          "the parcelNodeId contract does not admit",
+          tiers.length > 1
+            ? `every tier failed for this parcel -- ${tierProblems.join("; then ")}`
+            : `source row carries ${tierProblems[0]}`,
       });
       continue;
     }
@@ -413,8 +443,8 @@ export function planCountyParcelNodes(
     features.push({
       featureIndex,
       row,
-      parcelKey: normalized,
-      keyKind: policy.keyKind,
+      parcelKey: resolved.normalized,
+      keyKind: resolved.keyKind,
       keyProblem: null,
     });
   }

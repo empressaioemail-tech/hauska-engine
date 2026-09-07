@@ -185,8 +185,13 @@ if (!args.county || !/^\d{5}$/.test(args.county)) {
   process.exit(1);
 }
 
-if (args.keyKind && !["prop_id", "geo_id_crosswalk", "unresolved"].includes(args.keyKind)) {
-  console.error("FATAL: --key-kind must be prop_id | geo_id_crosswalk | unresolved.");
+if (
+  args.keyKind &&
+  !["prop_id", "geo_id_crosswalk", "unresolved", "prop_id_then_geo_id_cascade"].includes(args.keyKind)
+) {
+  console.error(
+    "FATAL: --key-kind must be prop_id | geo_id_crosswalk | unresolved | prop_id_then_geo_id_cascade.",
+  );
   await txSql.end({ timeout: 5 });
   process.exit(1);
 }
