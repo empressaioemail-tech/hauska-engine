@@ -168,7 +168,7 @@ describe("buildServePathHealthProbe", () => {
     return new Response(JSON.stringify({}), { status });
   }
 
-  it("PASSes (reachable: true) when health, search, and atom-chain all succeed", async () => {
+  it("PASSes (reachable: true) when health, search, and atom-chain all succeed, and no ledgerSql is configured", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(200)) // /health/search
@@ -182,7 +182,84 @@ describe("buildServePathHealthProbe", () => {
     });
     const result = await probe(ROW);
     expect(result.reachable).toBe(true);
-    expect(result.detail).toMatch(/ledger-write probe: not wireable from engine/);
+    expect(result.detail).toMatch(/ledger-read probe \(parcel_record\): not configured this run/);
+  });
+
+  it("PASSes with a real ledger row count when ledgerSql is configured and parcel_record has rows for this county", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200))
+      .mockResolvedValueOnce(jsonResponse(200))
+      .mockResolvedValueOnce(jsonResponse(200));
+    const ledgerSql = vi.fn(async () => [{ n: 24988 }]);
+    const probe = buildServePathHealthProbe({
+      baseUrl: "https://retrieval.example.com",
+      apiKey: "test-key",
+      loadSample: makeSampleLoader(["48021:1"]),
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      ledgerSql: ledgerSql as unknown as never,
+    });
+    const result = await probe(ROW);
+    expect(result.reachable).toBe(true);
+    expect(result.detail).toBe(
+      "ledger-read probe (parcel_record): reachable, 24988 row(s) for county 48021",
+    );
+    expect(ledgerSql).toHaveBeenCalledTimes(1);
+  });
+
+  it("DECLINEs when parcel_record has zero rows for this county (ADR-031: the record must be gateable)", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200))
+      .mockResolvedValueOnce(jsonResponse(200))
+      .mockResolvedValueOnce(jsonResponse(200));
+    const ledgerSql = vi.fn(async () => [{ n: 0 }]);
+    const probe = buildServePathHealthProbe({
+      baseUrl: "https://retrieval.example.com",
+      apiKey: "test-key",
+      loadSample: makeSampleLoader(["48021:1"]),
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      ledgerSql: ledgerSql as unknown as never,
+    });
+    const result = await probe(ROW);
+    expect(result.reachable).toBe(false);
+    expect(result.detail).toMatch(/parcel_record has 0 rows for county 48021/);
+  });
+
+  it("DECLINEs honestly (does not throw) when the ledger query itself rejects", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200))
+      .mockResolvedValueOnce(jsonResponse(200))
+      .mockResolvedValueOnce(jsonResponse(200));
+    const ledgerSql = vi.fn(async () => {
+      throw new Error("connection refused");
+    });
+    const probe = buildServePathHealthProbe({
+      baseUrl: "https://retrieval.example.com",
+      apiKey: "test-key",
+      loadSample: makeSampleLoader(["48021:1"]),
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      ledgerSql: ledgerSql as unknown as never,
+    });
+    const result = await probe(ROW);
+    expect(result.reachable).toBe(false);
+    expect(result.detail).toMatch(/parcel_record ledger unreachable: connection refused/);
+  });
+
+  it("does not query the ledger at all when an earlier retrieval-api step already failed", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(503));
+    const ledgerSql = vi.fn(async () => [{ n: 1 }]);
+    const probe = buildServePathHealthProbe({
+      baseUrl: "https://retrieval.example.com",
+      apiKey: "test-key",
+      loadSample: makeSampleLoader(["48021:1"]),
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      ledgerSql: ledgerSql as unknown as never,
+    });
+    const result = await probe(ROW);
+    expect(result.reachable).toBe(false);
+    expect(ledgerSql).not.toHaveBeenCalled();
   });
 
   it("DECLINEs with the exact '401' class when /search returns 401 (the outage-causing shape)", async () => {
@@ -474,6 +551,37 @@ describe("buildOnboardPreflightDeps", () => {
       fetchImpl: fakeAgolFetch(),
     });
     expect(deps.probeServePathHealth).toBeDefined();
+  });
+
+  it("threads ledgerSql into the built probeServePathHealth so check 6's ledger step actually runs", async () => {
+    const ledgerSql = vi.fn(async () => [{ n: 5 }]);
+    const fetchImpl = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes("/query")) {
+        // AGOL cohort query -- give the sample loader one real parcel.
+        return new Response(
+          JSON.stringify({ features: [{ attributes: { prop_id: "1" } }] }),
+          { status: 200 },
+        );
+      }
+      // /health/search, /search, /property-nodes/.../atom-chain all 200.
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+    const deps = buildOnboardPreflightDeps({
+      descriptor: {},
+      gradeOneParcel: passGrader,
+      loadRoads: makeRoadsLoader(),
+      retrievalApiUrl: "https://retrieval.example.com",
+      retrievalApiKey: "test-key",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      ledgerSql: ledgerSql as unknown as never,
+    });
+    const result = await deps.probeServePathHealth!(ROW);
+    expect(result.reachable).toBe(true);
+    expect(result.detail).toBe(
+      `ledger-read probe (parcel_record): reachable, 5 row(s) for county ${ROW.fips}`,
+    );
+    expect(ledgerSql).toHaveBeenCalledTimes(1);
   });
 
   it(

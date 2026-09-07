@@ -23,6 +23,11 @@
  * deployed retrieval-api URL). Absent creds/config, each check honestly
  * declines "not runnable" via the module's existing contract.
  *
+ * Check 6's step (d) (ADR-031 parcel_record ledger reachability) additionally
+ * needs FACTORY_DATABASE_URL — the ledger lives in its own separate Neon
+ * project, not hauska_mcp/cortex (confirmed 2026-09-07). Absent it, step (d)
+ * is an honestly-named not-configured partial, same as every other DI probe.
+ *
  * Grading machinery (checks 5/7) is imported from
  * src/registry/cert-grade-core.ts, NOT from block13-cert-grade.mjs — that
  * script depends on cert-grade-core.ts, not the reverse, so this CLI's own
@@ -62,6 +67,9 @@ const storageHandle = url ? createPgStorage({ databaseUrl: url, maxConnections: 
 const retrievalApiUrl = process.env.RETRIEVAL_API_URL?.trim() || null;
 const retrievalApiKey = process.env.RETRIEVAL_API_KEY?.trim() || null;
 
+const factoryUrl = process.env.FACTORY_DATABASE_URL?.trim() || null;
+const ledgerSql = factoryUrl ? postgres(factoryUrl, { ssl: "require", max: 2, prepare: false }) : null;
+
 /** Road-node context shared by the geometry-parity sample grade (mirrors block13-cert-grade.mjs's setup). */
 async function loadRoadsForFips(fips) {
   if (!sql) return [];
@@ -95,6 +103,7 @@ const deps = buildOnboardPreflightDeps({
   retrievalApiKey,
   gradeOneParcel: gradeOneParcelInQueryMode,
   loadRoads: loadRoadsForFips,
+  ledgerSql: ledgerSql ?? undefined,
 });
 
 try {
@@ -106,4 +115,5 @@ try {
   if (storageHandle) await storageHandle.close();
   if (txSql) await txSql.end();
   if (sql) await sql.end();
+  if (ledgerSql) await ledgerSql.end();
 }
