@@ -1,7 +1,9 @@
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFPage } from "pdf-lib";
 
-import type { FeasibilityModel } from "../feasibility-model.js";
+import type { ParcelReportModel } from "../report-model.js";
+import type { SitePlanModel } from "../site-model.js";
+import { FEASIBILITY_MANIFEST, manifestIncludes, type ReportManifest } from "../report-manifest.js";
 import { REASON, countyDisplayName } from "./format.js";
 import { RhythmCapture, placeRowBelowRule, type RhythmRow } from "./line-box.js";
 import { SITE_PLAN_HONESTY_LINE } from "./provenance.js";
@@ -42,32 +44,30 @@ import {
 import { SPACE, STROKE, TOKENS, TYPE, pt } from "./template-tokens.js";
 
 /**
- * FEASIBILITY STUDY assembler (P-32 wave 1, 2026-09-04).
+ * FEASIBILITY STUDY assembler (P-32 wave 1, 2026-09-04; re-cut onto
+ * `ParcelReportModel` 2026-09-07, R5).
  *
  * Sibling document to `dossier.ts` (X-ray): same SHEET_STANDARD_v1 tokens,
  * same fonts, same honest-absence chip vocabulary — reuses `dossier.ts`'s own
  * grouped-fact-page pagination/drawing (`planBriefPages`, `drawBriefFactRow`,
  * `drawDossierHeader`, `sanitizeDossierContent`) rather than re-deriving it,
- * per the architecture note those exports carry. Deliberately NOT a literal
- * copy-paste of `emitPdfDossier`: reusing its pure, already-tested helpers
- * gives the same behavior with less duplicated logic to drift, at the cost
- * of this file owning its own cover/narrative page types and orchestration.
+ * per the architecture note those exports carry.
  *
- * Composes, from a `FeasibilityModel` (already assembled by
- * `composeFeasibilityModel` — this file only renders):
- *   1. COVER — deterministic verdict headline + contents manifest.
- *   2. BRIEF SECTIONS — one grouped-fact section per model field (jurisdiction,
- *      parcel/ownership, zoning/envelope, flood, special districts, wells &
- *      pipelines, terrain, utilities, HOA, footprint), honest UNAVAILABLE
- *      chips on every absent fact — never a blank, never a default.
- *   3. OPEN ITEMS — one row per model.openItems entry (generated, never
- *      hand-populated).
- *   4. NARRATIVE — grounded deterministic skeleton (item 7); every sentence
- *      cites a model fact. A caller-supplied `narrativeOverride` (e.g. a
- *      separately-generated LLM narrative) renders instead when present —
- *      this assembler never calls an LLM itself, matching the dossier
- *      `chatSummary` precedent (caller-supplied, rendered verbatim, labeled).
- *   5. APPENDED SITE-PLAN SHEETS — same drawing-only mode dossier uses.
+ * R5: this now renders from `ParcelReportModel` (the one composition every
+ * report product reads, `report-model.ts`) rather than a feasibility-only
+ * `FeasibilityModel`. The verdict headline, deterministic narrative skeleton,
+ * open items and data-quality note are no longer computed here — they are
+ * `model.package.*`, computed once across every section by the composer, per
+ * R5's own requirement ("computed across all sections rather than one
+ * product's slice"). This file only renders. `manifest` gates whether the
+ * package layer draws at all (`manifestIncludes(manifest, "package")`) —
+ * FEASIBILITY_MANIFEST is the only manifest with a real renderer behind it
+ * this round (R6/R7 wire X-Ray/Site Plan/Flood), but the gate is a genuine
+ * conditional, not a decorative parameter.
+ *
+ * A caller-supplied `narrativeOverride` (e.g. a separately-generated LLM
+ * narrative) renders instead of `model.package.narrativeSkeleton` when
+ * present — this assembler never calls an LLM itself.
  */
 
 const FEASIBILITY_KICKER = "SMART SITE FEASIBILITY STUDY";
@@ -87,7 +87,7 @@ export const FEASIBILITY_GIS_REFERENCE_NOTE =
 export const FEASIBILITY_FACT_VALUE_ABSENT_REASON = "No matching record was found for this fact.";
 
 // ─────────────────────────────────────────────────────────────────────────
-// FeasibilityModel → the grouped-fact section shape `planBriefPages` and
+// ParcelReportModel → the grouped-fact section shape `planBriefPages` and
 // `drawBriefFactRow` already know how to paginate and draw.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -102,14 +102,15 @@ function factOrChip(
   return { label, value: String(value), source: opts.source, vintage: opts.vintage };
 }
 
-export function feasibilityModelToBriefSections(model: FeasibilityModel): DossierBriefSectionInput[] {
+export function feasibilityModelToBriefSections(model: ParcelReportModel): DossierBriefSectionInput[] {
   const sections: DossierBriefSectionInput[] = [];
+  const facts = model.facts;
 
   sections.push({
     id: "jurisdiction",
     title: "Location and jurisdiction",
     facts: [
-      factOrChip("County", countyDisplayName(model.jurisdiction.countyName) ?? countyDisplayName(model.jurisdiction.countyFips), {
+      factOrChip("County", countyDisplayName(facts.jurisdiction.countyName) ?? countyDisplayName(facts.jurisdiction.countyFips), {
         absentReason: REASON.noCountyName,
       }),
       factOrChip("City limits", "Unresolved", { absentReason: "No city-limits or ETJ data source is wired for this county yet." }),
@@ -117,7 +118,7 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
     ],
   });
 
-  const po = model.parcelOwnership;
+  const po = facts.parcelOwnership;
   sections.push({
     id: "parcel-ownership",
     title: "Parcel and ownership",
@@ -138,27 +139,40 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
         : [factOrChip("Parcel and ownership", undefined, { absentReason: po.reason })],
   });
 
-  const sp = model.sitePlan.summary;
-  sections.push({
-    id: "zoning-envelope",
-    title: "Zoning, setbacks, buildable envelope",
-    facts: [
-      factOrChip("Zoning district", sp.zoningDistrict, { absentReason: sp.zoningHonestAbsenceReason }),
-      factOrChip("Lot area", `${sp.lotAreaSqFt.toLocaleString()} sq ft`),
-      factOrChip("Buildable area", sp.buildablePdfLabel, { vintage: sp.buildableAreaHonestNote }),
-      factOrChip(
-        // Matches the existing row-label convention in dossier.ts/render.ts
-        // (item 14): the label carries the axis order so the bare number
-        // triplet never needs the site-plan drawing to decode it.
-        "Setbacks F / S / R",
-        model.sitePlan.setback.honestAbsence ? undefined : model.sitePlan.setback.displayLine,
-        { absentReason: model.sitePlan.setback.honestAbsenceReason },
-      ),
-    ],
-  });
+  sections.push(
+    model.geometry.status === "present"
+      ? {
+          id: "zoning-envelope",
+          title: "Zoning, setbacks, buildable envelope",
+          facts: (() => {
+            const sp = model.geometry.model.summary;
+            return [
+              factOrChip("Zoning district", sp.zoningDistrict, { absentReason: sp.zoningHonestAbsenceReason }),
+              factOrChip("Lot area", `${sp.lotAreaSqFt.toLocaleString()} sq ft`),
+              factOrChip("Buildable area", sp.buildablePdfLabel, { vintage: sp.buildableAreaHonestNote }),
+              factOrChip(
+                // Matches the existing row-label convention in dossier.ts/render.ts
+                // (item 14): the label carries the axis order so the bare number
+                // triplet never needs the site-plan drawing to decode it.
+                "Setbacks F / S / R",
+                model.geometry.model.setback.honestAbsence ? undefined : model.geometry.model.setback.displayLine,
+                { absentReason: model.geometry.model.setback.honestAbsenceReason },
+              ),
+            ];
+          })(),
+        }
+      : {
+          id: "zoning-envelope",
+          title: "Zoning, setbacks, buildable envelope",
+          // R2: a geometry composition failure degrades this section to a
+          // declared absence — it no longer takes the whole document down.
+          facts: [factOrChip("Zoning, setbacks, buildable envelope", undefined, { absentReason: model.geometry.reason })],
+        },
+  );
 
-  const flood = model.flood;
-  const dp = model.dischargePoint;
+  const flood = facts.flood;
+  const drainage = model.drainage;
+  const dp = facts.dischargePoint;
   sections.push({
     id: "flood",
     title: "Flood and drainage",
@@ -167,11 +181,28 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
         ? [
             factOrChip("Flood zone", flood.floodZone ?? (flood.inSpecialFloodHazardArea ? "In SFHA" : "Zone X (outside mapped hazard)")),
             factOrChip("Base flood elevation", flood.baseFloodElevation != null ? `${flood.baseFloodElevation} ft` : undefined),
-            factOrChip("Site-specific drainage study", flood.studyAvailable ? "On file" : undefined, {
-              absentReason: flood.studyAvailable ? undefined : "No parcel-scoped drainage study is on file for this parcel.",
-            }),
           ]
         : [factOrChip("Flood and drainage", undefined, { absentReason: flood.reason })]),
+      // R3: this used to be a caller-supplied boolean nothing checked. It is
+      // now the REAL parcel-scoped drainage study, present or absent with a
+      // reason — never a fabricated "on file".
+      factOrChip("Site-specific drainage study", drainage.status === "present" ? "On file" : undefined, {
+        source: drainage.status === "present" ? `${drainage.study.rainfallSource} rainfall, ${drainage.study.demProvenance.resolutionMeters} m DEM` : undefined,
+        vintage: drainage.status === "present" ? drainage.study.generatedAt.slice(0, 10) : undefined,
+        absentReason: drainage.status === "absent" ? drainage.reason : undefined,
+      }),
+      ...(drainage.status === "present"
+        ? [
+            factOrChip("Modeled catchment", `${Math.round(drainage.study.stats.catchmentAreaSqFt).toLocaleString()} sq ft`),
+            factOrChip(
+              "Modeled ponding on parcel",
+              drainage.study.stats.pondedAreaSqFt != null ? `${Math.round(drainage.study.stats.pondedAreaSqFt).toLocaleString()} sq ft` : undefined,
+              { absentReason: drainage.study.stats.pondedAreaSqFt == null ? "Rainfall ponding was not computed on this run." : undefined },
+            ),
+            factOrChip("Modeled flow exits", String(drainage.study.stats.flowExitCount)),
+            factOrChip("Design storm", `${drainage.study.rainfallDepthInches} in (${drainage.study.rainfallSource})`),
+          ]
+        : []),
       // item 19 — independent of flood-hazard-fact presence: this comes
       // from the D8 flow model + county hydrography, not the atom above.
       factOrChip(
@@ -189,7 +220,7 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
     ],
   });
 
-  const sd = model.specialDistricts;
+  const sd = facts.specialDistricts;
   sections.push({
     id: "special-districts",
     title: "Special districts",
@@ -199,7 +230,7 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
         : [factOrChip("Special districts", undefined, { absentReason: sd.reason })],
   });
 
-  const wp = model.wellsPipelines;
+  const wp = facts.wellsPipelines;
   sections.push({
     id: "wells-pipelines",
     title: "Wells and pipelines",
@@ -219,15 +250,20 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
   sections.push({
     id: "terrain",
     title: "Terrain and site conditions",
-    facts: [
-      factOrChip(
-        "Elevation range",
-        `${model.terrain.elevationRangeMeters.min.toFixed(1)}–${model.terrain.elevationRangeMeters.max.toFixed(1)} m`,
-      ),
-    ],
+    // R2: terrain is derived entirely from geometry, so its absence is a
+    // declared consequence of a geometry failure, never a crash.
+    facts:
+      facts.terrain.status === "present"
+        ? [
+            factOrChip(
+              "Elevation range",
+              `${facts.terrain.elevationRangeMeters.min.toFixed(1)}–${facts.terrain.elevationRangeMeters.max.toFixed(1)} m`,
+            ),
+          ]
+        : [factOrChip("Terrain and site conditions", undefined, { absentReason: facts.terrain.reason })],
   });
 
-  const util = model.utilities;
+  const util = facts.utilities;
   sections.push({
     id: "utilities",
     title: "Utilities who-serves",
@@ -246,10 +282,10 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
     facts: [
       factOrChip(
         "Recorded restrictions",
-        model.hoa.mountedDocumentCitation ? "Cited from a mounted document" : undefined,
+        facts.hoa.mountedDocumentCitation ? "Cited from a mounted document" : undefined,
         {
-          source: model.hoa.mountedDocumentCitation,
-          absentReason: model.hoa.mountedDocumentCitation
+          source: facts.hoa.mountedDocumentCitation,
+          absentReason: facts.hoa.mountedDocumentCitation
             ? undefined
             : "Not searched. Mount a recorded document (e.g. a CC&R) in Smart Files to cite it here.",
         },
@@ -257,7 +293,7 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
     ],
   });
 
-  const fp = model.footprint;
+  const fp = facts.footprint;
   sections.push({
     id: "footprint",
     title: "Existing structures",
@@ -267,11 +303,11 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
         : [factOrChip("Existing structures", undefined, { absentReason: fp.reason })],
   });
 
-  if (model.dataQuality.supersededNotes.length > 0) {
+  if (model.package.dataQuality.supersededNotes.length > 0) {
     sections.push({
       id: "data-quality",
       title: "Data quality",
-      facts: model.dataQuality.supersededNotes.map((note, i) => factOrChip(`Note ${i + 1}`, note)),
+      facts: model.package.dataQuality.supersededNotes.map((note, i) => factOrChip(`Note ${i + 1}`, note)),
     });
   }
 
@@ -279,8 +315,8 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
     id: "open-items",
     title: FEASIBILITY_OPEN_ITEMS_HEADING,
     facts:
-      model.openItems.length > 0
-        ? model.openItems.map((item) => factOrChip(item.section, item.actionSentence))
+      model.package.openItems.length > 0
+        ? model.package.openItems.map((item) => factOrChip(item.section, item.actionSentence))
         : [factOrChip("Open items", "None — every section above resolved to a fact.")],
   });
 
@@ -288,61 +324,24 @@ export function feasibilityModelToBriefSections(model: FeasibilityModel): Dossie
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Narrative — item 7. Deterministic, grounded, cited. Never an LLM call
-// inline (see the module doc comment); a caller-supplied `narrativeOverride`
-// takes precedence and renders verbatim, labeled, exactly like dossier's
-// `chatSummary`.
-// ─────────────────────────────────────────────────────────────────────────
-
-export function deterministicVerdictHeadline(model: FeasibilityModel): string {
-  const sp = model.sitePlan.summary;
-  if (sp.buildableAreaSqFt == null) {
-    return `Buildable area could not be determined for this parcel. ${model.openItems.length} open item${model.openItems.length === 1 ? "" : "s"} to resolve.`;
-  }
-  return `${sp.buildablePdfLabel} under the facts on file. ${model.openItems.length} open item${model.openItems.length === 1 ? "" : "s"} to resolve before proceeding.`;
-}
-
-export function deterministicNarrative(model: FeasibilityModel): string {
-  const sp = model.sitePlan.summary;
-  const paragraphs: string[] = [];
-
-  paragraphs.push(
-    `This parcel (${model.parcelNodeId}) sits in ${countyDisplayName(model.jurisdiction.countyName) ?? countyDisplayName(model.jurisdiction.countyFips) ?? "an unresolved county"}. ` +
-      `City-limits and ETJ status are not yet resolved for this jurisdiction. ` +
-      `Zoning reads ${sp.zoningDistrict ?? "not on file"}, on a lot of ${sp.lotAreaSqFt.toLocaleString()} square feet.`,
-  );
-
-  paragraphs.push(
-    model.flood.status === "present"
-      ? `Flood exposure: ${model.flood.floodZone ?? (model.flood.inSpecialFloodHazardArea ? "the parcel is in a mapped special flood hazard area" : "the parcel reads outside every mapped special flood hazard area (Zone X)")}` +
-          (model.flood.studyAvailable ? ", corroborated by a site-specific drainage study on file." : ".")
-      : `Flood exposure could not be determined: ${model.flood.reason}`,
-  );
-
-  const otherAbsences = model.openItems.filter((i) => i.section !== "jurisdiction").map((i) => i.section);
-  if (otherAbsences.length > 0) {
-    paragraphs.push(
-      `Open items remain in: ${otherAbsences.join(", ")}. Each is named with a specific next action in the open-items table below rather than left as a silent gap.`,
-    );
-  } else {
-    paragraphs.push("No open items remain outside jurisdiction and HOA, which are structurally unresolved for every parcel in wave 1.");
-  }
-
-  return paragraphs.join("\n\n");
-}
-
-// ─────────────────────────────────────────────────────────────────────────
 // The assembler.
 // ─────────────────────────────────────────────────────────────────────────
 
 export interface EmitPdfFeasibilityOptions {
-  sitePlan?: { model: FeasibilityModel["sitePlan"]; aerial?: EmitPdfSitePlanOptions["aerial"] };
+  sitePlan?: { model: SitePlanModel; aerial?: EmitPdfSitePlanOptions["aerial"] };
   sitePlanUnavailableReason?: string;
   liveViewUrl?: string;
+  /** Header fallback when `model.geometry` is absent (R2) — the site-plan
+   * geometry composition is unavailable, so there is no `model.geometry.
+   * model.summary.address/countyName` to print. Caller-supplied, never
+   * fabricated, same convention `dossier-author.ts` already uses for its own
+   * geometry-absent case. Ignored when geometry is present. */
+  descriptorOverride?: { address?: string; countyName?: string };
   /** Caller-supplied, already-generated narrative (e.g. LLM output from a
    * separate route) — rendered verbatim, labeled, never fabricated or
-   * verified here. Absent = the deterministic skeleton renders instead,
-   * which is a complete, valid document on its own (item 7's own check). */
+   * verified here. Absent = `model.package.narrativeSkeleton` renders
+   * instead, which is a complete, valid document on its own (item 7's own
+   * check). */
   narrativeOverride?: { text: string; generatedBy: string; generatedAt: string };
   generatedAtIso?: string;
 }
@@ -363,17 +362,23 @@ export interface PdfFeasibilityResult {
 }
 
 export async function emitPdfFeasibility(
-  model: FeasibilityModel,
+  model: ParcelReportModel,
   options: EmitPdfFeasibilityOptions = {},
+  manifest: ReportManifest = FEASIBILITY_MANIFEST,
 ): Promise<PdfFeasibilityResult> {
+  const includePackage = manifestIncludes(manifest, "package");
   const briefSections = feasibilityModelToBriefSections(model);
-  const verdictLine = deterministicVerdictHeadline(model);
-  const narrativeText = options.narrativeOverride?.text ?? deterministicNarrative(model);
+  const verdictLine = includePackage ? model.package.verdict : undefined;
+  const narrativeText = includePackage ? options.narrativeOverride?.text ?? model.package.narrativeSkeleton : undefined;
+  const openItemCount = includePackage ? model.package.openItems.length : 0;
+
+  const headerAddress = model.geometry.status === "present" ? model.geometry.model.summary.address : options.descriptorOverride?.address;
+  const headerCountyName = model.geometry.status === "present" ? model.geometry.model.summary.countyName : options.descriptorOverride?.countyName;
 
   const content = sanitizeDossierContent({
     parcelNodeId: model.parcelNodeId,
-    address: model.sitePlan.summary.address,
-    countyName: model.sitePlan.summary.countyName,
+    address: headerAddress,
+    countyName: headerCountyName,
     verdictLine,
     liveViewUrl: options.liveViewUrl,
     brief: { sections: briefSections },
@@ -578,7 +583,7 @@ export async function emitPdfFeasibility(
     sitePlanAppended: !!options.sitePlan,
     sitePlanUnavailableReason: options.sitePlan ? undefined : options.sitePlanUnavailableReason,
     sectionCount: content.sections.length,
-    openItemCount: model.openItems.length,
+    openItemCount,
     narrativeGrounded: true,
     narrativeIsDeterministicSkeleton: !options.narrativeOverride,
     marks: marks.marks,

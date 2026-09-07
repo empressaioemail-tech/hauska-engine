@@ -111,15 +111,52 @@ export {
 } from "./feasibility-author.js";
 
 export {
-  composeFeasibilityModel,
   present as presentFeasibilityFact,
   absent as absentFeasibilityFact,
-  type ComposeFeasibilityModelOptions,
   type FeasibilityFactState,
-  type FeasibilityModel,
+  type JurisdictionFacts,
+  type ParcelOwnershipFacts,
+  type FloodFacts,
+  type SpecialDistrictFacts,
+  type WellsPipelinesFacts,
+  type TerrainFacts,
+  type UtilityWhoServesFacts,
   type WhoServesResolver,
+  type HoaFacts,
+  type FootprintFacts,
+  type DataQualityNote,
+  type OpenItem,
   type DischargePointFacts,
 } from "./feasibility-model.js";
+
+export {
+  composeParcelReport,
+  composeParcelReportFacts,
+  resolveParcelDrainage,
+  DRAINAGE_STUDY_STALE_AFTER_MS,
+  type ParcelReportModel,
+  type ParcelReportFacts,
+  type ParcelGeometryState,
+  type ParcelDrainageState,
+  type PackageLayer,
+  type ComposeParcelReportOptions,
+  type ComposeParcelReportResult,
+  type ComposeParcelReportFactsOptions,
+  type ReadableTerrainArtifactStore,
+  type ResolveParcelDrainageOptions,
+  type ResolveParcelDrainageResult,
+} from "./report-model.js";
+
+export {
+  SITE_PLAN_MANIFEST,
+  X_RAY_MANIFEST,
+  FLOOD_MANIFEST,
+  FEASIBILITY_MANIFEST,
+  manifestIncludes,
+  type ReportManifest,
+  type ReportProduct,
+  type ReportSectionId,
+} from "./report-manifest.js";
 
 export {
   createCountyHydrographyDischargeResolver,
@@ -130,8 +167,6 @@ export {
 
 export {
   emitPdfFeasibility,
-  deterministicNarrative,
-  deterministicVerdictHeadline,
   feasibilityModelToBriefSections,
   type EmitPdfFeasibilityOptions,
   type PdfFeasibilityResult,

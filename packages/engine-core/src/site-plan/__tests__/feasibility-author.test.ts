@@ -143,8 +143,9 @@ describe("authorParcelFeasibilityExport", { timeout: 60_000 }, () => {
     expect(result.pageCount).toBe(result.feasibilityPageCount + 1);
     expect(result.sectionCount).toBeGreaterThan(5);
     // parcelOwnership resolved from the seeded cad-parcel-roll atom, so it's
-    // not one of the open items.
-    expect(result.openItemCount).toBeLessThan(8);
+    // not one of the open items. Ceiling is 9 now (drainage joined the set
+    // of sections that can be absent, R3), so resolving one leaves 8.
+    expect(result.openItemCount).toBeLessThan(9);
     expect(result.narrativeIsDeterministicSkeleton).toBe(true);
 
     expect(result.atom.entityType).toBe("parcel-terrain-model");
@@ -161,26 +162,46 @@ describe("authorParcelFeasibilityExport", { timeout: 60_000 }, () => {
     expect(decoded).toContain("SMART SITE FEASIBILITY STUDY");
   });
 
-  it("fails closed with an honest error when the site plan cannot be resolved, never emitting a fabricated report", async () => {
+  // R2 (2026-09-07): this used to fail closed with a thrown error the caller
+  // had to catch, which is exactly the outage the WDLL names — one small
+  // parcel's geometry failure took down the whole report. Now geometry
+  // composition failure degrades `model.geometry` to a declared absence and
+  // the document still ships, naming the reason rather than fabricating a
+  // site plan or refusing the export.
+  it("degrades to an honest absence when the site plan cannot be resolved, never failing the whole document (R2)", async () => {
     const storage = new InMemoryStorage();
     const artifactStore = fakeArtifactStore();
 
-    await expect(
-      authorParcelFeasibilityExport({
-        parcelNodeId,
-        resolver: fakeResolver(null),
-        setback,
-        storage,
-        artifactStore,
-        fetchAerialImage: stubAerialFetch,
-        fetchDem: fakeFetchDem,
-        parseDem: fakeParseDem,
-      }),
-    ).rejects.toThrow(/site plan/i);
+    const result = await authorParcelFeasibilityExport({
+      parcelNodeId,
+      resolver: fakeResolver(null),
+      setback,
+      storage,
+      artifactStore,
+      fetchAerialImage: stubAerialFetch,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
+    });
 
-    // No artifact was persisted on the failed attempt.
+    expect(result.geometryComposed).toBe(false);
+    expect(result.sitePlanAppended).toBe(false);
+    expect(result.sitePlanUnavailableReason).toMatch(/geometry/i);
+    expect(result.pageCount).toBeGreaterThan(0);
+
+    // The document still persists — it shipped, just with the geometry
+    // section declared absent rather than fabricated.
     const atoms = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
-    expect(atoms.find((a) => a.entityType === "parcel-terrain-model")).toBeUndefined();
+    const atom = atoms.find((a) => a.entityType === "parcel-terrain-model");
+    expect(atom).toBeDefined();
+    expect(atom?.artifacts["pdf-feasibility"]).toBeDefined();
+
+    const bytes = await artifactStore.get(atom!.artifacts["pdf-feasibility"]!.ref);
+    const decoded = decodeAllContentStreams(bytes!);
+    // The caller-supplied descriptor is the honest fallback header when
+    // geometry (and its own summary.address) is unavailable.
+    expect(decoded).toContain("1127 N PINE ST");
+    expect(decoded).toContain("Buildable area could not be determined");
   });
 
   it("finds-or-creates the SAME parcel-terrain-model atom a prior dossier export already created, never a second entity", async () => {

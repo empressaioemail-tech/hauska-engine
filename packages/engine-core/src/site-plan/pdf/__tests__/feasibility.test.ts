@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { PropertyAtomInstance } from "@hauska-engine/atoms";
 import type { StoragePort } from "@hauska-engine/storage";
 
-import { composeFeasibilityModel } from "../../feasibility-model.js";
+import { composeParcelReportFacts } from "../../report-model.js";
+import type { ParcelReportModel } from "../../report-model.js";
 import { composeSitePlanModel } from "../../site-model.js";
 import { boundaryEdgesForRing } from "../../__tests__/boundary-edge-fixture.js";
-import { emitPdfFeasibility, deterministicNarrative, deterministicVerdictHeadline } from "../feasibility.js";
+import { emitPdfFeasibility } from "../feasibility.js";
 import { decodeAllContentStreams } from "./decode-pdf-text.js";
 
 const bbox = { westLng: -98.5, southLat: 29.4, eastLng: -98.4995, northLat: 29.4004 };
@@ -59,10 +60,25 @@ function fakeStorage(atoms: PropertyAtomInstance[]): StoragePort {
   return { listPropertyAtomsByParcelNodeId: async () => atoms } as unknown as StoragePort;
 }
 
+const NO_DRAINAGE = { status: "absent" as const, reason: "test fixture: drainage not composed" };
+
+async function buildModel(
+  atoms: PropertyAtomInstance[],
+  extra: Partial<Parameters<typeof composeParcelReportFacts>[0]> = {},
+): Promise<ParcelReportModel> {
+  const sitePlan = buildSitePlanModel();
+  return composeParcelReportFacts({
+    parcelNodeId: "48029:105129",
+    storage: fakeStorage(atoms),
+    geometry: { status: "present", model: sitePlan },
+    drainage: NO_DRAINAGE,
+    ...extra,
+  });
+}
+
 describe("emitPdfFeasibility", () => {
   it("emits a complete document with no atoms on file — honest chips throughout, never fabrication", async () => {
-    const sitePlan = buildSitePlanModel();
-    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
+    const model = await buildModel([]);
     const result = await emitPdfFeasibility(model);
 
     expect(result.pageCount).toBeGreaterThan(0);
@@ -76,12 +92,11 @@ describe("emitPdfFeasibility", () => {
     // Never a fabricated flood zone when the fact atom is absent.
     expect(decoded).toContain("No flood-hazard-fact atom on file");
     expect(decoded).toContain("VERDICT");
-    expect(decoded).toContain(FEASIBILITY_HEADING_CHECK.narrative);
+    expect(decoded).toContain("NARRATIVE");
   });
 
   it("item 6 — the open items table lists every absent section with a real action sentence", async () => {
-    const sitePlan = buildSitePlanModel();
-    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
+    const model = await buildModel([]);
     const result = await emitPdfFeasibility(model);
     const decoded = decodeAllContentStreams(result.bytes);
     expect(decoded).toContain("Open items");
@@ -90,22 +105,18 @@ describe("emitPdfFeasibility", () => {
   });
 
   it("item 7 — LLM disabled still emits a complete document with a grounded deterministic skeleton", async () => {
-    const sitePlan = buildSitePlanModel();
-    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
-    const narrative = deterministicNarrative(model);
-    const headline = deterministicVerdictHeadline(model);
+    const model = await buildModel([]);
     // Grounded: cites the actual county name and zoning district from the model, not a placeholder.
-    expect(narrative).toContain("Bexar County");
-    expect(narrative).toContain("R-6");
-    expect(headline).toMatch(/open item/);
+    expect(model.package.narrativeSkeleton).toContain("Bexar County");
+    expect(model.package.narrativeSkeleton).toContain("R-6");
+    expect(model.package.verdict).toMatch(/open item/);
     const result = await emitPdfFeasibility(model);
     expect(result.narrativeGrounded).toBe(true);
     expect(result.narrativeIsDeterministicSkeleton).toBe(true);
   });
 
   it("a caller-supplied narrativeOverride renders verbatim instead of the deterministic skeleton", async () => {
-    const sitePlan = buildSitePlanModel();
-    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
+    const model = await buildModel([]);
     const result = await emitPdfFeasibility(model, {
       narrativeOverride: { text: "A wholly distinct generated narrative sentence for this parcel.", generatedBy: "test-llm", generatedAt: "2026-09-04T00:00:00Z" },
     });
@@ -116,7 +127,12 @@ describe("emitPdfFeasibility", () => {
 
   it("appends exactly one site-plan sheet when a site plan is supplied, same as the dossier contract", async () => {
     const sitePlan = buildSitePlanModel();
-    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
+    const model = await composeParcelReportFacts({
+      parcelNodeId: "48029:105129",
+      storage: fakeStorage([]),
+      geometry: { status: "present", model: sitePlan },
+      drainage: NO_DRAINAGE,
+    });
     const result = await emitPdfFeasibility(model, { sitePlan: { model: sitePlan } });
     expect(result.sitePlanAppended).toBe(true);
     expect(result.pageCount).toBe(result.feasibilityPageCount + 1);
@@ -125,8 +141,7 @@ describe("emitPdfFeasibility", () => {
   });
 
   it("prints a supplied liveViewUrl verbatim on the cover", async () => {
-    const sitePlan = buildSitePlanModel();
-    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
+    const model = await buildModel([]);
     const result = await emitPdfFeasibility(model, { liveViewUrl: "https://smartsite.cloud/share?g=test-feasibility" });
     const decoded = decodeAllContentStreams(result.bytes);
     expect(decoded).toContain("https://smartsite.cloud/share?g=test-feasibility");
@@ -137,7 +152,6 @@ describe("emitPdfFeasibility", () => {
   // leaving Legal description/Land use/Owner/Assessed value/Year built/
   // Living area with none on the same sheet, same section weight.
   it("item 14 — every parcel-and-ownership fact carries the shared citation, not just market value", async () => {
-    const sitePlan = buildSitePlanModel();
     const cadRoll = {
       entityType: "cad-parcel-roll" as const,
       atomDid: "cad_1",
@@ -169,11 +183,7 @@ describe("emitPdfFeasibility", () => {
       contentHash: "",
       status: "active" as const,
     };
-    const model = await composeFeasibilityModel({
-      parcelNodeId: "48029:105129",
-      storage: fakeStorage([cadRoll as unknown as PropertyAtomInstance]),
-      sitePlan,
-    });
+    const model = await buildModel([cadRoll as unknown as PropertyAtomInstance]);
     const result = await emitPdfFeasibility(model);
     const decoded = decodeAllContentStreams(result.bytes);
     // Substring match: the citation source text must appear more than once
@@ -186,11 +196,33 @@ describe("emitPdfFeasibility", () => {
   // county name was on file, violating format.ts's own countyDisplayName
   // rule (§11: a raw FIPS code never prints). Same leak in the narrative.
   it("item 14 — never prints a raw county FIPS code when the county name is unresolved", async () => {
-    const sitePlan = buildSitePlanModel();
-    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
-    // This fixture's sitePlan already has a real county name (Bexar County),
-    // so force the unresolved-name case directly on the composed model.
-    const unresolvedModel = { ...model, jurisdiction: { ...model.jurisdiction, countyName: undefined, countyFips: "48029" } };
+    // countyFips is parsed from the parcelNodeId itself ("48029:..."),
+    // independent of the descriptor, so omitting countyName from the
+    // descriptor (rather than mutating an already-composed model, which
+    // package.narrativeSkeleton is baked from at compose time, R5) is the
+    // faithful way to exercise the unresolved-name path through the real
+    // composition.
+    const sitePlanNoCountyName = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      boundaryEdges,
+      descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202" },
+      zoning: { district: "R-6" },
+      floodZone: { honestUnavailable: true, reason: "sandbox has no network egress" },
+      geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
+    });
+    const unresolvedModel = await composeParcelReportFacts({
+      parcelNodeId: "48029:105129",
+      storage: fakeStorage([]),
+      geometry: { status: "present", model: sitePlanNoCountyName },
+      drainage: NO_DRAINAGE,
+    });
+    expect(unresolvedModel.facts.jurisdiction.countyName).toBeUndefined();
+    expect(unresolvedModel.facts.jurisdiction.countyFips).toBe("48029");
     const result = await emitPdfFeasibility(unresolvedModel);
     const decoded = decodeAllContentStreams(result.bytes);
     // The parcelNodeId ("48029:105129") legitimately contains the FIPS
@@ -202,11 +234,7 @@ describe("emitPdfFeasibility", () => {
   });
 
   it("item 19 — a real named discharge point renders cited, distance included", async () => {
-    const sitePlan = buildSitePlanModel();
-    const model = await composeFeasibilityModel({
-      parcelNodeId: "48029:105129",
-      storage: fakeStorage([]),
-      sitePlan,
+    const model = await buildModel([], {
       dischargeExitPoint: { lat: 30.1269, lng: -97.3305 },
       dischargeResolver: {
         resolve: async () => ({
@@ -229,13 +257,10 @@ describe("emitPdfFeasibility", () => {
   });
 
   it("item 19 — honest UNAVAILABLE, never a fabricated name, when no exit point was supplied", async () => {
-    const sitePlan = buildSitePlanModel();
-    const model = await composeFeasibilityModel({ parcelNodeId: "48029:105129", storage: fakeStorage([]), sitePlan });
+    const model = await buildModel([]);
     const result = await emitPdfFeasibility(model);
     const decoded = decodeAllContentStreams(result.bytes);
     expect(decoded).toContain("Named downstream discharge point");
     expect(decoded).toContain("No flood-drainage-study flow exit was supplied");
   });
 });
-
-const FEASIBILITY_HEADING_CHECK = { narrative: "NARRATIVE" };
