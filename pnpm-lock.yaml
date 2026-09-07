@@ -22,6 +22,10 @@ importers:
         version: 2.1.9(@types/node@22.19.19)
 
   packages/adapters:
+    dependencies:
+      '@empressaio/setback-corpus':
+        specifier: ^1.0.1
+        version: 1.0.1
     devDependencies:
       '@types/node':
         specifier: ^22.10.5
@@ -562,6 +566,10 @@ packages:
 
   '@empressaio/atom-contract@1.22.0':
     resolution: {integrity: sha512-C20NWCdXeArcSfiQq/N8yGApMzvJqZbniYD0OIsXF4/y4xzfoKIP8efSJufwnzIhOJ99fwM7HGEkc/E+1qG51w==}
+    engines: {node: '>=18.18.0'}
+
+  '@empressaio/setback-corpus@1.0.1':
+    resolution: {integrity: sha512-Y7eqZxu3Lhd3/G7ih7rWOEsMRzonnOYBUpYoSaLxqdwRwdRl0xis0tE6dR6XFE5mEb0ESF39PoHro/jphJZNRQ==}
     engines: {node: '>=18.18.0'}
 
   '@esbuild/aix-ppc64@0.21.5':
@@ -2080,6 +2088,8 @@ snapshots:
       - prisma
       - sql.js
       - sqlite3
+
+  '@empressaio/setback-corpus@1.0.1': {}
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true
