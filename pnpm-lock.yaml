@@ -24,8 +24,8 @@ importers:
   packages/adapters:
     dependencies:
       '@empressaio/setback-corpus':
-        specifier: ^1.0.1
-        version: 1.0.1
+        specifier: ^1.1.0
+        version: 1.1.0
     devDependencies:
       '@types/node':
         specifier: ^22.10.5
@@ -568,8 +568,8 @@ packages:
     resolution: {integrity: sha512-C20NWCdXeArcSfiQq/N8yGApMzvJqZbniYD0OIsXF4/y4xzfoKIP8efSJufwnzIhOJ99fwM7HGEkc/E+1qG51w==}
     engines: {node: '>=18.18.0'}
 
-  '@empressaio/setback-corpus@1.0.1':
-    resolution: {integrity: sha512-Y7eqZxu3Lhd3/G7ih7rWOEsMRzonnOYBUpYoSaLxqdwRwdRl0xis0tE6dR6XFE5mEb0ESF39PoHro/jphJZNRQ==}
+  '@empressaio/setback-corpus@1.1.0':
+    resolution: {integrity: sha512-0lSIb71k1UAPdBa62HWAuGB8ffJqolub/wKgfd4Ml1rPgS2Qdq2gZ4XP/Yf36HC2uFRxE4JtGdp+WmKBSuGlGQ==}
     engines: {node: '>=18.18.0'}
 
   '@esbuild/aix-ppc64@0.21.5':
@@ -2089,7 +2089,7 @@ snapshots:
       - sql.js
       - sqlite3
 
-  '@empressaio/setback-corpus@1.0.1': {}
+  '@empressaio/setback-corpus@1.1.0': {}
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true
