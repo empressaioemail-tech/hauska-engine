@@ -140,7 +140,14 @@ describe("authorParcelFeasibilityExport", { timeout: 60_000 }, () => {
     });
 
     expect(result.sitePlanAppended).toBe(true);
-    expect(result.pageCount).toBe(result.feasibilityPageCount + 1);
+    // The site plan contributes its DRAWING and its SUMMARY sheets, not one
+    // sheet. This assertion used to read `feasibilityPageCount + 1`, which
+    // pinned the old `sheets: "drawing-only"` append as though it were the
+    // specification. It was in fact the defect: the drawing's fine print
+    // points at a segment table that lives on the summary sheet, so the
+    // one-sheet append left that pointer with no target in this document.
+    expect(result.pageCount).toBeGreaterThan(result.feasibilityPageCount);
+    expect(result.pageCount - result.feasibilityPageCount).toBeGreaterThanOrEqual(2);
     expect(result.sectionCount).toBeGreaterThan(5);
     // parcelOwnership resolved from the seeded cad-parcel-roll atom, so it's
     // not one of the open items. Ceiling is 9 now (drainage joined the set

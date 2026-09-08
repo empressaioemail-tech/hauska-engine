@@ -301,7 +301,16 @@ export interface EmitPdfSitePlanOptions {
    * SUMMARY pages, no AERIAL page, no aerial fetch. Used by the property
    * dossier (P-90 item 3: exactly one appended sheet). Default "all" keeps
    * the standalone pdf-site-plan export's full 3+ sheet set unchanged. */
-  sheets?: "all" | "drawing-only";
+  /**
+   * Which sheets this export emits.
+   *   "all"                 drawing + summary(1..n) + aerial (the standalone report)
+   *   "drawing-only"        drawing alone (the X-Ray append, P-90 item 3)
+   *   "drawing-and-summary" drawing + summary(1..n), NO aerial sheet and no
+   *                         imagery fetch — for a host document that draws
+   *                         its own aerial page and would otherwise pay for a
+   *                         second Esri fetch and then discard the sheet.
+   */
+  sheets?: "all" | "drawing-only" | "drawing-and-summary";
 }
 
 /** §14: keyed mark registry — a duplicate (page, kind, key) is never drawn twice. */
@@ -2666,6 +2675,9 @@ export async function emitPdfSitePlan(
   // sheet. No aerial fetch, no SUMMARY/AERIAL pages — page 1 still prints
   // whatever numbering.total the host document gives it.
   const drawingOnly = options.sheets === "drawing-only";
+  // The aerial sheet is the only thing that costs a network fetch, so it is
+  // gated separately from the summary sheets.
+  const includeAerialSheet = !drawingOnly && options.sheets !== "drawing-and-summary";
 
   // AERIAL (sheet 3) imagery fetch — started first so the bounded network
   // wait (default 8s cap) overlaps the vector rendering of sheets 1–2.
@@ -2679,7 +2691,7 @@ export async function emitPdfSitePlan(
   const aerialRect = aerialImageRect(headerRuleY(), aerialFooterBandTop);
   const mercBbox = computeAerialMercatorBbox(model.ringLocal, model.bboxWgs84, aerialRect.width / aerialRect.height);
   const aerialUrl = buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox));
-  const aerialPromise = drawingOnly
+  const aerialPromise = !includeAerialSheet
     ? null
     : fetchAerialImagery(aerialUrl, {
         fetchImage: options.aerial?.fetchImage,
@@ -2741,7 +2753,7 @@ export async function emitPdfSitePlan(
   // outlines behind ring/type. A decode failure degrades to the honest §17
   // path, never a failed export. Skipped entirely in drawing-only mode.
   let imagery: AerialImageryResult | undefined;
-  if (!drawingOnly) {
+  if (includeAerialSheet) {
     imagery = await aerialPromise!;
     let aerialPng: PDFImage | undefined;
     if (imagery.ok) {
@@ -2766,8 +2778,8 @@ export async function emitPdfSitePlan(
     bytes,
     pageCount: doc.getPageCount(),
     fontNote: FONT_NOTE,
-    aerial: drawingOnly
-      ? { imageryEmbedded: false, sourceUrl: "", unavailableReason: "aerial sheet not included (drawing-only append)" }
+    aerial: !includeAerialSheet
+      ? { imageryEmbedded: false, sourceUrl: "", unavailableReason: `aerial sheet not included (${options.sheets ?? "all"} append)` }
       : imagery!.ok
         ? { imageryEmbedded: true, sourceUrl: imagery!.url }
         : { imageryEmbedded: false, sourceUrl: imagery!.url, unavailableReason: imagery!.reason },
