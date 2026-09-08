@@ -17,6 +17,7 @@ import {
 } from "@hauska-engine/engine-core/parcel-terrain";
 import {
   authorParcelFeasibilityExport,
+  LIVE_PARCEL_REPORT_FACT_RESOLVERS,
   authorParcelPropertyDossierExport,
   authorParcelSitePlanExport,
   createCountyHydrographyDischargeResolver,
@@ -623,6 +624,11 @@ export function buildParcelTerrainRoutes(
         liveViewUrl: parsed.data.liveViewUrl,
         narrativeOverride: parsed.data.narrativeOverride,
         narrativeSection: narrativeSectionFromEnv(),
+        // P-120 R-04: run the floodplain-acreage, FIRM-panel, soil and
+        // electric/gas families. Injected rather than defaulted because they
+        // are live network reads; armed HERE so production actually gets them
+        // instead of three merged-but-unreached modules.
+        factResolvers: LIVE_PARCEL_REPORT_FACT_RESOLVERS,
         resolver,
         setback,
         storage,

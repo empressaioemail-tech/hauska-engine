@@ -42,6 +42,17 @@ import {
   type OpenItem,
   type DischargePointFacts,
 } from "./feasibility-model.js";
+import type {
+  FirmPanelCitation,
+  FloodplainAcreageFacts,
+  FloodplainFactResolution,
+} from "../floodplain-acreage-fact/index.js";
+import type { SoilFactResult, SoilFacts } from "../soil-fact/index.js";
+import type {
+  ElectricProviderFacts,
+  ElectricProviderResult,
+  GasProviderResult,
+} from "../electric-provider-fact/index.js";
 
 /**
  * The composition root (P-120 reports re-cut, R1-R3).
@@ -121,6 +132,28 @@ export type ParcelDrainageState =
   | { status: "present"; study: FloodDrainageStudy }
   | { status: "absent"; reason: string };
 
+/**
+ * The three fact families PR #404 shipped and nothing consumed. Injected as
+ * seams rather than imported and called directly, matching this file's own
+ * whoServes / dischargeResolver pattern: an interface at the boundary keeps
+ * the composer testable without live NFHL, SSURGO and HIFLD calls on every
+ * unit test.
+ *
+ * Kept as five INDEPENDENT families rather than folded into flood, terrain
+ * and utilities. Floodplain acreage and the FIRM panel citation come back
+ * from one resolver but can genuinely disagree on present/absent -- a parcel
+ * can intersect a mapped zone while sitting on an unprinted panel -- and
+ * collapsing them would force one to inherit the other's state. Grouping for
+ * presentation is the renderer's job; preserving the independence is the
+ * model's.
+ */
+export interface ParcelReportFactResolvers {
+  floodplain?: (ring: ReadonlyArray<[number, number]>) => Promise<FloodplainFactResolution>;
+  soil?: (point: { latitude: number; longitude: number }) => Promise<SoilFactResult>;
+  electricProvider?: (point: { latitude: number; longitude: number }) => Promise<ElectricProviderResult>;
+  gasProvider?: () => GasProviderResult;
+}
+
 export interface ParcelReportFacts {
   jurisdiction: JurisdictionFacts;
   parcelOwnership: FeasibilityFactState<ParcelOwnershipFacts>;
@@ -132,6 +165,11 @@ export interface ParcelReportFacts {
   hoa: HoaFacts;
   footprint: FeasibilityFactState<FootprintFacts>;
   dischargePoint: FeasibilityFactState<DischargePointFacts>;
+  floodplainAcreage: FeasibilityFactState<FloodplainAcreageFacts>;
+  firmPanel: FeasibilityFactState<{ panels: ReadonlyArray<FirmPanelCitation> }>;
+  soil: FeasibilityFactState<SoilFacts>;
+  electricProvider: FeasibilityFactState<ElectricProviderFacts>;
+  gasProvider: FeasibilityFactState<Record<string, never>>;
 }
 
 /** R5's "package layer": narrative, open items, verdict, data quality —
@@ -164,6 +202,14 @@ export interface ComposeParcelReportFactsOptions {
    * absence, never a blocking failure). */
   centroid?: { latitude: number; longitude: number };
   whoServes?: WhoServesResolver;
+  /** P-120 R-04: the fact families from PR #404. An omitted resolver reports
+   * out-of-scope rather than being silently skipped. */
+  factResolvers?: ParcelReportFactResolvers;
+  /** WGS84 exterior ring, needed for the polygon-intersection floodplain read.
+   * SitePlanModel carries ringLocal and bboxWgs84 but NOT the WGS84 ring, so
+   * it is threaded from whoever resolved the geometry rather than
+   * back-projected out of local coordinates. */
+  ringWgs84?: ReadonlyArray<[number, number]>;
   dischargeExitPoint?: { lat: number; lng: number };
   dischargeResolver?: DischargePointResolver;
 }
@@ -477,6 +523,107 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
         );
   });
 
+  // The PR #404 fact families, finally reaching a report.
+  //
+  // An omitted resolver is out-of-scope, NOT failed-this-run: the caller did
+  // not ask for this family, which is a scope decision rather than a gap on
+  // our side. A supplied resolver that then fails carries whichever kind the
+  // resolver itself declared, which is why those results had to grow a kind
+  // before this wiring could be honest.
+  const notRequested = (family: string) =>
+    absent<never>(
+      "out-of-scope",
+      family + " was not requested for this run.",
+      "This family can be produced on request; nothing about this parcel prevented it.",
+    );
+
+  const floodplainResolution = await (async () => {
+    if (!options.factResolvers?.floodplain || !options.ringWgs84) return null;
+    try {
+      return await options.factResolvers.floodplain(options.ringWgs84!);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) } as const;
+    }
+  })();
+
+  const floodplainAcreage = safeSection<FloodplainAcreageFacts>("floodplainAcreage", () => {
+    if (!options.factResolvers?.floodplain) return notRequested("Floodplain acreage");
+    if (!options.ringWgs84) {
+      return absent(
+        "failed-this-run",
+        "Floodplain acreage needs the parcel boundary ring, which was not supplied for this run.",
+        "Acreage inside the mapped floodplain could not be measured.",
+      );
+    }
+    if (!floodplainResolution) return notRequested("Floodplain acreage");
+    if ("error" in floodplainResolution) {
+      return absent("failed-this-run", "FEMA NFHL floodplain read failed: " + floodplainResolution.error);
+    }
+    const r = floodplainResolution.acreage;
+    return r.status === "present"
+      ? present<FloodplainAcreageFacts>(r.facts, {
+          consequence:
+            r.facts.sfhaAcres > 0
+              ? r.facts.sfhaAcres.toFixed(2) +
+                " of " +
+                r.facts.parcelAcres.toFixed(2) +
+                " acres sit inside the mapped special flood hazard area, which constrains where a structure can go and triggers federal flood-insurance requirements on a federally backed loan."
+              : "No part of this parcel falls inside the mapped special flood hazard area, so no federal flood-insurance requirement attaches on that basis. This is a mapping finding, not a drainage finding.",
+        })
+      : absent(r.kind, r.reason);
+  });
+
+  const firmPanel = safeSection<{ panels: ReadonlyArray<FirmPanelCitation> }>("firmPanel", () => {
+    if (!options.factResolvers?.floodplain) return notRequested("FIRM panel citation");
+    if (!floodplainResolution || "error" in floodplainResolution) {
+      return absent("failed-this-run", "The FIRM panel read did not complete for this parcel.");
+    }
+    const r = floodplainResolution.firmPanel;
+    return r.status === "present"
+      ? present<{ panels: ReadonlyArray<FirmPanelCitation> }>(
+          { panels: r.panels },
+          {
+            consequence:
+              "Cite this panel and its effective date when relying on the flood determination; a panel revision supersedes it.",
+          },
+        )
+      : absent(r.kind, r.reason);
+  });
+
+  const soil = await safeSectionAsync<SoilFacts>("soil", async () => {
+    if (!options.factResolvers?.soil || !options.centroid) return notRequested("Soil");
+    const r = await options.factResolvers.soil(options.centroid);
+    return r.status === "present"
+      ? present<SoilFacts>(r.facts, {
+          consequence:
+            "Soil group and drainage class drive foundation design and on-site septic feasibility. Confirm with a geotechnical report before design.",
+        })
+      : absent(r.kind, r.reason);
+  });
+
+  const electricProvider = await safeSectionAsync<ElectricProviderFacts>("electricProvider", async () => {
+    if (!options.factResolvers?.electricProvider || !options.centroid) return notRequested("Electric provider");
+    const r = await options.factResolvers.electricProvider(options.centroid);
+    return r.status === "present"
+      ? present<ElectricProviderFacts>(r.facts, {
+          sourceCitation: r.facts.sourceCitation,
+          consequence: r.facts.ambiguous
+            ? "More than one retail territory covers this point, so the serving utility is genuinely ambiguous here. Confirm with the county before assuming either."
+            : "This is the retail service territory, not a service commitment. Request a service-availability letter before assuming capacity.",
+        })
+      : absent(r.kind, r.reason);
+  });
+
+  const gasProvider = safeSection<Record<string, never>>("gasProvider", () => {
+    if (!options.factResolvers?.gasProvider) return notRequested("Gas provider");
+    const r = options.factResolvers.gasProvider();
+    return absent(
+      r.kind,
+      r.reason,
+      "Gas service must be confirmed directly with the local distribution utility; no territory GIS exists to check.",
+    );
+  });
+
   const jurisdiction: JurisdictionFacts = {
     countyFips: geometry.status === "present" ? geometry.model.summary.countyFips : null,
     countyName: geometry.status === "present" ? geometry.model.summary.countyName : undefined,
@@ -498,6 +645,11 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
       wellsPipelines,
       terrain,
       utilities,
+      floodplainAcreage,
+      firmPanel,
+      soil,
+      electricProvider,
+      gasProvider,
       hoa,
       footprint,
       dischargePoint,
@@ -596,6 +748,7 @@ export interface ComposeParcelReportOptions extends Omit<AuthorParcelSitePlanExp
   artifactStore: ReadableTerrainArtifactStore;
   centroidOverride?: { latitude: number; longitude: number };
   whoServes?: WhoServesResolver;
+  factResolvers?: ParcelReportFactResolvers;
   dischargeExitPoint?: { lat: number; lng: number };
   dischargeResolver?: DischargePointResolver;
   /** Omit entirely to skip drainage composition (absent, zero IO cost) —
@@ -656,6 +809,8 @@ export async function composeParcelReport(options: ComposeParcelReportOptions): 
   }
 
   const model = await composeParcelReportFacts({
+    ...(options.ringOverride ? { ringWgs84: options.ringOverride } : {}),
+    ...(options.factResolvers ? { factResolvers: options.factResolvers } : {}),
     parcelNodeId: options.parcelNodeId,
     storage: options.storage,
     geometry,

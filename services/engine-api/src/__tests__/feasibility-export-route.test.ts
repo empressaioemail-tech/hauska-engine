@@ -9,6 +9,9 @@ import { InMemoryStorage } from "@hauska-engine/storage";
 const FAKE_PDF = new TextEncoder().encode("%PDF-1.7 fake feasibility bytes");
 
 vi.mock("@hauska-engine/engine-core/site-plan", () => ({
+  // P-120 R-04: the route now passes the live fact resolvers through.
+  // The mock must export it or the module import fails before any assertion.
+  LIVE_PARCEL_REPORT_FACT_RESOLVERS: {},
   authorParcelSitePlanExport: vi.fn(),
   authorParcelPropertyDossierExport: vi.fn(),
   authorParcelFeasibilityExport: vi.fn(

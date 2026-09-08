@@ -44,6 +44,8 @@ export {
   type ResolveAttachingRoadNodesResult,
 } from "./resolve-attaching-roads.js";
 
+export { LIVE_PARCEL_REPORT_FACT_RESOLVERS } from "./live-fact-resolvers.js";
+
 export {
   resolveTerrainWindowBbox,
   requiredWindowExtentMeters,
