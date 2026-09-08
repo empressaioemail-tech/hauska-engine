@@ -1,9 +1,26 @@
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, PDFPage } from "pdf-lib";
+import { PDFDocument, PDFPage, type PDFImage } from "pdf-lib";
 
 import type { ParcelReportModel } from "../report-model.js";
 import type { SitePlanModel } from "../site-model.js";
 import { FEASIBILITY_MANIFEST, manifestIncludes, type ReportManifest } from "../report-manifest.js";
+import {
+  AERIAL_IMAGERY_ATTRIBUTION,
+  AERIAL_NOT_A_SURVEY_LINE,
+  AERIAL_UNAVAILABLE_NOTE,
+  aerialImagePixelSize,
+  buildAerialExportUrl,
+  computeAerialMercatorBbox,
+  fetchAerialImagery,
+  makeAerialOverlayTransform,
+  type AerialImageryResult,
+  type MercatorBbox,
+  type PageRect,
+} from "./aerial.js";
+import {
+  emitPdfFloodDrainage,
+  type PdfFloodDrainageResult,
+} from "./flood-drainage.js";
 import { REASON, countyDisplayName } from "./format.js";
 import { RhythmCapture, placeRowBelowRule, type RhythmRow } from "./line-box.js";
 import { SITE_PLAN_HONESTY_LINE } from "./provenance.js";
@@ -71,7 +88,14 @@ import { SPACE, STROKE, TOKENS, TYPE, pt } from "./template-tokens.js";
  */
 
 const FEASIBILITY_KICKER = "SMART SITE FEASIBILITY STUDY";
-const FEASIBILITY_VERDICT_HEADING = "VERDICT";
+const FEASIBILITY_VERDICT_HEADING = "WHAT CAN BE BUILT";
+
+/** The formal binding-constraint derivation — which single rule governs, and
+ * by how much — is R-04's remaining scope and is not on `ParcelReportModel`.
+ * Declared here rather than left blank: a cover that silently omits the
+ * governing rule reads as though nothing binds the envelope. */
+export const BINDING_CONSTRAINT_NOT_YET_DERIVED =
+  "Which single rule governs this envelope is not yet derived; the zoning district and setbacks above are the inputs that shaped it.";
 const FEASIBILITY_NARRATIVE_HEADING = "NARRATIVE";
 const FEASIBILITY_OPEN_ITEMS_HEADING = "Open items";
 export const FEASIBILITY_NOT_LEGAL_ADVICE = DOSSIER_NOT_LEGAL_ADVICE;
@@ -85,6 +109,41 @@ export const FEASIBILITY_GIS_REFERENCE_NOTE =
  * fact here means. Every Feasibility absence is the engine looking for a
  * real atom and finding none; this assembler's own generic line says so. */
 export const FEASIBILITY_FACT_VALUE_ABSENT_REASON = "No matching record was found for this fact.";
+
+/**
+ * Customer-facing labels for `OpenItem.section`.
+ *
+ * `composePackageLayer` keys open items by MODEL field name (`specialDistricts`,
+ * `wellsPipelines`, `hoa`, `parcelOwnership`, …) because that is what the
+ * composer iterates. Those are internal identifiers and printing them in the
+ * open-items table put raw camelCase keys in front of a buyer.
+ *
+ * The map lives HERE rather than on the model because it is presentation: the
+ * composer's key is the correct join value, and `report-model.ts` is another
+ * lane's file. An unmapped key falls back to the raw key rather than to a
+ * placeholder — a wrong-looking label is visible and gets fixed, whereas a
+ * silent "Other" would hide a section nobody labeled.
+ */
+const OPEN_ITEM_SECTION_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  geometry: "Site geometry",
+  jurisdiction: "City limits and ETJ",
+  parcelOwnership: "Parcel and ownership",
+  flood: "Flood",
+  specialDistricts: "Special districts",
+  wellsPipelines: "Wells and pipelines",
+  utilities: "Utilities",
+  footprint: "Existing structures",
+  drainage: "Drainage study",
+  hoa: "HOA and recorded restrictions",
+});
+
+export function openItemSectionLabel(section: string): string {
+  return OPEN_ITEM_SECTION_LABELS[section] ?? section;
+}
+
+/** Row label for a fact's rendered `consequence`. Phrased as the reader's
+ * question, not as a data-model field name. */
+export const CONSEQUENCE_ROW_LABEL = "What this means";
 
 // ─────────────────────────────────────────────────────────────────────────
 // ParcelReportModel → the grouped-fact section shape `planBriefPages` and
@@ -113,8 +172,20 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
       factOrChip("County", countyDisplayName(facts.jurisdiction.countyName) ?? countyDisplayName(facts.jurisdiction.countyFips), {
         absentReason: REASON.noCountyName,
       }),
-      factOrChip("City limits", "Unresolved", { absentReason: "No city-limits or ETJ data source is wired for this county yet." }),
-      factOrChip("ETJ status", "Unresolved", { absentReason: "No city-limits or ETJ data source is wired for this county yet." }),
+      // ONE row, and a real absence. This was two rows both printing the
+      // pseudo-value "Unresolved" — a non-empty string, so `factOrChip`
+      // rendered it as a FINDING and silently dropped the reason. Two
+      // identical negatives stacked, neither saying why. City limits and ETJ
+      // come from the same missing adapter and fail together, so they are one
+      // fact with one reason and one consequence.
+      factOrChip("City limits and ETJ", undefined, {
+        absentReason:
+          "No city-limits or ETJ boundary source is wired for this county yet, so annexation status is unverified.",
+      }),
+      factOrChip(
+        CONSEQUENCE_ROW_LABEL,
+        "Which authority reviews a permit here is not established. Confirm with the county and with any city whose ETJ may reach this parcel before assuming a review path.",
+      ),
     ],
   });
 
@@ -410,11 +481,57 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
     title: FEASIBILITY_OPEN_ITEMS_HEADING,
     facts:
       model.package.openItems.length > 0
-        ? model.package.openItems.map((item) => factOrChip(item.section, item.actionSentence))
+        ? model.package.openItems.map((item) =>
+            factOrChip(openItemSectionLabel(item.section), item.actionSentence),
+          )
         : [factOrChip("Open items", "None — every section above resolved to a fact.")],
   });
 
-  return sections;
+  return attachConsequences(sections, facts);
+}
+
+/**
+ * Append each section's `consequence` as its own closing row.
+ *
+ * `FeasibilityFactState` carries `consequence` on BOTH its present and absent
+ * branches — "what this fact means for someone deciding whether to build
+ * here" — and `report-model.ts` populates it. Nothing rendered it, so the
+ * document printed the finding and stopped, which is the "atom facts on a
+ * page" failure the operator named.
+ *
+ * Emitted as a normal fact row rather than by extending `DossierBriefFactInput`
+ * with a `consequence` field, because `pdf/dossier.ts` is another lane's file;
+ * a row needs no shared-type change and paginates through the existing
+ * `planBriefPages` path unmodified.
+ *
+ * A section whose state carries no consequence gets no row — an empty
+ * "What this means" would be worse than its absence.
+ */
+function attachConsequences(
+  sections: DossierBriefSectionInput[],
+  facts: ParcelReportModel["facts"],
+): DossierBriefSectionInput[] {
+  const bySectionId: Readonly<Record<string, { consequence?: string } | undefined>> = {
+    "parcel-ownership": facts.parcelOwnership,
+    flood: facts.flood,
+    "special-districts": facts.specialDistricts,
+    "wells-pipelines": facts.wellsPipelines,
+    "floodplain-acreage": facts.floodplainAcreage,
+    "firm-panel": facts.firmPanel,
+    soil: facts.soil,
+    "service-providers": facts.electricProvider,
+    terrain: facts.terrain,
+    utilities: facts.utilities,
+    footprint: facts.footprint,
+  };
+  return sections.map((section) => {
+    const consequence = bySectionId[section.id]?.consequence;
+    if (!consequence) return section;
+    return {
+      ...section,
+      facts: [...section.facts, factOrChip(CONSEQUENCE_ROW_LABEL, consequence)],
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -455,6 +572,413 @@ export interface PdfFeasibilityResult {
   sitePlan?: Omit<PdfSitePlanResult, "bytes">;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Page 1 answers four questions and nothing else: what can be built, what
+// binds it, what is genuinely unknown, what to do first. The helpers below
+// derive those four answers from the model. None of them fabricates: where
+// the model does not carry a value the helper returns undefined and the
+// cover renders a declared absence naming what is missing.
+// ─────────────────────────────────────────────────────────────────────────
+
+const METRES_TO_FEET = 3.280839895;
+
+/** Envelope extent in feet from the OFFSET ring's bounding box.
+ *
+ * A "roughly W by H" pad is only honest if it comes from real geometry.
+ * Deriving one from area alone (picking any rectangle whose product matches)
+ * would be an invented shape presented as a measurement, so this returns
+ * undefined when there is no offset ring to measure. */
+export function envelopeExtentFeet(
+  offsetRingLocal: ReadonlyArray<{ x: number; y: number }> | null | undefined,
+): { widthFt: number; depthFt: number } | undefined {
+  if (!offsetRingLocal || offsetRingLocal.length < 3) return undefined;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of offsetRingLocal) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return undefined;
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const widthFt = Math.round((maxX - minX) * METRES_TO_FEET);
+  const depthFt = Math.round((maxY - minY) * METRES_TO_FEET);
+  if (widthFt <= 0 || depthFt <= 0) return undefined;
+  return { widthFt, depthFt };
+}
+
+/**
+ * "What can be built", as a measurement a reader can picture.
+ *
+ * The same square footage stated three ways: the number, its share of the
+ * lot, and the envelope's real extent on the ground. `buildablePdfLabel` is
+ * the shared B3 vocabulary and stays verbatim so this document cannot
+ * disagree with the map card about the same parcel.
+ */
+export function buildableAnswer(sp: SitePlanModel["summary"], setback: SitePlanModel["setback"]): {
+  headline: string;
+  picture?: string;
+} {
+  const sqFt = sp.buildableAreaSqFt;
+  if (sqFt == null) {
+    return {
+      headline: `Buildable area could not be determined${
+        sp.buildableAreaHonestNote ? `: ${sp.buildableAreaHonestNote}` : "."
+      }`,
+    };
+  }
+  const parts: string[] = [];
+  if (sp.lotAreaSqFt > 0) {
+    parts.push(`${Math.round((sqFt / sp.lotAreaSqFt) * 100)}% of the ${Math.round(sp.lotAreaSqFt).toLocaleString("en-US")} sq ft lot`);
+  }
+  const extent = envelopeExtentFeet(setback.offsetRingLocal);
+  if (extent) {
+    parts.push(`an envelope roughly ${extent.widthFt.toLocaleString("en-US")} by ${extent.depthFt.toLocaleString("en-US")} ft at its widest`);
+  }
+  return {
+    headline: `${sp.buildablePdfLabel} of buildable area`,
+    picture: parts.length > 0 ? parts.join(", ") : undefined,
+  };
+}
+
+/**
+ * "What binds it" — the rule that produced the envelope.
+ *
+ * The formal binding-constraint derivation (which single rule is actually
+ * governing, and by how much) is R-04's remaining scope and is not on the
+ * model. Rather than invent one, this states the two inputs that DID shape
+ * the envelope and says plainly that the governing rule is not yet
+ * identified, which is a declared absence rather than a silent one.
+ */
+export function bindingAnswer(sp: SitePlanModel["summary"], setback: SitePlanModel["setback"]): string[] {
+  const lines: string[] = [];
+  lines.push(`Zoning: ${sp.zoningDistrict ?? sp.zoningHonestAbsenceReason ?? "not on file"}`);
+  lines.push(
+    setback.honestAbsence
+      ? `Setbacks: ${setback.honestAbsenceReason ?? "no setback rule is on file for this parcel"}`
+      : `Setbacks: ${setback.displayLine}`,
+  );
+  return lines;
+}
+
+/** "What is genuinely unknown" — named, never counted. A count tells a
+ * reader how much is missing; the names tell them whether the missing part
+ * matters to their decision. */
+export function unknownsAnswer(model: ParcelReportModel): string {
+  const names = model.package.openItems.map((i) => openItemSectionLabel(i.section));
+  const unique = [...new Set(names)];
+  if (unique.length === 0) return "Nothing outstanding — every section resolved to a fact.";
+  return unique.join(" · ");
+}
+
+/** "What to do first" — the first open item's action sentence, verbatim.
+ *
+ * Contact, portal and login-required fields are NOT on `OpenItem` (it carries
+ * `section` and `actionSentence` only), so this renders the action and does
+ * not invent a phone number or a portal URL. Widening the work plan is a
+ * model change and belongs with whoever owns `report-model.ts`. */
+export function firstActionAnswer(model: ParcelReportModel): string | undefined {
+  return model.package.openItems[0]?.actionSentence;
+}
+
+export const FEASIBILITY_AERIAL_KICKER = "AERIAL CONTEXT";
+export const FEASIBILITY_HOW_TO_READ_KICKER = "HOW TO READ THIS";
+
+/**
+ * Aerial caption, written from the footprint and envelope the model already
+ * carries.
+ *
+ * An uncaptioned aerial is a picture; the reader has to work out what it
+ * implies. Where a structure covers most of the buildable envelope the
+ * redevelopment question is demolition or reuse, not infill, and that is the
+ * single most decision-relevant sentence on the page.
+ *
+ * Every branch is derived. When the footprint family is absent the caption
+ * says so and stops, rather than implying a vacant lot — "no structure on
+ * file" and "no structure on the ground" are different claims.
+ */
+export function aerialCaption(model: ParcelReportModel): string {
+  const footprint = model.facts.footprint;
+  const buildableSqFt =
+    model.geometry.status === "present" ? model.geometry.model.summary.buildableAreaSqFt : null;
+
+  if (footprint.status !== "present") {
+    return `No existing-structure record is on file for this parcel (${footprint.reason}), so the imagery below has not been reconciled against a mapped footprint. Read it as context, not as confirmation that the site is clear.`;
+  }
+  const structureSqFt = footprintTotalSqFt(footprint);
+  if (structureSqFt == null || structureSqFt <= 0) {
+    return "The footprint record for this parcel carries no measured structure area, so coverage against the buildable envelope could not be computed.";
+  }
+  if (buildableSqFt == null || buildableSqFt <= 0) {
+    return `Existing structures cover about ${Math.round(structureSqFt).toLocaleString("en-US")} sq ft. The buildable envelope could not be determined, so the share of it already occupied is unknown.`;
+  }
+  const share = Math.round((structureSqFt / buildableSqFt) * 100);
+  const consequence =
+    share >= 60
+      ? "Redevelopment here likely means demolition or reuse rather than infill."
+      : share >= 25
+        ? "There is room to build alongside what is standing, but the existing structure constrains where."
+        : "Most of the envelope is unoccupied, so infill alongside the existing structure is plausible.";
+  return `Existing structures occupy roughly ${Math.round(structureSqFt).toLocaleString("en-US")} sq ft, about ${share}% of the buildable envelope. ${consequence}`;
+}
+
+/** Total mapped structure area, or null when the record carries none. */
+function footprintTotalSqFt(footprint: ParcelReportModel["facts"]["footprint"]): number | null {
+  if (footprint.status !== "present") return null;
+  const record = footprint as unknown as {
+    totalFootprintSqFt?: number;
+    footprintAreaSqFt?: number;
+    structures?: ReadonlyArray<{ areaSqFt?: number }>;
+  };
+  if (typeof record.totalFootprintSqFt === "number") return record.totalFootprintSqFt;
+  if (typeof record.footprintAreaSqFt === "number") return record.footprintAreaSqFt;
+  if (Array.isArray(record.structures)) {
+    const sum = record.structures.reduce((n, s) => n + (typeof s.areaSqFt === "number" ? s.areaSqFt : 0), 0);
+    return sum > 0 ? sum : null;
+  }
+  return null;
+}
+
+interface FeasibilityAerialContext {
+  imagery: Promise<AerialImageryResult>;
+  mercBbox: MercatorBbox;
+  rect: PageRect;
+  toPage: (point: { x: number; y: number }) => { x: number; y: number };
+}
+
+/** Starts the bounded imagery fetch and fixes the page geometry. Never
+ * throws and never blocks the document: a failed fetch renders the honest
+ * paper ground with the reason, exactly as the site-plan aerial sheet does. */
+function prepareFeasibilityAerial(
+  sitePlan: SitePlanModel,
+  aerialOptions: EmitPdfSitePlanOptions["aerial"],
+): FeasibilityAerialContext {
+  const rect: PageRect = {
+    x: MARGIN_X,
+    y: MARGIN_BOTTOM + pt(96),
+    width: PAGE_WIDTH - MARGIN_X * 2,
+    height: headerRuleY() - (MARGIN_BOTTOM + pt(96)) - pt(56),
+  };
+  const mercBbox = computeAerialMercatorBbox(sitePlan.ringLocal, sitePlan.bboxWgs84, rect.width / rect.height);
+  const imagery = fetchAerialImagery(buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox)), {
+    fetchImage: aerialOptions?.fetchImage,
+    timeoutMs: aerialOptions?.timeoutMs,
+  });
+  return {
+    imagery,
+    mercBbox,
+    rect,
+    toPage: makeAerialOverlayTransform(mercBbox, rect, sitePlan.bboxWgs84),
+  };
+}
+
+/**
+ * Which sheets of the real Flood & Drainage deliverable this document carries,
+ * and which layers those sheets draw.
+ *
+ * The four flood ids are independent, not a single on/off. `flood-cover`
+ * selects the summary sheet; `catchment`, `ponding` and `flow-paths` each
+ * select one drawing LAYER, and the drawing sheet comes across when any of
+ * them is asked for. That is what makes the violation test hold per id:
+ * dropping `ponding` alone removes the modeled-water raster and changes the
+ * rendered bytes, without removing the sheet.
+ *
+ * Returns an empty plan when no drainage study is on file — the honest
+ * absence is already reported by the flood section's own row, and an empty
+ * flood sheet would be worse than none.
+ */
+export function floodSheetPlan(
+  manifest: ReportManifest,
+  model: ParcelReportModel,
+): { localPages: number[]; layers: { catchment: boolean; ponding: boolean; flowPaths: boolean } } {
+  const empty = { localPages: [], layers: { catchment: false, ponding: false, flowPaths: false } };
+  if (model.drainage.status !== "present") return empty;
+  const layers = {
+    catchment: manifestIncludes(manifest, "catchment"),
+    ponding: manifestIncludes(manifest, "ponding"),
+    flowPaths: manifestIncludes(manifest, "flow-paths"),
+  };
+  const wantsDrawing = layers.catchment || layers.ponding || layers.flowPaths;
+  const wantsCover = manifestIncludes(manifest, "flood-cover");
+  const localPages = [...(wantsDrawing ? [1] : []), ...(wantsCover ? [2] : [])];
+  if (localPages.length === 0) return empty;
+  return { localPages, layers };
+}
+
+interface ResolvedFeasibilityAerial extends FeasibilityAerialContext {
+  png?: PDFImage;
+  unavailableReason?: string;
+}
+
+async function resolveFeasibilityAerial(
+  doc: PDFDocument,
+  ctx: FeasibilityAerialContext,
+): Promise<ResolvedFeasibilityAerial> {
+  const imagery = await ctx.imagery;
+  if (!imagery.ok) return { ...ctx, unavailableReason: imagery.reason };
+  try {
+    return { ...ctx, png: await doc.embedPng(imagery.bytes) };
+  } catch (error) {
+    return { ...ctx, unavailableReason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Page 2: the aerial, the parcel ring over it, and a caption that says what
+ * the picture means for a build decision. */
+function drawFeasibilityAerialPage(
+  page: PDFPage,
+  pageNo: number,
+  model: ParcelReportModel,
+  aerial: ResolvedFeasibilityAerial | null,
+  F: Fonts,
+  marks: MarkRegistry,
+  rhythm: RhythmCapture,
+  ruleY: number,
+): void {
+  const cursor = drawSectionHeading(page, pageNo, "THE SITE TODAY", ruleY, F, rhythm);
+  const rect = aerial?.rect ?? {
+    x: MARGIN_X,
+    y: MARGIN_BOTTOM + pt(96),
+    width: PAGE_WIDTH - MARGIN_X * 2,
+    height: cursor - (MARGIN_BOTTOM + pt(96)) - pt(12),
+  };
+
+  if (aerial?.png) {
+    page.drawImage(aerial.png, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+    marks.once(pageNo, "imagery", "raster");
+  } else {
+    page.drawRectangle({
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      color: TOKENS.neutral100,
+      borderColor: TOKENS.neutral300,
+      borderWidth: 0.7,
+    });
+    const why = aerial?.unavailableReason
+      ? `${AERIAL_UNAVAILABLE_NOTE}: ${aerial.unavailableReason}`
+      : AERIAL_UNAVAILABLE_NOTE;
+    page.drawText(why.slice(0, 140), {
+      x: rect.x + pt(10),
+      y: rect.y + rect.height / 2,
+      size: TYPE.rowValue,
+      font: F.body,
+      color: TOKENS.neutral600,
+    });
+  }
+
+  // The parcel ring over the imagery, so the reader can see which land is
+  // theirs. Drawn from the same `ringLocal` the site-plan drawing uses.
+  if (aerial && model.geometry.status === "present") {
+    const ring = model.geometry.model.ringLocal;
+    if (ring.length >= 3) {
+      const pts = ring.map((p) => aerial.toPage(p));
+      for (let i = 0; i < pts.length; i += 1) {
+        const a = pts[i]!;
+        const b = pts[(i + 1) % pts.length]!;
+        page.drawLine({ start: a, end: b, thickness: 1.8, color: TOKENS.accent700 });
+      }
+      marks.once(pageNo, "parcel-ring", "outline");
+    }
+  }
+
+  const caption = aerialCaption(model);
+  const captionLines = wrapTextToWidth(caption, F.body, TYPE.rowValue, PAGE_WIDTH - MARGIN_X * 2);
+  const placed = placeRowBelowRule(rect.y - pt(10), LB.kvRow, {
+    padTop: pt(SPACE.s1),
+    padBottom: pt(SPACE.s1),
+    lines: Math.max(1, captionLines.length),
+  });
+  captionLines.forEach((line, li) => {
+    page.drawText(line, { x: MARGIN_X, y: placed.baselines[li]!, size: TYPE.rowValue, font: F.body, color: TOKENS.text });
+  });
+  rhythm.row(pageNo, "aerial-caption", placed, LB.kvRow, pt(SPACE.s1));
+  marks.once(pageNo, "aerial-caption", "text");
+}
+
+/**
+ * The standing explanation, said once.
+ *
+ * These five sentences used to repeat on every sheet. Text that appears on
+ * all seven pages is text a reader learns to skip, which cost the one
+ * parcel-specific fine-print line its audience too. Said once, on a sheet
+ * whose whole job is to be read once, it can carry more than it did.
+ */
+export const HOW_TO_READ_ROWS: ReadonlyArray<{ label: string; body: string }> = Object.freeze([
+  {
+    label: "What this is",
+    body: "A compilation of public records and modeled results for one parcel, assembled automatically. It is not a survey, not an engineering study, and not legal advice.",
+  },
+  {
+    label: "Where a fact is missing",
+    body: "An UNAVAILABLE chip means this report looked and did not find a record. It never means the answer is no. The reason next to the chip says which of those two applies.",
+  },
+  {
+    label: "Checked and clear",
+    body: "Where a source ran and found nothing, the report says so in those words. That is a finding, not a gap, and it is stated differently from a record that was never located.",
+  },
+  {
+    label: "What this means",
+    body: "Each section closes with the consequence of its finding for a build decision. Where a section has no consequence line, the finding did not change what a builder would do.",
+  },
+  {
+    label: "Sources and dates",
+    body: "Every value carries its source and the date that source was current. A value with no date is a value whose vintage the source did not publish.",
+  },
+  {
+    label: "Before you rely on it",
+    body: "Resolve the open items on sheet 1 first. They are ordered so the item most likely to change the answer comes first.",
+  },
+]);
+
+function drawHowToReadPage(
+  page: PDFPage,
+  pageNo: number,
+  F: Fonts,
+  marks: MarkRegistry,
+  rhythm: RhythmCapture,
+  ruleY: number,
+): void {
+  let cursor = drawSectionHeading(page, pageNo, "HOW TO READ THIS REPORT", ruleY, F, rhythm);
+  const valueColWidth = PAGE_WIDTH - MARGIN_X - (MARGIN_X + pt(200));
+  for (const row of HOW_TO_READ_ROWS) {
+    cursor = drawBriefFactRow(
+      page,
+      pageNo,
+      {
+        label: row.label,
+        valueLines: wrapTextToWidth(row.body, F.body, TYPE.rowValue, valueColWidth),
+        greyLines: [],
+        chip: false,
+      },
+      cursor,
+      F,
+      rhythm,
+    );
+  }
+  page.drawLine({
+    start: { x: MARGIN_X, y: cursor },
+    end: { x: PAGE_WIDTH - MARGIN_X, y: cursor },
+    thickness: STROKE.rowRule,
+    color: TOKENS.neutral200,
+  });
+  const closing = [DOSSIER_COMPILATION_LINE, SITE_PLAN_HONESTY_LINE, FEASIBILITY_NOT_LEGAL_ADVICE, FEASIBILITY_GIS_REFERENCE_NOTE].join(" ");
+  const closingLines = wrapTextToWidth(closing, F.body, TYPE.rowQualifier, PAGE_WIDTH - MARGIN_X * 2);
+  const placed = placeRowBelowRule(cursor, LB.subline, {
+    padTop: pt(SPACE.s2),
+    padBottom: pt(SPACE.s1),
+    lines: Math.max(1, closingLines.length),
+  });
+  closingLines.forEach((line, li) => {
+    page.drawText(line, { x: MARGIN_X, y: placed.baselines[li]!, size: TYPE.rowQualifier, font: F.body, color: TOKENS.neutral600 });
+  });
+  rhythm.row(pageNo, "how-to-read-closing", placed, LB.subline, pt(SPACE.s2), { ruleDrawn: false });
+  marks.once(pageNo, "how-to-read", "sheet");
+}
+
 export async function emitPdfFeasibility(
   model: ParcelReportModel,
   options: EmitPdfFeasibilityOptions = {},
@@ -488,22 +1012,98 @@ export async function emitPdfFeasibility(
     displayMedium: await doc.embedFont(loadFont("BarlowCondensed-Medium.ttf"), { subset: false }),
   };
 
-  const plannedPages: PlannedPage[] = [{ kind: "cover" }];
-  plannedPages.push(...planBriefPages(content, F, FEASIBILITY_FACT_VALUE_ABSENT_REASON));
-  const narrativeLines = content.notes ? wrapUserText(content.notes, F) : [];
-  if (narrativeLines.length > 0) {
-    plannedPages.push(...planTextPages("notes", narrativeLines));
-  }
-  const feasibilityPageCount = plannedPages.length;
-  const sitePlanSheets = options.sitePlan ? 1 : 0;
-  const total = feasibilityPageCount + sitePlanSheets;
+  // ── Sheet plan ────────────────────────────────────────────────────────
+  // Page order is the operator's: cover, then the aerial, then the drawing,
+  // then the facts, then the flood deliverable, then how to read it.
+  //
+  // EVERY id is consulted. Before this, `manifestIncludes` was called once
+  // (for "package") and the other nine ids were inert — cover, fact-digest
+  // and drawing rendered only because they were hardcoded, so removing an id
+  // from FEASIBILITY_MANIFEST changed nothing. The manifest was the control
+  // and it enforced nothing.
+  const includeCover = manifestIncludes(manifest, "cover");
+  const includeAerial = manifestIncludes(manifest, "aerial") && model.geometry.status === "present";
+  const includeDrawing = manifestIncludes(manifest, "drawing") && !!options.sitePlan;
+  const includeSummary = manifestIncludes(manifest, "summary") && !!options.sitePlan;
+  const includeFactDigest = manifestIncludes(manifest, "fact-digest");
 
-  const sitePlanRender: Promise<PdfSitePlanResult> | null = options.sitePlan
-    ? emitPdfSitePlan(options.sitePlan.model, {
-        numbering: { startAt: feasibilityPageCount + 1, total },
-        sheets: "drawing-only",
-      })
-    : null;
+  const coverAnswers = {
+    buildable:
+      model.geometry.status === "present"
+        ? buildableAnswer(model.geometry.model.summary, model.geometry.model.setback)
+        : { headline: `Buildable area could not be determined: ${model.geometry.reason}` },
+    binds:
+      model.geometry.status === "present"
+        ? bindingAnswer(model.geometry.model.summary, model.geometry.model.setback)
+        : [`Zoning: not established — ${model.geometry.reason}`],
+    unknowns: unknownsAnswer(model),
+    firstAction: firstActionAnswer(model),
+  };
+
+  const briefPlanned = includeFactDigest
+    ? planBriefPages(content, F, FEASIBILITY_FACT_VALUE_ABSENT_REASON)
+    : [];
+  const narrativeLines = content.notes ? wrapUserText(content.notes, F) : [];
+  const notesPlanned = narrativeLines.length > 0 ? planTextPages("notes", narrativeLines) : [];
+
+  // The site plan is rendered with EVERY sheet ("all") rather than
+  // "drawing-only". That single change is what fixes the dangling reference:
+  // the drawing's fine print points at a segment table that lives on the
+  // SUMMARY sheet, and "drawing-only" excluded exactly that sheet, so the
+  // pointer had no target in this document. The mode is
+  // "drawing-and-summary" rather than "all" because Feasibility draws its own
+  // captioned aerial: asking for "all" would pay for a second Esri imagery
+  // fetch on a customer-facing synchronous path and then discard the sheet.
+  const sitePlanSheetTotal =
+    options.sitePlan && (includeDrawing || includeSummary)
+      ? await countSitePlanSheets(options.sitePlan.model)
+      : 0;
+  // countSitePlanSheets reports drawing + summary(1..n) + aerial.
+  const sitePlanSummaryCount = Math.max(0, sitePlanSheetTotal - 2);
+  const sitePlanCopyCount = (includeDrawing ? 1 : 0) + (includeSummary ? sitePlanSummaryCount : 0);
+
+  const floodSheets = floodSheetPlan(manifest, model);
+
+  const coverCount = includeCover ? 1 : 0;
+  const aerialCount = includeAerial ? 1 : 0;
+  const howToCount = 1;
+  const total =
+    coverCount +
+    aerialCount +
+    sitePlanCopyCount +
+    briefPlanned.length +
+    notesPlanned.length +
+    floodSheets.localPages.length +
+    howToCount;
+
+  const sitePlanStartAt = coverCount + aerialCount + 1;
+  const sitePlanRender: Promise<PdfSitePlanResult> | null =
+    options.sitePlan && sitePlanCopyCount > 0
+      ? emitPdfSitePlan(options.sitePlan.model, {
+          numbering: { startAt: sitePlanStartAt, total },
+          sheets: "drawing-and-summary",
+          aerial: options.sitePlan.aerial,
+        })
+      : null;
+
+  const floodStartAt = sitePlanStartAt + sitePlanCopyCount;
+  const floodRender: Promise<PdfFloodDrainageResult> | null =
+    floodSheets.localPages.length > 0 && model.drainage.status === "present"
+      ? emitPdfFloodDrainage(
+          model.drainage.study,
+          { address: headerAddress, countyName: headerCountyName, liveViewUrl: options.liveViewUrl },
+          {
+            generatedAtIso: options.generatedAtIso,
+            aerial: options.sitePlan?.aerial,
+            numbering: { startAt: floodStartAt, total },
+            layers: {
+              catchment: floodSheets.layers.catchment,
+              ponding: floodSheets.layers.ponding,
+              flowPaths: floodSheets.layers.flowPaths,
+            },
+          },
+        )
+      : null;
 
   const marks = new MarkRegistry();
   const rhythm = new RhythmCapture();
@@ -512,32 +1112,92 @@ export async function emitPdfFeasibility(
   const docId = `FS-${model.parcelNodeId.replace(/:/g, "-")}`;
   const rightMeta = [docId, model.parcelNodeId];
 
-  const briefPages = plannedPages.filter((p) => p.kind === "brief").length;
+  const briefPages = briefPlanned.length;
 
-  plannedPages.forEach((planned, i) => {
-    const pageNo = i + 1;
+  // Aerial imagery for the Feasibility-owned page 2 — started here so the
+  // bounded fetch overlaps the site-plan render, the same overlap the
+  // site-plan and flood sheets already use.
+  const aerialContext =
+    includeAerial && model.geometry.status === "present"
+      ? prepareFeasibilityAerial(model.geometry.model, options.sitePlan?.aerial)
+      : null;
+
+  type FeasibilitySheet =
+    | { kind: "aerial" }
+    | { kind: "how-to-read" }
+    | { kind: "dossier"; planned: PlannedPage };
+
+  const sheetPlan: FeasibilitySheet[] = [
+    ...(includeCover ? [{ kind: "dossier" as const, planned: { kind: "cover" } as PlannedPage }] : []),
+    ...(includeAerial ? [{ kind: "aerial" as const }] : []),
+  ];
+  // Site-plan sheets are copied in, not drawn here, so they occupy
+  // `sitePlanCopyCount` positions between the aerial and the facts.
+  const afterSitePlan: FeasibilitySheet[] = [
+    ...briefPlanned.map((planned) => ({ kind: "dossier" as const, planned })),
+    ...notesPlanned.map((planned) => ({ kind: "dossier" as const, planned })),
+    { kind: "how-to-read" as const },
+  ];
+
+  // Awaited HERE, not at prepare time: the fetch was started before the
+  // site-plan render so the two bounded waits overlap rather than serialise.
+  const aerialResolved = aerialContext ? await resolveFeasibilityAerial(doc, aerialContext) : null;
+
+  const drawSheet = (sheet: FeasibilitySheet, pageNo: number): void => {
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-
     const eyebrowByKind: Record<PlannedPage["kind"], string> = {
       cover: FEASIBILITY_KICKER,
       brief: "FEASIBILITY FACTS",
       chat: FEASIBILITY_NARRATIVE_HEADING,
       notes: FEASIBILITY_NARRATIVE_HEADING,
     };
+    const eyebrow =
+      sheet.kind === "aerial"
+        ? FEASIBILITY_AERIAL_KICKER
+        : sheet.kind === "how-to-read"
+          ? FEASIBILITY_HOW_TO_READ_KICKER
+          : eyebrowByKind[sheet.planned.kind];
     const ruleY = drawDossierHeader(
       page,
       content,
       F,
-      `${eyebrowByKind[planned.kind]} · SHEET ${pageNo} OF ${total}`,
+      `${eyebrow} · SHEET ${pageNo} OF ${total}`,
       rightMeta,
     );
-    marks.once(pageNo, "feasibility-header", planned.kind);
+    marks.once(pageNo, "feasibility-header", sheet.kind === "dossier" ? sheet.planned.kind : sheet.kind);
+
+    if (sheet.kind === "aerial") {
+      drawFeasibilityAerialPage(page, pageNo, model, aerialResolved, F, marks, rhythm, ruleY);
+      drawFinePrint(
+        page,
+        pageNo,
+        [AERIAL_IMAGERY_ATTRIBUTION, AERIAL_NOT_A_SURVEY_LINE, `· Sheet ${pageNo} of ${total}`].join(" "),
+        F,
+        marks,
+      );
+      return;
+    }
+
+    if (sheet.kind === "how-to-read") {
+      drawHowToReadPage(page, pageNo, F, marks, rhythm, ruleY);
+      drawFinePrint(page, pageNo, `· Sheet ${pageNo} of ${total}`, F, marks);
+      return;
+    }
+
+    const planned = sheet.planned;
 
     if (planned.kind === "cover") {
       let cursor = drawSectionHeading(page, pageNo, FEASIBILITY_VERDICT_HEADING, ruleY, F, rhythm);
       const verdictWidth = PAGE_WIDTH - MARGIN_X * 2;
-      const verdictLines = wrapTextToWidth(content.verdictLine ?? "", F.display, TYPE.statValue, verdictWidth);
-      if (content.verdictLine && verdictLines.length > 0) {
+      // The headline names WHAT the number measures. The model's verdict
+      // string opens with a bare `buildablePdfLabel` ("8,418 sq ft under the
+      // facts on file"), which is a measurement with no subject — a reader
+      // has to infer that the square footage is buildable area rather than
+      // lot area or floor area. Same field, same shared B3 vocabulary, so
+      // this cannot disagree with the map card; only the sentence differs.
+      const verdictHeadline = coverAnswers.buildable.headline;
+      const verdictLines = wrapTextToWidth(verdictHeadline, F.display, TYPE.statValue, verdictWidth);
+      if (verdictHeadline && verdictLines.length > 0) {
         const placed = placeRowBelowRule(cursor, LB.statValue, {
           padTop: pt(SPACE.s2),
           padBottom: pt(SPACE.s2),
@@ -551,7 +1211,15 @@ export async function emitPdfFeasibility(
         marks.once(pageNo, "verdict", "line");
         cursor = placed.nextRuleY;
         const qual = placeRowBelowRule(cursor, LB.subline, { padTop: pt(SPACE.s1), padBottom: pt(SPACE.s2) });
-        page.drawText(DOSSIER_VERDICT_QUALIFIER, { x: MARGIN_X, y: qual.baselines[0]!, size: TYPE.rowQualifier, font: F.body, color: TOKENS.neutral600 });
+        // The same area a second way, so the number becomes a picture: its
+        // share of the lot and the envelope's real extent on the ground.
+        page.drawText(coverAnswers.buildable.picture ?? DOSSIER_VERDICT_QUALIFIER, {
+          x: MARGIN_X,
+          y: qual.baselines[0]!,
+          size: TYPE.rowQualifier,
+          font: F.body,
+          color: TOKENS.neutral600,
+        });
         rhythm.row(pageNo, "verdict-qualifier", qual, LB.subline, pt(SPACE.s1), { ruleDrawn: false });
         cursor = qual.nextRuleY;
       } else {
@@ -561,49 +1229,83 @@ export async function emitPdfFeasibility(
         cursor = placed.nextRuleY;
       }
 
-      let contentsRule = drawSectionHeading(page, pageNo, "CONTENTS", cursor, F, rhythm);
-      const factCount = content.sections.reduce((n, s) => n + s.facts.length, 0);
+      // The cover answers four questions and stops. It used to carry a
+      // CONTENTS block instead — a section count, a fact count, and a
+      // promise of "a citation for each sentence" printed on the branch that
+      // emits no citations at all. A table of contents is navigation for the
+      // author; none of it helped a reader decide whether to build here, and
+      // the citation line was a claim the document did not keep.
+      const valueColWidth = PAGE_WIDTH - MARGIN_X - (MARGIN_X + pt(200));
+      let contentsRule = cursor;
+
+      contentsRule = drawSectionHeading(page, pageNo, "WHAT BINDS IT", contentsRule, F, rhythm);
+      for (const line of coverAnswers.binds) {
+        const [label, ...rest] = line.split(": ");
+        contentsRule = drawBriefFactRow(
+          page,
+          pageNo,
+          {
+            label: label ?? "",
+            valueLines: wrapTextToWidth(rest.join(": "), F.body, TYPE.rowValue, valueColWidth),
+            greyLines: [],
+            chip: false,
+          },
+          contentsRule,
+          F,
+          rhythm,
+        );
+      }
       contentsRule = drawBriefFactRow(
         page,
         pageNo,
         {
-          label: "Sections",
-          valueLines: wrapTextToWidth(
-            `${content.sections.length} sections, ${factCount} facts total`,
+          label: "Governing rule",
+          valueLines: [],
+          greyLines: wrapTextToWidth(
+            BINDING_CONSTRAINT_NOT_YET_DERIVED,
             F.body,
             TYPE.rowValue,
-            PAGE_WIDTH - MARGIN_X - (MARGIN_X + pt(200)),
+            valueColWidth,
           ),
-          greyLines: briefPages > 0 ? [briefPages === 1 ? "sheet 2" : `sheets 2–${1 + briefPages}`] : [],
-          chip: false,
+          chip: true,
         },
         contentsRule,
         F,
         rhythm,
       );
+
+      contentsRule = drawSectionHeading(page, pageNo, "WHAT IS NOT YET KNOWN", contentsRule, F, rhythm);
       contentsRule = drawBriefFactRow(
         page,
         pageNo,
         {
-          label: "Narrative",
-          valueLines: [narrativeText ? "included" : "not available"],
-          greyLines: [
-            options.narrativeOverride
-              ? `generated ${options.narrativeOverride.generatedBy}`
-              : "a plain summary of the facts above, with a citation for each sentence",
-          ],
+          label: "Unresolved",
+          valueLines: wrapTextToWidth(coverAnswers.unknowns, F.body, TYPE.rowValue, valueColWidth),
+          greyLines: [],
           chip: false,
         },
         contentsRule,
         F,
         rhythm,
       );
+
+      contentsRule = drawSectionHeading(page, pageNo, "WHAT TO DO FIRST", contentsRule, F, rhythm);
       contentsRule = drawBriefFactRow(
         page,
         pageNo,
-        options.sitePlan
-          ? { label: "Site-plan sheet", valueLines: [`sheet ${total} appended`], greyLines: ["drawing only"], chip: false }
-          : { label: "Site-plan sheet", valueLines: [], greyLines: ["Not appended; see the fine print for the reason."], chip: true },
+        coverAnswers.firstAction
+          ? {
+              label: "Next action",
+              valueLines: wrapTextToWidth(coverAnswers.firstAction, F.body, TYPE.rowValue, valueColWidth),
+              greyLines: [],
+              chip: false,
+            }
+          : {
+              label: "Next action",
+              valueLines: ["Nothing is blocking. Proceed on the facts in this document."],
+              greyLines: [],
+              chip: false,
+            },
         contentsRule,
         F,
         rhythm,
@@ -649,31 +1351,70 @@ export async function emitPdfFeasibility(
       rhythm.row(pageNo, "narrative-text", textPlaced, LB.kvRow, pt(SPACE.s2));
     }
 
-    const fineSentences = [DOSSIER_COMPILATION_LINE, SITE_PLAN_HONESTY_LINE, FEASIBILITY_NOT_LEGAL_ADVICE];
+    // The repeated five-sentence legal block is gone from every sheet. It
+    // said the same thing on all seven pages, which is how a reader learns to
+    // skip the fine print entirely — including the one line on one sheet that
+    // was specific to their parcel. What stays here is per-sheet and
+    // parcel-specific; the standing explanation moved to the how-to-read
+    // sheet, where it is said once and can be read.
+    const fineSentences: string[] = [];
     if (planned.kind === "notes") fineSentences.push(FEASIBILITY_NARRATIVE_DISCLOSURE);
     if (planned.kind === "cover" && !options.sitePlan) {
       fineSentences.push(`Site-plan sheets are not appended: ${options.sitePlanUnavailableReason ?? "site-plan authoring was unavailable for this parcel"}.`);
     }
-    if (i === plannedPages.length - 1 + (options.sitePlan ? 0 : 0)) {
-      // GIS-reference note rides the last feasibility (non-site-plan) sheet's fine print.
-    }
     fineSentences.push(`· Sheet ${pageNo} of ${total}`);
     drawFinePrint(page, pageNo, fineSentences.join(" "), F, marks);
-  });
+  };
+
+  // ── Assemble, in the specified order ──────────────────────────────────
+  let pageNo = 0;
+  for (const sheet of sheetPlan) drawSheet(sheet, ++pageNo);
 
   let sitePlanResult: PdfSitePlanResult | undefined;
   if (sitePlanRender) {
     sitePlanResult = await sitePlanRender;
     const spDoc = await PDFDocument.load(sitePlanResult.bytes);
-    const copied = await doc.copyPages(spDoc, spDoc.getPageIndices());
-    for (const p of copied) doc.addPage(p);
+    // Copy the drawing and the summary sheets; never the site plan's own
+    // aerial sheet, which this document replaces with its captioned page 2.
+    const summaryLocalPages = sitePlanResult.summarySheets.map((s) => s.localPage);
+    const wanted = [
+      ...(includeDrawing ? [1] : []),
+      ...(includeSummary ? summaryLocalPages : []),
+    ].sort((a, b) => a - b);
+    const indices = wanted.map((localPage) => localPage - 1).filter((i) => i >= 0 && i < spDoc.getPageCount());
+    const copied = await doc.copyPages(spDoc, indices);
+    for (const p of copied) {
+      doc.addPage(p);
+      pageNo += 1;
+    }
   }
+
+  // ── The real flood deliverable ────────────────────────────────────────
+  // Not a pair of summary numbers restated in the facts table: the actual
+  // Flood & Drainage sheets, catchment boundary, modeled water and traced
+  // flow paths, produced by the same assembler the standalone report uses,
+  // numbered into this document's own sequence.
+  let floodResult: PdfFloodDrainageResult | undefined;
+  if (floodRender) {
+    floodResult = await floodRender;
+    const fdDoc = await PDFDocument.load(floodResult.bytes);
+    const indices = floodSheets.localPages
+      .map((localPage) => localPage - 1)
+      .filter((i) => i >= 0 && i < fdDoc.getPageCount());
+    const copied = await doc.copyPages(fdDoc, indices);
+    for (const p of copied) {
+      doc.addPage(p);
+      pageNo += 1;
+    }
+  }
+
+  for (const sheet of afterSitePlan) drawSheet(sheet, ++pageNo);
 
   const bytes = await doc.save({ useObjectStreams: false });
   return {
     bytes,
     pageCount: total,
-    feasibilityPageCount,
+    feasibilityPageCount: total - sitePlanCopyCount,
     sitePlanAppended: !!options.sitePlan,
     sitePlanUnavailableReason: options.sitePlan ? undefined : options.sitePlanUnavailableReason,
     sectionCount: content.sections.length,

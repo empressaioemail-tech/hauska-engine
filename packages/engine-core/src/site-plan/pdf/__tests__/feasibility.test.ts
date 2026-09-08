@@ -95,10 +95,14 @@ describe("emitPdfFeasibility", () => {
     // buyer pays for; the assertion is updated to the intended sentence, not
     // to whatever the code happens to emit.
     expect(decoded).toContain("No FEMA flood-hazard mapping covers this parcel");
-    // The `consequence` line ("NOT a finding that the parcel is outside the
-    // floodplain") is carried on the model by R-04 but is not rendered yet.
-    // Asserting it here would be asserting R-05's scope from R-04's lane.
-    expect(decoded).toContain("VERDICT");
+    // R-05: the `consequence` line IS rendered now — each section closes
+    // with what its finding means for a build decision.
+    expect(decoded).toContain("What this means");
+    // The cover's opening heading answers the reader's question rather than
+    // naming the document's own data structure. "VERDICT" was a label for a
+    // field; "WHAT CAN BE BUILT" is the question a buyer opened the report
+    // to ask.
+    expect(decoded).toContain("WHAT CAN BE BUILT");
     expect(decoded).toContain("NARRATIVE");
   });
 
@@ -142,7 +146,11 @@ describe("emitPdfFeasibility", () => {
     });
     const result = await emitPdfFeasibility(model, { sitePlan: { model: sitePlan } });
     expect(result.sitePlanAppended).toBe(true);
-    expect(result.pageCount).toBe(result.feasibilityPageCount + 1);
+    // Drawing AND summary sheets now come across, not one drawing sheet.
+    // The old `+ 1` pinned `sheets: "drawing-only"` as the specification when
+    // it was the defect: the drawing's fine print points at a segment table
+    // that lives on the summary sheet.
+    expect(result.pageCount - result.feasibilityPageCount).toBeGreaterThanOrEqual(2);
     const decoded = decodeAllContentStreams(result.bytes);
     expect(decoded).toContain("SITE PLAN");
   });

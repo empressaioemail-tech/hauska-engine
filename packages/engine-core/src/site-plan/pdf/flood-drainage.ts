@@ -151,6 +151,26 @@ export interface EmitPdfFloodDrainageOptions {
     fetchImage?: AerialImageFetcher;
     timeoutMs?: number;
   };
+  /**
+   * Sheet numbering when these sheets ride inside a LARGER document (the
+   * Feasibility Study appends them). Mirrors the site-plan export's own
+   * `numbering` seam. Omitted = standalone, and the sheets number themselves
+   * 1..2 exactly as before.
+   *
+   * Without this, appended flood sheets printed "SHEET 1 OF 2" in the middle
+   * of a twelve-page document — the same class of dangling reference as a
+   * fine-print pointer with no target.
+   */
+  numbering?: { startAt: number; total: number };
+  /**
+   * Which drawing LAYERS sheet 1 composites. Omitted = every layer, which is
+   * the standalone Flood & Drainage report's behaviour and is unchanged.
+   *
+   * The Feasibility manifest names `catchment`, `ponding` and `flow-paths`
+   * as separate section ids; this is what makes each of them do something,
+   * rather than three ids sharing one on/off.
+   */
+  layers?: { catchment?: boolean; ponding?: boolean; flowPaths?: boolean };
 }
 
 export interface PdfFloodDrainageResult {
@@ -486,6 +506,11 @@ interface FdSheet1Layers {
   imagery: AerialImageryResult;
   imageryPng: PDFImage | undefined;
   gradientPng: PDFImage | undefined;
+  /** Manifest-driven layer selection. Absent = draw the layer, which is the
+   * standalone Flood & Drainage report's behaviour. */
+  showCatchment?: boolean;
+  showPonding?: boolean;
+  showFlowPaths?: boolean;
 }
 
 function drawStudyDrawing(
@@ -525,7 +550,7 @@ function drawStudyDrawing(
   // 2) THE WATER GRADIENT — composited over the backdrop by the SAME bbox
   // transform (gradient bbox corners → mercator → page), clipped hard to
   // the drawing frame (§3). The raster's row-0 edge is its bbox's north.
-  if (layers.gradientPng && study.gradient) {
+  if (layers.gradientPng && study.gradient && layers.showPonding !== false) {
     const sw = toPage(study.gradient.bbox.westLng, study.gradient.bbox.southLat);
     const ne = toPage(study.gradient.bbox.eastLng, study.gradient.bbox.northLat);
     if (marks.once(1, "water-gradient", "raster", frame)) {
@@ -552,7 +577,7 @@ function drawStudyDrawing(
   if (!study.honestEmpty) {
     // 3) CATCHMENT BOUNDARY — clean dashed outline of the modeled cells'
     // union, paper-haloed so it reads over imagery.
-    {
+    if (layers.showCatchment !== false) {
       const drawn: Array<{ x: number; y: number }> = [];
       catchmentBoundaryRings(study.catchmentGeoJson).forEach((ring) => {
         const closed = [...ring, ring[0]!];
@@ -572,7 +597,7 @@ function drawStudyDrawing(
 
     // 4) FLOW LINES — bold water-blue with paper halos, clipped hard to the
     // frame (§3), with a direction arrow along each path.
-    study.flowLinesGeoJson.features.forEach((feature, i) => {
+    if (layers.showFlowPaths !== false) study.flowLinesGeoJson.features.forEach((feature, i) => {
       if (feature.geometry.type !== "LineString") return;
       const projected = (feature.geometry.coordinates as Array<[number, number]>).map(
         ([lng, lat]) => {
@@ -623,7 +648,9 @@ function drawStudyDrawing(
 
   // 6) FLOW EXIT ARROWS — PROMINENT, water-blue with paper halos, outbound
   // bearing at each traced exit (§14 keyed), sized to read at arm's length.
-  if (!study.honestEmpty) {
+  // Part of the flow-paths layer: an exit arrow with no flow line to leave
+  // along is an arrow pointing out of nowhere.
+  if (!study.honestEmpty && layers.showFlowPaths !== false) {
     study.flowExits.forEach((exit, i) => {
       const at = toPage(exit.lng, exit.lat);
       const rad = (exit.bearingDeg * Math.PI) / 180;
@@ -1154,6 +1181,7 @@ function fdFinePrint(
   study: FloodDrainageStudy,
   sheetNo: number,
   imagery?: AerialImageryResult | null,
+  printed?: { no: number; total: number } | null,
 ): string {
   const sentences: string[] = [
     FLOOD_DRAINAGE_DISCLAIMER,
@@ -1179,7 +1207,7 @@ function fdFinePrint(
   if (study.honestEmpty) {
     sentences.push(study.honestEmpty.reason);
   }
-  sentences.push(`· Sheet ${sheetNo} of ${FLOOD_DRAINAGE_TOTAL_SHEETS}`);
+  sentences.push(`· Sheet ${printed?.no ?? sheetNo} of ${printed?.total ?? FLOOD_DRAINAGE_TOTAL_SHEETS}`);
   return sentences.join(" ");
 }
 
@@ -1206,6 +1234,18 @@ export async function emitPdfFloodDrainage(
   const frame = drawingFrame();
   const rect = frameRect(frame);
   const docId = `FD-${study.parcelNodeId.replace(/:/g, "-")}`;
+
+  // Printed sheet numbers. Standalone this is 1..2 exactly as before; when
+  // the Feasibility Study appends these sheets it supplies its own numbering
+  // so the printed "SHEET k OF n" matches the page's real position.
+  const printedTotal = options.numbering?.total ?? FLOOD_DRAINAGE_TOTAL_SHEETS;
+  const sheetNoFor = (local: number): number =>
+    options.numbering ? options.numbering.startAt + local - 1 : local;
+
+  // Drawing layers. Omitted = all on, which is this report's own behaviour.
+  const layerCatchment = options.layers?.catchment ?? true;
+  const layerPonding = options.layers?.ponding ?? true;
+  const layerFlowPaths = options.layers?.flowPaths ?? true;
 
   // Sheet-1 imagery fetch — started FIRST (aerial-page pattern) so the
   // bounded network wait overlaps the vector work; bounded and never
@@ -1257,7 +1297,7 @@ export async function emitPdfFloodDrainage(
       study,
       descriptor,
       F,
-      `${FLOOD_DRAINAGE_KICKER} · SHEET 1 OF ${FLOOD_DRAINAGE_TOTAL_SHEETS}`,
+      `${FLOOD_DRAINAGE_KICKER} · SHEET ${sheetNoFor(1)} OF ${printedTotal}`,
       headerStats(study),
       null,
     );
@@ -1266,6 +1306,9 @@ export async function emitPdfFloodDrainage(
       imagery,
       imageryPng,
       gradientPng,
+      showCatchment: layerCatchment,
+      showPonding: layerPonding,
+      showFlowPaths: layerFlowPaths,
     });
     drawFdFooter(
       page,
@@ -1279,7 +1322,7 @@ export async function emitPdfFloodDrainage(
       gradientPng !== undefined,
       descriptor.liveViewUrl,
     );
-    drawFinePrint(page, 1, fdFinePrint(study, 1, imagery), F, marks);
+    drawFinePrint(page, 1, fdFinePrint(study, 1, imagery, { no: sheetNoFor(1), total: printedTotal }), F, marks);
   }
 
   // ── SHEET 2 · SUMMARY ──────────────────────────────────────────────────
@@ -1291,7 +1334,7 @@ export async function emitPdfFloodDrainage(
       study,
       descriptor,
       F,
-      `${FLOOD_DRAINAGE_SUMMARY_KICKER} · SHEET 2 OF ${FLOOD_DRAINAGE_TOTAL_SHEETS}`,
+      `${FLOOD_DRAINAGE_SUMMARY_KICKER} · SHEET ${sheetNoFor(2)} OF ${printedTotal}`,
       null,
       [docId, study.parcelNodeId],
     );
@@ -1416,7 +1459,7 @@ export async function emitPdfFloodDrainage(
     cursor = drawSectionHeading(page, pageNo, "PROVENANCE", cursor, F, rhythm);
     drawFdProvenanceTable(page, pageNo, fdProvenanceRows(study), cursor, F, rhythm);
 
-    drawFinePrint(page, pageNo, fdFinePrint(study, 2), F, marks);
+    drawFinePrint(page, pageNo, fdFinePrint(study, 2, null, { no: sheetNoFor(2), total: printedTotal }), F, marks);
   }
 
   const bytes = await doc.save({ useObjectStreams: false });
