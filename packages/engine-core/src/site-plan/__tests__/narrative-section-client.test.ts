@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildFullNarrativeFacts,
   buildNarrativeFacts,
   deriveCitedSections,
   fetchFeasibilityNarrative,
@@ -126,7 +127,31 @@ describe("buildNarrativeFacts: what the model is allowed to see", () => {
     expect(known.jurisdiction.cityLimitsStatus).toBe("unresolved");
   });
 
-  it("offers every FACT FAMILY on the model, so none is silently withheld", () => {
+  it("KEEPS the LDT contract at nine families — widening it regressed production", () => {
+    // Regression guard, 2026-09-08. `buildNarrativeFacts` feeds
+    // cortex-api's /research/narrative-section, a service this lane does not
+    // own. Widening it made that service slower, tripped the client's 20s
+    // timeout, and returned working parcels to the deterministic skeleton
+    // (Caldwell 48055:20478 failed 3/3 on the canary while the serving
+    // revision produced a real narrative in 17s). The wide payload lives on
+    // `buildFullNarrativeFacts` instead.
+    expect(Object.keys(buildNarrativeFacts(modelFixture())).sort()).toEqual(
+      [
+        "dischargePoint",
+        "flood",
+        "footprint",
+        "hoa",
+        "jurisdiction",
+        "parcelOwnership",
+        "specialDistricts",
+        "terrain",
+        "utilities",
+        "wellsPipelines",
+      ].sort(),
+    );
+  });
+
+  it("offers every FACT FAMILY on the model to IN-PROCESS generation", () => {
     // Derived from the model, not frozen as a list. The frozen version of
     // this assertion named nine keys and passed for months while geometry,
     // topography, the drainage study, all five PR #404 families and the
@@ -134,13 +159,13 @@ describe("buildNarrativeFacts: what the model is allowed to see", () => {
     // could never discuss flood or terrain. A snapshot of the omission cannot
     // catch the omission.
     const model = modelFixture();
-    const offered = new Set(Object.keys(buildNarrativeFacts(model)));
+    const offered = new Set(Object.keys(buildFullNarrativeFacts(model)));
     const missing = Object.keys(model.facts).filter((k) => !offered.has(k));
     expect(missing).toEqual([]);
   });
 
   it("offers the composed sub-models the fact families do not cover", () => {
-    const offered = new Set(Object.keys(buildNarrativeFacts(modelFixture())));
+    const offered = new Set(Object.keys(buildFullNarrativeFacts(modelFixture())));
     for (const key of ["geometry", "topography", "drainageStudy", "verdict", "openItems"]) {
       expect(offered.has(key)).toBe(true);
     }
@@ -150,7 +175,7 @@ describe("buildNarrativeFacts: what the model is allowed to see", () => {
     // The study carries catchment GeoJSON, flow-line GeoJSON and a gradient
     // raster. Shipping those to a language model bills for coordinates it
     // cannot use, so the payload must carry summary numbers only.
-    const serialized = JSON.stringify(buildNarrativeFacts(modelFixture()));
+    const serialized = JSON.stringify(buildFullNarrativeFacts(modelFixture()));
     expect(serialized).not.toContain("catchmentGeoJson");
     expect(serialized).not.toContain("flowLinesGeoJson");
     expect(serialized).not.toContain("coordinates");

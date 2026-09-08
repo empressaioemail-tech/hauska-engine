@@ -106,6 +106,23 @@ const SERVER_NO_CONTENT_GENERATED_BY = "rules-v1";
  * through untouched too, same as flood/parcelOwnership/etc.
  */
 export function buildNarrativeFacts(model: ParcelReportModel): Record<string, unknown> {
+  // THE LDT CONTRACT. Nine families, exactly what
+  // `/research/narrative-section` was built and tuned for.
+  //
+  // Do not widen this. It was widened on 2026-09-08 and it broke the service
+  // path in production: the wider input made cortex-api's generation slower,
+  // the client's 20s timeout tripped, and the narrative regressed to the
+  // deterministic skeleton on parcels that had been working. Caught on the
+  // canary — Caldwell 48055:20478 failed 3/3 with `request-failed` while the
+  // serving revision produced a real narrative for the same parcel in 17s.
+  //
+  // The wide payload belongs to IN-PROCESS generation, which is ours to make
+  // slower. `buildFullNarrativeFacts` carries it. Changing the shape of
+  // another service's request is that service's decision, not this lane's.
+  return buildLdtNarrativeFacts(model);
+}
+
+function buildLdtNarrativeFacts(model: ParcelReportModel): Record<string, unknown> {
   const jurisdictionKnown = model.facts.jurisdiction.countyFips !== null;
   const hoaCitation = model.facts.hoa.mountedDocumentCitation;
 
@@ -128,7 +145,26 @@ export function buildNarrativeFacts(model: ParcelReportModel): Record<string, un
         },
     footprint: model.facts.footprint,
     dischargePoint: model.facts.dischargePoint,
+  };
+}
 
+
+/**
+ * The WIDE payload: every fact family, plus the composed sub-models the
+ * families do not cover. Used ONLY by in-process generation.
+ *
+ * Kept separate from the LDT contract above because widening that one broke
+ * it in production. This one we own end to end, so it can afford to be
+ * expensive.
+ *
+ * Each addition is PROJECTED, never spread. `model.drainage.study` carries
+ * catchment GeoJSON, traced flow-line GeoJSON and a gradient raster;
+ * spreading it would push megabytes of coordinates at a language model that
+ * cannot use them, and bill for every token.
+ */
+export function buildFullNarrativeFacts(model: ParcelReportModel): Record<string, unknown> {
+  return {
+    ...buildLdtNarrativeFacts(model),
     // ── Added 2026-09-08. Everything below was ABSENT from this payload. ──
     // The narrative was being asked to reason over a report it could only
     // see half of, which is why it never discussed the flood study or the

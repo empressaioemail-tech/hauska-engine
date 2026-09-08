@@ -1,4 +1,4 @@
-import { buildNarrativeFacts, deriveCitedSections } from "./narrative-section-client.js";
+import { buildFullNarrativeFacts, deriveCitedSections } from "./narrative-section-client.js";
 import type { ParcelReportModel } from "./report-model.js";
 import {
   GROK_SEARCH_DEFAULT_MODEL,
@@ -224,7 +224,9 @@ export async function generateFeasibilityNarrative(
   model: ParcelReportModel,
   options: GenerateNarrativeOptions = {},
 ): Promise<GenerateNarrativeOutcome> {
-  const facts = buildNarrativeFacts(model);
+  // The WIDE payload — in-process only. The LDT client keeps its own
+  // nine-family contract; widening that one regressed it in production.
+  const facts = buildFullNarrativeFacts(model);
   const webSearch = options.webSearch === true;
   // Never open a live client from a test run. An injected client is always
   // honoured, but an ambient XAI_API_KEY in a developer shell or a CI secret
