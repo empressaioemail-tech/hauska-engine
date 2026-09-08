@@ -15,6 +15,7 @@
  * data did reach the parcel.
  */
 import { queryHifldElectricTerritory, type HifldElectricTerritory } from "./hifld-query.js";
+import type { AbsenceKind } from "../site-plan/feasibility-model.js";
 
 export interface ElectricProviderFacts {
   candidates: HifldElectricTerritory[];
@@ -26,7 +27,7 @@ export interface ElectricProviderFacts {
 
 export type ElectricProviderResult =
   | { status: "present"; facts: ElectricProviderFacts }
-  | { status: "absent"; reason: string };
+  | { status: "absent"; kind: AbsenceKind; reason: string };
 
 const HIFLD_SOURCE_CITATION =
   "HIFLD Electric Retail Service Territories (services2.arcgis.com/LYMgRMwHfrWWEg3s), same source staged 2026-08-14 as source_key hifld-electric-retail";
@@ -42,6 +43,7 @@ export async function resolveElectricProviderFact(
   } catch (error) {
     return {
       status: "absent",
+      kind: "failed-this-run",
       reason: `HIFLD electric-retail-territory lookup failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
@@ -49,6 +51,7 @@ export async function resolveElectricProviderFact(
   if (candidates.length === 0) {
     return {
       status: "absent",
+      kind: "blocked-at-source",
       reason: "The staged HIFLD electric-retail-territory data does not reach this parcel (no intersecting polygon).",
     };
   }

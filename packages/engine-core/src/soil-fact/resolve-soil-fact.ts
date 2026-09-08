@@ -22,6 +22,7 @@ import {
   runAdapters,
   type AdapterRunOutcome,
 } from "@hauska-engine/adapters";
+import type { AbsenceKind } from "../site-plan/feasibility-model.js";
 
 const SSURGO_ADAPTER_KEY = "usda:ssurgo-soils";
 
@@ -63,7 +64,7 @@ export interface SoilFacts {
   degradationReasons: string[];
 }
 
-export type SoilFactResult = { status: "present"; facts: SoilFacts } | { status: "absent"; reason: string };
+export type SoilFactResult = { status: "present"; facts: SoilFacts } | { status: "absent"; kind: AbsenceKind; reason: string };
 
 function str(v: unknown): string | null {
   return typeof v === "string" ? v : null;
@@ -81,6 +82,7 @@ export async function resolveSoilFact(
   if (!adapter) {
     return {
       status: "absent",
+      kind: "failed-this-run",
       reason: `USDA SSURGO adapter ("${SSURGO_ADAPTER_KEY}") is not registered in @hauska-engine/adapters' FEDERAL_ADAPTERS.`,
     };
   }
@@ -99,17 +101,19 @@ export async function resolveSoilFact(
   } catch (error) {
     return {
       status: "absent",
+      kind: "failed-this-run",
       reason: `USDA SSURGO adapter run threw: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 
   const outcome = outcomes[0];
   if (!outcome) {
-    return { status: "absent", reason: "USDA SSURGO adapter run produced no outcome." };
+    return { status: "absent", kind: "failed-this-run", reason: "USDA SSURGO adapter run produced no outcome." };
   }
   if (outcome.status !== "ok" || !outcome.result) {
     return {
       status: "absent",
+      kind: "failed-this-run",
       reason: outcome.error?.message ?? `USDA SSURGO adapter returned status "${outcome.status}" with no message.`,
     };
   }

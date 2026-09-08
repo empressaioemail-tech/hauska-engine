@@ -17,11 +17,15 @@
  * a retry. If the decision is ever reversed, this function is where that
  * reversal lands.
  */
-export type GasProviderResult = { status: "absent"; reason: string; structural: true };
+import type { AbsenceKind } from "../site-plan/feasibility-model.js";
+
+export type GasProviderResult = { status: "absent"; kind: AbsenceKind; reason: string; structural: true };
 
 const GAS_STRUCTURAL_ABSENCE_REASON =
   "Gas retail-territory data has no acquisition path in Texas (franchise-based distribution, not certificated-territory GIS); ruled permanently unaccounted 2026-09-03, decisions/2026-09-03_gas_utility_service_rail_closed_unacquirable.md.";
 
 export function resolveGasProviderFact(): GasProviderResult {
-  return { status: "absent", reason: GAS_STRUCTURAL_ABSENCE_REASON, structural: true };
+  // Permanently unacquirable by ruling, not a gap on our side and not a
+  // finding about the parcel: the source does not exist to be read.
+  return { status: "absent", kind: "blocked-at-source", reason: GAS_STRUCTURAL_ABSENCE_REASON, structural: true };
 }

@@ -32,6 +32,7 @@
  */
 import { intersectionAreaAcres, ringAreaAcres, type Ring } from "./geo.js";
 import { queryFirmPanels, queryFloodHazardZones, type FirmPanelCitation } from "./nfhl-query.js";
+import type { AbsenceKind } from "../site-plan/feasibility-model.js";
 
 export interface FloodplainZoneHit {
   fldZone: string | null;
@@ -52,11 +53,11 @@ export interface FloodplainAcreageFacts {
 
 export type FloodplainAcreageResult =
   | { status: "present"; facts: FloodplainAcreageFacts }
-  | { status: "absent"; reason: string };
+  | { status: "absent"; kind: AbsenceKind; reason: string };
 
 export type FirmPanelResult =
   | { status: "present"; panels: FirmPanelCitation[] }
-  | { status: "absent"; reason: string };
+  | { status: "absent"; kind: AbsenceKind; reason: string };
 
 export interface FloodplainFactResolution {
   acreage: FloodplainAcreageResult;
@@ -81,6 +82,7 @@ export async function resolveFloodplainFact(
     zonesSettled.status === "rejected"
       ? {
           status: "absent",
+          kind: "failed-this-run",
           reason: `FEMA NFHL flood-hazard-zone lookup failed: ${errorMessage(zonesSettled.reason)}`,
         }
       : {
@@ -103,10 +105,14 @@ export async function resolveFloodplainFact(
 
   const firmPanel: FirmPanelResult =
     panelsSettled.status === "rejected"
-      ? { status: "absent", reason: `FEMA NFHL FIRM Panels lookup failed: ${errorMessage(panelsSettled.reason)}` }
+      ? { status: "absent", kind: "failed-this-run", reason: `FEMA NFHL FIRM Panels lookup failed: ${errorMessage(panelsSettled.reason)}` }
       : panelsSettled.value.length === 0
         ? {
             status: "absent",
+            // The panel layer answered and has no panel here. The source does
+            // not map this area; that is not our failure and not a finding
+            // that the parcel is out of the floodplain.
+            kind: "blocked-at-source",
             reason: "NFHL FIRM Panels layer returned no panel intersecting this parcel (unmapped or non-printed area).",
           }
         : { status: "present", panels: panelsSettled.value };
