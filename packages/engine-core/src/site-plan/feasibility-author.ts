@@ -5,6 +5,7 @@ import type { DischargePointResolver } from "./discharge-point.js";
 import type { WhoServesResolver } from "./feasibility-model.js";
 import {
   composeParcelReport,
+  type ParcelReportFactResolvers,
   type ComposeParcelReportOptions,
   type ReadableTerrainArtifactStore,
 } from "./report-model.js";
@@ -37,6 +38,12 @@ export interface AuthorParcelFeasibilityExportOptions
   artifactStore: ReadableTerrainArtifactStore;
   descriptor?: { address?: string; countyName?: string };
   whoServes?: WhoServesResolver;
+  /** P-120 R-04. Omit to leave the three PR #404 fact families out of the
+   * report as a declared out-of-scope rather than a silent omission; pass
+   * `LIVE_PARCEL_REPORT_FACT_RESOLVERS` to run them. Injected rather than
+   * imported so tests stay hermetic — these are live NFHL, SSURGO and HIFLD
+   * reads. */
+  factResolvers?: ParcelReportFactResolvers;
   /** Parcel centroid for the who-serves point read. Derived from the ring
    * when omitted and a ring is available; the read is skipped (honest
    * absence) when neither is supplied. */
@@ -104,6 +111,7 @@ export async function authorParcelFeasibilityExport(
   // fatal (R2) — a geometry failure degrades `model.geometry` and every
   // dependent section rather than throwing.
   const { model, freshDrainageStudy } = await composeParcelReport({
+    ...(options.factResolvers ? { factResolvers: options.factResolvers } : {}),
     ...options,
     descriptor: options.descriptor,
   });

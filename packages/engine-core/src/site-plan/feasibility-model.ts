@@ -22,18 +22,68 @@ import type { DischargePointResolver, NamedDischargePoint } from "./discharge-po
  * absence. The generic keeps ~12 sections from repeating this shape by hand
  * while staying a real discriminated union (not a generic Maybe<T>). */
 export type FeasibilityFactState<T> =
-  | ({ status: "present"; sourceCitation?: string; asOfIso?: string } & T)
-  | { status: "absent"; reason: string };
+  | ({ status: "present"; sourceCitation?: string; asOfIso?: string; consequence?: string } & T)
+  | { status: "absent"; kind: AbsenceKind; reason: string; consequence?: string };
+
+/**
+ * WHICH KIND OF NOTHING was found (P-120 content revision, R-04).
+ *
+ * The previous two-state union flattened five genuinely different situations
+ * into one gray UNAVAILABLE chip, which is why a thoroughly-checked parcel
+ * read as a mostly-empty report. Same facts, same honesty, wrong impression:
+ * a refusal to guess looked identical to a broken pipeline.
+ *
+ * This is a TYPE rather than a rendering convention on purpose. If the five
+ * live only in the renderer they drift, and this repo has watched exactly that
+ * happen. Making `kind` required means the compiler asks every producer which
+ * kind of nothing it found, at every call site, and a new producer cannot skip
+ * the question.
+ *
+ * - `clear`             checked against a source that covers this parcel, and
+ *                       the answer is GOOD NEWS. No MUD, no special
+ *                       assessment. This is a finding, not a gap, and it is
+ *                       the one that changes how the document reads.
+ * - `not-applicable`    the field cannot apply to this parcel (year built on
+ *                       vacant land).
+ * - `out-of-scope`      a scope decision rather than a gap. Says what it would
+ *                       take, and is a sales conversation, not a defect.
+ * - `blocked-at-source` the source genuinely does not publish it, or does not
+ *                       cover this parcel. Authoritative to say so.
+ * - `failed-this-run`   a system gap. Never dress this as any of the above;
+ *                       it is the only one that means WE failed, and it is
+ *                       the one that must never quietly read as "clear".
+ *
+ * `clear` and `blocked-at-source` are the pair most easily confused, and the
+ * test is coverage: only claim `clear` when the source actually covers this
+ * parcel. "We looked everywhere and found none" is clear; "no row came back
+ * from a source with partial coverage" is blocked-at-source.
+ */
+export type AbsenceKind =
+  | "clear"
+  | "not-applicable"
+  | "out-of-scope"
+  | "blocked-at-source"
+  | "failed-this-run";
 
 export function present<T extends object>(
   value: T,
-  provenance?: { sourceCitation?: string; asOfIso?: string },
+  provenance?: { sourceCitation?: string; asOfIso?: string; consequence?: string },
 ): FeasibilityFactState<T> {
   return { status: "present", ...provenance, ...value };
 }
 
-export function absent<T extends object>(reason: string): FeasibilityFactState<T> {
-  return { status: "absent", reason };
+/**
+ * `kind` is REQUIRED and deliberately first: it is the question the caller
+ * must answer, not an option they may pass. `consequence` says what the
+ * absence MEANS for the reader, because a fact without a consequence is data
+ * and a fact with one is a deliverable.
+ */
+export function absent<T extends object>(
+  kind: AbsenceKind,
+  reason: string,
+  consequence?: string,
+): FeasibilityFactState<T> {
+  return { status: "absent", kind, reason, ...(consequence ? { consequence } : {}) };
 }
 
 // ── Section 3: location and jurisdiction ────────────────────────────────

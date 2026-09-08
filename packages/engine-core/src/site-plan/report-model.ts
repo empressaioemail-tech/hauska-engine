@@ -42,6 +42,17 @@ import {
   type OpenItem,
   type DischargePointFacts,
 } from "./feasibility-model.js";
+import type {
+  FirmPanelCitation,
+  FloodplainAcreageFacts,
+  FloodplainFactResolution,
+} from "../floodplain-acreage-fact/index.js";
+import type { SoilFactResult, SoilFacts } from "../soil-fact/index.js";
+import type {
+  ElectricProviderFacts,
+  ElectricProviderResult,
+  GasProviderResult,
+} from "../electric-provider-fact/index.js";
 
 /**
  * The composition root (P-120 reports re-cut, R1-R3).
@@ -83,7 +94,11 @@ function safeSection<T extends object>(sectionName: string, compute: () => Feasi
   try {
     return compute();
   } catch (error) {
-    return absent<T>(`${sectionName} section failed to compose: ${error instanceof Error ? error.message : String(error)}`);
+    return absent<T>(
+      "failed-this-run",
+      `${sectionName} section failed to compose: ${error instanceof Error ? error.message : String(error)}`,
+      "This section could not be produced on this run. It is a gap on our side, not a finding about the parcel.",
+    );
   }
 }
 
@@ -94,7 +109,11 @@ async function safeSectionAsync<T extends object>(
   try {
     return await compute();
   } catch (error) {
-    return absent<T>(`${sectionName} section failed to compose: ${error instanceof Error ? error.message : String(error)}`);
+    return absent<T>(
+      "failed-this-run",
+      `${sectionName} section failed to compose: ${error instanceof Error ? error.message : String(error)}`,
+      "This section could not be produced on this run. It is a gap on our side, not a finding about the parcel.",
+    );
   }
 }
 
@@ -113,6 +132,28 @@ export type ParcelDrainageState =
   | { status: "present"; study: FloodDrainageStudy }
   | { status: "absent"; reason: string };
 
+/**
+ * The three fact families PR #404 shipped and nothing consumed. Injected as
+ * seams rather than imported and called directly, matching this file's own
+ * whoServes / dischargeResolver pattern: an interface at the boundary keeps
+ * the composer testable without live NFHL, SSURGO and HIFLD calls on every
+ * unit test.
+ *
+ * Kept as five INDEPENDENT families rather than folded into flood, terrain
+ * and utilities. Floodplain acreage and the FIRM panel citation come back
+ * from one resolver but can genuinely disagree on present/absent -- a parcel
+ * can intersect a mapped zone while sitting on an unprinted panel -- and
+ * collapsing them would force one to inherit the other's state. Grouping for
+ * presentation is the renderer's job; preserving the independence is the
+ * model's.
+ */
+export interface ParcelReportFactResolvers {
+  floodplain?: (ring: ReadonlyArray<[number, number]>) => Promise<FloodplainFactResolution>;
+  soil?: (point: { latitude: number; longitude: number }) => Promise<SoilFactResult>;
+  electricProvider?: (point: { latitude: number; longitude: number }) => Promise<ElectricProviderResult>;
+  gasProvider?: () => GasProviderResult;
+}
+
 export interface ParcelReportFacts {
   jurisdiction: JurisdictionFacts;
   parcelOwnership: FeasibilityFactState<ParcelOwnershipFacts>;
@@ -124,6 +165,11 @@ export interface ParcelReportFacts {
   hoa: HoaFacts;
   footprint: FeasibilityFactState<FootprintFacts>;
   dischargePoint: FeasibilityFactState<DischargePointFacts>;
+  floodplainAcreage: FeasibilityFactState<FloodplainAcreageFacts>;
+  firmPanel: FeasibilityFactState<{ panels: ReadonlyArray<FirmPanelCitation> }>;
+  soil: FeasibilityFactState<SoilFacts>;
+  electricProvider: FeasibilityFactState<ElectricProviderFacts>;
+  gasProvider: FeasibilityFactState<Record<string, never>>;
 }
 
 /** R5's "package layer": narrative, open items, verdict, data quality —
@@ -156,6 +202,14 @@ export interface ComposeParcelReportFactsOptions {
    * absence, never a blocking failure). */
   centroid?: { latitude: number; longitude: number };
   whoServes?: WhoServesResolver;
+  /** P-120 R-04: the fact families from PR #404. An omitted resolver reports
+   * out-of-scope rather than being silently skipped. */
+  factResolvers?: ParcelReportFactResolvers;
+  /** WGS84 exterior ring, needed for the polygon-intersection floodplain read.
+   * SitePlanModel carries ringLocal and bboxWgs84 but NOT the WGS84 ring, so
+   * it is threaded from whoever resolved the geometry rather than
+   * back-projected out of local coordinates. */
+  ringWgs84?: ReadonlyArray<[number, number]>;
   dischargeExitPoint?: { lat: number; lng: number };
   dischargeResolver?: DischargePointResolver;
 }
@@ -286,11 +340,17 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   }
 
   const parcelOwnership = safeSection<ParcelOwnershipFacts>("parcelOwnership", () => {
-    if (atomsFetchFailureReason) return absent(atomsFetchFailureReason);
+    if (atomsFetchFailureReason) return absent("failed-this-run", atomsFetchFailureReason);
     const cadRoll = atoms.find((a): a is CadParcelRollAtomInstance => a.entityType === "cad-parcel-roll");
     const owner = atoms.find((a): a is OwnerFactAtomInstance => a.entityType === "owner-fact");
     const landUse = atoms.find((a): a is LandUseFactAtomInstance => a.entityType === "land-use-fact");
-    if (!cadRoll && !owner) return absent("No CAD parcel roll or owner-fact atom on file for this parcel.");
+    if (!cadRoll && !owner) {
+      return absent(
+        "blocked-at-source",
+        "The county appraisal roll carries no record for this parcel.",
+        "Ownership, value and building characteristics cannot be stated. Order a title or CAD roll pull before relying on any of them.",
+      );
+    }
     return present<ParcelOwnershipFacts>(
       {
         legalDescription: cadRoll?.legalDescription,
@@ -315,9 +375,15 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   });
 
   const flood = safeSection<FloodFacts>("flood", () => {
-    if (atomsFetchFailureReason) return absent(atomsFetchFailureReason);
+    if (atomsFetchFailureReason) return absent("failed-this-run", atomsFetchFailureReason);
     const floodAtom = atoms.find((a): a is FloodHazardFactAtomInstance => a.entityType === "flood-hazard-fact");
-    if (!floodAtom) return absent("No flood-hazard-fact atom on file for this parcel.");
+    if (!floodAtom) {
+      return absent(
+        "blocked-at-source",
+        "No FEMA flood-hazard mapping covers this parcel.",
+        "This is NOT a finding that the parcel is outside the floodplain. Order a site-specific flood determination before relying on flood status.",
+      );
+    }
     return present<FloodFacts>(
       {
         inSpecialFloodHazardArea: Boolean(floodAtom.inSpecialFloodHazardArea),
@@ -329,7 +395,7 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   });
 
   const specialDistricts = safeSection<SpecialDistrictFacts>("specialDistricts", () => {
-    if (atomsFetchFailureReason) return absent(atomsFetchFailureReason);
+    if (atomsFetchFailureReason) return absent("failed-this-run", atomsFetchFailureReason);
     // well-fact / special-district-fact / rrc-pipeline-fact / building-footprint
     // persist an honest "checked, found nothing" row carrying an `absence`
     // field, rather than having no row at all — filtering on entityType
@@ -337,15 +403,46 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
     const districts = atoms.filter(
       (a): a is SpecialDistrictFactAtomInstance => a.entityType === "special-district-fact" && !a.absence,
     );
-    if (districts.length === 0) return absent("No special-district-fact atom on file for this parcel (outside every mapped source boundary).");
+    if (districts.length === 0) {
+      // An absence-carrying row means the source RAN and found nothing. No row
+      // at all means nothing ever looked. Same empty list, opposite meanings,
+      // and collapsing them is the absent/zero/unmeasured error directly.
+      const checked = atoms.some((a) => a.entityType === "special-district-fact" && a.absence);
+      return checked
+        ? absent(
+            "clear",
+            "Checked against every mapped special-district boundary; this parcel falls outside all of them.",
+            "No MUD, PID or special-assessment district applies, so no district levy attaches to this parcel.",
+          )
+        : absent(
+            "blocked-at-source",
+            "Special-district boundaries have not been checked for this parcel.",
+            "District membership is unknown, not absent. Confirm with the county tax office.",
+          );
+    }
     return present<SpecialDistrictFacts>({ districts: districts.map((d) => ({ districtName: d.districtName, districtType: d.districtType })) });
   });
 
   const wellsPipelines = safeSection<WellsPipelinesFacts>("wellsPipelines", () => {
-    if (atomsFetchFailureReason) return absent(atomsFetchFailureReason);
+    if (atomsFetchFailureReason) return absent("failed-this-run", atomsFetchFailureReason);
     const wells = atoms.filter((a): a is WellFactAtomInstance => a.entityType === "well-fact" && !a.absence);
     const pipeline = atoms.find((a): a is RrcPipelineFactAtomInstance => a.entityType === "rrc-pipeline-fact" && !a.absence);
-    if (wells.length === 0 && !pipeline) return absent("No well-fact or rrc-pipeline-fact atom on file for this parcel.");
+    if (wells.length === 0 && !pipeline) {
+      const checked = atoms.some(
+        (a) => (a.entityType === "well-fact" || a.entityType === "rrc-pipeline-fact") && a.absence,
+      );
+      return checked
+        ? absent(
+            "clear",
+            "Checked against the state well and pipeline records; none intersect this parcel.",
+            "No plugging, offset or pipeline-easement constraint applies from these records.",
+          )
+        : absent(
+            "blocked-at-source",
+            "State well and pipeline records have not been checked for this parcel.",
+            "Confirm well and pipeline proximity with a site survey.",
+          );
+    }
     return present<WellsPipelinesFacts>({
       wells: wells.map((w) => ({ wellStatus: w.wellStatus, wellType: w.wellType, orphaned: w.orphaned })),
       nearPipeline: pipeline?.nearPipeline,
@@ -355,9 +452,22 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   });
 
   const footprint = safeSection<FootprintFacts>("footprint", () => {
-    if (atomsFetchFailureReason) return absent(atomsFetchFailureReason);
+    if (atomsFetchFailureReason) return absent("failed-this-run", atomsFetchFailureReason);
     const footprints = atoms.filter((a): a is BuildingFootprintAtomInstance => a.entityType === "building-footprint" && !a.absence);
-    if (footprints.length === 0) return absent("No building-footprint atom on file for this parcel.");
+    if (footprints.length === 0) {
+      const checked = atoms.some((a) => a.entityType === "building-footprint" && a.absence);
+      return checked
+        ? absent(
+            "clear",
+            "Checked against the building-footprint source; no structure is mapped on this parcel.",
+            "The site reads as unimproved, so redevelopment is unlikely to require demolition.",
+          )
+        : absent(
+            "blocked-at-source",
+            "Building-footprint mapping has not been checked for this parcel.",
+            "Existing structures are unknown, not absent. Confirm with a site survey.",
+          );
+    }
     return present<FootprintFacts>({
       footprints: footprints.map((f) => ({ footprintId: f.footprintId, structureRole: f.structureRole, sourceTier: f.sourceTier })),
     });
@@ -365,7 +475,11 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
 
   const terrain = safeSection<TerrainFacts>("terrain", () => {
     if (geometry.status === "absent") {
-      return absent(`Terrain facts require the parcel's composed geometry, which is unavailable: ${geometry.reason}`);
+      return absent(
+        "failed-this-run",
+        `Terrain facts require the parcel's composed geometry, which is unavailable: ${geometry.reason}`,
+        "Elevation range and contour interval are unavailable for this run.",
+      );
     }
     return present<TerrainFacts>({
       elevationRangeMeters: geometry.model.summary.elevationRangeMeters,
@@ -375,20 +489,139 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
 
   const utilities = await safeSectionAsync<UtilityWhoServesFacts>("utilities", async () => {
     if (!options.whoServes || !options.centroid) {
-      return absent("Utility service-territory read was not performed for this parcel.");
+      return absent(
+        "failed-this-run",
+        "The utility service-territory lookup did not run for this parcel.",
+        "Service territory is unknown for this run. This is a gap on our side, not a finding about the parcel.",
+      );
     }
     const result = await options.whoServes.resolve(options.centroid);
     return result.status === "measured"
       ? present<UtilityWhoServesFacts>({ holders: result.holders, residual: result.residual }, { asOfIso: result.asOf ?? undefined })
-      : absent(result.basis);
+      : absent(
+          "blocked-at-source",
+          result.basis,
+          "Territory holders could not be resolved. Request a service-availability letter before assuming capacity.",
+        );
   });
 
   const dischargePoint = await safeSectionAsync<DischargePointFacts>("dischargePoint", async () => {
     if (!options.dischargeExitPoint || !options.dischargeResolver) {
-      return absent("No flood-drainage-study flow exit was supplied for this parcel.");
+      return absent(
+        "out-of-scope",
+        "No modeled drainage exit point was available for this parcel.",
+        "The named downstream receiving water is not reported. This is a coverage limitation, not something to go confirm.",
+      );
     }
     const result = await options.dischargeResolver.resolve(options.dischargeExitPoint);
-    return result.status === "present" ? present<DischargePointFacts>({ point: result.point }) : absent(result.reason);
+    return result.status === "present"
+      ? present<DischargePointFacts>({ point: result.point })
+      : absent(
+          "blocked-at-source",
+          result.reason,
+          "No county hydrography source resolves a named receiving water here.",
+        );
+  });
+
+  // The PR #404 fact families, finally reaching a report.
+  //
+  // An omitted resolver is out-of-scope, NOT failed-this-run: the caller did
+  // not ask for this family, which is a scope decision rather than a gap on
+  // our side. A supplied resolver that then fails carries whichever kind the
+  // resolver itself declared, which is why those results had to grow a kind
+  // before this wiring could be honest.
+  const notRequested = (family: string) =>
+    absent<never>(
+      "out-of-scope",
+      family + " was not requested for this run.",
+      "This family can be produced on request; nothing about this parcel prevented it.",
+    );
+
+  const floodplainResolution = await (async () => {
+    if (!options.factResolvers?.floodplain || !options.ringWgs84) return null;
+    try {
+      return await options.factResolvers.floodplain(options.ringWgs84!);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) } as const;
+    }
+  })();
+
+  const floodplainAcreage = safeSection<FloodplainAcreageFacts>("floodplainAcreage", () => {
+    if (!options.factResolvers?.floodplain) return notRequested("Floodplain acreage");
+    if (!options.ringWgs84) {
+      return absent(
+        "failed-this-run",
+        "Floodplain acreage needs the parcel boundary ring, which was not supplied for this run.",
+        "Acreage inside the mapped floodplain could not be measured.",
+      );
+    }
+    if (!floodplainResolution) return notRequested("Floodplain acreage");
+    if ("error" in floodplainResolution) {
+      return absent("failed-this-run", "FEMA NFHL floodplain read failed: " + floodplainResolution.error);
+    }
+    const r = floodplainResolution.acreage;
+    return r.status === "present"
+      ? present<FloodplainAcreageFacts>(r.facts, {
+          consequence:
+            r.facts.sfhaAcres > 0
+              ? r.facts.sfhaAcres.toFixed(2) +
+                " of " +
+                r.facts.parcelAcres.toFixed(2) +
+                " acres sit inside the mapped special flood hazard area, which constrains where a structure can go and triggers federal flood-insurance requirements on a federally backed loan."
+              : "No part of this parcel falls inside the mapped special flood hazard area, so no federal flood-insurance requirement attaches on that basis. This is a mapping finding, not a drainage finding.",
+        })
+      : absent(r.kind, r.reason);
+  });
+
+  const firmPanel = safeSection<{ panels: ReadonlyArray<FirmPanelCitation> }>("firmPanel", () => {
+    if (!options.factResolvers?.floodplain) return notRequested("FIRM panel citation");
+    if (!floodplainResolution || "error" in floodplainResolution) {
+      return absent("failed-this-run", "The FIRM panel read did not complete for this parcel.");
+    }
+    const r = floodplainResolution.firmPanel;
+    return r.status === "present"
+      ? present<{ panels: ReadonlyArray<FirmPanelCitation> }>(
+          { panels: r.panels },
+          {
+            consequence:
+              "Cite this panel and its effective date when relying on the flood determination; a panel revision supersedes it.",
+          },
+        )
+      : absent(r.kind, r.reason);
+  });
+
+  const soil = await safeSectionAsync<SoilFacts>("soil", async () => {
+    if (!options.factResolvers?.soil || !options.centroid) return notRequested("Soil");
+    const r = await options.factResolvers.soil(options.centroid);
+    return r.status === "present"
+      ? present<SoilFacts>(r.facts, {
+          consequence:
+            "Soil group and drainage class drive foundation design and on-site septic feasibility. Confirm with a geotechnical report before design.",
+        })
+      : absent(r.kind, r.reason);
+  });
+
+  const electricProvider = await safeSectionAsync<ElectricProviderFacts>("electricProvider", async () => {
+    if (!options.factResolvers?.electricProvider || !options.centroid) return notRequested("Electric provider");
+    const r = await options.factResolvers.electricProvider(options.centroid);
+    return r.status === "present"
+      ? present<ElectricProviderFacts>(r.facts, {
+          sourceCitation: r.facts.sourceCitation,
+          consequence: r.facts.ambiguous
+            ? "More than one retail territory covers this point, so the serving utility is genuinely ambiguous here. Confirm with the county before assuming either."
+            : "This is the retail service territory, not a service commitment. Request a service-availability letter before assuming capacity.",
+        })
+      : absent(r.kind, r.reason);
+  });
+
+  const gasProvider = safeSection<Record<string, never>>("gasProvider", () => {
+    if (!options.factResolvers?.gasProvider) return notRequested("Gas provider");
+    const r = options.factResolvers.gasProvider();
+    return absent(
+      r.kind,
+      r.reason,
+      "Gas service must be confirmed directly with the local distribution utility; no territory GIS exists to check.",
+    );
   });
 
   const jurisdiction: JurisdictionFacts = {
@@ -412,6 +645,11 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
       wellsPipelines,
       terrain,
       utilities,
+      floodplainAcreage,
+      firmPanel,
+      soil,
+      electricProvider,
+      gasProvider,
       hoa,
       footprint,
       dischargePoint,
@@ -510,6 +748,7 @@ export interface ComposeParcelReportOptions extends Omit<AuthorParcelSitePlanExp
   artifactStore: ReadableTerrainArtifactStore;
   centroidOverride?: { latitude: number; longitude: number };
   whoServes?: WhoServesResolver;
+  factResolvers?: ParcelReportFactResolvers;
   dischargeExitPoint?: { lat: number; lng: number };
   dischargeResolver?: DischargePointResolver;
   /** Omit entirely to skip drainage composition (absent, zero IO cost) —
@@ -570,6 +809,8 @@ export async function composeParcelReport(options: ComposeParcelReportOptions): 
   }
 
   const model = await composeParcelReportFacts({
+    ...(options.ringOverride ? { ringWgs84: options.ringOverride } : {}),
+    ...(options.factResolvers ? { factResolvers: options.factResolvers } : {}),
     parcelNodeId: options.parcelNodeId,
     storage: options.storage,
     geometry,

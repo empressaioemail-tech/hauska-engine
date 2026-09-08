@@ -90,7 +90,14 @@ describe("emitPdfFeasibility", () => {
     expect(decoded).toContain("1127 N PINE ST");
     expect(decoded).toContain("UNAVAILABLE");
     // Never a fabricated flood zone when the fact atom is absent.
-    expect(decoded).toContain("No flood-hazard-fact atom on file");
+    // P-120 R-04: the absence copy is now customer-facing and the absence
+    // carries a KIND. "atom on file" was internal vocabulary in a document a
+    // buyer pays for; the assertion is updated to the intended sentence, not
+    // to whatever the code happens to emit.
+    expect(decoded).toContain("No FEMA flood-hazard mapping covers this parcel");
+    // The `consequence` line ("NOT a finding that the parcel is outside the
+    // floodplain") is carried on the model by R-04 but is not rendered yet.
+    // Asserting it here would be asserting R-05's scope from R-04's lane.
     expect(decoded).toContain("VERDICT");
     expect(decoded).toContain("NARRATIVE");
   });
@@ -261,6 +268,6 @@ describe("emitPdfFeasibility", () => {
     const result = await emitPdfFeasibility(model);
     const decoded = decodeAllContentStreams(result.bytes);
     expect(decoded).toContain("Named downstream discharge point");
-    expect(decoded).toContain("No flood-drainage-study flow exit was supplied");
+    expect(decoded).toContain("No modeled drainage exit point was available");
   });
 });
