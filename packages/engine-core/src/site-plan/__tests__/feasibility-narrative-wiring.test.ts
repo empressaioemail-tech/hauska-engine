@@ -117,7 +117,13 @@ describe("Feasibility narrative wiring (P-120 item 6)", () => {
     // exactly the failure the enforcement rules name.
     const result = await authorParcelFeasibilityExport(baseOptions() as any);
     expect(result.narrativeIsDeterministicSkeleton).toBe(true);
-    expect(result.narrativeFallbackReason).toBe("not-configured");
+    // The reason is now the SPECIFIC one. Generation moved in-process AND
+    // became opt-in (63s measured, against PE's 55s whole-compose budget), so
+    // an unrequested narrative reports "not-requested" rather than the older
+    // "not-configured", which described a cross-repo endpoint that is no
+    // longer the first path tried. What must not change is that SOME reason
+    // is always named — that invariant has its own test below.
+    expect(result.narrativeFallbackReason).toBe("not-requested");
     expect(result.pageCount).toBeGreaterThan(0);
   });
 

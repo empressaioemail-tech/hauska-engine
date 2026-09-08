@@ -1,0 +1,160 @@
+{
+  "id": "8d894195-bb01-918c-a24a-cb3ae442a60a",
+  "object": "response",
+  "model": "grok-4.6",
+  "status": "completed",
+  "output": [
+    {
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "id": "ws_8d894195-bb01-918c-a24a-cb3ae442a60a_call-408cee7b-e143-4fbb-a629-52f4506c0b3c-0",
+      "type": "web_search_call",
+      "status": "completed",
+      "action": {
+        "type": "search",
+        "query": "1501 Church St Bastrop Texas National Register of Historic Places",
+        "sources": [
+          {
+            "type": "url",
+            "url": "https://atlas.thc.texas.gov/Details?atlasnumber=2078003347"
+          },
+          {
+            "type": "url",
+            "url": "https://en.wikipedia.org/wiki/National_Register_of_Historic_Places_listings_in_Bastrop_County%2C_Texas"
+          },
+          {
+            "type": "url",
+            "url": "http://media.wix.com/ugd/2d3905_5dd0346cfdb8417ba5c8d0508be19c3e.pdf"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ws_8d894195-bb01-918c-a24a-cb3ae442a60a_call-408cee7b-e143-4fbb-a629-52f4506c0b3c-1",
+      "type": "web_search_call",
+      "status": "completed",
+      "action": {
+        "type": "search",
+        "query": "\"1501 Church Street\" Bastrop Texas historic",
+        "sources": [
+          {
+            "type": "url",
+            "url": "https://atlas.thc.texas.gov/Details?fn=print&atlasnumber=2078003347"
+          },
+          {
+            "type": "url",
+            "url": "https://www.countyoffice.org/church-st-bastrop-tx-property-records/"
+          },
+          {
+            "type": "url",
+            "url": "https://www.visitbastrop.com/listing/rufus-a-green-house/834/"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ws_8d894195-bb01-918c-a24a-cb3ae442a60a_call-408cee7b-e143-4fbb-a629-52f4506c0b3c-2",
+      "type": "web_search_call",
+      "status": "completed",
+      "action": {
+        "type": "search",
+        "query": "National Register of Historic Places Bastrop Texas listings",
+        "sources": [
+          {
+            "type": "url",
+            "url": "https://commons.wikimedia.org/wiki/Category:National_Register_of_Historic_Places_in_Bastrop,_Texas"
+          },
+          {
+            "type": "url",
+            "url": "https://nationalregisterofhistoricplaces.com/tx/bastrop/districts.html"
+          },
+          {
+            "type": "url",
+            "url": "https://en.wikipedia.org/wiki/National_Register_of_Historic_Places_listings_in_Capital2"
+          }
+        ]
+      }
+    },
+    {
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Yes, 1501 Church St in Bastrop, Texas (the Rufus A. Green House) has been listed on the National Register of Historic Places since December 22, 1978.",
+          "annotations": [
+            {
+              "type": "url_citation",
+              "url": "https://www.nps.gov/subjects/nationalregister/database-research.htm",
+              "start_index": 0,
+              "end_index": 0,
+              "title": "https://www.nps.gov/subjects/nationalregister/database-research.htm"
+            },
+            {
+              "type": "url_citation",
+              "url": "https://commons.wikimedia.org/wiki/Category:National_Register_of_Historic_Places_in_Bastrop,_Texas",
+              "start_index": 0,
+              "end_index": 0,
+              "title": "https://commons.wikimedia.org/wiki/Category:National_Register_of_Historic_Places_in_Bastrop,_Texas"
+            },
+            {
+              "type": "url_citation",
+              "url": "http://media.wix.com/ugd/2d3905_5dd0346cfdb8417ba5c8d0508be19c3e.pdf",
+              "start_index": 0,
+              "end_index": 0,
+              "title": "http://media.wix.com/ugd/2d3905_5dd0346cfdb8417ba5c8d0508be19c3e.pdf"
+            },
+            {
+              "type": "url_citation",
+              "url": "https://reference.org/facts/national_register_of_historic_places_listings_in_bastrop_county_texas/kmWljqDU",
+              "start_index": 0,
+              "end_index": 0,
+              "title": "https://reference.org/facts/national_register_of_historic_places_listings_in_bastrop_county_texas/kmWljqDU"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 15407,
+    "input_tokens_details": {
+      "cached_tokens": 2816
+    },
+    "output_tokens": 623,
+    "output_tokens_details": {
+      "reasoning_tokens": 579
+    },
+    "total_tokens": 16030,
+    "num_sources_used": 0,
+    "num_server_side_tools_used": 3,
+    "cost_in_usd_ticks": 453280000,
+    "server_side_tool_usage_details": {
+      "web_search_calls": 3,
+      "x_search_calls": 0,
+      "code_interpreter_calls": 0,
+      "file_search_calls": 0,
+      "mcp_calls": 0,
+      "document_search_calls": 0,
+      "image_generation_calls": 0
+    },
+    "context_details": {
+      "input_tokens": 13891,
+      "output_tokens": 419
+    }
+  }
+}

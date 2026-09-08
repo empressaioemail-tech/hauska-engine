@@ -10,6 +10,7 @@ import {
   type ReadableTerrainArtifactStore,
 } from "./report-model.js";
 import { emitPdfFeasibility, type PdfFeasibilityResult } from "./pdf/feasibility.js";
+import { generateFeasibilityNarrative } from "./narrative-generator.js";
 import {
   fetchFeasibilityNarrative,
   type NarrativeFallbackReason,
@@ -63,6 +64,24 @@ export interface AuthorParcelFeasibilityExportOptions
    * `narrativeFallbackReason` — never an error, never a half-written report.
    */
   narrativeSection?: NarrativeSectionConfig;
+  /**
+   * Let the narrative run live web search. OFF by default: it adds latency
+   * and per-call cost to a synchronous customer path, so it is turned on at
+   * the call site rather than by a deploy. Anything it finds renders on its
+   * own sheet under an unverified label, never in the fact tables.
+   */
+  narrativeWebSearch?: boolean;
+  /**
+   * Generate the narrative with the LLM at all. OFF BY DEFAULT.
+   *
+   * Measured against grok-4.6 on 2026-09-08: 63s without web search, 95s
+   * with. Property Explorer's BFF budgets 55s for the WHOLE feasibility
+   * compose, so generating on every refresh would push every customer's
+   * report past its own client timeout. Until narrative generation moves off
+   * the synchronous path, it is requested per call and the deterministic
+   * skeleton remains the default.
+   */
+  narrativeGenerate?: boolean;
   /** Recorded documents to cite into the narrative (P-120 item 16). */
   courthouseDocuments?: ReadonlyArray<{ citation: string; excerpt: string }>;
   /**
@@ -87,6 +106,9 @@ export interface AuthorParcelFeasibilityExportResult {
   /** Backfill worklist and address-first file name — see pdf/feasibility.ts. */
   absentFields: PdfFeasibilityResult["absentFields"];
   suggestedFileBaseName: string;
+  /** Unverified web leads that reached the document, and what the call cost. */
+  webFindings: ReadonlyArray<{ text: string; url: string; title?: string }>;
+  narrativeUsage?: Record<string, unknown>;
   narrativeIsDeterministicSkeleton: boolean;
   /**
    * Why the skeleton was used. Present exactly when
@@ -127,23 +149,46 @@ export async function authorParcelFeasibilityExport(
   let narrativeOverride = options.narrativeOverride;
   let narrativeFallbackReason: NarrativeFallbackReason | undefined;
   let narrativeCitedSections: ReadonlyArray<string> | undefined;
+  let webFindings: ReadonlyArray<{ text: string; url: string; title?: string }> = [];
+  let narrativeUsage: Record<string, unknown> | undefined;
   if (!narrativeOverride) {
-    if (options.narrativeSection) {
-      const generated = await fetchFeasibilityNarrative({
+    // IN-PROCESS FIRST (2026-09-08). The cross-repo `narrativeSection` hop
+    // needed BROKERAGE_API_BASE_URL plus a SERVICE_API_KEY whose secret lives
+    // in a different GCP project, and it was never configured, so every
+    // report ever produced fell back to the skeleton. engine-api already runs
+    // with XAI_API_KEY, so the same generation happens here with no new
+    // secret. `narrativeSection` remains only as an explicit override for a
+    // caller that still wants the LDT route; see the retirement note on
+    // `narrative-section-client.ts`.
+    const wantsGenerated =
+      options.narrativeGenerate === true || options.narrativeWebSearch === true;
+    const generated = wantsGenerated
+      ? await generateFeasibilityNarrative(model, {
+          webSearch: options.narrativeWebSearch === true,
+        })
+      : ({ ok: false, reason: "not-requested" } as const);
+    if (generated.ok) {
+      narrativeOverride = generated.narrativeOverride;
+      narrativeCitedSections = generated.citedSections;
+      webFindings = generated.webFindings;
+      narrativeUsage = generated.usage;
+    } else if (options.narrativeSection) {
+      const viaService = await fetchFeasibilityNarrative({
         model,
         config: options.narrativeSection,
         courthouseDocuments: options.courthouseDocuments,
       });
-      if (generated.ok) {
-        narrativeOverride = generated.outcome.narrativeOverride;
-        narrativeCitedSections = generated.outcome.citedSections;
+      if (viaService.ok) {
+        narrativeOverride = viaService.outcome.narrativeOverride;
+        narrativeCitedSections = viaService.outcome.citedSections;
       } else {
-        narrativeFallbackReason = generated.reason;
+        narrativeFallbackReason = viaService.reason;
       }
     } else {
-      // The absent-config path must ALSO name itself — a degraded answer
-      // presented as complete is the defect; labelled is honest.
-      narrativeFallbackReason = "not-configured";
+      // Degraded answers name themselves. `generated.reason` says WHICH way
+      // it degraded — no key, refused for want of citations, request failed —
+      // rather than collapsing all of them into "not-configured".
+      narrativeFallbackReason = generated.reason;
     }
   }
 
@@ -153,6 +198,7 @@ export async function authorParcelFeasibilityExport(
     sitePlanUnavailableReason: model.geometry.status === "absent" ? model.geometry.reason : undefined,
     liveViewUrl: options.liveViewUrl,
     narrativeOverride,
+    webFindings,
     descriptorOverride: options.descriptor,
   });
 
@@ -275,6 +321,8 @@ export async function authorParcelFeasibilityExport(
     openItemCount: pdf.openItemCount,
     absentFields: pdf.absentFields,
     suggestedFileBaseName: pdf.suggestedFileBaseName,
+    webFindings,
+    ...(narrativeUsage ? { narrativeUsage } : {}),
     narrativeIsDeterministicSkeleton: pdf.narrativeIsDeterministicSkeleton,
     ...(narrativeFallbackReason ? { narrativeFallbackReason } : {}),
     ...(narrativeCitedSections ? { narrativeCitedSections } : {}),

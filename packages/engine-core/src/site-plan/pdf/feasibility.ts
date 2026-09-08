@@ -21,6 +21,7 @@ import {
   emitPdfFloodDrainage,
   type PdfFloodDrainageResult,
 } from "./flood-drainage.js";
+import { WEB_FINDINGS_DISCLOSURE } from "../narrative-generator.js";
 import { REASON, countyDisplayName } from "./format.js";
 import { RhythmCapture, placeRowBelowRule, type RhythmRow } from "./line-box.js";
 import { SITE_PLAN_HONESTY_LINE } from "./provenance.js";
@@ -602,6 +603,14 @@ export interface EmitPdfFeasibilityOptions {
    * instead, which is a complete, valid document on its own (item 7's own
    * check). */
   narrativeOverride?: { text: string; generatedBy: string; generatedAt: string };
+  /**
+   * Unverified web findings, rendered on their OWN sheet under an explicit
+   * disclosure. Never merged into the fact sections: a web sentence sitting
+   * in a fact table is indistinguishable from a source-of-record finding,
+   * and that is the entire risk of putting a language model in a paid
+   * deliverable. Each carries the URL the search provider actually returned.
+   */
+  webFindings?: ReadonlyArray<{ text: string; url: string; title?: string }>;
   generatedAtIso?: string;
 }
 
@@ -1112,6 +1121,77 @@ export const HOW_TO_READ_ROWS: ReadonlyArray<{ label: string; body: string }> = 
   },
 ]);
 
+export const FEASIBILITY_WEB_FINDINGS_KICKER = "UNVERIFIED WEB FINDINGS";
+
+/**
+ * Web findings, on their own sheet, under their own disclosure.
+ *
+ * The separation IS the control. Everywhere else in this document a row means
+ * "a source of record says this". These rows mean "a page on the internet
+ * says this and nobody checked". Those two claims cannot share a table
+ * without the weaker one borrowing the authority of the stronger, so they do
+ * not share a sheet either.
+ *
+ * Every row prints its URL. A finding whose URL the search provider did not
+ * return never reaches this function — `extractWebFindings` drops it.
+ */
+function drawWebFindingsPage(
+  page: PDFPage,
+  pageNo: number,
+  findings: ReadonlyArray<{ text: string; url: string; title?: string }>,
+  F: Fonts,
+  marks: MarkRegistry,
+  rhythm: RhythmCapture,
+  ruleY: number,
+): void {
+  let cursor = drawSectionHeading(page, pageNo, "FROM THE OPEN WEB, NOT VERIFIED", ruleY, F, rhythm);
+  const width = PAGE_WIDTH - MARGIN_X * 2;
+
+  const lead = wrapTextToWidth(WEB_FINDINGS_DISCLOSURE, F.body, TYPE.rowValue, width);
+  const leadPlaced = placeRowBelowRule(cursor, LB.kvRow, {
+    padTop: pt(SPACE.s1),
+    padBottom: pt(SPACE.s2),
+    lines: Math.max(1, lead.length),
+  });
+  lead.forEach((line, li) => {
+    page.drawText(line, {
+      x: MARGIN_X,
+      y: leadPlaced.baselines[li]!,
+      size: TYPE.rowValue,
+      font: F.bodyMedium,
+      color: TOKENS.text,
+    });
+  });
+  rhythm.row(pageNo, "web-findings-disclosure", leadPlaced, LB.kvRow, pt(SPACE.s1));
+  cursor = leadPlaced.nextRuleY;
+
+  const valueColWidth = PAGE_WIDTH - MARGIN_X - (MARGIN_X + pt(200));
+  findings.forEach((finding, i) => {
+    cursor = drawBriefFactRow(
+      page,
+      pageNo,
+      {
+        label: `Lead ${i + 1}`,
+        valueLines: wrapTextToWidth(finding.text, F.body, TYPE.rowValue, valueColWidth),
+        // The URL is the whole point of the row: without it a reader cannot
+        // go and check, which is the only thing an unverified lead is for.
+        greyLines: wrapTextToWidth(finding.url, F.body, TYPE.rowQualifier, valueColWidth),
+        chip: false,
+      },
+      cursor,
+      F,
+      rhythm,
+    );
+  });
+  page.drawLine({
+    start: { x: MARGIN_X, y: cursor },
+    end: { x: PAGE_WIDTH - MARGIN_X, y: cursor },
+    thickness: STROKE.rowRule,
+    color: TOKENS.neutral200,
+  });
+  marks.once(pageNo, "web-findings", "sheet");
+}
+
 function drawHowToReadPage(
   page: PDFPage,
   pageNo: number,
@@ -1204,6 +1284,8 @@ export async function emitPdfFeasibility(
   const includeDrawing = manifestIncludes(manifest, "drawing") && !!options.sitePlan;
   const includeSummary = manifestIncludes(manifest, "summary") && !!options.sitePlan;
   const includeFactDigest = manifestIncludes(manifest, "fact-digest");
+  const webFindings = options.webFindings ?? [];
+  const webSheetCount = webFindings.length > 0 ? 1 : 0;
 
   const coverAnswers = {
     buildable:
@@ -1252,6 +1334,7 @@ export async function emitPdfFeasibility(
     briefPlanned.length +
     notesPlanned.length +
     floodSheets.localPages.length +
+    webSheetCount +
     howToCount;
 
   const sitePlanStartAt = coverCount + aerialCount + 1;
@@ -1303,7 +1386,9 @@ export async function emitPdfFeasibility(
   type FeasibilitySheet =
     | { kind: "aerial" }
     | { kind: "how-to-read" }
+    | { kind: "web-findings" }
     | { kind: "dossier"; planned: PlannedPage };
+
 
   const sheetPlan: FeasibilitySheet[] = [
     ...(includeCover ? [{ kind: "dossier" as const, planned: { kind: "cover" } as PlannedPage }] : []),
@@ -1314,6 +1399,7 @@ export async function emitPdfFeasibility(
   const afterSitePlan: FeasibilitySheet[] = [
     ...briefPlanned.map((planned) => ({ kind: "dossier" as const, planned })),
     ...notesPlanned.map((planned) => ({ kind: "dossier" as const, planned })),
+    ...(webSheetCount > 0 ? [{ kind: "web-findings" as const }] : []),
     { kind: "how-to-read" as const },
   ];
 
@@ -1334,7 +1420,9 @@ export async function emitPdfFeasibility(
         ? FEASIBILITY_AERIAL_KICKER
         : sheet.kind === "how-to-read"
           ? FEASIBILITY_HOW_TO_READ_KICKER
-          : eyebrowByKind[sheet.planned.kind];
+          : sheet.kind === "web-findings"
+            ? FEASIBILITY_WEB_FINDINGS_KICKER
+            : eyebrowByKind[sheet.planned.kind];
     const ruleY = drawDossierHeader(
       page,
       content,
@@ -1353,6 +1441,12 @@ export async function emitPdfFeasibility(
         F,
         marks,
       );
+      return;
+    }
+
+    if (sheet.kind === "web-findings") {
+      drawWebFindingsPage(page, pageNo, webFindings, F, marks, rhythm, ruleY);
+      drawFinePrint(page, pageNo, `${WEB_FINDINGS_DISCLOSURE} · Sheet ${pageNo} of ${total}`, F, marks);
       return;
     }
 
