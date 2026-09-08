@@ -183,8 +183,17 @@ const feasibilityRefreshBody = z.object({
   // honest-absent; the engine never runs its own D8 pass here.
   dischargeExitPoint: z.object({ lat: z.number(), lng: z.number() }).optional(),
   liveViewUrl: z.string().max(500).optional(),
-  // Caller-supplied, already-generated narrative (item 7) — the engine never
-  // calls an LLM itself. Absent = the deterministic skeleton renders.
+  /** Let the narrative run live web search. Off by default: it adds latency
+   * and per-call cost on a synchronous customer path. Anything found renders
+   * on its own sheet, labelled unverified, never in the fact tables. */
+  webSearch: z.boolean().optional(),
+  /** Generate the narrative with the LLM. Off by default: measured 63s
+   * without search and 95s with, against PE's 55s whole-compose budget. */
+  narrative: z.boolean().optional(),
+  // Caller-supplied, already-generated narrative. NOTE: the engine DOES now
+  // generate a narrative itself when this is absent (see
+  // `generateFeasibilityNarrative`); the older comment claiming it never
+  // calls an LLM described the pre-2026-09-08 behaviour.
   narrativeOverride: z
     .object({
       text: z.string().max(20000),
@@ -624,6 +633,13 @@ export function buildParcelTerrainRoutes(
         liveViewUrl: parsed.data.liveViewUrl,
         narrativeOverride: parsed.data.narrativeOverride,
         narrativeSection: narrativeSectionFromEnv(),
+        // P-120: the narrative now generates IN THIS SERVICE against the
+        // XAI_API_KEY already mounted here, so it no longer waits on a secret
+        // from another GCP project. Web search is opt-in per request:
+        // `webSearch: true` in the body. It costs latency and money on a
+        // synchronous customer path, so it is not on by default.
+        narrativeWebSearch: parsed.data.webSearch === true,
+        narrativeGenerate: parsed.data.narrative === true,
         // P-120 R-04: run the floodplain-acreage, FIRM-panel, soil and
         // electric/gas families. Injected rather than defaulted because they
         // are live network reads; armed HERE so production actually gets them
@@ -643,6 +659,13 @@ export function buildParcelTerrainRoutes(
         sitePlanUnavailableReason: result.sitePlanUnavailableReason,
         sectionCount: result.sectionCount,
         openItemCount: result.openItemCount,
+        // P-120: the backfill worklist. `kind` separates "the source ran and
+        // found nothing" from "nobody asked" and "the read broke"; only the
+        // latter two are jobs.
+        absentFields: result.absentFields,
+        suggestedFileBaseName: result.suggestedFileBaseName,
+        webFindings: result.webFindings,
+        ...(result.narrativeUsage ? { narrativeUsage: result.narrativeUsage } : {}),
         narrativeIsDeterministicSkeleton: result.narrativeIsDeterministicSkeleton,
         // Declared degradation: WHY the skeleton was used, and what the
         // generated narrative actually cited. A bare boolean does not say
@@ -686,8 +709,16 @@ export function buildParcelTerrainRoutes(
       }, 410);
     }
     const safeNodeId = c.req.param("parcelNodeId").replace(/[^a-zA-Z0-9._-]/g, "_");
+    // Named by parcel id here on purpose. The address-first name is computed
+    // at render time and returned on the REFRESH response as
+    // `suggestedFileBaseName`; the atom's artifact record is a closed type and
+    // cannot carry it, so this route has no address to read at download time.
+    // The customer-visible name is set by Property Explorer's BFF anyway
+    // (`feasibilityFilename` in hauska-map), which re-serves these bytes and
+    // writes its own Content-Disposition — so renaming the download for a
+    // customer is a hauska-map change, not this one.
     c.header("Content-Type", "application/pdf");
-    c.header("Content-Disposition", `attachment; filename="${safeNodeId}.pdf-feasibility.pdf"`);
+    c.header("Content-Disposition", `attachment; filename="${safeNodeId}_feasibility_study.pdf"`);
     return c.body(Buffer.from(bytes));
   });
 

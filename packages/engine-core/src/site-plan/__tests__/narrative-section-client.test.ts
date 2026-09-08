@@ -126,21 +126,34 @@ describe("buildNarrativeFacts: what the model is allowed to see", () => {
     expect(known.jurisdiction.cityLimitsStatus).toBe("unresolved");
   });
 
-  it("offers every section the report has, so none is silently withheld", () => {
-    expect(Object.keys(buildNarrativeFacts(modelFixture())).sort()).toEqual(
-      [
-        "dischargePoint",
-        "flood",
-        "footprint",
-        "hoa",
-        "jurisdiction",
-        "parcelOwnership",
-        "specialDistricts",
-        "terrain",
-        "utilities",
-        "wellsPipelines",
-      ].sort(),
-    );
+  it("offers every FACT FAMILY on the model, so none is silently withheld", () => {
+    // Derived from the model, not frozen as a list. The frozen version of
+    // this assertion named nine keys and passed for months while geometry,
+    // topography, the drainage study, all five PR #404 families and the
+    // package layer were absent from the payload — which is why the narrative
+    // could never discuss flood or terrain. A snapshot of the omission cannot
+    // catch the omission.
+    const model = modelFixture();
+    const offered = new Set(Object.keys(buildNarrativeFacts(model)));
+    const missing = Object.keys(model.facts).filter((k) => !offered.has(k));
+    expect(missing).toEqual([]);
+  });
+
+  it("offers the composed sub-models the fact families do not cover", () => {
+    const offered = new Set(Object.keys(buildNarrativeFacts(modelFixture())));
+    for (const key of ["geometry", "topography", "drainageStudy", "verdict", "openItems"]) {
+      expect(offered.has(key)).toBe(true);
+    }
+  });
+
+  it("projects the drainage study rather than spreading it", () => {
+    // The study carries catchment GeoJSON, flow-line GeoJSON and a gradient
+    // raster. Shipping those to a language model bills for coordinates it
+    // cannot use, so the payload must carry summary numbers only.
+    const serialized = JSON.stringify(buildNarrativeFacts(modelFixture()));
+    expect(serialized).not.toContain("catchmentGeoJson");
+    expect(serialized).not.toContain("flowLinesGeoJson");
+    expect(serialized).not.toContain("coordinates");
   });
 });
 

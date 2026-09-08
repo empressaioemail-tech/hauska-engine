@@ -21,6 +21,7 @@ import {
   emitPdfFloodDrainage,
   type PdfFloodDrainageResult,
 } from "./flood-drainage.js";
+import { WEB_FINDINGS_DISCLOSURE } from "../narrative-generator.js";
 import { REASON, countyDisplayName } from "./format.js";
 import { RhythmCapture, placeRowBelowRule, type RhythmRow } from "./line-box.js";
 import { SITE_PLAN_HONESTY_LINE } from "./provenance.js";
@@ -251,7 +252,18 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
       ...(flood.status === "present"
         ? [
             factOrChip("Flood zone", flood.floodZone ?? (flood.inSpecialFloodHazardArea ? "In SFHA" : "Zone X (outside mapped hazard)")),
-            factOrChip("Base flood elevation", flood.baseFloodElevation != null ? `${flood.baseFloodElevation} ft` : undefined),
+            // A parcel outside the special flood hazard area HAS no base
+            // flood elevation — FEMA does not publish one there. Rendering
+            // that as an UNAVAILABLE chip turned a correct null into an
+            // apparent gap, and put a fifth "we don't know" on a sheet where
+            // the honest answer was "none applies".
+            flood.baseFloodElevation != null
+              ? factOrChip("Base flood elevation", `${flood.baseFloodElevation} ft`)
+              : flood.inSpecialFloodHazardArea === false
+                ? factOrChip("Base flood elevation", "None applies", {
+                    source: "FEMA publishes no base flood elevation outside a special flood hazard area",
+                  })
+                : factOrChip("Base flood elevation", undefined),
           ]
         : [factOrChip("Flood and drainage", undefined, { absentReason: flood.reason })]),
       // R3: this used to be a caller-supplied boolean nothing checked. It is
@@ -459,13 +471,26 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
   });
 
   const fp = facts.footprint;
+  const contradiction = footprintContradictsAppraisal(model) ? improvementEvidence(model) : null;
   sections.push({
     id: "footprint",
     title: "Existing structures",
     facts:
       fp.status === "present"
         ? fp.footprints.map((f, i) => factOrChip(`Structure ${i + 1}`, f.structureRole ?? f.footprintId, { source: f.sourceTier }))
-        : [factOrChip("Existing structures", undefined, { absentReason: fp.reason })],
+        : contradiction
+          ? [
+              // NOT an absence chip. A gray UNAVAILABLE here reads as
+              // "checked and clear", which is the opposite of what the two
+              // sources together support.
+              factOrChip("Existing structures", "Sources disagree — appraisal records say improved", {
+                source: fp.reason,
+              }),
+              factOrChip("Appraisal record", contradiction.summary, {
+                source: "county appraisal roll (cad_property)",
+              }),
+            ]
+          : [factOrChip("Existing structures", undefined, { absentReason: fp.reason })],
   });
 
   if (model.package.dataQuality.supersededNotes.length > 0) {
@@ -487,7 +512,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
         : [factOrChip("Open items", "None — every section above resolved to a fact.")],
   });
 
-  return attachConsequences(sections, facts);
+  return attachConsequences(sections, model);
 }
 
 /**
@@ -509,8 +534,9 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
  */
 function attachConsequences(
   sections: DossierBriefSectionInput[],
-  facts: ParcelReportModel["facts"],
+  model: ParcelReportModel,
 ): DossierBriefSectionInput[] {
+  const facts = model.facts;
   const bySectionId: Readonly<Record<string, { consequence?: string } | undefined>> = {
     "parcel-ownership": facts.parcelOwnership,
     flood: facts.flood,
@@ -525,6 +551,29 @@ function attachConsequences(
     footprint: facts.footprint,
   };
   return sections.map((section) => {
+    // The footprint consequence is REFUSED when a second source contradicts
+    // it. `report-model.ts` writes "The site reads as unimproved, so
+    // redevelopment is unlikely to require demolition" whenever the
+    // building-footprint layer returns nothing — a confident negative
+    // inference from one layer's miss. On a parcel whose appraisal record
+    // carries a year built and a living area, that sentence is false, and it
+    // points a reader toward demolishing a building the same document
+    // describes three sheets earlier.
+    //
+    // Refused here rather than corrected upstream because the composer cannot
+    // be edited from this lane; the override is stated, not silent.
+    if (section.id === "footprint" && footprintContradictsAppraisal(model)) {
+      return {
+        ...section,
+        facts: [
+          ...section.facts,
+          factOrChip(
+            CONSEQUENCE_ROW_LABEL,
+            `Sources disagree. The building-footprint layer maps no structure, while county appraisal records carry ${improvementEvidence(model)!.summary}. Do not treat this parcel as vacant: confirm what is standing with a site visit or survey before any demolition, valuation or yield assumption.`,
+          ),
+        ],
+      };
+    }
     const consequence = bySectionId[section.id]?.consequence;
     if (!consequence) return section;
     return {
@@ -554,6 +603,14 @@ export interface EmitPdfFeasibilityOptions {
    * instead, which is a complete, valid document on its own (item 7's own
    * check). */
   narrativeOverride?: { text: string; generatedBy: string; generatedAt: string };
+  /**
+   * Unverified web findings, rendered on their OWN sheet under an explicit
+   * disclosure. Never merged into the fact sections: a web sentence sitting
+   * in a fact table is indistinguishable from a source-of-record finding,
+   * and that is the entire risk of putting a language model in a paid
+   * deliverable. Each carries the URL the search provider actually returned.
+   */
+  webFindings?: ReadonlyArray<{ text: string; url: string; title?: string }>;
   generatedAtIso?: string;
 }
 
@@ -567,6 +624,14 @@ export interface PdfFeasibilityResult {
   openItemCount: number;
   narrativeGrounded: boolean;
   narrativeIsDeterministicSkeleton: boolean;
+  /** Backfill worklist: every fact family that resolved to nothing, with
+   * which kind of nothing. See `absentFactFamilies`. */
+  absentFields: ReadonlyArray<AbsentFactFamily>;
+  /** Address-first file name (no extension) for whoever serves these bytes.
+   * Returned rather than imposed: engine-api's download route uses it, and
+   * PE's BFF sets its own Content-Disposition, so the customer-visible name
+   * only changes once hauska-map adopts this too. */
+  suggestedFileBaseName: string;
   marks: ReadonlyArray<SheetMark>;
   rhythm: ReadonlyArray<RhythmRow>;
   sitePlan?: Omit<PdfSitePlanResult, "bytes">;
@@ -683,6 +748,110 @@ export function firstActionAnswer(model: ParcelReportModel): string | undefined 
   return model.package.openItems[0]?.actionSentence;
 }
 
+/**
+ * Every fact family that resolved to nothing on this run, with WHICH KIND of
+ * nothing — the backfill worklist.
+ *
+ * Derived from the model's fact states, never from the rendered rows. A row
+ * is a presentation artifact: it can be merged, suppressed or relabelled by
+ * this file, and a backfill driven off it would inherit those decisions.
+ *
+ * `kind` is what makes the list actionable rather than a pile of gaps:
+ *   clear             the source ran and found nothing. NOT a backfill target
+ *                     — there is nothing to acquire.
+ *   out-of-scope      the family was not requested this run. Fix by asking
+ *                     for it, not by acquiring anything.
+ *   failed-this-run   the read broke. Retry.
+ *   blocked-at-source no acquisition path exists. Needs a ruling, not a job.
+ *   not-applicable    the question does not apply to this parcel.
+ *
+ * Only `failed-this-run` and `out-of-scope` are jobs. Reporting all five as
+ * one undifferentiated gap count is how a backfill ends up chasing families
+ * that were already answered.
+ */
+export interface AbsentFactFamily {
+  section: string;
+  label: string;
+  kind: string;
+  reason: string;
+  /** True when this absence is a genuine acquisition or retry target. */
+  actionable: boolean;
+}
+
+const ABSENT_FAMILY_LABELS: ReadonlyArray<readonly [string, string]> = Object.freeze([
+  ["parcelOwnership", "Parcel and ownership"],
+  ["flood", "Flood"],
+  ["specialDistricts", "Special districts"],
+  ["wellsPipelines", "Wells and pipelines"],
+  ["terrain", "Terrain"],
+  ["utilities", "Utilities"],
+  ["footprint", "Existing structures"],
+  ["dischargePoint", "Downstream discharge point"],
+  ["floodplainAcreage", "Floodplain acreage in tract"],
+  ["firmPanel", "FIRM panel"],
+  ["soil", "Soil"],
+  ["electricProvider", "Electric provider"],
+  ["gasProvider", "Gas provider"],
+]);
+
+export function absentFactFamilies(model: ParcelReportModel): AbsentFactFamily[] {
+  const facts = model.facts as unknown as Record<
+    string,
+    { status?: string; kind?: string; reason?: string } | undefined
+  >;
+  const out: AbsentFactFamily[] = [];
+  for (const [key, label] of ABSENT_FAMILY_LABELS) {
+    const state = facts[key];
+    if (!state || state.status !== "absent") continue;
+    const kind = state.kind ?? "unknown";
+    out.push({
+      section: key,
+      label,
+      kind,
+      reason: state.reason ?? "",
+      actionable: kind === "failed-this-run" || kind === "out-of-scope",
+    });
+  }
+  if (model.drainage.status === "absent") {
+    out.push({
+      section: "drainage",
+      label: "Drainage study",
+      // ParcelDrainageState has no `kind` — it predates the absence taxonomy,
+      // so this cannot be classified without guessing, and is reported as
+      // unclassified rather than defaulted into a bucket.
+      kind: "unclassified",
+      reason: model.drainage.reason,
+      actionable: false,
+    });
+  }
+  return out;
+}
+
+/**
+ * File-safe document name, address first.
+ *
+ * `48021_27895_feasibility_study.pdf` names the document by an internal key.
+ * A buyer with six of these in a downloads folder cannot tell them apart, and
+ * the parcel node id is the one identifier they never typed. The address is
+ * what they searched for.
+ *
+ * The parcel id is kept as a SUFFIX rather than dropped: addresses are not
+ * unique and not stable, so the key still has to be in the name to keep two
+ * reports from colliding.
+ */
+export function feasibilityDocumentBaseName(model: ParcelReportModel): string {
+  const address =
+    model.geometry.status === "present" ? model.geometry.model.summary.address : undefined;
+  const key = model.parcelNodeId.replace(/:/g, "_");
+  const slug = (address ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60);
+  return slug.length > 0 ? `${slug}_${key}_feasibility_study` : `${key}_feasibility_study`;
+}
+
 export const FEASIBILITY_AERIAL_KICKER = "AERIAL CONTEXT";
 export const FEASIBILITY_HOW_TO_READ_KICKER = "HOW TO READ THIS";
 
@@ -701,44 +870,62 @@ export const FEASIBILITY_HOW_TO_READ_KICKER = "HOW TO READ THIS";
  */
 export function aerialCaption(model: ParcelReportModel): string {
   const footprint = model.facts.footprint;
-  const buildableSqFt =
-    model.geometry.status === "present" ? model.geometry.model.summary.buildableAreaSqFt : null;
+  const improvement = improvementEvidence(model);
 
-  if (footprint.status !== "present") {
-    return `No existing-structure record is on file for this parcel (${footprint.reason}), so the imagery below has not been reconciled against a mapped footprint. Read it as context, not as confirmation that the site is clear.`;
+  if (footprint.status === "present") {
+    const n = footprint.footprints.length;
+    const structures = `${n} mapped structure${n === 1 ? "" : "s"}`;
+    return improvement
+      ? `${structures} on this parcel. County appraisal records carry ${improvement.summary}. Redevelopment here means demolition or reuse, not building on open ground.`
+      : `${structures} on this parcel. The footprint layer carries no floor area, so how much of the envelope is already occupied is not established here.`;
   }
-  const structureSqFt = footprintTotalSqFt(footprint);
-  if (structureSqFt == null || structureSqFt <= 0) {
-    return "The footprint record for this parcel carries no measured structure area, so coverage against the buildable envelope could not be computed.";
+
+  // The footprint layer found nothing. That is only "unimproved" if no OTHER
+  // source says otherwise — and the CAD parcel roll is a genuinely separate
+  // derivation, so it can contradict this one.
+  if (improvement) {
+    return `The building-footprint layer maps no structure here, but county appraisal records carry ${improvement.summary}. Two independent sources disagree, and the imagery is the tiebreaker. Treat this site as improved until a survey settles it; do NOT read the footprint gap as an empty lot.`;
   }
-  if (buildableSqFt == null || buildableSqFt <= 0) {
-    return `Existing structures cover about ${Math.round(structureSqFt).toLocaleString("en-US")} sq ft. The buildable envelope could not be determined, so the share of it already occupied is unknown.`;
-  }
-  const share = Math.round((structureSqFt / buildableSqFt) * 100);
-  const consequence =
-    share >= 60
-      ? "Redevelopment here likely means demolition or reuse rather than infill."
-      : share >= 25
-        ? "There is room to build alongside what is standing, but the existing structure constrains where."
-        : "Most of the envelope is unoccupied, so infill alongside the existing structure is plausible.";
-  return `Existing structures occupy roughly ${Math.round(structureSqFt).toLocaleString("en-US")} sq ft, about ${share}% of the buildable envelope. ${consequence}`;
+  return `No existing-structure record is on file for this parcel (${footprint.reason}), so the imagery below has not been reconciled against a mapped footprint. Read it as context, not as confirmation that the site is clear.`;
 }
 
-/** Total mapped structure area, or null when the record carries none. */
-function footprintTotalSqFt(footprint: ParcelReportModel["facts"]["footprint"]): number | null {
-  if (footprint.status !== "present") return null;
-  const record = footprint as unknown as {
-    totalFootprintSqFt?: number;
-    footprintAreaSqFt?: number;
-    structures?: ReadonlyArray<{ areaSqFt?: number }>;
+/**
+ * CAD-side evidence that this parcel is improved.
+ *
+ * `FootprintFacts` carries a LIST of mapped structures and no area at all, so
+ * a footprint miss says only that one GIS layer has no polygon here. The CAD
+ * parcel roll is derived from a different source entirely — an appraisal
+ * record — and a year built or a living area on it is direct evidence of a
+ * building.
+ *
+ * This is the second derivation that makes the improved/unimproved check
+ * meaning shaped rather than presence shaped: no single upstream can satisfy
+ * both sides, because the footprint layer and the appraisal roll are not the
+ * same party.
+ */
+export function improvementEvidence(
+  model: ParcelReportModel,
+): { summary: string; yearBuilt?: number; livingAreaSqft?: number } | null {
+  const po = model.facts.parcelOwnership;
+  if (po.status !== "present") return null;
+  const { yearBuilt, livingAreaSqft } = po;
+  const hasArea = typeof livingAreaSqft === "number" && livingAreaSqft > 0;
+  const hasYear = typeof yearBuilt === "number" && yearBuilt > 0;
+  if (!hasArea && !hasYear) return null;
+  const parts: string[] = [];
+  if (hasArea) parts.push(`${Math.round(livingAreaSqft!).toLocaleString("en-US")} sq ft of living area`);
+  if (hasYear) parts.push(`a structure built in ${yearBuilt}`);
+  return {
+    summary: parts.join(" and "),
+    ...(hasYear ? { yearBuilt } : {}),
+    ...(hasArea ? { livingAreaSqft } : {}),
   };
-  if (typeof record.totalFootprintSqFt === "number") return record.totalFootprintSqFt;
-  if (typeof record.footprintAreaSqFt === "number") return record.footprintAreaSqFt;
-  if (Array.isArray(record.structures)) {
-    const sum = record.structures.reduce((n, s) => n + (typeof s.areaSqFt === "number" ? s.areaSqFt : 0), 0);
-    return sum > 0 ? sum : null;
-  }
-  return null;
+}
+
+/** True when the footprint layer reports nothing AND the appraisal roll says
+ * the parcel is improved. Named because three places must react to it. */
+export function footprintContradictsAppraisal(model: ParcelReportModel): boolean {
+  return model.facts.footprint.status !== "present" && improvementEvidence(model) !== null;
 }
 
 interface FeasibilityAerialContext {
@@ -934,6 +1121,77 @@ export const HOW_TO_READ_ROWS: ReadonlyArray<{ label: string; body: string }> = 
   },
 ]);
 
+export const FEASIBILITY_WEB_FINDINGS_KICKER = "UNVERIFIED WEB FINDINGS";
+
+/**
+ * Web findings, on their own sheet, under their own disclosure.
+ *
+ * The separation IS the control. Everywhere else in this document a row means
+ * "a source of record says this". These rows mean "a page on the internet
+ * says this and nobody checked". Those two claims cannot share a table
+ * without the weaker one borrowing the authority of the stronger, so they do
+ * not share a sheet either.
+ *
+ * Every row prints its URL. A finding whose URL the search provider did not
+ * return never reaches this function — `extractWebFindings` drops it.
+ */
+function drawWebFindingsPage(
+  page: PDFPage,
+  pageNo: number,
+  findings: ReadonlyArray<{ text: string; url: string; title?: string }>,
+  F: Fonts,
+  marks: MarkRegistry,
+  rhythm: RhythmCapture,
+  ruleY: number,
+): void {
+  let cursor = drawSectionHeading(page, pageNo, "FROM THE OPEN WEB, NOT VERIFIED", ruleY, F, rhythm);
+  const width = PAGE_WIDTH - MARGIN_X * 2;
+
+  const lead = wrapTextToWidth(WEB_FINDINGS_DISCLOSURE, F.body, TYPE.rowValue, width);
+  const leadPlaced = placeRowBelowRule(cursor, LB.kvRow, {
+    padTop: pt(SPACE.s1),
+    padBottom: pt(SPACE.s2),
+    lines: Math.max(1, lead.length),
+  });
+  lead.forEach((line, li) => {
+    page.drawText(line, {
+      x: MARGIN_X,
+      y: leadPlaced.baselines[li]!,
+      size: TYPE.rowValue,
+      font: F.bodyMedium,
+      color: TOKENS.text,
+    });
+  });
+  rhythm.row(pageNo, "web-findings-disclosure", leadPlaced, LB.kvRow, pt(SPACE.s1));
+  cursor = leadPlaced.nextRuleY;
+
+  const valueColWidth = PAGE_WIDTH - MARGIN_X - (MARGIN_X + pt(200));
+  findings.forEach((finding, i) => {
+    cursor = drawBriefFactRow(
+      page,
+      pageNo,
+      {
+        label: `Lead ${i + 1}`,
+        valueLines: wrapTextToWidth(finding.text, F.body, TYPE.rowValue, valueColWidth),
+        // The URL is the whole point of the row: without it a reader cannot
+        // go and check, which is the only thing an unverified lead is for.
+        greyLines: wrapTextToWidth(finding.url, F.body, TYPE.rowQualifier, valueColWidth),
+        chip: false,
+      },
+      cursor,
+      F,
+      rhythm,
+    );
+  });
+  page.drawLine({
+    start: { x: MARGIN_X, y: cursor },
+    end: { x: PAGE_WIDTH - MARGIN_X, y: cursor },
+    thickness: STROKE.rowRule,
+    color: TOKENS.neutral200,
+  });
+  marks.once(pageNo, "web-findings", "sheet");
+}
+
 function drawHowToReadPage(
   page: PDFPage,
   pageNo: number,
@@ -1026,6 +1284,8 @@ export async function emitPdfFeasibility(
   const includeDrawing = manifestIncludes(manifest, "drawing") && !!options.sitePlan;
   const includeSummary = manifestIncludes(manifest, "summary") && !!options.sitePlan;
   const includeFactDigest = manifestIncludes(manifest, "fact-digest");
+  const webFindings = options.webFindings ?? [];
+  const webSheetCount = webFindings.length > 0 ? 1 : 0;
 
   const coverAnswers = {
     buildable:
@@ -1074,6 +1334,7 @@ export async function emitPdfFeasibility(
     briefPlanned.length +
     notesPlanned.length +
     floodSheets.localPages.length +
+    webSheetCount +
     howToCount;
 
   const sitePlanStartAt = coverCount + aerialCount + 1;
@@ -1125,7 +1386,9 @@ export async function emitPdfFeasibility(
   type FeasibilitySheet =
     | { kind: "aerial" }
     | { kind: "how-to-read" }
+    | { kind: "web-findings" }
     | { kind: "dossier"; planned: PlannedPage };
+
 
   const sheetPlan: FeasibilitySheet[] = [
     ...(includeCover ? [{ kind: "dossier" as const, planned: { kind: "cover" } as PlannedPage }] : []),
@@ -1136,6 +1399,7 @@ export async function emitPdfFeasibility(
   const afterSitePlan: FeasibilitySheet[] = [
     ...briefPlanned.map((planned) => ({ kind: "dossier" as const, planned })),
     ...notesPlanned.map((planned) => ({ kind: "dossier" as const, planned })),
+    ...(webSheetCount > 0 ? [{ kind: "web-findings" as const }] : []),
     { kind: "how-to-read" as const },
   ];
 
@@ -1156,7 +1420,9 @@ export async function emitPdfFeasibility(
         ? FEASIBILITY_AERIAL_KICKER
         : sheet.kind === "how-to-read"
           ? FEASIBILITY_HOW_TO_READ_KICKER
-          : eyebrowByKind[sheet.planned.kind];
+          : sheet.kind === "web-findings"
+            ? FEASIBILITY_WEB_FINDINGS_KICKER
+            : eyebrowByKind[sheet.planned.kind];
     const ruleY = drawDossierHeader(
       page,
       content,
@@ -1175,6 +1441,12 @@ export async function emitPdfFeasibility(
         F,
         marks,
       );
+      return;
+    }
+
+    if (sheet.kind === "web-findings") {
+      drawWebFindingsPage(page, pageNo, webFindings, F, marks, rhythm, ruleY);
+      drawFinePrint(page, pageNo, `${WEB_FINDINGS_DISCLOSURE} · Sheet ${pageNo} of ${total}`, F, marks);
       return;
     }
 
@@ -1421,6 +1693,8 @@ export async function emitPdfFeasibility(
     openItemCount,
     narrativeGrounded: true,
     narrativeIsDeterministicSkeleton: !options.narrativeOverride,
+    absentFields: absentFactFamilies(model),
+    suggestedFileBaseName: feasibilityDocumentBaseName(model),
     marks: marks.marks,
     rhythm: rhythm.rows,
     sitePlan: sitePlanResult ? (({ bytes: _bytes, ...rest }) => rest)(sitePlanResult) : undefined,
