@@ -340,3 +340,71 @@ describe("fetchFeasibilityNarrative: every failure falls back, none throws", () 
     expect(f.calls).toHaveLength(0);
   });
 });
+
+/**
+ * The latency instrument, added 2026-09-08 after doc-repo-79 pointed out that
+ * the only visible number was the WHOLE feasibility request (20.2s-41.0s
+ * across five counties on identical code). Inside that envelope a 3s
+ * narrative call and an 18s one look the same, and an 18s one passes today
+ * and fails on any slower day against the 20s timeout.
+ *
+ * Tested because an emitter nobody calls is the failure this whole session
+ * kept finding. Both directions: it must fire on success AND on failure.
+ * Success is the load-bearing half — the failures are already known to sit
+ * at the timeout, so only the successes say whether there is headroom.
+ */
+describe("the narrative call reports its own duration", () => {
+  function captureLogs(): { lines: unknown[]; restore: () => void } {
+    const lines: unknown[] = [];
+    const original = console.log;
+    console.log = (arg: unknown) => {
+      try {
+        const parsed = JSON.parse(String(arg));
+        if (parsed?.event === "feasibility.narrative_section.call") lines.push(parsed);
+      } catch {
+        /* not our line */
+      }
+    };
+    return { lines, restore: () => { console.log = original; } };
+  }
+
+  it("emits duration, timeout and cited count on SUCCESS", async () => {
+    const f = stubFetch({ json: async () => goodBody });
+    const cap = captureLogs();
+    try {
+      await fetchFeasibilityNarrative({
+        model: modelFixture(),
+        config: { ...config, fetchImpl: f.impl },
+      });
+    } finally {
+      cap.restore();
+    }
+    expect(cap.lines).toHaveLength(1);
+    const line = cap.lines[0] as Record<string, unknown>;
+    expect(line.outcome).toBe("ok");
+    expect(typeof line.durationMs).toBe("number");
+    expect(line.timeoutMs).toBe(20_000);
+    expect(line.citedCount).toBeGreaterThan(0);
+  });
+
+  it("emits on FAILURE too, with the outcome that caused it", async () => {
+    const cap = captureLogs();
+    try {
+      await fetchFeasibilityNarrative({
+        model: modelFixture(),
+        config: {
+          ...config,
+          fetchImpl: (async () => {
+            throw new Error("simulated timeout");
+          }) as unknown as typeof fetch,
+        },
+      });
+    } finally {
+      cap.restore();
+    }
+    expect(cap.lines).toHaveLength(1);
+    const line = cap.lines[0] as Record<string, unknown>;
+    expect(line.outcome).toBe("request-failed");
+    expect(String(line.detail)).toContain("simulated timeout");
+  });
+});

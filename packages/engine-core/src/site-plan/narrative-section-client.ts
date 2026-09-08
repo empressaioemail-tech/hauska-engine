@@ -274,6 +274,36 @@ export async function fetchFeasibilityNarrative(input: {
     return { ok: false, reason: "not-configured" };
   }
 
+  // Duration is emitted on EVERY outcome, successes included.
+  //
+  // Raised by doc-repo-79 2026-09-08, and the reasoning is the point: the
+  // only latency anyone could see was the whole feasibility request, which
+  // ranges 20.2s to 41.0s across counties on identical code. Inside that
+  // envelope a 3s narrative call and an 18s one are indistinguishable, and an
+  // 18s one passes today and fails on any slower day against this client's
+  // 20s timeout. A measurement that cannot tell "fine" from "about to fail"
+  // is not a measurement.
+  //
+  // Logging only failures would not fix it: the failures are the cases where
+  // the duration is already known to be 20s. The distribution of the
+  // SUCCESSES is what says whether the timeout has headroom.
+  const startedAt = Date.now();
+  const emit = (outcome: string, extra: Record<string, unknown> = {}): void => {
+    console.log(
+      JSON.stringify({
+        level: outcome === "ok" ? "info" : "warn",
+        service: "engine-core",
+        event: "feasibility.narrative_section.call",
+        outcome,
+        durationMs: Date.now() - startedAt,
+        timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        parcelNodeId: model.parcelNodeId,
+        ...extra,
+        ts: new Date().toISOString(),
+      }),
+    );
+  };
+
   const facts = buildNarrativeFacts(model);
   const body = {
     parcelNodeId: model.parcelNodeId,
@@ -298,6 +328,7 @@ export async function fetchFeasibilityNarrative(input: {
       signal: AbortSignal.timeout(config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
   } catch (error) {
+    emit("request-failed", { detail: error instanceof Error ? error.message : String(error) });
     return {
       ok: false,
       reason: "request-failed",
@@ -306,6 +337,7 @@ export async function fetchFeasibilityNarrative(input: {
   }
 
   if (!res.ok) {
+    emit("http-error", { status: res.status });
     return { ok: false, reason: "http-error", detail: `HTTP ${res.status}` };
   }
 
@@ -331,15 +363,17 @@ export async function fetchFeasibilityNarrative(input: {
     typeof parsed.generatedBy !== "string" ||
     typeof parsed.generatedAt !== "string"
   ) {
+    emit("malformed-response");
     return { ok: false, reason: "malformed-response", detail: "response shape did not match" };
   }
 
   const text = parsed.narrative.trim();
-  if (!text) return { ok: false, reason: "empty-narrative" };
+  if (!text) { emit("empty-narrative"); return { ok: false, reason: "empty-narrative" }; }
 
   // The server's own no-content path. See the constant's comment: our
   // skeleton beats its apology, and this must not read as a real narrative.
   if (parsed.generatedBy === SERVER_NO_CONTENT_GENERATED_BY) {
+    emit("server-reported-no-llm-content");
     return { ok: false, reason: "server-reported-no-llm-content" };
   }
 
@@ -349,9 +383,11 @@ export async function fetchFeasibilityNarrative(input: {
   // unmarked wall of prose is refused in favour of the skeleton, which is
   // cited by construction.
   if (cited.length === 0) {
+    emit("no-cited-sections");
     return { ok: false, reason: "no-cited-sections" };
   }
 
+  emit("ok", { citedCount: cited.length, uncitedCount: uncited.length });
   return {
     ok: true,
     outcome: {
