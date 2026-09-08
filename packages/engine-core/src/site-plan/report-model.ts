@@ -147,6 +147,13 @@ export type ParcelDrainageState =
  * presentation is the renderer's job; preserving the independence is the
  * model's.
  */
+/**
+ * Per-read budget for the three live outbound fact reads. Deliberately well
+ * under a customer's patience: the point is that a slow source degrades ONE
+ * family honestly rather than holding the whole document.
+ */
+export const DEFAULT_FACT_READ_TIMEOUT_MS = 8_000;
+
 export interface ParcelReportFactResolvers {
   floodplain?: (ring: ReadonlyArray<[number, number]>) => Promise<FloodplainFactResolution>;
   soil?: (point: { latitude: number; longitude: number }) => Promise<SoilFactResult>;
@@ -210,6 +217,9 @@ export interface ComposeParcelReportFactsOptions {
    * it is threaded from whoever resolved the geometry rather than
    * back-projected out of local coordinates. */
   ringWgs84?: ReadonlyArray<[number, number]>;
+  /** Override the per-read budget. Tests use a small value to assert the
+   * timeout path without waiting on it. */
+  factReadTimeoutMs?: number;
   dischargeExitPoint?: { lat: number; lng: number };
   dischargeResolver?: DischargePointResolver;
 }
@@ -530,6 +540,40 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   // our side. A supplied resolver that then fails carries whichever kind the
   // resolver itself declared, which is why those results had to grow a kind
   // before this wiring could be honest.
+  // Latency budget, added after the 2026-09-08 canary measured 82.9s against
+  // production's 6.4s on the same parcel. Three live outbound reads on a path
+  // a customer waits on synchronously, run one after another, is not a
+  // deployable shape however correct each read is.
+  //
+  // Two changes: the three run CONCURRENTLY rather than serially, and each is
+  // bounded. A source that hangs now costs the budget once rather than the
+  // whole report, and a source that exceeds it reports `failed-this-run` --
+  // which is true, ours, and never mistakable for a finding about the parcel.
+  const readBudgetMs = options.factReadTimeoutMs ?? DEFAULT_FACT_READ_TIMEOUT_MS;
+
+  async function bounded<T>(
+    label: string,
+    run: () => Promise<T>,
+  ): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const value = await Promise.race([
+        run(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${label} exceeded the ${readBudgetMs}ms read budget`)),
+            readBudgetMs,
+          );
+        }),
+      ]);
+      return { ok: true, value };
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   const notRequested = (family: string) =>
     absent<never>(
       "out-of-scope",
@@ -537,14 +581,27 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
       "This family can be produced on request; nothing about this parcel prevented it.",
     );
 
-  const floodplainResolution = await (async () => {
-    if (!options.factResolvers?.floodplain || !options.ringWgs84) return null;
-    try {
-      return await options.factResolvers.floodplain(options.ringWgs84!);
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error) } as const;
-    }
-  })();
+  const [floodplainSettled, soilSettled, electricSettled] = await Promise.all([
+    options.factResolvers?.floodplain && options.ringWgs84
+      ? bounded("FEMA NFHL floodplain read", () =>
+          options.factResolvers!.floodplain!(options.ringWgs84!),
+        )
+      : Promise.resolve(null),
+    options.factResolvers?.soil && options.centroid
+      ? bounded("USDA SSURGO soil read", () => options.factResolvers!.soil!(options.centroid!))
+      : Promise.resolve(null),
+    options.factResolvers?.electricProvider && options.centroid
+      ? bounded("HIFLD electric-territory read", () =>
+          options.factResolvers!.electricProvider!(options.centroid!),
+        )
+      : Promise.resolve(null),
+  ]);
+
+  const floodplainResolution = floodplainSettled
+    ? floodplainSettled.ok
+      ? floodplainSettled.value
+      : ({ error: floodplainSettled.reason } as const)
+    : null;
 
   const floodplainAcreage = safeSection<FloodplainAcreageFacts>("floodplainAcreage", () => {
     if (!options.factResolvers?.floodplain) return notRequested("Floodplain acreage");
@@ -590,9 +647,10 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
       : absent(r.kind, r.reason);
   });
 
-  const soil = await safeSectionAsync<SoilFacts>("soil", async () => {
-    if (!options.factResolvers?.soil || !options.centroid) return notRequested("Soil");
-    const r = await options.factResolvers.soil(options.centroid);
+  const soil = safeSection<SoilFacts>("soil", () => {
+    if (!soilSettled) return notRequested("Soil");
+    if (!soilSettled.ok) return absent("failed-this-run", soilSettled.reason);
+    const r = soilSettled.value;
     return r.status === "present"
       ? present<SoilFacts>(r.facts, {
           consequence:
@@ -601,9 +659,10 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
       : absent(r.kind, r.reason);
   });
 
-  const electricProvider = await safeSectionAsync<ElectricProviderFacts>("electricProvider", async () => {
-    if (!options.factResolvers?.electricProvider || !options.centroid) return notRequested("Electric provider");
-    const r = await options.factResolvers.electricProvider(options.centroid);
+  const electricProvider = safeSection<ElectricProviderFacts>("electricProvider", () => {
+    if (!electricSettled) return notRequested("Electric provider");
+    if (!electricSettled.ok) return absent("failed-this-run", electricSettled.reason);
+    const r = electricSettled.value;
     return r.status === "present"
       ? present<ElectricProviderFacts>(r.facts, {
           sourceCitation: r.facts.sourceCitation,
