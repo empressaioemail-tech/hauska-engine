@@ -92,6 +92,32 @@ export interface GenerateNarrativeOptions {
   maxOutputTokens?: number;
 }
 
+/**
+ * Fast model without search, reasoning model with it. Measured on one parcel,
+ * 2026-09-08, same prompt and same payload:
+ *
+ *   grok-3-mini   17.5s   1,213 output tokens (908 reasoning)     53,784,000 ticks   11 families cited
+ *   grok-4.6      63.5s   3,968 output tokens (3,467 reasoning)  282,780,000 ticks   14 families cited
+ *
+ * 3.6x the wall clock and 5.3x the cost for three more cited families is not
+ * worth it on a synchronous customer path — Property Explorer budgets 55s for
+ * the WHOLE compose, and 63s does not fit it at any quality. 17.5s does.
+ *
+ * Web search is the exception. The searching run has to judge which results
+ * are about THIS parcel and which are a different Church Street, and the
+ * reasoning model was visibly better at declining when it could not tell.
+ * A search run is already off the synchronous path on latency alone, so it
+ * can afford the slower model.
+ *
+ * `XAI_NARRATIVE_MODEL` overrides both.
+ */
+export const NARRATIVE_MODEL_FAST = "grok-3-mini";
+export const NARRATIVE_MODEL_SEARCH = GROK_SEARCH_DEFAULT_MODEL;
+
+function defaultModelFor(webSearch: boolean): string {
+  return webSearch ? NARRATIVE_MODEL_SEARCH : NARRATIVE_MODEL_FAST;
+}
+
 const SYSTEM_PROMPT = `You are writing the narrative section of a property feasibility study for a developer or buyer deciding whether to build on one parcel.
 
 You are given a JSON object of FACTS assembled from public records and models. Write for someone making a decision, not for the system that produced the data.
@@ -217,7 +243,7 @@ export async function generateFeasibilityNarrative(
   let usage: Record<string, unknown> | undefined;
   try {
     const result = await client.respondWithSearch({
-      model: options.model ?? process.env.XAI_NARRATIVE_MODEL?.trim() ?? GROK_SEARCH_DEFAULT_MODEL,
+      model: options.model ?? process.env.XAI_NARRATIVE_MODEL?.trim() ?? defaultModelFor(webSearch),
       system: SYSTEM_PROMPT,
       user: buildUserPrompt(model, facts, webSearch),
       // Gates the TOOL, not just the wording. Without this the provider
@@ -254,7 +280,7 @@ export async function generateFeasibilityNarrative(
     ok: true,
     narrativeOverride: {
       text: body,
-      generatedBy: `xai:${options.model ?? GROK_SEARCH_DEFAULT_MODEL}${webSearch ? "+web" : ""}`,
+      generatedBy: `xai:${options.model ?? process.env.XAI_NARRATIVE_MODEL?.trim() ?? defaultModelFor(webSearch)}${webSearch ? "+web" : ""}`,
       generatedAt: new Date().toISOString(),
     },
     citedSections: cited,

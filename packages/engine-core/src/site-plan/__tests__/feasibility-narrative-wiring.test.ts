@@ -193,6 +193,34 @@ describe("Feasibility narrative wiring (P-120 item 6)", () => {
     ]);
   });
 
+  it("NO REGRESSION: in-process generation being opt-in does not turn OFF a configured LDT narrative", async () => {
+    // Guards a specific customer-visible reversion, raised by doc-repo-79
+    // 2026-09-08. Production revision 00189-cej has BROKERAGE_API_BASE_URL
+    // and SERVICE_API_KEY set, so the narrative is LIVE and on by default
+    // today. In-process generation was added as opt-in
+    // (`narrativeGenerate`/`narrativeWebSearch`), and if that had short-
+    // circuited the configured LDT path, shipping it would have silently
+    // returned every default export to the deterministic skeleton.
+    //
+    // It does not: with no narrativeGenerate flag and narrativeSection
+    // configured, the service path still runs and still produces a real
+    // narrative. Asserted on the OUTPUT, not on the call, because "the
+    // endpoint was called" would still pass if the result were discarded.
+    const f = narrativeFetch(CITED_NARRATIVE);
+    const result = await authorParcelFeasibilityExport({
+      ...baseOptions(),
+      // narrativeGenerate deliberately ABSENT — the default request shape.
+      narrativeSection: {
+        baseUrl: "https://api.example/api/brokerage/v1",
+        apiKey: "svc",
+        fetchImpl: f.impl,
+      },
+    } as any);
+    expect(result.narrativeIsDeterministicSkeleton).toBe(false);
+    expect(result.narrativeFallbackReason).toBeUndefined();
+    expect(result.narrativeCitedSections?.length ?? 0).toBeGreaterThan(0);
+  });
+
   it("a generated, cited narrative produces a NON-skeleton report", async () => {
     const f = narrativeFetch(CITED_NARRATIVE);
     const result = await authorParcelFeasibilityExport({
