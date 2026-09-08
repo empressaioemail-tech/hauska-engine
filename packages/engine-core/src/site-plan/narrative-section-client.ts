@@ -145,6 +145,75 @@ function buildLdtNarrativeFacts(model: ParcelReportModel): Record<string, unknow
         },
     footprint: model.facts.footprint,
     dischargePoint: model.facts.dischargePoint,
+
+    // ── Added 2026-09-08. Everything below was ABSENT from this payload. ──
+    // The narrative was being asked to reason over a report it could only
+    // see half of, which is why it never discussed the flood study or the
+    // terrain: neither was sent. Nine families went out, and geometry, the
+    // drainage study, all five PR #404 families and the package layer did
+    // not.
+    //
+    // Each is PROJECTED, never spread. `model.drainage.study` carries
+    // catchment GeoJSON, traced flow-line GeoJSON and a gradient raster;
+    // spreading it would push megabytes of coordinates at a language model
+    // that cannot use them, and bill for every token. The summary numbers
+    // are the part a narrative can reason from.
+    geometry:
+      model.geometry.status === "present"
+        ? {
+            status: "present",
+            zoningDistrict: model.geometry.model.summary.zoningDistrict ?? null,
+            lotAreaSqFt: model.geometry.model.summary.lotAreaSqFt,
+            buildableAreaSqFt: model.geometry.model.summary.buildableAreaSqFt,
+            buildableAreaNote: model.geometry.model.summary.buildableAreaHonestNote ?? null,
+            setbacks: model.geometry.model.setback.honestAbsence
+              ? { status: "absent", reason: model.geometry.model.setback.honestAbsenceReason ?? null }
+              : {
+                  status: "present",
+                  frontFt: model.geometry.model.setback.front,
+                  sideFt: model.geometry.model.setback.side,
+                  rearFt: model.geometry.model.setback.rear,
+                  display: model.geometry.model.setback.displayLine,
+                },
+          }
+        : { status: "absent", reason: model.geometry.reason },
+    topography:
+      model.geometry.status === "present"
+        ? {
+            status: "present",
+            elevationRangeMeters: model.geometry.model.summary.elevationRangeMeters,
+            reliefMeters:
+              model.geometry.model.summary.elevationRangeMeters.max -
+              model.geometry.model.summary.elevationRangeMeters.min,
+            verticalDatum: model.geometry.model.summary.verticalDatumSummary,
+            contourIntervalMeters: model.geometry.model.contourIntervalMeters,
+          }
+        : { status: "absent", reason: model.geometry.reason },
+    drainageStudy:
+      model.drainage.status === "present"
+        ? {
+            status: "present",
+            catchmentAreaSqFt: model.drainage.study.stats.catchmentAreaSqFt,
+            pondedAreaSqFt: model.drainage.study.stats.pondedAreaSqFt ?? null,
+            flowExitCount: model.drainage.study.stats.flowExitCount,
+            designStormInches: model.drainage.study.rainfallDepthInches,
+            rainfallSource: model.drainage.study.rainfallSource,
+            demResolutionMeters: model.drainage.study.demProvenance.resolutionMeters,
+            honestEmptyReason: model.drainage.study.honestEmpty?.reason ?? null,
+            generatedAt: model.drainage.study.generatedAt,
+          }
+        : { status: "absent", reason: model.drainage.reason },
+    floodplainAcreage: model.facts.floodplainAcreage,
+    firmPanel: model.facts.firmPanel,
+    soil: model.facts.soil,
+    electricProvider: model.facts.electricProvider,
+    gasProvider: model.facts.gasProvider,
+    verdict: model.package.verdict,
+    openItems: model.package.openItems.map((i) => ({
+      section: i.section,
+      action: i.actionSentence,
+    })),
+    dataQualityNotes: model.package.dataQuality.supersededNotes,
   };
 }
 
