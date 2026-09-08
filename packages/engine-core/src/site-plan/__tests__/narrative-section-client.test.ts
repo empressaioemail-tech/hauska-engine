@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildFullNarrativeFacts,
   buildNarrativeFacts,
   deriveCitedSections,
   fetchFeasibilityNarrative,
@@ -126,7 +127,31 @@ describe("buildNarrativeFacts: what the model is allowed to see", () => {
     expect(known.jurisdiction.cityLimitsStatus).toBe("unresolved");
   });
 
-  it("offers every FACT FAMILY on the model, so none is silently withheld", () => {
+  it("KEEPS the LDT contract at nine families — widening it regressed production", () => {
+    // Regression guard, 2026-09-08. `buildNarrativeFacts` feeds
+    // cortex-api's /research/narrative-section, a service this lane does not
+    // own. Widening it made that service slower, tripped the client's 20s
+    // timeout, and returned working parcels to the deterministic skeleton
+    // (Caldwell 48055:20478 failed 3/3 on the canary while the serving
+    // revision produced a real narrative in 17s). The wide payload lives on
+    // `buildFullNarrativeFacts` instead.
+    expect(Object.keys(buildNarrativeFacts(modelFixture())).sort()).toEqual(
+      [
+        "dischargePoint",
+        "flood",
+        "footprint",
+        "hoa",
+        "jurisdiction",
+        "parcelOwnership",
+        "specialDistricts",
+        "terrain",
+        "utilities",
+        "wellsPipelines",
+      ].sort(),
+    );
+  });
+
+  it("offers every FACT FAMILY on the model to IN-PROCESS generation", () => {
     // Derived from the model, not frozen as a list. The frozen version of
     // this assertion named nine keys and passed for months while geometry,
     // topography, the drainage study, all five PR #404 families and the
@@ -134,13 +159,13 @@ describe("buildNarrativeFacts: what the model is allowed to see", () => {
     // could never discuss flood or terrain. A snapshot of the omission cannot
     // catch the omission.
     const model = modelFixture();
-    const offered = new Set(Object.keys(buildNarrativeFacts(model)));
+    const offered = new Set(Object.keys(buildFullNarrativeFacts(model)));
     const missing = Object.keys(model.facts).filter((k) => !offered.has(k));
     expect(missing).toEqual([]);
   });
 
   it("offers the composed sub-models the fact families do not cover", () => {
-    const offered = new Set(Object.keys(buildNarrativeFacts(modelFixture())));
+    const offered = new Set(Object.keys(buildFullNarrativeFacts(modelFixture())));
     for (const key of ["geometry", "topography", "drainageStudy", "verdict", "openItems"]) {
       expect(offered.has(key)).toBe(true);
     }
@@ -150,7 +175,7 @@ describe("buildNarrativeFacts: what the model is allowed to see", () => {
     // The study carries catchment GeoJSON, flow-line GeoJSON and a gradient
     // raster. Shipping those to a language model bills for coordinates it
     // cannot use, so the payload must carry summary numbers only.
-    const serialized = JSON.stringify(buildNarrativeFacts(modelFixture()));
+    const serialized = JSON.stringify(buildFullNarrativeFacts(modelFixture()));
     expect(serialized).not.toContain("catchmentGeoJson");
     expect(serialized).not.toContain("flowLinesGeoJson");
     expect(serialized).not.toContain("coordinates");
@@ -313,5 +338,73 @@ describe("fetchFeasibilityNarrative: every failure falls back, none throws", () 
     if (out.ok) return;
     expect(out.reason).toBe("not-configured");
     expect(f.calls).toHaveLength(0);
+  });
+});
+
+/**
+ * The latency instrument, added 2026-09-08 after doc-repo-79 pointed out that
+ * the only visible number was the WHOLE feasibility request (20.2s-41.0s
+ * across five counties on identical code). Inside that envelope a 3s
+ * narrative call and an 18s one look the same, and an 18s one passes today
+ * and fails on any slower day against the 20s timeout.
+ *
+ * Tested because an emitter nobody calls is the failure this whole session
+ * kept finding. Both directions: it must fire on success AND on failure.
+ * Success is the load-bearing half — the failures are already known to sit
+ * at the timeout, so only the successes say whether there is headroom.
+ */
+describe("the narrative call reports its own duration", () => {
+  function captureLogs(): { lines: unknown[]; restore: () => void } {
+    const lines: unknown[] = [];
+    const original = console.log;
+    console.log = (arg: unknown) => {
+      try {
+        const parsed = JSON.parse(String(arg));
+        if (parsed?.event === "feasibility.narrative_section.call") lines.push(parsed);
+      } catch {
+        /* not our line */
+      }
+    };
+    return { lines, restore: () => { console.log = original; } };
+  }
+
+  it("emits duration, timeout and cited count on SUCCESS", async () => {
+    const f = stubFetch({ json: async () => goodBody });
+    const cap = captureLogs();
+    try {
+      await fetchFeasibilityNarrative({
+        model: modelFixture(),
+        config: { ...config, fetchImpl: f.impl },
+      });
+    } finally {
+      cap.restore();
+    }
+    expect(cap.lines).toHaveLength(1);
+    const line = cap.lines[0] as Record<string, unknown>;
+    expect(line.outcome).toBe("ok");
+    expect(typeof line.durationMs).toBe("number");
+    expect(line.timeoutMs).toBe(20_000);
+    expect(line.citedCount).toBeGreaterThan(0);
+  });
+
+  it("emits on FAILURE too, with the outcome that caused it", async () => {
+    const cap = captureLogs();
+    try {
+      await fetchFeasibilityNarrative({
+        model: modelFixture(),
+        config: {
+          ...config,
+          fetchImpl: (async () => {
+            throw new Error("simulated timeout");
+          }) as unknown as typeof fetch,
+        },
+      });
+    } finally {
+      cap.restore();
+    }
+    expect(cap.lines).toHaveLength(1);
+    const line = cap.lines[0] as Record<string, unknown>;
+    expect(line.outcome).toBe("request-failed");
+    expect(String(line.detail)).toContain("simulated timeout");
   });
 });

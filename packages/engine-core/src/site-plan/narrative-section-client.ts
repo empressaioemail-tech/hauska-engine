@@ -106,6 +106,23 @@ const SERVER_NO_CONTENT_GENERATED_BY = "rules-v1";
  * through untouched too, same as flood/parcelOwnership/etc.
  */
 export function buildNarrativeFacts(model: ParcelReportModel): Record<string, unknown> {
+  // THE LDT CONTRACT. Nine families, exactly what
+  // `/research/narrative-section` was built and tuned for.
+  //
+  // Do not widen this. It was widened on 2026-09-08 and it broke the service
+  // path in production: the wider input made cortex-api's generation slower,
+  // the client's 20s timeout tripped, and the narrative regressed to the
+  // deterministic skeleton on parcels that had been working. Caught on the
+  // canary — Caldwell 48055:20478 failed 3/3 with `request-failed` while the
+  // serving revision produced a real narrative for the same parcel in 17s.
+  //
+  // The wide payload belongs to IN-PROCESS generation, which is ours to make
+  // slower. `buildFullNarrativeFacts` carries it. Changing the shape of
+  // another service's request is that service's decision, not this lane's.
+  return buildLdtNarrativeFacts(model);
+}
+
+function buildLdtNarrativeFacts(model: ParcelReportModel): Record<string, unknown> {
   const jurisdictionKnown = model.facts.jurisdiction.countyFips !== null;
   const hoaCitation = model.facts.hoa.mountedDocumentCitation;
 
@@ -128,7 +145,26 @@ export function buildNarrativeFacts(model: ParcelReportModel): Record<string, un
         },
     footprint: model.facts.footprint,
     dischargePoint: model.facts.dischargePoint,
+  };
+}
 
+
+/**
+ * The WIDE payload: every fact family, plus the composed sub-models the
+ * families do not cover. Used ONLY by in-process generation.
+ *
+ * Kept separate from the LDT contract above because widening that one broke
+ * it in production. This one we own end to end, so it can afford to be
+ * expensive.
+ *
+ * Each addition is PROJECTED, never spread. `model.drainage.study` carries
+ * catchment GeoJSON, traced flow-line GeoJSON and a gradient raster;
+ * spreading it would push megabytes of coordinates at a language model that
+ * cannot use them, and bill for every token.
+ */
+export function buildFullNarrativeFacts(model: ParcelReportModel): Record<string, unknown> {
+  return {
+    ...buildLdtNarrativeFacts(model),
     // ── Added 2026-09-08. Everything below was ABSENT from this payload. ──
     // The narrative was being asked to reason over a report it could only
     // see half of, which is why it never discussed the flood study or the
@@ -238,6 +274,36 @@ export async function fetchFeasibilityNarrative(input: {
     return { ok: false, reason: "not-configured" };
   }
 
+  // Duration is emitted on EVERY outcome, successes included.
+  //
+  // Raised by doc-repo-79 2026-09-08, and the reasoning is the point: the
+  // only latency anyone could see was the whole feasibility request, which
+  // ranges 20.2s to 41.0s across counties on identical code. Inside that
+  // envelope a 3s narrative call and an 18s one are indistinguishable, and an
+  // 18s one passes today and fails on any slower day against this client's
+  // 20s timeout. A measurement that cannot tell "fine" from "about to fail"
+  // is not a measurement.
+  //
+  // Logging only failures would not fix it: the failures are the cases where
+  // the duration is already known to be 20s. The distribution of the
+  // SUCCESSES is what says whether the timeout has headroom.
+  const startedAt = Date.now();
+  const emit = (outcome: string, extra: Record<string, unknown> = {}): void => {
+    console.log(
+      JSON.stringify({
+        level: outcome === "ok" ? "info" : "warn",
+        service: "engine-core",
+        event: "feasibility.narrative_section.call",
+        outcome,
+        durationMs: Date.now() - startedAt,
+        timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        parcelNodeId: model.parcelNodeId,
+        ...extra,
+        ts: new Date().toISOString(),
+      }),
+    );
+  };
+
   const facts = buildNarrativeFacts(model);
   const body = {
     parcelNodeId: model.parcelNodeId,
@@ -262,6 +328,7 @@ export async function fetchFeasibilityNarrative(input: {
       signal: AbortSignal.timeout(config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
   } catch (error) {
+    emit("request-failed", { detail: error instanceof Error ? error.message : String(error) });
     return {
       ok: false,
       reason: "request-failed",
@@ -270,6 +337,7 @@ export async function fetchFeasibilityNarrative(input: {
   }
 
   if (!res.ok) {
+    emit("http-error", { status: res.status });
     return { ok: false, reason: "http-error", detail: `HTTP ${res.status}` };
   }
 
@@ -295,15 +363,17 @@ export async function fetchFeasibilityNarrative(input: {
     typeof parsed.generatedBy !== "string" ||
     typeof parsed.generatedAt !== "string"
   ) {
+    emit("malformed-response");
     return { ok: false, reason: "malformed-response", detail: "response shape did not match" };
   }
 
   const text = parsed.narrative.trim();
-  if (!text) return { ok: false, reason: "empty-narrative" };
+  if (!text) { emit("empty-narrative"); return { ok: false, reason: "empty-narrative" }; }
 
   // The server's own no-content path. See the constant's comment: our
   // skeleton beats its apology, and this must not read as a real narrative.
   if (parsed.generatedBy === SERVER_NO_CONTENT_GENERATED_BY) {
+    emit("server-reported-no-llm-content");
     return { ok: false, reason: "server-reported-no-llm-content" };
   }
 
@@ -313,9 +383,11 @@ export async function fetchFeasibilityNarrative(input: {
   // unmarked wall of prose is refused in favour of the skeleton, which is
   // cited by construction.
   if (cited.length === 0) {
+    emit("no-cited-sections");
     return { ok: false, reason: "no-cited-sections" };
   }
 
+  emit("ok", { citedCount: cited.length, uncitedCount: uncited.length });
   return {
     ok: true,
     outcome: {
