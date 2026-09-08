@@ -247,6 +247,100 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
         : [factOrChip("Wells and pipelines", undefined, { absentReason: wp.reason })],
   });
 
+  // P-120 R-05: the five families R-04 composes. Until this landed the model
+  // paid three live outbound reads and the sheet showed none of them, which is
+  // the whole reason the 2026-09-08 canary was 13x slower for no visible gain.
+  sections.push({
+    id: "floodplain-acreage",
+    title: "Floodplain acreage in tract",
+    facts:
+      facts.floodplainAcreage.status === "present"
+        ? [
+            factOrChip(
+              "Parcel area",
+              `${facts.floodplainAcreage.parcelAcres.toFixed(2)} acres`,
+            ),
+            factOrChip(
+              "Inside the special flood hazard area",
+              `${facts.floodplainAcreage.sfhaAcres.toFixed(2)} acres`,
+            ),
+            factOrChip(
+              "Mapped flood zones intersecting",
+              String(facts.floodplainAcreage.zones.length),
+            ),
+          ]
+        : [
+            factOrChip("Floodplain acreage in tract", undefined, {
+              absentReason: facts.floodplainAcreage.reason,
+            }),
+          ],
+  });
+
+  sections.push({
+    id: "firm-panel",
+    title: "FIRM panel",
+    facts:
+      facts.firmPanel.status === "present"
+        ? facts.firmPanel.panels.map((panel) =>
+            factOrChip("Panel", panel.firmPan, {
+              source: panel.dfirmId ?? undefined,
+              vintage: panel.effectiveDate ?? undefined,
+            }),
+          )
+        : [factOrChip("FIRM panel", undefined, { absentReason: facts.firmPanel.reason })],
+  });
+
+  sections.push({
+    id: "soil",
+    title: "Soil",
+    facts:
+      facts.soil.status === "present"
+        ? [
+            factOrChip("Map unit", facts.soil.muname),
+            factOrChip("Hydrologic soil group", facts.soil.hydrologicSoilGroup),
+            factOrChip("Drainage class", facts.soil.drainageClass),
+            factOrChip(
+              "Slope",
+              facts.soil.slopePercentRounded == null
+                ? undefined
+                : `${facts.soil.slopePercentRounded}%`,
+            ),
+          ]
+        : [factOrChip("Soil", undefined, { absentReason: facts.soil.reason })],
+  });
+
+  sections.push({
+    id: "service-providers",
+    title: "Electric and gas service",
+    facts: [
+      ...(facts.electricProvider.status === "present"
+        ? facts.electricProvider.ambiguous
+          ? [
+              // A disclosed ambiguity, never silently resolved to one name.
+              factOrChip(
+                "Electric territory",
+                `${facts.electricProvider.candidates.length} overlapping territories — not resolved`,
+                { source: facts.electricProvider.sourceCitation },
+              ),
+            ]
+          : facts.electricProvider.candidates.map((c) =>
+              factOrChip("Electric provider", c.name ?? undefined, {
+                source: facts.electricProvider.status === "present"
+                  ? facts.electricProvider.sourceCitation
+                  : undefined,
+              }),
+            )
+        : [
+            factOrChip("Electric provider", undefined, {
+              absentReason: facts.electricProvider.reason,
+            }),
+          ]),
+      ...(facts.gasProvider.status === "absent"
+        ? [factOrChip("Gas provider", undefined, { absentReason: facts.gasProvider.reason })]
+        : []),
+    ],
+  });
+
   sections.push({
     id: "terrain",
     title: "Terrain and site conditions",
