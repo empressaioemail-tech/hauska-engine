@@ -84,6 +84,9 @@ export interface AuthorParcelFeasibilityExportResult {
   sitePlanUnavailableReason?: string;
   sectionCount: number;
   openItemCount: number;
+  /** Backfill worklist and address-first file name — see pdf/feasibility.ts. */
+  absentFields: PdfFeasibilityResult["absentFields"];
+  suggestedFileBaseName: string;
   narrativeIsDeterministicSkeleton: boolean;
   /**
    * Why the skeleton was used. Present exactly when
@@ -229,6 +232,12 @@ export async function authorParcelFeasibilityExport(
     ...(narrativeCitedSections ? { narrativeCitedSections: [...narrativeCitedSections] } : {}),
     whoServesMeasured: model.facts.utilities.status === "present",
   };
+  // NOT persisted onto the artifact record: `TerrainExportArtifact` is a
+  // closed type in the atom schema, and widening it is the substrate seat's
+  // call. `suggestedFileBaseName` and `absentFields` therefore ride the
+  // REFRESH RESPONSE only, which is a fed path (engine-api returns them
+  // straight from this result). Writing a download-time read against a field
+  // nothing stores would be a mechanism with a trigger and no input.
 
   // A freshly-computed drainage study is persisted onto the SAME shared
   // atom, in the SAME shape `authorParcelFloodDrainageReport` already writes
@@ -264,6 +273,8 @@ export async function authorParcelFeasibilityExport(
     sitePlanUnavailableReason: pdf.sitePlanUnavailableReason,
     sectionCount: pdf.sectionCount,
     openItemCount: pdf.openItemCount,
+    absentFields: pdf.absentFields,
+    suggestedFileBaseName: pdf.suggestedFileBaseName,
     narrativeIsDeterministicSkeleton: pdf.narrativeIsDeterministicSkeleton,
     ...(narrativeFallbackReason ? { narrativeFallbackReason } : {}),
     ...(narrativeCitedSections ? { narrativeCitedSections } : {}),

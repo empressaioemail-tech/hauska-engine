@@ -643,6 +643,11 @@ export function buildParcelTerrainRoutes(
         sitePlanUnavailableReason: result.sitePlanUnavailableReason,
         sectionCount: result.sectionCount,
         openItemCount: result.openItemCount,
+        // P-120: the backfill worklist. `kind` separates "the source ran and
+        // found nothing" from "nobody asked" and "the read broke"; only the
+        // latter two are jobs.
+        absentFields: result.absentFields,
+        suggestedFileBaseName: result.suggestedFileBaseName,
         narrativeIsDeterministicSkeleton: result.narrativeIsDeterministicSkeleton,
         // Declared degradation: WHY the skeleton was used, and what the
         // generated narrative actually cited. A bare boolean does not say
@@ -686,8 +691,16 @@ export function buildParcelTerrainRoutes(
       }, 410);
     }
     const safeNodeId = c.req.param("parcelNodeId").replace(/[^a-zA-Z0-9._-]/g, "_");
+    // Named by parcel id here on purpose. The address-first name is computed
+    // at render time and returned on the REFRESH response as
+    // `suggestedFileBaseName`; the atom's artifact record is a closed type and
+    // cannot carry it, so this route has no address to read at download time.
+    // The customer-visible name is set by Property Explorer's BFF anyway
+    // (`feasibilityFilename` in hauska-map), which re-serves these bytes and
+    // writes its own Content-Disposition — so renaming the download for a
+    // customer is a hauska-map change, not this one.
     c.header("Content-Type", "application/pdf");
-    c.header("Content-Disposition", `attachment; filename="${safeNodeId}.pdf-feasibility.pdf"`);
+    c.header("Content-Disposition", `attachment; filename="${safeNodeId}_feasibility_study.pdf"`);
     return c.body(Buffer.from(bytes));
   });
 

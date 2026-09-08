@@ -9,7 +9,15 @@ import {
   type ReportManifest,
   type ReportSectionId,
 } from "../report-manifest.js";
-import { emitPdfFeasibility, floodSheetPlan } from "../pdf/feasibility.js";
+import {
+  absentFactFamilies,
+  aerialCaption,
+  emitPdfFeasibility,
+  feasibilityModelToBriefSections,
+  floodSheetPlan,
+  footprintContradictsAppraisal,
+  improvementEvidence,
+} from "../pdf/feasibility.js";
 
 /**
  * THE ACCEPTANCE TEST FOR "make the manifest real".
@@ -242,5 +250,121 @@ describe("the four flood ids each do something of their own", () => {
       drainage: { status: "absent", reason: "none" },
     } as unknown as ParcelReportModel;
     expect(floodSheetPlan(FEASIBILITY_MANIFEST, noStudy).localPages).toEqual([]);
+  });
+});
+
+/**
+ * The improved/unimproved contradiction (operator finding, 2026-09-08).
+ *
+ * A real Bastrop parcel rendered "The site reads as unimproved, so
+ * redevelopment is unlikely to require demolition" on sheet 10 while sheet 7
+ * of the SAME document printed "Year built 1888" and "Living area 4,780 sq
+ * ft" from the county appraisal roll. The parcel is a National Register
+ * house. The sentence is a confident negative inference drawn from one GIS
+ * layer's miss, and it pointed a reader toward a teardown.
+ *
+ * The check is meaning shaped, not presence shaped: the building-footprint
+ * layer and the appraisal roll are different upstreams, so no single party
+ * can satisfy both sides of it.
+ */
+describe("a footprint miss is not evidence of an empty lot", () => {
+  /** Only the families the section builder dereferences; everything else is
+   * an honest absence so the builder runs end to end. */
+  const absent = (reason: string) => ({ status: "absent", kind: "clear", reason });
+  const baseFacts = {
+    jurisdiction: { countyName: "Bastrop County", countyFips: "48021", cityLimitsStatus: "unresolved" },
+    flood: absent("n/a"),
+    specialDistricts: absent("n/a"),
+    wellsPipelines: absent("n/a"),
+    terrain: absent("n/a"),
+    utilities: absent("n/a"),
+    hoa: { recordedRestrictions: undefined },
+    dischargePoint: absent("n/a"),
+    floodplainAcreage: absent("n/a"),
+    firmPanel: absent("n/a"),
+    soil: absent("n/a"),
+    electricProvider: absent("n/a"),
+    gasProvider: absent("n/a"),
+  };
+  const basePackage = {
+    verdict: "",
+    narrativeSkeleton: "",
+    openItems: [],
+    dataQuality: { supersededNotes: [] },
+  };
+
+  const improvedButUnmapped = {
+    parcelNodeId: "48021:27895",
+    geometry: { status: "absent", reason: "not needed for this fixture" },
+    drainage: { status: "absent", reason: "n/a" },
+    package: basePackage,
+    facts: {
+      ...baseFacts,
+      footprint: {
+        status: "absent",
+        kind: "clear",
+        reason: "Checked against the building-footprint source; no structure is mapped on this parcel.",
+        consequence: "The site reads as unimproved, so redevelopment is unlikely to require demolition.",
+      },
+      parcelOwnership: { status: "present", yearBuilt: 1888, livingAreaSqft: 4780 },
+    },
+  } as unknown as ParcelReportModel;
+
+  const genuinelyVacant = {
+    parcelNodeId: "48021:00001",
+    facts: {
+      footprint: { status: "absent", kind: "clear", reason: "no structure mapped" },
+      parcelOwnership: { status: "present" },
+    },
+  } as unknown as ParcelReportModel;
+
+  it("detects the contradiction when the appraisal roll says improved", () => {
+    expect(footprintContradictsAppraisal(improvedButUnmapped)).toBe(true);
+    expect(improvementEvidence(improvedButUnmapped)?.summary).toContain("4,780");
+    expect(improvementEvidence(improvedButUnmapped)?.summary).toContain("1888");
+  });
+
+  it("does NOT fire on a parcel the appraisal roll also reports as unimproved", () => {
+    // The falsifier. Without this the check could be a constant `true` and
+    // the case above would still pass.
+    expect(footprintContradictsAppraisal(genuinelyVacant)).toBe(false);
+    expect(improvementEvidence(genuinelyVacant)).toBeNull();
+  });
+
+  it("the aerial caption refuses the empty-lot reading and says the sources disagree", () => {
+    const caption = aerialCaption(improvedButUnmapped);
+    expect(caption).toContain("disagree");
+    expect(caption).toContain("4,780");
+    expect(caption).not.toContain("unimproved");
+  });
+
+  it("the rendered footprint section drops the misleading consequence", () => {
+    const sections = feasibilityModelToBriefSections(improvedButUnmapped);
+    const footprint = sections.find((s) => s.id === "footprint");
+    const text = JSON.stringify(footprint);
+    expect(text).not.toContain("unlikely to require demolition");
+    expect(text).toContain("Sources disagree");
+  });
+});
+
+describe("the backfill worklist separates kinds of nothing", () => {
+  it("marks only failed-this-run and out-of-scope as actionable", () => {
+    const model = {
+      parcelNodeId: "48021:1",
+      drainage: { status: "present", study: {} },
+      facts: {
+        specialDistricts: { status: "absent", kind: "clear", reason: "checked, none" },
+        soil: { status: "absent", kind: "out-of-scope", reason: "not requested" },
+        firmPanel: { status: "absent", kind: "failed-this-run", reason: "read broke" },
+        gasProvider: { status: "absent", kind: "blocked-at-source", reason: "no path" },
+      },
+    } as unknown as ParcelReportModel;
+
+    const rows = absentFactFamilies(model);
+    const byKey = Object.fromEntries(rows.map((r) => [r.section, r]));
+    expect(byKey.specialDistricts!.actionable).toBe(false);
+    expect(byKey.soil!.actionable).toBe(true);
+    expect(byKey.firmPanel!.actionable).toBe(true);
+    expect(byKey.gasProvider!.actionable).toBe(false);
   });
 });
