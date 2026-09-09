@@ -209,6 +209,13 @@ describe("R2: section-level failure isolation, verified by violation", () => {
       artifactStore: fakeArtifactStore(),
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
+      // Skip the network-shaped internal resolutions this test isn't about
+      // (flood-zone lookup, road-node attachment) so the ONLY thing that can
+      // make composeSitePlanModelForParcel fail here is the thing under
+      // test.
+      floodZoneOverride: { honestUnavailable: true, reason: "test fixture" },
+      boundaryEdgesOverride: [],
+      resolveStreetFromRoadNodes: false,
     });
 
     expect(model.geometry.status).toBe("absent");
@@ -338,6 +345,13 @@ describe("R2: section-level failure isolation, verified by violation", () => {
       artifactStore: fakeArtifactStore(),
       fetchDem: fakeFetchDem,
       parseDem: fakeParseDem,
+      // Skip the network-shaped internal resolutions this test isn't about
+      // (flood-zone lookup, road-node attachment) so the ONLY thing that can
+      // make composeSitePlanModelForParcel fail here is the thing under
+      // test.
+      floodZoneOverride: { honestUnavailable: true, reason: "test fixture" },
+      boundaryEdgesOverride: [],
+      resolveStreetFromRoadNodes: false,
     });
     // The document still composes — never throws — and names every gap.
     expect(model.package.verdict.length).toBeGreaterThan(0);
@@ -670,6 +684,340 @@ describe("composeParcelReportFacts: behavior preserved from composeFeasibilityMo
     expect(model.facts.dischargePoint.status).toBe("present");
     if (model.facts.dischargePoint.status === "present") {
       expect(model.facts.dischargePoint.point.name).toBe("Piney Creek");
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// R-06 (2026-09-09 CTX-FAMILIES) — floodplainAcreage, firmPanel, soil and
+// electricProvider were unconditionally out-of-scope/failed-this-run in
+// production because composeParcelReport only ever threaded a CALLER-
+// SUPPLIED ringOverride/centroidOverride into the fact resolvers, never the
+// REAL ring/centroid composeSitePlanModelForParcel resolves from the live
+// parcel-geometry resolver on every request. Same root cause behind
+// dischargePoint being permanently out-of-scope: the D8 drainage study
+// already computes a real exit coordinate that was never threaded into the
+// discharge resolver either. Verified by FIRING the resolvers and asserting
+// what they were called with — asserting only the output would not
+// distinguish "wired" from "the test itself happened to supply an override"
+// (DEV_PROCESS 2.2: a gating indicator is tested for its ability to fire).
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("R-06: the geometry-resolved ring/centroid/discharge-exit-point reach the fact resolvers without a caller override", () => {
+  const workingGeometryResolver: ParcelGeometryResolver = {
+    async resolve() {
+      return { bbox, sourceRef: `txgio-parcel:${parcelNodeId}:stratmap25-landparcels_48029_2025`, ring: ringWgs84 };
+    },
+  };
+  const fakeArtifactStore = (): TerrainArtifactStore & { get(ref: string): Promise<Uint8Array | null> } => {
+    const data = new Map<string, Uint8Array>();
+    return {
+      async put(input) {
+        const key = `memory://${data.size}`;
+        data.set(key, input.bytes);
+        return key;
+      },
+      async get(ref) {
+        return data.get(ref) ?? null;
+      },
+    };
+  };
+  const fakeFetchDem = (async (bboxArg: unknown, opts: { resolutionMeters: number }) => ({
+    bytes: new Uint8Array(0),
+    contentType: "image/tiff",
+    bbox: bboxArg as typeof bbox,
+    resolutionMeters: opts.resolutionMeters,
+    resolutionMetersRequested: opts.resolutionMeters,
+    resolutionMetersActual: null,
+    widthPx: dem.width,
+    heightPx: dem.height,
+    endpoint: "https://fake.usgs.example/exportImage",
+    fetchedAt: new Date().toISOString(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  })) as any;
+  const fakeParseDem = async () => dem;
+
+  it("floodplain/soil/electricProvider resolvers are invoked with the geometry-resolved ring/centroid when NO ringOverride/centroidOverride is supplied -- the real production shape", async () => {
+    const floodplainCalls: unknown[] = [];
+    const soilCalls: unknown[] = [];
+    const electricCalls: unknown[] = [];
+    const { model } = await composeParcelReport({
+      parcelNodeId,
+      resolver: workingGeometryResolver,
+      setback: undefined,
+      storage: fakeStorage([]),
+      artifactStore: fakeArtifactStore(),
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      // Skip the network-shaped internal resolutions this test isn't about
+      // (flood-zone lookup, road-node attachment) so the ONLY thing that can
+      // make composeSitePlanModelForParcel fail here is the thing under
+      // test.
+      floodZoneOverride: { honestUnavailable: true, reason: "test fixture" },
+      boundaryEdgesOverride: [],
+      resolveStreetFromRoadNodes: false,
+      // No ringOverride, no centroidOverride -- exactly what the real
+      // engine-api route sends. Before this fix, none of the three resolvers
+      // below were ever invoked on a call shaped like this one.
+      factResolvers: {
+        floodplain: async (ring) => {
+          floodplainCalls.push(ring);
+          return {
+            acreage: { status: "present", facts: { parcelAcres: 1, sfhaAcres: 0, zones: [] } },
+            firmPanel: { status: "present", panels: [] },
+          };
+        },
+        soil: async (point) => {
+          soilCalls.push(point);
+          return {
+            status: "present",
+            facts: {
+              mukey: "test-mukey",
+              musym: null,
+              muname: null,
+              areaSymbol: null,
+              drainageClass: "well-drained",
+              hydrologicSoilGroup: null,
+              dominantComponent: null,
+              slopePercentRounded: null,
+              depthToBedrockMinFeet: null,
+              waterTableDepthMinFeet: null,
+              shrinkSwellPotential: null,
+              sourceCitation: "test",
+              degraded: false,
+              degradationReasons: [],
+            },
+          };
+        },
+        electricProvider: async (point) => {
+          electricCalls.push(point);
+          return {
+            status: "present",
+            facts: { candidates: [{ name: "Test Coop", type: null, naicsDescription: null, website: null, source: null }], ambiguous: false, sourceCitation: "test" },
+          };
+        },
+      },
+    });
+
+    expect(floodplainCalls.length).toBe(1);
+    expect(soilCalls.length).toBe(1);
+    expect(electricCalls.length).toBe(1);
+    expect(floodplainCalls[0]).toEqual(ringWgs84);
+    expect(soilCalls[0]).toHaveProperty("latitude");
+    expect(soilCalls[0]).toHaveProperty("longitude");
+
+    expect(model.facts.floodplainAcreage.status).toBe("present");
+    expect(model.facts.firmPanel.status).toBe("present");
+    expect(model.facts.soil.status).toBe("present");
+    expect(model.facts.electricProvider.status).toBe("present");
+  });
+
+  it("dischargePoint resolver is invoked with the drainage study's own first flow exit when NO dischargeExitPoint is supplied -- the real production shape", async () => {
+    const study = {
+      parcelNodeId,
+      catchmentGeoJson: { type: "FeatureCollection", features: [] },
+      drainageZonesGeoJson: { type: "FeatureCollection", features: [] },
+      rainfallResultGeoJson: null,
+      flowLinesGeoJson: { type: "FeatureCollection", features: [] },
+      rainfallDepthInches: 9.5,
+      rainfallSource: "default" as const,
+      demProvenance: { source: "USGS 3DEP", resolutionMeters: 10 },
+      briefing: "test briefing",
+      flowExits: [{ lng: -97.3305, lat: 30.1269, bearingDeg: 90 }],
+      stats: { catchmentAreaSqFt: 1000, pondedAreaSqFt: 0, pondedAreaModeledRegionSqFt: 0, flowExitCount: 1, pourPoint: { lng: -98.5, lat: 29.4 }, pourPointMethod: "ring-centroid" as const },
+      computation: { library: "test", routing: "d8", accumulationThreshold: 10 },
+      parcelRingWgs84: ringWgs84,
+      catchmentBbox: bbox,
+      geometrySourceRef: "test",
+      generatedAt: new Date().toISOString(),
+    };
+    const studyBytes = new TextEncoder().encode(JSON.stringify(study));
+    const artifactData = new Map<string, Uint8Array>([["memory://study", studyBytes]]);
+    const storageWithStudy = {
+      listPropertyAtomsByParcelNodeId: async () => [
+        {
+          entityType: "parcel-terrain-model",
+          artifacts: { "json-flood-drainage-study": { format: "json-flood-drainage-study", ref: "memory://study" } },
+        } as unknown as PropertyAtomInstance,
+      ],
+    } as unknown as StoragePort;
+
+    const dischargeCalls: unknown[] = [];
+    const { model } = await composeParcelReport({
+      parcelNodeId,
+      resolver: workingGeometryResolver,
+      setback: undefined,
+      storage: storageWithStudy,
+      artifactStore: { async put() { return "unused"; }, async get(ref: string) { return artifactData.get(ref) ?? null; } },
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      // Skip the network-shaped internal resolutions this test isn't about
+      // (flood-zone lookup, road-node attachment) so the ONLY thing that can
+      // make composeSitePlanModelForParcel fail here is the thing under
+      // test.
+      floodZoneOverride: { honestUnavailable: true, reason: "test fixture" },
+      boundaryEdgesOverride: [],
+      resolveStreetFromRoadNodes: false,
+      drainage: {},
+      // No dischargeExitPoint supplied -- the real route only ever supplies
+      // one when the caller's request body happened to include one, which
+      // no real caller does. The study read above already carries a real
+      // flow exit; that is what should feed the resolver now.
+      dischargeResolver: {
+        resolve: async (point) => {
+          dischargeCalls.push(point);
+          return { status: "present", point: { name: "Piney Creek", featureType: "STREAM/RIVER", distanceMeters: 12, sourceUrl: "test", layerName: "test" } };
+        },
+      },
+    });
+
+    expect(dischargeCalls.length).toBe(1);
+    expect(dischargeCalls[0]).toEqual({ lat: 30.1269, lng: -97.3305 });
+    expect(model.facts.dischargePoint.status).toBe("present");
+  });
+
+  it("a drainage study that ran and modeled ZERO flow exits reports dischargePoint as blocked-at-source (a real checked finding), never out-of-scope -- live-observed on Bastrop 48021:52727, 2026-09-09", async () => {
+    const zeroExitStudy = {
+      parcelNodeId,
+      catchmentGeoJson: { type: "FeatureCollection", features: [] },
+      drainageZonesGeoJson: { type: "FeatureCollection", features: [] },
+      rainfallResultGeoJson: null,
+      flowLinesGeoJson: { type: "FeatureCollection", features: [] },
+      rainfallDepthInches: 9.5,
+      rainfallSource: "default" as const,
+      demProvenance: { source: "USGS 3DEP", resolutionMeters: 10 },
+      briefing: "test briefing",
+      flowExits: [],
+      stats: { catchmentAreaSqFt: 1000, pondedAreaSqFt: 0, pondedAreaModeledRegionSqFt: 0, flowExitCount: 0, pourPoint: { lng: -98.5, lat: 29.4 }, pourPointMethod: "ring-centroid" as const },
+      computation: { library: "test", routing: "d8", accumulationThreshold: 10 },
+      parcelRingWgs84: ringWgs84,
+      catchmentBbox: bbox,
+      geometrySourceRef: "test",
+      generatedAt: new Date().toISOString(),
+    };
+    const studyBytes = new TextEncoder().encode(JSON.stringify(zeroExitStudy));
+    const artifactData = new Map<string, Uint8Array>([["memory://study", studyBytes]]);
+    const storageWithStudy = {
+      listPropertyAtomsByParcelNodeId: async () => [
+        {
+          entityType: "parcel-terrain-model",
+          artifacts: { "json-flood-drainage-study": { format: "json-flood-drainage-study", ref: "memory://study" } },
+        } as unknown as PropertyAtomInstance,
+      ],
+    } as unknown as StoragePort;
+
+    const { model } = await composeParcelReport({
+      parcelNodeId,
+      resolver: workingGeometryResolver,
+      setback: undefined,
+      storage: storageWithStudy,
+      artifactStore: { async put() { return "unused"; }, async get(ref: string) { return artifactData.get(ref) ?? null; } },
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      floodZoneOverride: { honestUnavailable: true, reason: "test fixture" },
+      boundaryEdgesOverride: [],
+      resolveStreetFromRoadNodes: false,
+      drainage: {},
+      dischargeResolver: { resolve: async () => ({ status: "present", point: { name: "unused", featureType: null, distanceMeters: 0, sourceUrl: "", layerName: "" } }) },
+    });
+
+    expect(model.facts.dischargePoint.status).toBe("absent");
+    if (model.facts.dischargePoint.status === "absent") {
+      expect(model.facts.dischargePoint.kind).toBe("blocked-at-source");
+      expect(model.facts.dischargePoint.reason).toContain("modeled no surface flow exit");
+    }
+  });
+
+  it("an explicit ringOverride/centroidOverride/dischargeExitPoint still wins over the geometry-resolved values -- the test/operator escape hatch is preserved", async () => {
+    const forcedRing: Array<[number, number]> = [
+      [-97.0, 30.0],
+      [-96.999, 30.0],
+      [-96.999, 30.001],
+      [-97.0, 30.001],
+      [-97.0, 30.0],
+    ];
+    const floodplainCalls: unknown[] = [];
+    await composeParcelReport({
+      parcelNodeId,
+      resolver: workingGeometryResolver,
+      setback: undefined,
+      storage: fakeStorage([]),
+      artifactStore: fakeArtifactStore(),
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      // Skip the network-shaped internal resolutions this test isn't about
+      // (flood-zone lookup, road-node attachment) so the ONLY thing that can
+      // make composeSitePlanModelForParcel fail here is the thing under
+      // test.
+      floodZoneOverride: { honestUnavailable: true, reason: "test fixture" },
+      boundaryEdgesOverride: [],
+      resolveStreetFromRoadNodes: false,
+      ringOverride: forcedRing,
+      factResolvers: {
+        floodplain: async (ring) => {
+          floodplainCalls.push(ring);
+          return {
+            acreage: { status: "present", facts: { parcelAcres: 1, sfhaAcres: 0, zones: [] } },
+            firmPanel: { status: "present", panels: [] },
+          };
+        },
+      },
+    });
+    expect(floodplainCalls[0]).toEqual(forcedRing);
+    expect(floodplainCalls[0]).not.toEqual(ringWgs84);
+  });
+});
+
+describe("R-06: utilities' missing-input case is out-of-scope, never failed-this-run", () => {
+  it("no whoServes resolver supplied: out-of-scope (nothing was reached, nothing failed) -- not failed-this-run (that means WE failed)", async () => {
+    const sitePlan = buildSitePlanModel();
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: { status: "present", model: sitePlan },
+      drainage: NO_DRAINAGE,
+      centroid: { latitude: 29.4, longitude: -98.5 },
+      // whoServes omitted entirely.
+    });
+    expect(model.facts.utilities.status).toBe("absent");
+    if (model.facts.utilities.status === "absent") {
+      expect(model.facts.utilities.kind).toBe("out-of-scope");
+    }
+  });
+
+  it("a whoServes resolver that reports its own failed-this-run kind is respected, never collapsed into blocked-at-source", async () => {
+    const sitePlan = buildSitePlanModel();
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: { status: "present", model: sitePlan },
+      drainage: NO_DRAINAGE,
+      centroid: { latitude: 29.4, longitude: -98.5 },
+      whoServes: {
+        resolve: async () => ({ status: "unmeasured", kind: "failed-this-run", basis: "HIFLD query threw: network unreachable" }),
+      },
+    });
+    expect(model.facts.utilities.status).toBe("absent");
+    if (model.facts.utilities.status === "absent") {
+      expect(model.facts.utilities.kind).toBe("failed-this-run");
+    }
+  });
+
+  it("a whoServes resolver that reports unmeasured with no kind still defaults to blocked-at-source (backward compatible)", async () => {
+    const sitePlan = buildSitePlanModel();
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: { status: "present", model: sitePlan },
+      drainage: NO_DRAINAGE,
+      centroid: { latitude: 29.4, longitude: -98.5 },
+      whoServes: {
+        resolve: async () => ({ status: "unmeasured", basis: "no territory here" }),
+      },
+    });
+    expect(model.facts.utilities.status).toBe("absent");
+    if (model.facts.utilities.status === "absent") {
+      expect(model.facts.utilities.kind).toBe("blocked-at-source");
     }
   });
 });

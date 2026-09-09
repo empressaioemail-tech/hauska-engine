@@ -41,6 +41,7 @@ import {
   type DataQualityNote,
   type OpenItem,
   type DischargePointFacts,
+  type AbsenceKind,
 } from "./feasibility-model.js";
 import type {
   FirmPanelCitation,
@@ -222,6 +223,10 @@ export interface ComposeParcelReportFactsOptions {
   factReadTimeoutMs?: number;
   dischargeExitPoint?: { lat: number; lng: number };
   dischargeResolver?: DischargePointResolver;
+  /** Set by composeParcelReport when dischargeExitPoint ended up undefined
+   * for a reason more specific than "not requested" -- see dischargePoint's
+   * own section below for why this matters. */
+  dischargeUnavailableReason?: { kind: AbsenceKind; reason: string };
 }
 
 const JURISDICTION_ACTION_SENTENCE = "Confirm city-limits and ETJ status with the county before proceeding.";
@@ -499,17 +504,27 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
 
   const utilities = await safeSectionAsync<UtilityWhoServesFacts>("utilities", async () => {
     if (!options.whoServes || !options.centroid) {
+      // Not "failed-this-run": nothing was reached and nothing failed. A
+      // missing whoServes resolver is a caller decision, the same shape as
+      // an omitted factResolvers entry (notRequested() below) -- previously
+      // mislabeled as our own failure, which is exactly the shape the
+      // 2026-09-09 operator ruling forbids surfacing to a customer.
       return absent(
-        "failed-this-run",
-        "The utility service-territory lookup did not run for this parcel.",
-        "Service territory is unknown for this run. This is a gap on our side, not a finding about the parcel.",
+        "out-of-scope",
+        "Utility service-territory lookup was not requested for this run.",
+        "This family can be produced on request; nothing about this parcel prevented it.",
       );
     }
     const result = await options.whoServes.resolve(options.centroid);
     return result.status === "measured"
       ? present<UtilityWhoServesFacts>({ holders: result.holders, residual: result.residual }, { asOfIso: result.asOf ?? undefined })
       : absent(
-          "blocked-at-source",
+          // A resolver that threw/timed out failed THIS run, ours; a
+          // resolver that ran cleanly and found no coverage is an honest
+          // declared absence. Collapsing both into blocked-at-source (the
+          // previous unconditional behavior) would misreport a live outage
+          // as a permanent finding about the parcel.
+          result.kind ?? "blocked-at-source",
           result.basis,
           "Territory holders could not be resolved. Request a service-availability letter before assuming capacity.",
         );
@@ -517,9 +532,16 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
 
   const dischargePoint = await safeSectionAsync<DischargePointFacts>("dischargePoint", async () => {
     if (!options.dischargeExitPoint || !options.dischargeResolver) {
+      // "Not requested" is the right story only when nothing was ever
+      // attempted. composeParcelReport sets dischargeUnavailableReason when
+      // it knows better: the drainage study genuinely ran and modeled zero
+      // flow exits (a real, checked finding -- blocked-at-source, not a
+      // scope decision), or the study itself failed to compute this run
+      // (failed-this-run -- ours, not the parcel's).
+      const fallback = options.dischargeUnavailableReason;
       return absent(
-        "out-of-scope",
-        "No modeled drainage exit point was available for this parcel.",
+        fallback?.kind ?? "out-of-scope",
+        fallback?.reason ?? "No modeled drainage exit point was available for this parcel.",
         "The named downstream receiving water is not reported. This is a coverage limitation, not something to go confirm.",
       );
     }
@@ -838,16 +860,33 @@ function centroidOfRing(ringWgs84: ReadonlyArray<[number, number]>): { latitude:
 
 export async function composeParcelReport(options: ComposeParcelReportOptions): Promise<ComposeParcelReportResult> {
   let geometry: ParcelGeometryState;
+  // The REAL ring/centroid composeSitePlanModelForParcel resolved from the
+  // live parcel-geometry resolver on this call -- the actual parcel
+  // boundary, not a test-only override. Previously only options.ringOverride/
+  // centroidOverride (caller-supplied test escape hatches production never
+  // sends) fed the fact resolvers below, so floodplainAcreage, firmPanel,
+  // soil and electricProvider never reached their live NFHL/SSURGO/HIFLD
+  // reads on any real request. Threading the resolved values through fixes
+  // all four with one change.
+  let resolvedRingWgs84: ReadonlyArray<[number, number]> | undefined;
+  let resolvedCentroid: { latitude: number; longitude: number } | undefined;
   try {
     const composed = await composeSitePlanModelForParcel(options);
     geometry = { status: "present", model: composed.model };
+    resolvedRingWgs84 = composed.ringWgs84;
+    resolvedCentroid = composed.centroid;
   } catch (error) {
     // R2: the outage this generalises. A parcel whose geometry cannot be
     // composed no longer takes the whole report down with it.
     geometry = { status: "absent", reason: sitePlanUnavailableFromError(error).summary };
   }
 
-  const centroid = options.centroidOverride ?? (options.ringOverride ? centroidOfRing(options.ringOverride) : undefined);
+  // ringOverride/centroidOverride remain an explicit escape hatch (tests, or
+  // a caller with its own reason to force a specific ring) and win when
+  // supplied; otherwise use what geometry composition actually resolved.
+  const ringWgs84ForFacts = options.ringOverride ?? resolvedRingWgs84;
+  const centroid =
+    options.centroidOverride ?? resolvedCentroid ?? (ringWgs84ForFacts ? centroidOfRing(ringWgs84ForFacts) : undefined);
 
   let drainageResult: ResolveParcelDrainageResult;
   if (!options.drainage) {
@@ -867,8 +906,41 @@ export async function composeParcelReport(options: ComposeParcelReportOptions): 
     });
   }
 
+  // item 19: the D8 drainage study, when this call ran one, already computes
+  // a real, un-named exit coordinate per flow line (discharge-point.ts's own
+  // module doc). Use the first one as the discharge-point resolver's input
+  // when the caller did not supply one explicitly -- previously this only
+  // ever fired for a caller that already knew the coordinate in advance,
+  // which no real caller does; the study this same request may have just
+  // computed is exactly that coordinate.
+  const firstFlowExit =
+    drainageResult.state.status === "present" ? drainageResult.state.study.flowExits[0] : undefined;
+  const dischargeExitPoint =
+    options.dischargeExitPoint ?? (firstFlowExit ? { lat: firstFlowExit.lat, lng: firstFlowExit.lng } : undefined);
+
+  // dischargeExitPoint can end up undefined for three different reasons that
+  // must not read the same to a customer: never requested (out-of-scope,
+  // the default below), the study ran and genuinely modeled zero surface
+  // flow exits (a real checked finding -- live-verified 2026-09-09 against
+  // Bastrop 48021:52727, which drains nowhere on the modeled catchment),
+  // or a requested fresh run failed to compute at all (ours, this run).
+  let dischargeUnavailableReason: { kind: AbsenceKind; reason: string } | undefined;
+  if (!options.dischargeExitPoint && !dischargeExitPoint) {
+    if (drainageResult.state.status === "present" && drainageResult.state.study.flowExits.length === 0) {
+      dischargeUnavailableReason = {
+        kind: "blocked-at-source",
+        reason: "The parcel-scoped drainage study ran and modeled no surface flow exit for this parcel.",
+      };
+    } else if (options.drainage?.runWhenStale && drainageResult.state.status === "absent") {
+      dischargeUnavailableReason = {
+        kind: "failed-this-run",
+        reason: `The drainage study needed to locate a discharge point did not complete: ${drainageResult.state.reason}`,
+      };
+    }
+  }
+
   const model = await composeParcelReportFacts({
-    ...(options.ringOverride ? { ringWgs84: options.ringOverride } : {}),
+    ...(ringWgs84ForFacts ? { ringWgs84: ringWgs84ForFacts } : {}),
     ...(options.factResolvers ? { factResolvers: options.factResolvers } : {}),
     parcelNodeId: options.parcelNodeId,
     storage: options.storage,
@@ -876,8 +948,9 @@ export async function composeParcelReport(options: ComposeParcelReportOptions): 
     drainage: drainageResult.state,
     centroid,
     whoServes: options.whoServes,
-    dischargeExitPoint: options.dischargeExitPoint,
+    dischargeExitPoint,
     dischargeResolver: options.dischargeResolver,
+    ...(dischargeUnavailableReason ? { dischargeUnavailableReason } : {}),
   });
 
   return { model, freshDrainageStudy: drainageResult.freshlyComputed };

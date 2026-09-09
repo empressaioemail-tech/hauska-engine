@@ -12,6 +12,11 @@ vi.mock("@hauska-engine/engine-core/site-plan", () => ({
   // P-120 R-04: the route now passes the live fact resolvers through.
   // The mock must export it or the module import fails before any assertion.
   LIVE_PARCEL_REPORT_FACT_RESOLVERS: {},
+  // P-120 R-06 (2026-09-09 CTX-FAMILIES): the route now constructs these
+  // unconditionally (construction itself does no network IO), so the mock
+  // must export both or the module import fails before any assertion.
+  createCountyHydrographyDischargeResolver: vi.fn(() => ({ resolve: vi.fn() })),
+  createElectricOnlyWhoServesResolver: vi.fn(() => ({ resolve: vi.fn() })),
   authorParcelSitePlanExport: vi.fn(),
   authorParcelPropertyDossierExport: vi.fn(),
   authorParcelFeasibilityExport: vi.fn(

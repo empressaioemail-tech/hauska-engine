@@ -21,6 +21,7 @@ import {
   authorParcelPropertyDossierExport,
   authorParcelSitePlanExport,
   createCountyHydrographyDischargeResolver,
+  createElectricOnlyWhoServesResolver,
 } from "@hauska-engine/engine-core/site-plan";
 import {
   GcsTerrainArtifactStore,
@@ -626,10 +627,21 @@ export function buildParcelTerrainRoutes(
         // to the real adapters, same as the Flood-Drainage report's own
         // route does today.
         drainage: { runWhenStale: true },
+        // P-120 R-06 (2026-09-09 CTX-FAMILIES): the resolver is always
+        // constructed -- construction does no network IO, only .resolve()
+        // does. dischargeExitPoint is passed through when the caller
+        // supplied one; composeParcelReport now derives one from the D8
+        // drainage study's own first flow exit when the caller did not,
+        // which is the actual production shape (no real caller has ever
+        // been observed to supply an exit point in advance).
         dischargeExitPoint: parsed.data.dischargeExitPoint,
-        dischargeResolver: parsed.data.dischargeExitPoint
-          ? createCountyHydrographyDischargeResolver()
-          : undefined,
+        dischargeResolver: createCountyHydrographyDischargeResolver(),
+        // P-120 R-06: real electric-territory who-serves read (water/sewer/
+        // water-district have no acquisition path yet -- see CP1 and
+        // who-serves-electric-only.ts's module doc). Armed here so
+        // `utilities` reaches a real partial answer instead of never
+        // running at all.
+        whoServes: createElectricOnlyWhoServesResolver(),
         liveViewUrl: parsed.data.liveViewUrl,
         narrativeOverride: parsed.data.narrativeOverride,
         narrativeSection: narrativeSectionFromEnv(),

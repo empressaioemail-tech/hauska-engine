@@ -175,15 +175,26 @@ export interface UtilityWhoServesFacts {
   residual: string;
 }
 
-/** Injected resolver for the cross-repo who-serves read (`legacy-design-tools`
- * `GET /api/who-serves`) — mirrors this codebase's existing pattern for
- * cross-service reads (`ParcelGeometryResolver`, `AerialImageFetcher`):
- * an interface at the boundary, never a direct import of the other repo's
- * DB layer. The assembler must not block on this failing (spec item 8). */
+/** Injected resolver for the who-serves read — mirrors this codebase's
+ * existing pattern for cross-service reads (`ParcelGeometryResolver`,
+ * `AerialImageFetcher`): an interface at the boundary, never a direct import
+ * of another repo's or another package's read. The assembler must not block
+ * on this failing (spec item 8). Originally specified against a cross-repo
+ * `legacy-design-tools GET /api/who-serves` endpoint backed by an internal
+ * utility-territory table; neither exists (2026-09-09 CTX-FAMILIES CP1), so
+ * the live implementation (`who-serves-electric-only.ts`) answers from the
+ * one utility type this repo can actually check today. The interface itself
+ * is unchanged by that — a future resolver backed by the originally-intended
+ * source is a drop-in replacement. */
 export interface WhoServesResolver {
   resolve(input: { latitude: number; longitude: number }): Promise<
     | { status: "measured"; holders: UtilityWhoServesFacts["holders"]; residual: string; asOf: string | null }
-    | { status: "unmeasured"; basis: string }
+    /** `kind` defaults to `blocked-at-source` when omitted (the original,
+     * sole behavior this resolver interface had) — but a resolver whose
+     * underlying read genuinely FAILED this run (a thrown network error, a
+     * timeout) must say `failed-this-run` rather than let a live outage
+     * misreport as an honest declared absence. */
+    | { status: "unmeasured"; basis: string; kind?: AbsenceKind }
   >;
 }
 
