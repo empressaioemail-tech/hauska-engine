@@ -72,7 +72,8 @@ export interface AuthorParcelFeasibilityExportOptions
    */
   narrativeWebSearch?: boolean;
   /**
-   * Generate the narrative with the LLM at all. OFF BY DEFAULT.
+   * Generate the narrative with the LLM at all. ON BY DEFAULT since
+   * 2026-09-09; pass `false` to force the deterministic skeleton.
    *
    * Measured against grok-4.6 on 2026-09-08: 63s without web search, 95s
    * with. Property Explorer's BFF budgets 55s for the WHOLE feasibility
@@ -160,8 +161,12 @@ export async function authorParcelFeasibilityExport(
     // secret. `narrativeSection` remains only as an explicit override for a
     // caller that still wants the LDT route; see the retirement note on
     // `narrative-section-client.ts`.
-    const wantsGenerated =
-      options.narrativeGenerate === true || options.narrativeWebSearch === true;
+    // ON BY DEFAULT (2026-09-09). It was opt-in while the default model was
+    // grok-4.6 at 63s, which did not fit Property Explorer's 55s
+    // whole-compose budget. grok-4.3 produces a longer, better-cited
+    // narrative in 12.7s, so the reason for holding it back is gone.
+    // `narrativeGenerate: false` still turns it off explicitly.
+    const wantsGenerated = options.narrativeGenerate !== false;
     const generated = wantsGenerated
       ? await generateFeasibilityNarrative(model, {
           webSearch: options.narrativeWebSearch === true,

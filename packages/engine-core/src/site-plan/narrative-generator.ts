@@ -96,12 +96,22 @@ export interface GenerateNarrativeOptions {
  * Fast model without search, reasoning model with it. Measured on one parcel,
  * 2026-09-08, same prompt and same payload:
  *
- *   grok-3-mini   17.5s   1,213 output tokens (908 reasoning)     53,784,000 ticks   11 families cited
- *   grok-4.6      63.5s   3,968 output tokens (3,467 reasoning)  282,780,000 ticks   14 families cited
+ *   grok-3-mini   16.0s   13 cited   392 words
+ *   grok-4.3      12.7s   18 cited   372 words   <- default
+ *   grok-4.6      74.1s   20 cited   477 words
  *
- * 3.6x the wall clock and 5.3x the cost for three more cited families is not
- * worth it on a synchronous customer path — Property Explorer budgets 55s for
- * the WHOLE compose, and 63s does not fit it at any quality. 17.5s does.
+ * grok-4.6 does not fit: Property Explorer budgets 55s for the WHOLE compose.
+ * grok-4.3 is the fastest of the three AND cites the most families per second,
+ * and its prose reasons across facts rather than listing them — it refuses the
+ * empty-lot inference unprompted and closes by saying which confirmation to
+ * get first.
+ *
+ * MEASURED SEPARATELY, and the more useful finding: the first cut of these
+ * numbers had grok-3-mini at 142 words and grok-4.3 at 226, and the limiter
+ * was this file's own prompt ("three to six SHORT paragraphs"), not the
+ * models. Stating a word count and saying the narrative appears on the cover
+ * took grok-3-mini from 142 to 392 words at the same latency. Prompt before
+ * model, when output looks thin.
  *
  * Web search is the exception. The searching run has to judge which results
  * are about THIS parcel and which are a different Church Street, and the
@@ -111,7 +121,7 @@ export interface GenerateNarrativeOptions {
  *
  * `XAI_NARRATIVE_MODEL` overrides both.
  */
-export const NARRATIVE_MODEL_FAST = "grok-3-mini";
+export const NARRATIVE_MODEL_FAST = "grok-4.3";
 export const NARRATIVE_MODEL_SEARCH = GROK_SEARCH_DEFAULT_MODEL;
 
 function defaultModelFor(webSearch: boolean): string {
@@ -129,7 +139,10 @@ RULES, all mandatory:
 3. Where two facts disagree, say so plainly and say which one a reader should act on. Disagreements are the most valuable thing you can surface.
 4. An absent fact is not a negative finding. "No record was found" never becomes "there is none". Never infer a vacant site from a missing footprint.
 5. No dollar figures, no yield or unit estimates, no schedule estimates. None are supported by this data.
-6. Plain prose. No bullet lists, no headings, no bold. Three to six short paragraphs.
+6. Plain prose. No bullet lists, no headings, no bold.
+7. LENGTH: write 350 to 500 words, in four to six paragraphs. This is the primary narrative of the document and it appears on the cover, where it is the first thing a buyer reads. A three-sentence answer is a failure of the task, not a concise version of it.
+8. Attach a marker to the sentence that actually used the fact. Do not stack unrelated markers at the end of a sentence: "[a][b][c][d][e]" tells a reader nothing about which claim rests on which fact.
+9. Lead with what a decision-maker needs first. Open with what can be built and what governs it; put the confirmations and the unknowns after that, and close with what stands between this packet and a decision.
 
 If you used web search, put everything you learned from the web AFTER the main narrative, inside these exact delimiters:
 ${WEB_BLOCK_OPEN}

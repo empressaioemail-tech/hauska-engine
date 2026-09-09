@@ -1337,7 +1337,7 @@ export async function emitPdfFeasibility(
     webSheetCount +
     howToCount;
 
-  const sitePlanStartAt = coverCount + aerialCount + 1;
+  const sitePlanStartAt = coverCount + notesPlanned.length + aerialCount + 1;
   const sitePlanRender: Promise<PdfSitePlanResult> | null =
     options.sitePlan && sitePlanCopyCount > 0
       ? emitPdfSitePlan(options.sitePlan.model, {
@@ -1390,15 +1390,23 @@ export async function emitPdfFeasibility(
     | { kind: "dossier"; planned: PlannedPage };
 
 
+  // Cover, then the NARRATIVE, then the aerial.
+  //
+  // The narrative used to sit near the back (sheet 11 of 12), which is where
+  // a reader never reaches. It is the only part of this document that reasons
+  // across the facts rather than listing them, so it is the part most worth
+  // reading and it now runs immediately after the cover's four answers.
+  // Operator direction 2026-09-09: "page two or even on the cover should be a
+  // half page narrative at minimum."
   const sheetPlan: FeasibilitySheet[] = [
     ...(includeCover ? [{ kind: "dossier" as const, planned: { kind: "cover" } as PlannedPage }] : []),
+    ...notesPlanned.map((planned) => ({ kind: "dossier" as const, planned })),
     ...(includeAerial ? [{ kind: "aerial" as const }] : []),
   ];
   // Site-plan sheets are copied in, not drawn here, so they occupy
   // `sitePlanCopyCount` positions between the aerial and the facts.
   const afterSitePlan: FeasibilitySheet[] = [
     ...briefPlanned.map((planned) => ({ kind: "dossier" as const, planned })),
-    ...notesPlanned.map((planned) => ({ kind: "dossier" as const, planned })),
     ...(webSheetCount > 0 ? [{ kind: "web-findings" as const }] : []),
     { kind: "how-to-read" as const },
   ];
