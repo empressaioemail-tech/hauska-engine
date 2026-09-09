@@ -267,6 +267,18 @@ export interface ComposeSitePlanModelForParcelResult {
   terrainWindowExpanded: boolean;
   /** Why the window was widened. Present only when expanded. */
   terrainWindowReason?: string;
+  /**
+   * The REAL WGS84 boundary ring this composition resolved (from the live
+   * parcel-geometry resolver, or ringOverride for a test) and the centroid
+   * derived from it. `composeSitePlanModel` consumes these to build `model`
+   * but does not carry the raw ring back out on it (`model` keeps only
+   * `ringLocal` + `bboxWgs84`) -- callers that need the WGS84 ring/centroid
+   * for something other than the site-plan drawing itself (P-120 R-04's
+   * floodplain/soil/electric-provider fact reads) read them from here rather
+   * than re-resolving or requiring a second, caller-supplied override.
+   */
+  ringWgs84: ReadonlyArray<[number, number]>;
+  centroid: { latitude: number; longitude: number };
 }
 
 export async function composeSitePlanModelForParcel(
@@ -500,6 +512,8 @@ export async function composeSitePlanModelForParcel(
     contourIntervalMeters,
     terrainWindowExpanded: terrainWindow.expanded,
     ...(terrainWindow.reason ? { terrainWindowReason: terrainWindow.reason } : {}),
+    ringWgs84,
+    centroid,
   };
 }
 

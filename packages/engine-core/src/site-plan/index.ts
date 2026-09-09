@@ -47,6 +47,11 @@ export {
 export { LIVE_PARCEL_REPORT_FACT_RESOLVERS } from "./live-fact-resolvers.js";
 
 export {
+  createElectricOnlyWhoServesResolver,
+  UTILITIES_ELECTRIC_ONLY_RESIDUAL,
+} from "./who-serves-electric-only.js";
+
+export {
   resolveTerrainWindowBbox,
   requiredWindowExtentMeters,
   type TerrainWindowResult,
