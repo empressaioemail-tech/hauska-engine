@@ -117,13 +117,15 @@ describe("Feasibility narrative wiring (P-120 item 6)", () => {
     // exactly the failure the enforcement rules name.
     const result = await authorParcelFeasibilityExport(baseOptions() as any);
     expect(result.narrativeIsDeterministicSkeleton).toBe(true);
-    // The reason is now the SPECIFIC one. Generation moved in-process AND
-    // became opt-in (63s measured, against PE's 55s whole-compose budget), so
-    // an unrequested narrative reports "not-requested" rather than the older
-    // "not-configured", which described a cross-repo endpoint that is no
-    // longer the first path tried. What must not change is that SOME reason
-    // is always named — that invariant has its own test below.
-    expect(result.narrativeFallbackReason).toBe("not-requested");
+    // The reason is the SPECIFIC one. In-process generation is now ON by
+    // default (grok-4.3 at 12.7s fits Property Explorer's 55s whole-compose
+    // budget, which grok-4.6 at 63s did not), so with no XAI_API_KEY the
+    // honest cause is "no-api-key" — not "not-requested", which described the
+    // opt-in window, and not the older "not-configured", which described a
+    // cross-repo endpoint that is no longer the first path tried. What must
+    // not change is that SOME reason is always named; that invariant has its
+    // own test below.
+    expect(result.narrativeFallbackReason).toBe("no-api-key");
     expect(result.pageCount).toBeGreaterThan(0);
   });
 
