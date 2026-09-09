@@ -62,6 +62,17 @@ export const ZONING_STAGING_REGISTRY: Record<string, ZoningCityRegistryEntry> = 
     codeField: "Zone_Code",
     descriptionField: "Zoning",
     // Elgin A (legacy multifamily letter) → ordinance R-4.
+    // S-P ("Specific Use" per this layer's own Zoning field; "Special Permit"
+    // per the FeatureServer's service-level domain description, both sourced
+    // from the City of Elgin) is NOT one of the 8 base districts established
+    // in Chapter 46 Sec. 46-203 (R-1..R-4, C-1..C-3, I — see
+    // property-reasoning/district-code-section-map.ts ELGIN_TX_MAP). A
+    // specific-use/special-permit grant carries its own case-by-case
+    // conditions rather than a shared district's dimensional/use standards,
+    // so it has no honest equivalent among those 8 and stages under its own
+    // identity rather than being forced into a neighbouring code (CTX-SP,
+    // 2026-09-09). Confirmed live: appears only on this layer (FeatureServer/0,
+    // Bastrop side); FeatureServer/1 (Travis side) carries no S-P features.
     codeDomainMap: {
       "R-1": "R-1",
       "R-2": "R-2",
@@ -71,6 +82,7 @@ export const ZONING_STAGING_REGISTRY: Record<string, ZoningCityRegistryEntry> = 
       "C-2": "C-2",
       "C-3": "C-3",
       I: "I",
+      "S-P": "S-P",
     },
     codeExtractRegex: null,
     nullDistrictCodes: [],
