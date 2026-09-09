@@ -172,6 +172,27 @@ export async function authorParcelFeasibilityExport(
           webSearch: options.narrativeWebSearch === true,
         })
       : ({ ok: false, reason: "not-requested" } as const);
+    // Log the in-process OUTCOME whether or not the fallback rescues it.
+    // Without this, a silent in-process failure is invisible: the fallback
+    // reason is only written when the LDT path ALSO fails, so a broken
+    // in-process path served by a working fallback looks identical to a
+    // healthy one. That is exactly what happened on 00197-fuy.
+    if (wantsGenerated) {
+      console.log(
+        JSON.stringify({
+          level: generated.ok ? "info" : "warn",
+          service: "engine-core",
+          event: "feasibility.narrative_inprocess.outcome",
+          outcome: generated.ok ? "ok" : generated.reason,
+          ...(generated.ok ? { citedCount: generated.citedSections.length } : {}),
+          ...(!generated.ok && "detail" in generated && generated.detail
+            ? { detail: generated.detail }
+            : {}),
+          parcelNodeId: model.parcelNodeId,
+          ts: new Date().toISOString(),
+        }),
+      );
+    }
     if (generated.ok) {
       narrativeOverride = generated.narrativeOverride;
       narrativeCitedSections = generated.citedSections;

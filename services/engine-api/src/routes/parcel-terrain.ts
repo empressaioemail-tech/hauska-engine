@@ -639,7 +639,12 @@ export function buildParcelTerrainRoutes(
         // `webSearch: true` in the body. It costs latency and money on a
         // synchronous customer path, so it is not on by default.
         narrativeWebSearch: parsed.data.webSearch === true,
-        narrativeGenerate: parsed.data.narrative === true,
+        // PASSED THROUGH, not coerced. `=== true` turned an absent field into
+        // an explicit `false`, which defeated the author's own default and
+        // meant in-process generation never ran in production while the LDT
+        // fallback quietly served every request. A default in one layer is
+        // worthless if a caller hard-codes the value.
+        narrativeGenerate: parsed.data.narrative,
         // P-120 R-04: run the floodplain-acreage, FIRM-panel, soil and
         // electric/gas families. Injected rather than defaulted because they
         // are live network reads; armed HERE so production actually gets them
