@@ -852,6 +852,44 @@ export function feasibilityDocumentBaseName(model: ParcelReportModel): string {
   return slug.length > 0 ? `${slug}_${key}_feasibility_study` : `${key}_feasibility_study`;
 }
 
+/**
+ * The X-Ray's section set: a mini feasibility.
+ *
+ * FILTERED from `feasibilityModelToBriefSections`, never re-derived. That is
+ * the whole point of the one-model re-cut — X-Ray showing a different owner
+ * or a different buildable area than Feasibility for the same parcel is the
+ * defect class this program exists to delete, and it cannot happen if both
+ * read the same composed sections.
+ *
+ * What is in: where it is, who owns it and what the roll says, what can be
+ * built, flood headline, what is standing on it, and what to chase. That is
+ * the high-level read.
+ *
+ * What is out: floodplain acreage, FIRM panel, soil, electric and gas
+ * territory, wells and pipelines, discharge point, terrain detail, data
+ * quality. Those belong in the full study; in a four-sheet snapshot they
+ * bury the five facts a reader opened it for.
+ */
+export const X_RAY_SECTION_IDS: ReadonlyArray<string> = Object.freeze([
+  "jurisdiction",
+  "parcel-ownership",
+  "zoning-envelope",
+  "flood",
+  "footprint",
+  "open-items",
+]);
+
+export function xRayModelToBriefSections(model: ParcelReportModel): DossierBriefSectionInput[] {
+  const bySectionId = new Map(
+    feasibilityModelToBriefSections(model).map((section) => [section.id, section]),
+  );
+  // Ordered by X_RAY_SECTION_IDS, not by the feasibility order, so the
+  // snapshot reads in its own sequence.
+  return X_RAY_SECTION_IDS.map((id) => bySectionId.get(id)).filter(
+    (s): s is DossierBriefSectionInput => s !== undefined,
+  );
+}
+
 export const FEASIBILITY_AERIAL_KICKER = "AERIAL CONTEXT";
 export const FEASIBILITY_HOW_TO_READ_KICKER = "HOW TO READ THIS";
 
@@ -1421,6 +1459,7 @@ export async function emitPdfFeasibility(
       cover: FEASIBILITY_KICKER,
       brief: "FEASIBILITY FACTS",
       chat: FEASIBILITY_NARRATIVE_HEADING,
+      narrative: FEASIBILITY_NARRATIVE_HEADING,
       notes: FEASIBILITY_NARRATIVE_HEADING,
     };
     const eyebrow =

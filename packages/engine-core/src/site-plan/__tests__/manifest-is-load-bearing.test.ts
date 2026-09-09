@@ -14,6 +14,7 @@ import {
   aerialCaption,
   emitPdfFeasibility,
   feasibilityModelToBriefSections,
+  xRayModelToBriefSections,
   floodSheetPlan,
   footprintContradictsAppraisal,
   improvementEvidence,
@@ -367,4 +368,57 @@ describe("the backfill worklist separates kinds of nothing", () => {
     expect(byKey.firmPanel!.actionable).toBe(true);
     expect(byKey.gasProvider!.actionable).toBe(false);
   });
+});
+
+/**
+ * X-Ray as a mini feasibility (operator direction 2026-09-09): "more of a
+ * high level snapshot... it doesn't need to include the aerials or flood
+ * study, [just] the site plan and narratives and property details."
+ *
+ * The load-bearing property is that X-Ray FILTERS the Feasibility sections
+ * rather than deriving its own. X-Ray printing a different owner or a
+ * different buildable area than Feasibility for the same parcel is the exact
+ * defect the one-model re-cut exists to delete, and filtering makes it
+ * unreachable rather than policed.
+ */
+describe("the X-Ray section set is a filter, never a second derivation", () => {
+  it("every X-Ray section is content-identical to the Feasibility section of the same id", async () => {
+    const model = await buildModel();
+    const feasibility = feasibilityModelToBriefSections(model);
+    const xray = xRayModelToBriefSections(model);
+
+    expect(xray.length).toBeGreaterThan(0);
+    for (const section of xray) {
+      const source = feasibility.find((s) => s.id === section.id);
+      expect(source).toBeDefined();
+      expect(section).toEqual(source);
+    }
+
+    // What this proves and what it does not. It proves the two documents
+    // state the same thing for every shared section, so a reader cannot find
+    // a different owner or a different buildable area in the X-Ray than in
+    // the Feasibility Study. It does NOT prove they came from one call —
+    // reference identity is unobservable here because the composition runs
+    // once inside each function. If someone re-derived the X-Ray sections
+    // from the same model this assertion would still pass while they agreed,
+    // and would start failing the moment they drifted, which is the point.
+  }, 60_000);
+
+  it("carries property details, and omits the full study's deep families", async () => {
+    const ids = xRayModelToBriefSections(await buildModel()).map((s) => s.id);
+    // What a snapshot is for.
+    expect(ids).toContain("parcel-ownership");
+    expect(ids).toContain("zoning-envelope");
+    expect(ids).toContain("flood");
+    // What belongs in the full study and would bury a four-sheet document.
+    for (const deep of ["floodplain-acreage", "firm-panel", "soil", "service-providers", "wells-pipelines", "terrain"]) {
+      expect(ids).not.toContain(deep);
+    }
+  }, 60_000);
+
+  it("reads in the X-Ray's own order, not the Feasibility order", async () => {
+    const ids = xRayModelToBriefSections(await buildModel()).map((s) => s.id);
+    expect(ids.indexOf("parcel-ownership")).toBeLessThan(ids.indexOf("flood"));
+    expect(ids[ids.length - 1]).toBe("open-items");
+  }, 60_000);
 });

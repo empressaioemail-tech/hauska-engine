@@ -87,6 +87,16 @@ export interface DossierContentInput {
   verdictLine?: string;
   brief?: { sections: DossierBriefSectionInput[] };
   chatSummary?: { summary: string; savedAt: string; disclaimer?: string };
+  /**
+   * Generated narrative, rendered on its OWN sheet directly after the cover.
+   *
+   * Separate from `notes` because they are different claims: `notes` is what
+   * the owner typed, `narrative` is what the engine wrote from the composed
+   * model. Folding one into the other would attribute a machine-written
+   * paragraph to a person, or bury the narrative behind whatever the user
+   * happened to save.
+   */
+  narrative?: { text: string; generatedBy: string };
   notes?: string;
   /** Caller-forwarded deep link to the live Smart Site record (P-90 item 5).
    * Printed verbatim on the cover when present; simply omitted (no chip)
@@ -118,6 +128,7 @@ export const DOSSIER_CAPS = {
 // Standing dossier lines (§8 family). One spelling each, everywhere.
 export const DOSSIER_KICKER = "SMART SITE X-RAY";
 export const DOSSIER_VERDICT_HEADING = "VERDICT";
+export const DOSSIER_NARRATIVE_HEADING = "SNAPSHOT";
 export const DOSSIER_VERDICT_QUALIFIER =
   "The requesting application's deterministic verdict, rendered verbatim.";
 export const DOSSIER_VERDICT_ABSENT_REASON = "No verdict line was supplied for this export.";
@@ -175,6 +186,7 @@ export interface DossierContent {
   verdictLine?: string;
   sections: Array<{ id: string; title: string; facts: Array<Required<Pick<DossierBriefFactInput, "label">> & Omit<DossierBriefFactInput, "label">> }>;
   chatSummary?: { summary: string; savedAt: string; disclaimer?: string };
+  narrative?: { text: string; generatedBy: string };
   notes?: string;
   liveViewUrl?: string;
 }
@@ -201,6 +213,9 @@ export function sanitizeDossierContent(input: DossierContentInput): DossierConte
     multiline: true,
   });
   const notes = sanitizeDossierText(input.notes, C.notes, { multiline: true });
+  // Sanitised on the same path and to the same cap as notes. Generated text
+  // is not trusted more than typed text just because a machine wrote it.
+  const narrativeText = sanitizeDossierText(input.narrative?.text, C.notes, { multiline: true });
 
   return {
     parcelNodeId: input.parcelNodeId,
@@ -218,6 +233,9 @@ export function sanitizeDossierContent(input: DossierContentInput): DossierConte
           }
         : undefined,
     notes,
+    ...(narrativeText && input.narrative
+      ? { narrative: { text: narrativeText, generatedBy: input.narrative.generatedBy } }
+      : {}),
   };
 }
 
@@ -285,6 +303,7 @@ export type PlannedPage =
   | { kind: "cover" }
   | { kind: "brief"; groups: PlannedGroup[] }
   | { kind: "chat"; lines: string[]; first: boolean }
+  | { kind: "narrative"; lines: string[]; first: boolean }
   | { kind: "notes"; lines: string[]; first: boolean };
 
 const LABEL_COL = pt(200);
@@ -398,7 +417,7 @@ export function wrapUserText(text: string, F: Fonts): string[] {
   return out;
 }
 
-export function planTextPages(kind: "chat" | "notes", lines: string[]): PlannedPage[] {
+export function planTextPages(kind: "chat" | "notes" | "narrative", lines: string[]): PlannedPage[] {
   const floor = contentFloorY();
   // Heading + (for chat) AI label + muted rule sit above the text block.
   const chromeCost = sectionHeadingCost() + (kind === "chat" ? LB.subline.lineBoxHeight + pt(SPACE.s3) : 0);
@@ -640,6 +659,13 @@ export async function emitPdfDossier(
   // eyebrow or fine print draws, and before the appended site plan renders
   // (its renumbering seam needs startAt/total).
   const plannedPages: PlannedPage[] = [{ kind: "cover" }];
+  // Narrative FIRST, before the facts. Same reasoning as the Feasibility
+  // Study's page two: it is the only part that reads across the facts rather
+  // than listing them, so it goes where a reader actually reaches.
+  const narrativeLines = content.narrative ? wrapUserText(content.narrative.text, F) : [];
+  if (narrativeLines.length > 0) {
+    plannedPages.push(...planTextPages("narrative", narrativeLines));
+  }
   plannedPages.push(...planBriefPages(content, F));
   const chatLines = content.chatSummary ? wrapUserText(content.chatSummary.summary, F) : [];
   if (content.chatSummary && chatLines.length > 0) {
@@ -694,6 +720,7 @@ export async function emitPdfDossier(
       cover: DOSSIER_KICKER,
       brief: "BRIEF FACTS",
       chat: "AI RESEARCH SUMMARY",
+      narrative: DOSSIER_NARRATIVE_HEADING,
       notes: DOSSIER_NOTES_HEADING,
     };
     const ruleY = drawDossierHeader(
@@ -853,12 +880,30 @@ export async function emitPdfDossier(
       }
     }
 
-    if (planned.kind === "chat" || planned.kind === "notes") {
+    if (planned.kind === "chat" || planned.kind === "notes" || planned.kind === "narrative") {
       const heading =
         planned.kind === "chat"
           ? `AI RESEARCH SUMMARY · SAVED ${(content.chatSummary?.savedAt ?? "").slice(0, 10) || "DATE UNAVAILABLE"}${planned.first ? "" : " · CONTINUED"}`
-          : `${DOSSIER_NOTES_HEADING}${planned.first ? "" : " · CONTINUED"}`;
+          : planned.kind === "narrative"
+            ? `${DOSSIER_NARRATIVE_HEADING}${planned.first ? "" : " · CONTINUED"}`
+            : `${DOSSIER_NOTES_HEADING}${planned.first ? "" : " · CONTINUED"}`;
       let cursor = drawSectionHeading(page, pageNo, heading, ruleY, F, rhythm);
+      if (planned.kind === "narrative") {
+        // Machine-written, and it says so. Same suppressed-label treatment
+        // the chat summary already uses, because the reader's question is the
+        // same one: who wrote this sentence.
+        const labelPlaced = placeRowBelowRule(cursor, LB.subline, { padTop: pt(SPACE.s1), padBottom: pt(SPACE.s1) });
+        drawTrackedText(page, `GENERATED · ${(content.narrative?.generatedBy ?? "unknown").toUpperCase()}`, {
+          x: MARGIN_X,
+          y: labelPlaced.baselines[0]!,
+          size: TYPE.rowQualifier,
+          font: F.body,
+          color: TOKENS.neutral600,
+          trackingEm: TRACKING.eyebrow,
+        });
+        rhythm.row(pageNo, "narrative-label", labelPlaced, LB.subline, pt(SPACE.s1), { ruleDrawn: false });
+        cursor = labelPlaced.nextRuleY;
+      }
       if (planned.kind === "chat") {
         // Visually distinct AI content: suppressed tracked label + muted rule
         // (no new colors — §6/§20 vocabulary only).
@@ -891,7 +936,7 @@ export async function emitPdfDossier(
           color: planned.kind === "chat" ? TOKENS.neutral800 : INK,
         });
       });
-      rhythm.row(pageNo, planned.kind === "chat" ? "chat-text" : "notes-text", textPlaced, LB.kvRow, pt(SPACE.s2), {
+      rhythm.row(pageNo, planned.kind === "chat" ? "chat-text" : planned.kind === "narrative" ? "narrative-text" : "notes-text", textPlaced, LB.kvRow, pt(SPACE.s2), {
         ruleDrawn: planned.kind === "chat",
       });
     }

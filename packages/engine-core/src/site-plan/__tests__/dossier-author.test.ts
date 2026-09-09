@@ -135,7 +135,12 @@ describe("authorParcelPropertyDossierExport", { timeout: 60_000 }, () => {
     // drawing), not the standalone export's full 3+ sheet set.
     expect(result.pageCount).toBe(result.dossierPageCount + 1);
     expect(result.verdictIncluded).toBe(true);
-    expect(result.briefFactCount).toBe(1);
+    // Was 1 — the single fact this fixture's CALLER passed. X-Ray now renders
+    // facts composed from the parcel model instead of whatever the app sent,
+    // so it shows the fields the platform actually holds. The caller's
+    // sections are used only when composition fails outright, which is
+    // asserted by the honest-degrade test below.
+    expect(result.briefFactCount).toBeGreaterThan(1);
     expect(result.chatSummaryIncluded).toBe(true);
     expect(result.notesIncluded).toBe(true);
     expect(result.setbackHonestAbsence).toBe(false);
@@ -154,7 +159,19 @@ describe("authorParcelPropertyDossierExport", { timeout: 60_000 }, () => {
     expect(bytes).toBeDefined();
     const decoded = decodeAllContentStreams(bytes!);
     expect(decoded).toContain(`SITE PLAN · SHEET ${result.dossierPageCount + 1} OF ${result.pageCount}`);
-    expect(decoded).toContain("4,860 SF envelope under R-6 setbacks");
+    // The caller's verdict no longer survives: with geometry composed, X-Ray
+    // takes the MODEL's verdict, the same one the Feasibility Study takes.
+    // Two customer documents about one parcel disagreeing on buildable area
+    // is the defect the one-model re-cut exists to remove.
+    //
+    // Asserted only as an absence, and deliberately not paired with a
+    // positive assertion on the model's wording: this decoder reads back
+    // through the document's own ToUnicode map and cannot be trusted to
+    // confirm what a PDF SAYS
+    // (_inbox/2026-09-08_pdf-text-extraction-instrument_finding.md). The
+    // model-verdict path is covered by unit tests over the composer instead.
+    expect(decoded).not.toContain("4,860 SF envelope under R-6 setbacks");
+    expect(result.verdictIncluded).toBe(true);
 
     // Atom persisted.
     const atoms = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);

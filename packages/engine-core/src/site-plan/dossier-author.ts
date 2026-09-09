@@ -11,6 +11,9 @@ import {
   type PdfDossierResult,
 } from "./pdf/dossier.js";
 import { sitePlanUnavailableFromError } from "./site-plan-unavailable.js";
+import { composeParcelReportFacts, type ParcelReportModel } from "./report-model.js";
+import { xRayModelToBriefSections } from "./pdf/feasibility.js";
+import { generateFeasibilityNarrative } from "./narrative-generator.js";
 
 /**
  * PROPERTY DOSSIER export authoring (2026-07-29).
@@ -34,6 +37,11 @@ export interface AuthorParcelPropertyDossierExportOptions
    * notes). Rendered verbatim after server-side sanitization — the engine
    * never fabricates or verifies user-supplied content. */
   content: Omit<DossierContentInput, "parcelNodeId">;
+  /**
+   * Generate the snapshot narrative. ON by default, same as the Feasibility
+   * Study; pass false to force a narrative-free X-Ray.
+   */
+  narrativeGenerate?: boolean;
 }
 
 export interface AuthorParcelPropertyDossierExportResult {
@@ -78,11 +86,78 @@ export async function authorParcelPropertyDossierExport(
     sitePlanUnavailableReason = sitePlanUnavailableFromError(error).summary;
   }
 
-  // 2) Assemble the dossier (sheets appended when composition succeeded).
+  // 2) Compose the PARCEL REPORT MODEL and render facts from it.
+  //
+  // X-Ray used to print whatever facts the CALLER sent — hauska-map derived
+  // them itself, from its own payload, so the two customer documents about
+  // one parcel were computed by two systems with nothing reconciling them.
+  // That is the second derivation the one-model re-cut exists to delete, and
+  // it is why "the detail fields we have" were not showing: the engine knew
+  // the owner, the roll values, the zoning and the flood zone, and printed
+  // whichever subset the app happened to pass.
+  //
+  // Model-derived sections now win. Caller-supplied brief facts are used ONLY
+  // when composition fails outright, so an X-Ray never gets thinner than it
+  // was before this change.
+  let reportModel: ParcelReportModel | undefined;
+  try {
+    reportModel = await composeParcelReportFacts({
+      parcelNodeId: options.parcelNodeId,
+      storage: options.storage,
+      geometry: composed ? { status: "present", model: composed.model } : { status: "absent", reason: sitePlanUnavailableReason ?? "Site-plan geometry could not be composed for this parcel." },
+      // X-Ray never runs the drainage study. It is a snapshot, and the study
+      // is the most expensive thing the platform does.
+      drainage: { status: "absent", reason: "The X-Ray does not run a drainage study; see the Feasibility Study." },
+    });
+  } catch {
+    reportModel = undefined;
+  }
+
+  const modelSections = reportModel ? xRayModelToBriefSections(reportModel) : [];
+  const briefSections =
+    modelSections.length > 0 ? modelSections : (options.content.brief?.sections ?? []);
+
+  // 3) Snapshot narrative — shorter than the Feasibility Study's, same
+  // cite-or-decline rules, same fail-closed posture.
+  let narrative: { text: string; generatedBy: string } | undefined;
+  if (reportModel && options.narrativeGenerate !== false) {
+    const generated = await generateFeasibilityNarrative(reportModel, { style: "snapshot" });
+    console.log(
+      JSON.stringify({
+        level: generated.ok ? "info" : "warn",
+        service: "engine-core",
+        event: "xray.narrative_inprocess.outcome",
+        outcome: generated.ok ? "ok" : generated.reason,
+        ...(generated.ok ? { citedCount: generated.citedSections.length } : {}),
+        parcelNodeId: options.parcelNodeId,
+        ts: new Date().toISOString(),
+      }),
+    );
+    if (generated.ok) {
+      narrative = {
+        text: generated.narrativeOverride.text,
+        generatedBy: generated.narrativeOverride.generatedBy,
+      };
+    }
+  }
+
+  // 4) Assemble the dossier (sheets appended when composition succeeded).
   const pdf: PdfDossierResult = await emitPdfDossier(
     {
       parcelNodeId: options.parcelNodeId,
       ...options.content,
+      brief: { sections: briefSections },
+      // Model verdict ONLY when geometry composed. With geometry absent the
+      // model's verdict is "buildable area could not be determined", which is
+      // honest but strictly less than a caller verdict computed from data the
+      // app had — so in that case the caller's stands. When geometry IS
+      // present both sides can compute, and the model wins: X-Ray and
+      // Feasibility disagreeing about one parcel's buildable area is the
+      // defect the one-model re-cut exists to remove.
+      ...(reportModel && reportModel.geometry.status === "present"
+        ? { verdictLine: reportModel.package.verdict }
+        : {}),
+      ...(narrative ? { narrative } : {}),
       // The dossier header prefers request-carried descriptors; when absent,
       // fall back to what the composed model already carries (same values the
       // site-plan sheets print) — never a fabricated descriptor.
@@ -94,7 +169,7 @@ export async function authorParcelPropertyDossierExport(
       : { sitePlanUnavailableReason },
   );
 
-  // 3) Persist bytes + record the artifact on the parcel-terrain-model atom
+  // 5) Persist bytes + record the artifact on the parcel-terrain-model atom
   // (same recording seam as pdf-site-plan).
   const ref = await options.artifactStore.put({
     parcelNodeId: options.parcelNodeId,

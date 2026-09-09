@@ -90,6 +90,19 @@ export interface GenerateNarrativeOptions {
    * something a deploy turns on by surprise. */
   webSearch?: boolean;
   maxOutputTokens?: number;
+  /**
+   * How much narrative to write.
+   *
+   * "full" is the Feasibility Study's: 350-500 words reasoning across every
+   * fact family, because that document is the one a buyer takes to a
+   * decision.
+   *
+   * "snapshot" is the X-Ray's: 150-220 words. X-Ray is a mini feasibility —
+   * a high-level read of what the parcel is and what stands out — and a
+   * five-paragraph essay on a four-sheet document is the wrong shape. Same
+   * facts, same cite-or-decline rules, less of it.
+   */
+  style?: "full" | "snapshot";
 }
 
 /**
@@ -128,7 +141,18 @@ function defaultModelFor(webSearch: boolean): string {
   return webSearch ? NARRATIVE_MODEL_SEARCH : NARRATIVE_MODEL_FAST;
 }
 
-const SYSTEM_PROMPT = `You are writing the narrative section of a property feasibility study for a developer or buyer deciding whether to build on one parcel.
+const SNAPSHOT_RULES = `6. Plain prose. No bullet lists, no headings, no bold.
+7. LENGTH: write 150 to 220 words, in two or three paragraphs. This is a SNAPSHOT at the front of a short document, not a full study. Say what this parcel is, what governs it, and the one or two things that most stand out — then stop. Do not walk the whole fact list.
+8. Attach a marker to the sentence that actually used the fact. Do not stack unrelated markers at the end of a sentence.
+9. Lead with what the parcel is and what can be built on it. If something genuinely constrains a build here, that is the second sentence, not the last.`;
+
+const FULL_RULES = `6. Plain prose. No bullet lists, no headings, no bold.
+7. LENGTH: write 350 to 500 words, in four to six paragraphs. This is the primary narrative of the document and it appears on the cover, where it is the first thing a buyer reads. A three-sentence answer is a failure of the task, not a concise version of it.
+8. Attach a marker to the sentence that actually used the fact. Do not stack unrelated markers at the end of a sentence: "[a][b][c][d][e]" tells a reader nothing about which claim rests on which fact.
+9. Lead with what a decision-maker needs first. Open with what can be built and what governs it; put the confirmations and the unknowns after that, and close with what stands between this packet and a decision.`;
+
+function systemPrompt(style: "full" | "snapshot"): string {
+  return `You are writing the narrative section of a property feasibility study for a developer or buyer deciding whether to build on one parcel.
 
 You are given a JSON object of FACTS assembled from public records and models. Write for someone making a decision, not for the system that produced the data.
 
@@ -139,10 +163,7 @@ RULES, all mandatory:
 3. Where two facts disagree, say so plainly and say which one a reader should act on. Disagreements are the most valuable thing you can surface.
 4. An absent fact is not a negative finding. "No record was found" never becomes "there is none". Never infer a vacant site from a missing footprint.
 5. No dollar figures, no yield or unit estimates, no schedule estimates. None are supported by this data.
-6. Plain prose. No bullet lists, no headings, no bold.
-7. LENGTH: write 350 to 500 words, in four to six paragraphs. This is the primary narrative of the document and it appears on the cover, where it is the first thing a buyer reads. A three-sentence answer is a failure of the task, not a concise version of it.
-8. Attach a marker to the sentence that actually used the fact. Do not stack unrelated markers at the end of a sentence: "[a][b][c][d][e]" tells a reader nothing about which claim rests on which fact.
-9. Lead with what a decision-maker needs first. Open with what can be built and what governs it; put the confirmations and the unknowns after that, and close with what stands between this packet and a decision.
+${style === "snapshot" ? SNAPSHOT_RULES : FULL_RULES}
 
 If you used web search, put everything you learned from the web AFTER the main narrative, inside these exact delimiters:
 ${WEB_BLOCK_OPEN}
@@ -150,6 +171,7 @@ ${WEB_BLOCK_OPEN}
 ${WEB_BLOCK_CLOSE}
 
 Nothing from the web may appear in the main narrative. Web findings are unverified leads and are labelled as such for the reader.`;
+}
 
 function buildUserPrompt(model: ParcelReportModel, facts: Record<string, unknown>, webSearch: boolean): string {
   const address =
@@ -259,7 +281,7 @@ export async function generateFeasibilityNarrative(
   try {
     const result = await client.respondWithSearch({
       model: options.model ?? process.env.XAI_NARRATIVE_MODEL?.trim() ?? defaultModelFor(webSearch),
-      system: SYSTEM_PROMPT,
+      system: systemPrompt(options.style ?? "full"),
       user: buildUserPrompt(model, facts, webSearch),
       // Gates the TOOL, not just the wording. Without this the provider
       // searches regardless and the citations are discarded rather than
