@@ -185,20 +185,58 @@ describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
     expect(decoded).toContain("N PINE ST");
   });
 
-  it("centers a BUILDABLE ENVELOPE callout with the buildable sq ft + percent-of-lot qualifier", async () => {
+  // P-159 / Ruling B (`_decisions/2026-09-11_ruling_b_reversed_polygon_only.md`):
+  // the POLYGON (and its title) still draws wherever setbacks resolve — R-2
+  // allows that unconditionally — but the callout's sq-ft-and-percent QUALIFIER
+  // is the buildable-area FIGURE, and stays refused until a buildable-envelope
+  // ATOM backs it. `buildModel()` carries no `envelopeOutcome` at all, so this
+  // is exactly the "local geometry resolved fine, no atom" case Ruling B
+  // targets: this test used to assert the pre-ruling defect (F4) — a LOCAL,
+  // non-atom-backed figure printed here as if it were fact.
+  it("centers a BUILDABLE ENVELOPE title with NO figure or percent when no buildable-envelope atom backs it", async () => {
     const model = buildModel();
     const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
     expect(decoded).toContain("BUILDABLE ENVELOPE");
-    // "{sqft} sq ft · {pct}% of lot" qualifier.
-    expect(decoded).toMatch(/% of lot/);
+    expect(decoded).not.toMatch(/% of lot/);
   });
 
-  // Planner HOLD-1 (2026-07-25) + 2026-07-28 build-to-line ruling: a
-  // primitive-consuming envelope whose edges include a stored setback
-  // ABSENCE draws a numeric buildable area AND prints the provisional
-  // honesty note — zero inset on the silent edges, nothing fabricated.
-  it("prints the provisional honesty note on the summary page even though a numeric buildable area is also drawn", async () => {
+  it("prints the callout's sq ft + percent-of-lot qualifier once a buildable-envelope ATOM backs the figure", async () => {
+    const model = composeSitePlanModel({
+      parcelNodeId: "48029:105129",
+      bbox,
+      ringWgs84,
+      dem,
+      contourIntervalMeters: 0.5,
+      setback,
+      boundaryEdges,
+      descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
+      zoning: { district: "R-6" },
+      floodZone: { honestUnavailable: true, reason: "sandbox has no network egress" },
+      geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
+      envelopeOutcome: {
+        kind: "buildable",
+        areaSqFt: 4200,
+        atomDid: "did:hauska:buildable-envelope:48029:105129:1",
+      },
+    });
+    expect(model.summary.printedBuildable).toEqual({
+      kind: "atom",
+      areaSqFt: 4200,
+      atomRef: "did:hauska:buildable-envelope:48029:105129:1",
+    });
+    const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
+    const decoded = decodeAllContentStreams(bytes);
+    expect(decoded).toContain("BUILDABLE ENVELOPE");
+    expect(decoded).toMatch(/% of lot/);
+    expect(decoded).toContain("4,200 sq ft");
+  });
+
+  // Planner HOLD-1 (2026-07-25) + 2026-07-28 build-to-line ruling produced a
+  // LOCAL, non-atom-backed provisional figure here; P-159 / Ruling B refuses it
+  // instead (`site-model.test.ts` covers `printedBuildable` directly — this
+  // asserts the same refusal reaches the rendered PDF row and its fine print).
+  it("refuses the buildable-area figure on the summary page when a provisional local offset has no atom behind it (Ruling B)", async () => {
     const provisionalEdges = boundaryEdgesForRing(ringWgs84, [
       { role: "front", feet: 15 },
       { role: "side", absent: true },
@@ -219,14 +257,19 @@ describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
       geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
     });
     expect(model.setback.basis).toBe("boundary-primitive");
+    // The LOCAL offset ring still resolves a number (it still drives the
+    // drawn inset polygon, R-2) — it just may never PRINT as a figure.
     expect(model.summary.buildableAreaSqFt).not.toBeNull();
+    expect(model.summary.printedBuildable).toEqual({
+      kind: "refused",
+      reason: "pending — buildable-envelope atom not yet on file",
+    });
     const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
-    // §7/§11: the provisional state is ONE grey qualifier on the value row,
-    // with the long narrative folded into the sheet-2 fine print.
-    expect(decoded).toContain("provisional planning estimate");
-    expect(decoded).toContain("planning estimate, not a permit-ready boundary");
-    expect(decoded).toContain("sq ft");
+    // No figure, no "provisional planning estimate" qualifier — the row is an
+    // honest UNAVAILABLE chip naming the same refusal reason.
+    expect(decoded).not.toContain("provisional planning estimate");
+    expect(decoded).toContain("buildable-envelope atom not yet on file");
   });
 
   // HEADER = DRAWING (2026-07-28): the live defect printed a warm number in

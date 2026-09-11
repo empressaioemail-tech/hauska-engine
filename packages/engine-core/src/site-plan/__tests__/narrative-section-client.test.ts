@@ -180,6 +180,77 @@ describe("buildNarrativeFacts: what the model is allowed to see", () => {
     expect(serialized).not.toContain("flowLinesGeoJson");
     expect(serialized).not.toContain("coordinates");
   });
+
+  // P-159 item 3. The payload used to send the raw LOCAL offset-ring
+  // `buildableAreaSqFt` verbatim — a second, uncited number the model had no
+  // way to reconcile against what the document actually prints (F4's
+  // mechanism). It now sends the ONE printed value, atom-backed or refused.
+  it("P-159: sends `printedBuildable`, never the raw local `buildableAreaSqFt`, in the geometry object", () => {
+    const sitePlan = {
+      summary: {
+        zoningDistrict: "R-6",
+        lotAreaSqFt: 10_000,
+        buildableAreaSqFt: 6_500, // LOCAL — must never reach the payload
+        buildableAreaHonestNote: undefined,
+        printedBuildable: { kind: "refused", reason: "pending — buildable-envelope atom not yet on file" },
+        elevationRangeMeters: { min: 100, max: 105 },
+        verticalDatumSummary: "NAVD88 orthometric (USGS 3DEP)",
+        address: "1127 N PINE ST, SAN ANTONIO, TX 78202",
+        countyName: "Bexar County",
+      },
+      contourIntervalMeters: 0.5,
+      setback: { honestAbsence: false, front: 15, side: 5, rear: 15, displayLine: "15 / 5 / 15" },
+    };
+    const model = modelFixture();
+    (model as { geometry: unknown }).geometry = { status: "present", model: sitePlan };
+    const facts = buildFullNarrativeFacts(model) as { geometry: Record<string, unknown> };
+    expect(facts.geometry.printedBuildable).toEqual(sitePlan.summary.printedBuildable);
+    expect(facts.geometry).not.toHaveProperty("buildableAreaSqFt");
+    expect(facts.geometry).not.toHaveProperty("buildableAreaNote");
+    expect(JSON.stringify(facts.geometry)).not.toContain("6500");
+  });
+
+  // P-159 item 3: the SAME guard the facts page applies
+  // (`footprintContradictsAppraisal`, `report-model.ts`) — never hand the
+  // narrative-generating model "the site reads as unimproved" when the
+  // appraisal roll independently says the parcel carries a structure.
+  describe("P-159: the footprint fact the model sees never contradicts the appraisal roll", () => {
+    it("overrides the misleading consequence when the roll carries year built / living area", () => {
+      const model = modelFixture({
+        footprint: absentFact(
+          "clear",
+          "Checked against the building-footprint source; no structure is mapped on this parcel.",
+          "The site reads as unimproved, so redevelopment is unlikely to require demolition.",
+        ),
+        parcelOwnership: presentFact({ yearBuilt: 1904, livingAreaSqft: 1_820 } as never),
+      });
+      const facts = buildFullNarrativeFacts(model) as { footprint: { consequence?: string; status: string } };
+      expect(facts.footprint.status).toBe("absent"); // the FACT is unchanged — only the consequence text
+      expect(facts.footprint.consequence).not.toContain("unimproved");
+      expect(facts.footprint.consequence).toContain("Sources disagree");
+      expect(facts.footprint.consequence).toContain("1,820 sq ft");
+      expect(facts.footprint.consequence).toContain("1904");
+    });
+
+    it("leaves the footprint fact untouched when the roll agrees the parcel is genuinely vacant", () => {
+      const model = modelFixture({
+        footprint: absentFact("clear", "no structure mapped", "The site reads as unimproved, so redevelopment is unlikely to require demolition."),
+        parcelOwnership: presentFact({} as never),
+      });
+      const facts = buildFullNarrativeFacts(model) as { footprint: { consequence?: string } };
+      expect(facts.footprint.consequence).toContain("unimproved");
+    });
+
+    it("applies the same override on the narrow LDT payload, not only the wide in-process one", () => {
+      const model = modelFixture({
+        footprint: absentFact("clear", "no structure mapped", "The site reads as unimproved, so redevelopment is unlikely to require demolition."),
+        parcelOwnership: presentFact({ yearBuilt: 1975 } as never),
+      });
+      const facts = buildNarrativeFacts(model) as { footprint: { consequence?: string } };
+      expect(facts.footprint.consequence).not.toContain("unimproved");
+      expect(facts.footprint.consequence).toContain("Sources disagree");
+    });
+  });
 });
 
 describe("deriveCitedSections: scanned, never self-reported", () => {

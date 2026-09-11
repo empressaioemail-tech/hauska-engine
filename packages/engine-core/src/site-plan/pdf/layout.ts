@@ -877,15 +877,19 @@ export function buildSitePlanDrawingLayout(
     const titleWidth = measureText(titleText, calloutTitleSize);
     // §9: suppress if the envelope is narrower than the callout needs.
     if (envWidthPage >= titleWidth * 1.05) {
-      const pct =
-        Number.isFinite(model.summary.lotAreaSqFt) &&
-        model.summary.lotAreaSqFt > 0 &&
-        model.summary.buildableAreaSqFt != null
-          ? Math.round((model.summary.buildableAreaSqFt / model.summary.lotAreaSqFt) * 100)
-          : null;
+      // P-159 / Ruling B: the POLYGON draws regardless (R-2 allows the drawn
+      // envelope wherever a district and setback table exist); the callout's
+      // TEXT qualifier is the figure, and prints only when `printedBuildable`
+      // is atom-backed — never the local offset-ring number this callout used
+      // to compute its own, second, percent from.
+      const printed = model.summary.printedBuildable;
       const qualifier =
-        model.summary.buildableAreaSqFt != null
-          ? `${formatSqFt(model.summary.buildableAreaSqFt)}${pct != null ? ` · ${pct}% of lot` : ""}`
+        printed.kind === "atom"
+          ? `${formatSqFt(printed.areaSqFt)}${
+              Number.isFinite(model.summary.lotAreaSqFt) && model.summary.lotAreaSqFt > 0
+                ? ` · ${Math.round((printed.areaSqFt / model.summary.lotAreaSqFt) * 100)}% of lot`
+                : ""
+            }`
           : null;
       envelopeCallout = { anchor, qualifier, titleSize: calloutTitleSize, qualifierSize: calloutQualifierSize };
       const blockH = calloutTitleSize + calloutQualifierSize + 6;

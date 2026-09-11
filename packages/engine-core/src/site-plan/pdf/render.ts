@@ -548,16 +548,17 @@ function cityFromAddress(address: string | undefined): string | null {
 }
 
 /**
- * BUILDABLE header stat (§2/§15): the header reads the SAME model value the
- * drawing draws — `summary.buildableAreaSqFt` — or NONE. The old regex
- * fallback that scraped a warm number out of `buildablePdfLabel` is gone
- * (2026-07-28): it printed a warm figure over a drawing that honestly drew
- * nothing. A warm-vs-local discrepancy belongs in the sheet-2 buildable row
- * wording (shared vocab), never in the header.
+ * BUILDABLE header stat (§2/§15): the header reads `summary.printedBuildable`
+ * (P-159 / Ruling B) — or NONE. The old regex fallback that scraped a warm
+ * number out of `buildablePdfLabel` was already removed (2026-07-28): it
+ * printed a warm figure over a drawing that honestly drew nothing. This lane
+ * went one step further: a resolved LOCAL offset-ring figure with no
+ * buildable-envelope atom behind it is refused here too, not just a warm one —
+ * neither may print until an atom backs the number (Ruling B).
  */
 function buildableHeaderStat(s: SitePlanModel["summary"]): { value: string; none: boolean } {
-  if (typeof s.buildableAreaSqFt === "number") {
-    return { value: formatSf(s.buildableAreaSqFt), none: false };
+  if (s.printedBuildable.kind === "atom") {
+    return { value: formatSf(s.printedBuildable.areaSqFt), none: false };
   }
   return { value: "NONE", none: true };
 }
@@ -1271,7 +1272,10 @@ function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, ctx: FinePrintCon
   if (model.summary.zoningFixture) {
     sentences.push("Zoning district shown is a fixture label — confirm against live zoning-fact on planner QA.");
   }
-  if (page === 2 && model.summary.buildableAreaHonestNote && model.summary.buildableAreaSqFt != null) {
+  // P-159 / Ruling B: this caveat only makes sense beside a PRINTED figure —
+  // gated on `printedBuildable.kind === "atom"`, not on the local honest note
+  // alone (a local-only provisional figure no longer prints at all).
+  if (page === 2 && model.summary.buildableAreaHonestNote && model.summary.printedBuildable.kind === "atom") {
     sentences.push(
       "Buildable area is provisional pending front-edge resolution; treat it as a planning estimate, not a permit-ready boundary.",
     );
@@ -1367,40 +1371,28 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
         qualifier: setbacksNotSpecified ? "build-to-line governs" : describeSetbackBasis(model.setback.basis),
       };
 
-  const provisional = s.buildableAreaHonestNote != null && s.buildableAreaSqFt != null;
-  const pct =
-    s.buildableAreaSqFt != null && s.lotAreaSqFt > 0
-      ? Math.round((s.buildableAreaSqFt / s.lotAreaSqFt) * 100)
-      : null;
+  // P-159 / Ruling B: reads `printedBuildable`, never the local offset-ring
+  // `buildableAreaSqFt` — a resolved local geometry with no buildable-envelope
+  // atom behind it is a REFUSAL now (it used to print, "provisional" qualifier
+  // and all; that provisional print is exactly the F4 defect class).
   const buildable: SummaryRow =
-    s.buildableAreaSqFt != null
+    s.printedBuildable.kind === "atom"
       ? {
           label: "Buildable area",
-          value: formatSqFt(s.buildableAreaSqFt),
+          value: formatSqFt(s.printedBuildable.areaSqFt),
           accentValue: true,
-          qualifier: provisional
-            ? `provisional planning estimate${pct != null ? ` · ${pct}% of lot` : ""}`
-            : pct != null
-              ? `(${pct}% of lot)`
+          qualifier:
+            s.lotAreaSqFt > 0
+              ? `(${Math.round((s.printedBuildable.areaSqFt / s.lotAreaSqFt) * 100)}% of lot)`
               : undefined,
         }
       : model.setback.honestAbsence
         ? { label: "Buildable area", chip: "unavailable", chipReason: REASON.noSetbackRule }
         : model.setback.frontEdgeUnresolved
-          ? {
-              label: "Buildable area",
-              chip: "unavailable",
-              // Warm-vs-local discrepancies live in THIS row's wording (shared
-              // vocab), never in the header stat — the header reads the model
-              // value or NONE (§2/§15).
-              chipReason:
-                s.buildableDisplayKind === "provisional"
-                  ? "Front edge unresolved; a provisional warm estimate is on file."
-                  : REASON.frontEdgeUnresolved,
-            }
+          ? { label: "Buildable area", chip: "unavailable", chipReason: REASON.frontEdgeUnresolved }
           : model.setback.degenerate
             ? { label: "Buildable area", chip: "unavailable", chipReason: REASON.setbacksConsumeLot }
-            : { label: "Buildable area", chip: "unavailable", chipReason: REASON.noSetbackRule };
+            : { label: "Buildable area", chip: "unavailable", chipReason: s.printedBuildable.reason };
 
   const flood: SummaryRow =
     "zone" in s.floodZone

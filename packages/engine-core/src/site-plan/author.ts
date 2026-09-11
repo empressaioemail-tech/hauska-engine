@@ -153,7 +153,15 @@ async function resolveEnvelopeOutcome(
   const envelope = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
     (candidate): candidate is BuildableEnvelopeAtomInstance => candidate.entityType === "buildable-envelope",
   );
-  return envelope?.outcome;
+  if (!envelope?.outcome) return envelope?.outcome;
+  // P-159 (CP1): the atom instance carries its own `atomDid`, but `.outcome` alone
+  // (the shape re-declared as `EnvelopeOutcomeInput` in site-model.ts) does not — so
+  // returning it bare would leave the composer unable to tell "this outcome came
+  // from a real persisted atom" from "this outcome was synthesized". Thread the
+  // atom's own DID through on the one branch that can print a figure (Ruling B).
+  return envelope.outcome.kind === "buildable"
+    ? { ...envelope.outcome, atomDid: envelope.atomDid }
+    : envelope.outcome;
 }
 
 function centroidOfRing(ringWgs84: Array<[number, number]>): { latitude: number; longitude: number } {

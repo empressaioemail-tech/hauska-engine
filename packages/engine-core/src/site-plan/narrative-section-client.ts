@@ -1,4 +1,4 @@
-import type { ParcelReportModel } from "./report-model.js";
+import { footprintContradictionConsequence, type ParcelReportModel } from "./report-model.js";
 
 /**
  * OPS-16 P-120 item 6 — hauska-engine's consuming side of the Feasibility
@@ -73,7 +73,12 @@ export type NarrativeFallbackReason =
   | "malformed-response"
   | "empty-narrative"
   | "server-reported-no-llm-content"
-  | "no-cited-sections";
+  | "no-cited-sections"
+  // P-159 item 3: the deterministic post-generation check
+  // (`narrative-generator.ts`'s `findUnauthorizedBuildableFigures`) found a
+  // square-foot or percent figure in a buildable-area sentence that does not
+  // match `printedBuildable` — or found one at all when nothing is printed.
+  | "printed-figure-mismatch";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
@@ -125,6 +130,13 @@ export function buildNarrativeFacts(model: ParcelReportModel): Record<string, un
 function buildLdtNarrativeFacts(model: ParcelReportModel): Record<string, unknown> {
   const jurisdictionKnown = model.facts.jurisdiction.countyFips !== null;
   const hoaCitation = model.facts.hoa.mountedDocumentCitation;
+  // P-159 item 3: the SAME guard the facts page applies (`footprintContradictsAppraisal`,
+  // `report-model.ts`) — never hand the model "the site reads as unimproved" when the
+  // appraisal roll independently says otherwise. Only the `consequence` field changes;
+  // `status`/`kind`/`reason` stay whatever the fact actually is (still "absent", still
+  // whichever `AbsenceKind` — the footprint layer itself did not change, only what it
+  // is honest to conclude from it).
+  const footprintOverride = footprintContradictionConsequence(model);
 
   return {
     jurisdiction: jurisdictionKnown
@@ -143,7 +155,7 @@ function buildLdtNarrativeFacts(model: ParcelReportModel): Record<string, unknow
           reason:
             "Recorded restrictions and HOA documents have not been searched for this parcel.",
         },
-    footprint: model.facts.footprint,
+    footprint: footprintOverride ? { ...model.facts.footprint, consequence: footprintOverride } : model.facts.footprint,
     dischargePoint: model.facts.dischargePoint,
   };
 }
@@ -183,8 +195,13 @@ export function buildFullNarrativeFacts(model: ParcelReportModel): Record<string
             status: "present",
             zoningDistrict: model.geometry.model.summary.zoningDistrict ?? null,
             lotAreaSqFt: model.geometry.model.summary.lotAreaSqFt,
-            buildableAreaSqFt: model.geometry.model.summary.buildableAreaSqFt,
-            buildableAreaNote: model.geometry.model.summary.buildableAreaHonestNote ?? null,
+            // P-159 / Ruling B: the ONE buildable-area signal — never the raw
+            // local `buildableAreaSqFt` this field used to send verbatim, which
+            // gave the model a second, uncited number to disagree with the
+            // printed document over (F4's mechanism). `printedBuildable` is
+            // either the atom-backed figure every surface also prints, or a
+            // declared refusal with no number in it at all.
+            printedBuildable: model.geometry.model.summary.printedBuildable,
             setbacks: model.geometry.model.setback.honestAbsence
               ? { status: "absent", reason: model.geometry.model.setback.honestAbsenceReason ?? null }
               : {

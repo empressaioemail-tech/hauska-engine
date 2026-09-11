@@ -106,10 +106,40 @@ export type FloodZoneSummaryInput =
  * required dependency just for one union type; the `kind`/`reason` fields
  * are structurally identical to `EnvelopeHonestOutcome`. */
 export type EnvelopeOutcomeInput =
-  | { kind: "buildable"; areaSqFt: number }
+  | {
+      kind: "buildable";
+      areaSqFt: number;
+      /**
+       * The buildable-envelope ATOM's own `atomDid` (P-159). `resolveEnvelopeOutcome`
+       * (author.ts) is the only production populator of this input and it looks up a
+       * real persisted `buildable-envelope` atom instance — but the `.outcome` field
+       * it reads from that instance is this same bare `kind`/`areaSqFt` union with NO
+       * atom identity on it, and a caller (a test seam, or a future non-atom live
+       * derive) can construct `{ kind: "buildable", areaSqFt }` with no atom behind it
+       * at all. So `kind === "buildable"` is NOT proof of atom-backing by itself
+       * (CP1 finding): only the presence of `atomDid` here is. Every consumer that
+       * needs to know "is this figure allowed to print" (Ruling B) must key on this
+       * field, never on `kind` alone.
+       */
+      atomDid?: string;
+    }
   | { kind: "no-buildable-area"; reason: string }
   | { kind: "provisional-front-edge"; reason: string }
   | { kind: "not-applicable"; reason: string };
+
+/**
+ * P-159 / Ruling B (`_decisions/2026-09-11_ruling_b_reversed_polygon_only.md`): the
+ * ONE printable buildable-area figure for every document surface. `kind: "atom"`
+ * only when a buildable-envelope ATOM backs the figure (`EnvelopeOutcomeInput`'s
+ * `atomDid`, not merely `kind: "buildable"` — see the CP1 note on that type).
+ * Every other case — no envelope outcome at all, a `kind: "buildable"` outcome with
+ * no `atomDid`, a locally-derived offset-ring area, a provisional front edge, a
+ * degenerate offset — is `kind: "refused"`. No renderer may print a buildable-area
+ * number or percent except by reading this field.
+ */
+export type PrintedBuildable =
+  | { kind: "atom"; areaSqFt: number; atomRef: string }
+  | { kind: "refused"; reason: string };
 
 export interface ComposeSitePlanModelInputs {
   parcelNodeId: string;
@@ -251,8 +281,14 @@ export interface SitePlanSummaryModel {
    */
   buildableDisplayKind: BuildableDisplayKind;
   buildableAgreementToken: string;
-  /** PDF SUMMARY "Buildable Area" value — always from the shared mapper. */
+  /** PDF SUMMARY "Buildable Area" value — always from the shared mapper.
+   * @deprecated Not gated on atom-backing (Ruling B) — no renderer may print this
+   * for a buildable-area NUMBER OR PERCENT any more. Read `printedBuildable`. Kept
+   * only because the shared B3 vocab still computes it and other non-printing
+   * callers (map-card parity fixtures) may still reference the field shape. */
   buildablePdfLabel: string;
+  /** P-159 / Ruling B: the one figure every PDF surface is allowed to print. */
+  printedBuildable: PrintedBuildable;
   elevationRangeMeters: { min: number; max: number };
   verticalDatumSummary: string;
   floodZone:
@@ -596,6 +632,34 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
         } (PROVISIONAL — ${honestNote})`
       : buildableVocab.pdfLabel;
 
+  // P-159 / Ruling B. `kind === "buildable"` is NOT proof of atom-backing (see the
+  // CP1 note on `EnvelopeOutcomeInput`) — only a present, non-empty `atomDid` is.
+  // Everything else refuses, reusing the shared vocab's own honest wording where
+  // that wording does not itself contain a bare figure (it must not leak one here
+  // either: `buildable-with-area` / `provisional` DO carry a raw local or warm
+  // number, so those two get the same declared-pending wording as an outcome that
+  // never resolved at all, rather than printing the number this field exists to
+  // withhold).
+  const atomRef =
+    warmKind === "buildable" &&
+    typeof inputs.envelopeOutcome?.atomDid === "string" &&
+    inputs.envelopeOutcome.atomDid.length > 0
+      ? inputs.envelopeOutcome.atomDid
+      : null;
+  const printedBuildable: PrintedBuildable =
+    atomRef != null && warmAreaSqFt != null
+      ? { kind: "atom", areaSqFt: warmAreaSqFt, atomRef }
+      : {
+          kind: "refused",
+          // Kept to one short line deliberately (§21 vertical-rhythm gate: this
+          // reason renders as a "kv-row" chip on the site-plan summary sheet,
+          // sized the same as every other REASON constant there).
+          reason:
+            buildableVocab.kind === "buildable-with-area" || buildableVocab.kind === "provisional"
+              ? "pending — buildable-envelope atom not yet on file"
+              : buildableVocab.pdfLabel,
+        };
+
   const summary: SitePlanSummaryModel = {
     parcelNodeId: inputs.parcelNodeId,
     countyFips: parseCountyFips(inputs.parcelNodeId),
@@ -610,6 +674,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     buildableDisplayKind: buildableVocab.kind,
     buildableAgreementToken: buildableVocab.agreementToken,
     buildablePdfLabel,
+    printedBuildable,
     elevationRangeMeters: { min: inputs.dem.minElevation, max: inputs.dem.maxElevation },
     verticalDatumSummary: TERRAIN_VERTICAL_DATUM.summary,
     floodZone,

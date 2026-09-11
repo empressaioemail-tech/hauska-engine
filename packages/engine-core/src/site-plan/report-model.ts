@@ -256,11 +256,92 @@ function composeVerdict(model: Omit<ParcelReportModel, "package">, openItemCount
   if (model.geometry.status === "absent") {
     return `Buildable area could not be determined for this parcel: ${model.geometry.reason}. ${itemsPhrase}.`;
   }
-  const sp = model.geometry.model.summary;
-  if (sp.buildableAreaSqFt == null) {
-    return `Buildable area could not be determined for this parcel. ${itemsPhrase}.`;
+  const printed = model.geometry.model.summary.printedBuildable;
+  // P-159 / Ruling B: the verdict is the FIRST place a reader (and, via
+  // `narrative-section-client.ts`'s `verdict` field, the narrative-generating
+  // model) sees a buildable-area claim. It must say exactly what every other
+  // surface says — one atom-backed figure, or a declared refusal — never the
+  // locally-derived offset-ring number `buildablePdfLabel` used to prefer.
+  return printed.kind === "atom"
+    ? `${Math.round(printed.areaSqFt).toLocaleString("en-US")} sq ft of buildable area under the facts on file. ${itemsPhrase} before proceeding.`
+    : `Buildable area is refused: ${printed.reason}. ${itemsPhrase}.`;
+}
+
+/**
+ * Evidence from the appraisal roll (a DIFFERENT source than the building-footprint
+ * layer) that a parcel carries a structure. `FootprintFacts` carries a LIST of
+ * mapped structures and no area at all, so a footprint miss says only that one GIS
+ * layer has no polygon here; a year built or a living area on the CAD roll is
+ * direct evidence of a building from an entirely separate party.
+ *
+ * Lives here (composition layer), not in `pdf/feasibility.ts` (presentation),
+ * because P-159 needs the SAME check to gate what the narrative-generation payload
+ * says about the parcel's structures — a presentation-layer import from this
+ * module's own composer would invert the dependency direction this file's header
+ * comment already declares (composition must not depend on `pdf/`).
+ * `pdf/feasibility.ts` re-exports this rather than redefining it.
+ */
+export function improvementEvidence(
+  model: ParcelReportModel,
+): { summary: string; yearBuilt?: number; livingAreaSqft?: number } | null {
+  const po = model.facts.parcelOwnership;
+  if (po.status !== "present") return null;
+  const { yearBuilt, livingAreaSqft } = po;
+  const hasArea = typeof livingAreaSqft === "number" && livingAreaSqft > 0;
+  const hasYear = typeof yearBuilt === "number" && yearBuilt > 0;
+  if (!hasArea && !hasYear) return null;
+  const parts: string[] = [];
+  if (hasArea) parts.push(`${Math.round(livingAreaSqft!).toLocaleString("en-US")} sq ft of living area`);
+  if (hasYear) parts.push(`a structure built in ${yearBuilt}`);
+  return {
+    summary: parts.join(" and "),
+    ...(hasYear ? { yearBuilt } : {}),
+    ...(hasArea ? { livingAreaSqft } : {}),
+  };
+}
+
+/** True when the footprint layer reports nothing AND the appraisal roll says the
+ * parcel is improved. Named because more than one place must react to it — the
+ * facts page (via `attachConsequences`) and, since P-159, the narrative-generation
+ * payload (`narrative-section-client.ts`). */
+export function footprintContradictsAppraisal(model: ParcelReportModel): boolean {
+  return model.facts.footprint.status !== "present" && improvementEvidence(model) !== null;
+}
+
+/**
+ * The ONE sentence every consumer of a contradicted footprint state must use —
+ * the facts page's consequence row and, since P-159, the narrative payload's
+ * footprint fact. Returns null when the contradiction does not fire, so a caller
+ * can tell "nothing to override" from "override to this text" without re-deriving
+ * either check itself (never a second copy of this wording).
+ */
+export function footprintContradictionConsequence(model: ParcelReportModel): string | null {
+  if (!footprintContradictsAppraisal(model)) return null;
+  const evidence = improvementEvidence(model);
+  if (!evidence) return null;
+  return (
+    `Sources disagree. The building-footprint layer maps no structure, while county appraisal records carry ` +
+    `${evidence.summary}. Do not treat this parcel as vacant: confirm what is standing with a site visit or ` +
+    "survey before any demolition, valuation or yield assumption."
+  );
+}
+
+/** Sheet-2 / narrative-skeleton sentence on the lot's structures (P-159 item 5):
+ * never "absent" when the footprint layer's miss is contradicted by the appraisal
+ * roll, and never "absent" when the footprint fact itself was merely unchecked
+ * (`blocked-at-source`) — only a genuine, uncontradicted `clear` miss reads as
+ * unimproved. Shared by the deterministic skeleton AND, since the same honesty
+ * rule applies to whatever the generated narrative is allowed to say, available
+ * for the same purpose there. */
+function composeStructuresSentence(model: Omit<ParcelReportModel, "package">): string {
+  const contradiction = footprintContradictionConsequence(model as ParcelReportModel);
+  if (contradiction) return contradiction;
+  const fp = model.facts.footprint;
+  if (fp.status === "present") {
+    const count = fp.footprints.length;
+    return `Structures on file: ${count} mapped footprint${count === 1 ? "" : "s"}.`;
   }
-  return `${sp.buildablePdfLabel} under the facts on file. ${itemsPhrase} before proceeding.`;
+  return fp.consequence ?? "Existing structures are unresolved for this parcel; confirm with a site survey.";
 }
 
 function composeNarrativeSkeleton(model: Omit<ParcelReportModel, "package">, openItems: ReadonlyArray<OpenItem>): string {
@@ -283,6 +364,8 @@ function composeNarrativeSkeleton(model: Omit<ParcelReportModel, "package">, ope
         }` + (model.drainage.status === "present" ? ", corroborated by a site-specific drainage study on file." : ".")
       : `Flood exposure could not be determined: ${flood.reason}`,
   );
+
+  paragraphs.push(composeStructuresSentence(model));
 
   const otherAbsences = openItems.filter((i) => i.section !== "jurisdiction" && i.section !== "hoa").map((i) => i.section);
   if (otherAbsences.length > 0) {

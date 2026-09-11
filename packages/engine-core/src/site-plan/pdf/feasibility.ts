@@ -1,9 +1,21 @@
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFPage, type PDFImage } from "pdf-lib";
 
-import type { ParcelReportModel } from "../report-model.js";
+import {
+  footprintContradictionConsequence,
+  footprintContradictsAppraisal,
+  improvementEvidence,
+  type ParcelReportModel,
+} from "../report-model.js";
 import type { SitePlanModel } from "../site-model.js";
 import { FEASIBILITY_MANIFEST, manifestIncludes, type ReportManifest } from "../report-manifest.js";
+
+// Re-exported for backward compatibility: both functions moved to
+// `report-model.js` (the composition layer) for P-159 so the narrative-generation
+// payload (`narrative-section-client.ts`) can apply the same guard without a
+// presentation-layer (`pdf/`) import. Existing callers of this module —
+// `__tests__/manifest-is-load-bearing.test.ts` among them — keep working unchanged.
+export { footprintContradictionConsequence, footprintContradictsAppraisal, improvementEvidence };
 import {
   AERIAL_IMAGERY_ATTRIBUTION,
   AERIAL_NOT_A_SURVEY_LINE,
@@ -22,7 +34,7 @@ import {
   type PdfFloodDrainageResult,
 } from "./flood-drainage.js";
 import { WEB_FINDINGS_DISCLOSURE } from "../narrative-generator.js";
-import { REASON, countyDisplayName } from "./format.js";
+import { REASON, countyDisplayName, formatSqFt } from "./format.js";
 import { RhythmCapture, placeRowBelowRule, type RhythmRow } from "./line-box.js";
 import { SITE_PLAN_HONESTY_LINE } from "./provenance.js";
 import {
@@ -221,7 +233,11 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
             return [
               factOrChip("Zoning district", sp.zoningDistrict, { absentReason: sp.zoningHonestAbsenceReason }),
               factOrChip("Lot area", `${sp.lotAreaSqFt.toLocaleString()} sq ft`),
-              factOrChip("Buildable area", sp.buildablePdfLabel, { vintage: sp.buildableAreaHonestNote }),
+              // P-159 / Ruling B: reads the ONE printable figure, never `buildablePdfLabel`
+              // (which prefers a non-atom-backed warm or local number).
+              sp.printedBuildable.kind === "atom"
+                ? factOrChip("Buildable area", formatSqFt(sp.printedBuildable.areaSqFt))
+                : factOrChip("Buildable area", undefined, { absentReason: sp.printedBuildable.reason }),
               factOrChip(
                 // Matches the existing row-label convention in dossier.ts/render.ts
                 // (item 14): the label carries the axis order so the bare number
@@ -562,17 +578,16 @@ function attachConsequences(
     //
     // Refused here rather than corrected upstream because the composer cannot
     // be edited from this lane; the override is stated, not silent.
-    if (section.id === "footprint" && footprintContradictsAppraisal(model)) {
-      return {
-        ...section,
-        facts: [
-          ...section.facts,
-          factOrChip(
-            CONSEQUENCE_ROW_LABEL,
-            `Sources disagree. The building-footprint layer maps no structure, while county appraisal records carry ${improvementEvidence(model)!.summary}. Do not treat this parcel as vacant: confirm what is standing with a site visit or survey before any demolition, valuation or yield assumption.`,
-          ),
-        ],
-      };
+    // (P-159: the sentence itself now lives once, in `footprintContradictionConsequence`
+    // — the narrative-generation payload applies the identical guard and text.)
+    if (section.id === "footprint") {
+      const contradiction = footprintContradictionConsequence(model);
+      if (contradiction) {
+        return {
+          ...section,
+          facts: [...section.facts, factOrChip(CONSEQUENCE_ROW_LABEL, contradiction)],
+        };
+      }
     }
     const consequence = bySectionId[section.id]?.consequence;
     if (!consequence) return section;
@@ -612,6 +627,16 @@ export interface EmitPdfFeasibilityOptions {
    */
   webFindings?: ReadonlyArray<{ text: string; url: string; title?: string }>;
   generatedAtIso?: string;
+  /**
+   * P-159 item 3: when the generated narrative was refused by the deterministic
+   * buildable-figure check (a planted or drifted number that does not match
+   * `printedBuildable`, or any buildable figure at all when none is printed) and
+   * the document fell back to `model.package.narrativeSkeleton`, this names why —
+   * rendered as its own declared row in the Data quality section rather than a
+   * silent skeleton with no explanation. Omit for every other fallback reason
+   * (an operational one, e.g. no API key) and for every non-fallback case.
+   */
+  narrativeWithheldNote?: string;
 }
 
 export interface PdfFeasibilityResult {
@@ -677,23 +702,22 @@ export function envelopeExtentFeet(
 /**
  * "What can be built", as a measurement a reader can picture.
  *
- * The same square footage stated three ways: the number, its share of the
- * lot, and the envelope's real extent on the ground. `buildablePdfLabel` is
- * the shared B3 vocabulary and stays verbatim so this document cannot
- * disagree with the map card about the same parcel.
+ * P-159 / Ruling B: reads `printedBuildable`, the ONE figure every surface in
+ * this document is allowed to print — never `buildablePdfLabel` (which used to
+ * prefer a non-atom-backed warm or local number here while the qualifier text
+ * below computed its percentage from a DIFFERENT, local-only number: the
+ * F4 defect). No figure and no percent print unless a buildable-envelope atom
+ * backs one.
  */
 export function buildableAnswer(sp: SitePlanModel["summary"], setback: SitePlanModel["setback"]): {
   headline: string;
   picture?: string;
 } {
-  const sqFt = sp.buildableAreaSqFt;
-  if (sqFt == null) {
-    return {
-      headline: `Buildable area could not be determined${
-        sp.buildableAreaHonestNote ? `: ${sp.buildableAreaHonestNote}` : "."
-      }`,
-    };
+  const printed = sp.printedBuildable;
+  if (printed.kind !== "atom") {
+    return { headline: `Buildable area is refused: ${printed.reason}` };
   }
+  const sqFt = printed.areaSqFt;
   const parts: string[] = [];
   if (sp.lotAreaSqFt > 0) {
     parts.push(`${Math.round((sqFt / sp.lotAreaSqFt) * 100)}% of the ${Math.round(sp.lotAreaSqFt).toLocaleString("en-US")} sq ft lot`);
@@ -703,7 +727,7 @@ export function buildableAnswer(sp: SitePlanModel["summary"], setback: SitePlanM
     parts.push(`an envelope roughly ${extent.widthFt.toLocaleString("en-US")} by ${extent.depthFt.toLocaleString("en-US")} ft at its widest`);
   }
   return {
-    headline: `${sp.buildablePdfLabel} of buildable area`,
+    headline: `${formatSqFt(sqFt)} of buildable area`,
     picture: parts.length > 0 ? parts.join(", ") : undefined,
   };
 }
@@ -889,44 +913,8 @@ export function aerialCaption(model: ParcelReportModel): string {
   return `No existing-structure record is on file for this parcel (${footprint.reason}), so the imagery below has not been reconciled against a mapped footprint. Read it as context, not as confirmation that the site is clear.`;
 }
 
-/**
- * CAD-side evidence that this parcel is improved.
- *
- * `FootprintFacts` carries a LIST of mapped structures and no area at all, so
- * a footprint miss says only that one GIS layer has no polygon here. The CAD
- * parcel roll is derived from a different source entirely — an appraisal
- * record — and a year built or a living area on it is direct evidence of a
- * building.
- *
- * This is the second derivation that makes the improved/unimproved check
- * meaning shaped rather than presence shaped: no single upstream can satisfy
- * both sides, because the footprint layer and the appraisal roll are not the
- * same party.
- */
-export function improvementEvidence(
-  model: ParcelReportModel,
-): { summary: string; yearBuilt?: number; livingAreaSqft?: number } | null {
-  const po = model.facts.parcelOwnership;
-  if (po.status !== "present") return null;
-  const { yearBuilt, livingAreaSqft } = po;
-  const hasArea = typeof livingAreaSqft === "number" && livingAreaSqft > 0;
-  const hasYear = typeof yearBuilt === "number" && yearBuilt > 0;
-  if (!hasArea && !hasYear) return null;
-  const parts: string[] = [];
-  if (hasArea) parts.push(`${Math.round(livingAreaSqft!).toLocaleString("en-US")} sq ft of living area`);
-  if (hasYear) parts.push(`a structure built in ${yearBuilt}`);
-  return {
-    summary: parts.join(" and "),
-    ...(hasYear ? { yearBuilt } : {}),
-    ...(hasArea ? { livingAreaSqft } : {}),
-  };
-}
-
-/** True when the footprint layer reports nothing AND the appraisal roll says
- * the parcel is improved. Named because three places must react to it. */
-export function footprintContradictsAppraisal(model: ParcelReportModel): boolean {
-  return model.facts.footprint.status !== "present" && improvementEvidence(model) !== null;
-}
+// `improvementEvidence` and `footprintContradictsAppraisal` moved to
+// `report-model.js` for P-159; re-exported near the top of this file.
 
 interface FeasibilityAerialContext {
   imagery: Promise<AerialImageryResult>;
@@ -1244,6 +1232,20 @@ export async function emitPdfFeasibility(
 ): Promise<PdfFeasibilityResult> {
   const includePackage = manifestIncludes(manifest, "package");
   const briefSections = feasibilityModelToBriefSections(model);
+  // P-159 item 3: a generated narrative the deterministic figure check refused
+  // falls back to the skeleton silently unless this note is appended — declared
+  // fallback, not silent acceptance. Appended to the existing "Data quality"
+  // section when present, or creates it, so it never lands as a second thing
+  // called "data quality" on the page.
+  if (includePackage && options.narrativeWithheldNote) {
+    const note = factOrChip("Narrative", `Withheld — ${options.narrativeWithheldNote}`);
+    const dqIndex = briefSections.findIndex((s) => s.id === "data-quality");
+    if (dqIndex >= 0) {
+      briefSections[dqIndex] = { ...briefSections[dqIndex]!, facts: [...briefSections[dqIndex]!.facts, note] };
+    } else {
+      briefSections.push({ id: "data-quality", title: "Data quality", facts: [note] });
+    }
+  }
   const verdictLine = includePackage ? model.package.verdict : undefined;
   const narrativeText = includePackage ? options.narrativeOverride?.text ?? model.package.narrativeSkeleton : undefined;
   const openItemCount = includePackage ? model.package.openItems.length : 0;
