@@ -14,6 +14,8 @@ import {
   STAGED_FOOTPRINT_GEOM_UNREADY,
   STAGED_FOOTPRINT_TABLE_MISSING,
   StagedFootprintError,
+  computeStagedJoinDiagnostics,
+  describeStagedFootprintAbsence,
   envelopeOfRing,
   geometryTrueAttach,
   haltStagedFootprintOrThrow,
@@ -117,13 +119,11 @@ describe("failing-first: bbox bleed vs geometry-true attach", () => {
   });
 
   it("plan from staged join never emits county-coverage-absent for a bleed reject", () => {
-    const join = joinStagedCandidatePairs(
-      [
-        { parcel: parcelA, footprint: buildingFp },
-        { parcel: parcelB, footprint: buildingFp },
-      ],
-      [parcelA, parcelB],
-    );
+    const pairs = [
+      { parcel: parcelA, footprint: buildingFp },
+      { parcel: parcelB, footprint: buildingFp },
+    ];
+    const join = joinStagedCandidatePairs(pairs, [parcelA, parcelB]);
     const plan = planCountyFromStagedGeometryTrueJoin(
       [
         { parcelKey: "A", ring: PARCEL_A },
@@ -140,6 +140,147 @@ describe("failing-first: bbox bleed vs geometry-true attach", () => {
       (p) => p.outcome === "absent-per-parcel" && p.parcelKey === "A",
     );
     expect(absentA).toBeDefined();
+    // No diagnostics passed (back-compat call, matches every caller before
+    // P-158): the old, undifferentiated string is preserved byte-for-byte.
+    expect(absentA?.outcome === "absent-per-parcel" ? absentA.reason : null).toBe(
+      "staged-geometry-true-join-below-10pct-overlap-threshold — no qualifying staged footprint for parcel",
+    );
+    expect(absentA?.outcome === "absent-per-parcel" ? absentA.joinOutcome : "defined").toBeUndefined();
+  });
+});
+
+/**
+ * P-158: the "below-10pct" string covered three distinct causes. This proves
+ * all three are separately reachable and correctly evidenced, including the
+ * one the old fixture above could never exercise (attached-to-neighbour --
+ * loses to a higher-ratio neighbour despite itself clearing the 10% floor),
+ * per the mission's "not-vacuous" requirement.
+ */
+describe("P-158: staged absence splits into three evidenced causes", () => {
+  // C sits far away from every footprint in this fixture: zero envelope
+  // candidates, the true acquisition-gap case.
+  const parcelC: ParcelRecord = {
+    parcelNodeId: "48021:C",
+    propId: "C",
+    fips: "48021",
+    ring: rect(-90, 10, -89.999, 10.001),
+  };
+
+  // D and E share a boundary at lng = -97.339. A single footprint straddles
+  // it, split roughly 38% into D / 62% into E -- BOTH clear the 10% floor
+  // (unlike the A/B fixture above, where only one side did), so this is
+  // genuinely "a footprint straddles two parcels", not a below-threshold
+  // reject. joinStagedCandidatePairs gives the whole footprint to the
+  // higher-ratio parcel (E); D is the neighbour-losing case.
+  const parcelD: ParcelRecord = {
+    parcelNodeId: "48021:D",
+    propId: "D",
+    fips: "48021",
+    ring: rect(-97.34, 30.2, -97.339, 30.201),
+  };
+  const parcelE: ParcelRecord = {
+    parcelNodeId: "48021:E",
+    propId: "E",
+    fips: "48021",
+    ring: rect(-97.339, 30.2, -97.338, 30.201),
+  };
+  const straddleFp = {
+    footprintId: "d-e-straddle",
+    ring: rect(-97.3395, 30.2002, -97.3382, 30.2008),
+  };
+
+  const pairs = [
+    { parcel: parcelA, footprint: buildingFp },
+    { parcel: parcelB, footprint: buildingFp },
+    { parcel: parcelD, footprint: straddleFp },
+    { parcel: parcelE, footprint: straddleFp },
+    // parcelC deliberately has no pair at all -- it never enters the
+    // envelope prefilter in production, exactly as it never appears here.
+  ];
+
+  it("computeStagedJoinDiagnostics records every candidate ratio and each footprint's winner", () => {
+    const diagnostics = computeStagedJoinDiagnostics(pairs);
+    expect(diagnostics.candidateRatiosByParcel.has("48021:C")).toBe(false);
+    expect(diagnostics.candidateRatiosByParcel.get("48021:A")?.[0]?.ratio).toBeLessThan(0.1);
+    const dRatio = diagnostics.candidateRatiosByParcel.get("48021:D")?.[0]?.ratio ?? -1;
+    const eRatio = diagnostics.candidateRatiosByParcel.get("48021:E")?.[0]?.ratio ?? -1;
+    expect(dRatio).toBeGreaterThanOrEqual(0.1);
+    expect(dRatio).toBeLessThan(0.5);
+    expect(eRatio).toBeGreaterThan(dRatio);
+    expect(diagnostics.footprintWinner.get("d-e-straddle")).toEqual({
+      parcelNodeId: "48021:E",
+      ratio: Math.round(eRatio * 10000) / 10000,
+    });
+  });
+
+  it("branch 1: no-candidate-in-envelope for a parcel with zero candidates", () => {
+    const diagnostics = computeStagedJoinDiagnostics(pairs);
+    const described = describeStagedFootprintAbsence("48021:C", diagnostics);
+    expect(described.joinOutcome).toEqual({ kind: "no-candidate-in-envelope" });
+    expect(described.reason).toMatch(/no-candidate-in-envelope/);
+  });
+
+  it("branch 2: overlap-below-threshold for a real candidate under 10%", () => {
+    const diagnostics = computeStagedJoinDiagnostics(pairs);
+    const described = describeStagedFootprintAbsence("48021:A", diagnostics);
+    expect(described.joinOutcome.kind).toBe("overlap-below-threshold");
+    expect(described.reason).toMatch(/overlap-below-threshold/);
+    if (described.joinOutcome.kind === "overlap-below-threshold") {
+      expect(described.joinOutcome.bestOverlapRatio).toBeLessThan(0.1);
+    }
+  });
+
+  it("branch 3 (not vacuous): attached-to-neighbour when a straddling footprint's other side wins", () => {
+    const diagnostics = computeStagedJoinDiagnostics(pairs);
+    const described = describeStagedFootprintAbsence("48021:D", diagnostics);
+    expect(described.joinOutcome.kind).toBe("attached-to-neighbour");
+    expect(described.reason).toMatch(/attached-to-neighbour/);
+    expect(described.reason).toMatch(/\bE\b/);
+    if (described.joinOutcome.kind === "attached-to-neighbour") {
+      expect(described.joinOutcome.neighbourParcelKey).toBe("E");
+      expect(described.joinOutcome.neighbourOverlapRatio).toBeGreaterThan(
+        described.joinOutcome.ownOverlapRatio,
+      );
+      expect(described.joinOutcome.ownOverlapRatio).toBeGreaterThanOrEqual(0.1);
+    }
+  });
+
+  it("end to end: planCountyFromStagedGeometryTrueJoin carries the split reason and joinOutcome per parcel", () => {
+    const join = joinStagedCandidatePairs(pairs, [parcelA, parcelB, parcelC, parcelD, parcelE]);
+    const diagnostics = computeStagedJoinDiagnostics(pairs);
+    const plan = planCountyFromStagedGeometryTrueJoin(
+      [
+        { parcelKey: "A", ring: PARCEL_A },
+        { parcelKey: "B", ring: PARCEL_B },
+        { parcelKey: "C", ring: parcelC.ring },
+        { parcelKey: "D", ring: parcelD.ring },
+        { parcelKey: "E", ring: parcelE.ring },
+      ],
+      join,
+      { countyFips: "48021", featuresRead: 2 },
+      diagnostics,
+    );
+    const byKey = new Map(plan.planned.map((p) => [p.parcelKey, p]));
+    const a = byKey.get("A");
+    const c = byKey.get("C");
+    const d = byKey.get("D");
+    expect(a?.outcome === "absent-per-parcel" ? a.joinOutcome?.kind : null).toBe(
+      "overlap-below-threshold",
+    );
+    expect(c?.outcome === "absent-per-parcel" ? c.joinOutcome?.kind : null).toBe(
+      "no-candidate-in-envelope",
+    );
+    expect(d?.outcome === "absent-per-parcel" ? d.joinOutcome?.kind : null).toBe(
+      "attached-to-neighbour",
+    );
+    // Three distinct causes must never collapse back onto one string.
+    const reasons = new Set(
+      ["A", "C", "D"].map((k) => {
+        const entry = byKey.get(k);
+        return entry?.outcome === "absent-per-parcel" ? entry.reason : null;
+      }),
+    );
+    expect(reasons.size).toBe(3);
   });
 });
 

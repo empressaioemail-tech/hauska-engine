@@ -416,11 +416,26 @@ try {
       };
     }
 
+    // P-158: absentPerParcel was one number for three causes. Denominator
+    // for each count below is wouldWriteAbsentPerParcel itself (every
+    // absent-per-parcel entry falls into exactly one of these three, or
+    // "unsplit" when planCountyFromStagedGeometryTrueJoin was called
+    // without diagnostics -- never on this county path after P-158).
+    const absentPerParcelEntries = plan.planned.filter(
+      (p) => p.outcome === "absent-per-parcel",
+    );
+    const absentByJoinOutcome = { unsplit: 0 };
+    for (const entry of absentPerParcelEntries) {
+      const kind = entry.joinOutcome?.kind ?? "unsplit";
+      absentByJoinOutcome[kind] = (absentByJoinOutcome[kind] ?? 0) + 1;
+    }
+
     summary.plan = {
       parcelsRead: plan.parcelsRead,
       wouldWriteTotal: plan.planned.length,
       wouldWritePresent: plan.counts.present,
       wouldWriteAbsentPerParcel: plan.counts.absentPerParcel,
+      wouldWriteAbsentPerParcelByJoinOutcome: absentByJoinOutcome,
       wouldWriteCountyCoverageAbsent: plan.counts.countyCoverageAbsent,
       skippedUnusableKey: plan.counts.skippedUnusableKey,
       skippedNoRing: plan.counts.skippedNoRing,
