@@ -124,6 +124,61 @@ export interface JurisdictionStatusSnapshot {
   accessPolicy?: AccessPolicy;
 }
 
+/**
+ * P-155 (OPS-23 FEASIBILITY, 2026-09-11): durable feasibility-export job
+ * state. One row per parcelNodeId, persisted beside (never inside) the
+ * `parcel-terrain-model` atom's `artifacts["pdf-feasibility"]` record --
+ * that artifact record is a CLOSED type the substrate seat owns (see the
+ * comment above `atom.artifacts["pdf-feasibility"] = ...` in
+ * `packages/engine-core/src/site-plan/feasibility-author.ts`); this table
+ * is the property seat's own operational bookkeeping, not a parcel fact.
+ *
+ * `never-requested` is NOT a member of this type: it is the absence of a
+ * row for a parcelNodeId (`getFeasibilityExportJob` returning null), so a
+ * caller can distinguish "nobody ever asked" from every state a job can
+ * actually be in.
+ */
+export type FeasibilityExportJobState = "queued" | "running" | "ready" | "failed";
+
+export interface FeasibilityExportJob {
+  parcelNodeId: string;
+  /** Identifies ONE job. Stable across queued -> running -> ready/failed;
+   * a NEW job (a fresh refresh accepted after the prior job settled) gets
+   * a new jobRef. */
+  jobRef: string;
+  state: FeasibilityExportJobState;
+  queuedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  failedAt?: string | null;
+  /** `failed` only. Coarse classification (e.g. "compose_failed",
+   * "stalled") -- never a raw stack trace on a customer-visible path. */
+  errorClass?: string | null;
+  errorMessage?: string | null;
+  /** `ready` only. Mirrors the atom's `artifacts["pdf-feasibility"].ref`
+   * so `download` can read it from the job row without a second atom
+   * lookup; source of truth for BYTES stays the artifact store either way. */
+  artifactRef?: string | null;
+  /**
+   * `ready` only. Exactly the fields the two real consumers
+   * (pe-feasibility-export-core.ts's `mapEngineFeasibilityPayload`,
+   * smartsite-mcp's `executeFeasibilityExport`) read off the old
+   * SYNCHRONOUS refresh (201) response and nothing else -- the channel
+   * that carried them before `refresh` returned immediately. See
+   * migrations/014_feasibility_export_jobs_result.sql.
+   */
+  resultSummary?: {
+    pageCount?: number;
+    feasibilityPageCount?: number;
+    sitePlanAppended?: boolean;
+    sitePlanUnavailableReason?: string;
+    sectionCount?: number;
+    openItemCount?: number;
+    narrativeIsDeterministicSkeleton?: boolean;
+  } | null;
+  updatedAt: string;
+}
+
 export interface StoragePort {
   /** Atomic write: pin to IPFS, index in Postgres, emit event. */
   writeAtom(instance: CodeAtomInstance): Promise<{ atomDid: string; cid: string }>;
@@ -355,4 +410,25 @@ export interface StoragePort {
    * runs whatever this backs, so it must stay cheap regardless of table size.
    */
   estimateAtomCount(): Promise<number>;
+
+  /**
+   * P-155: read the current feasibility-export job row for a parcel. null
+   * means no row exists -- `never-requested`, not `deferred`. Optional on
+   * older ports (in-process dev/test doubles) -- callers must feature-detect.
+   */
+  getFeasibilityExportJob?(parcelNodeId: string): Promise<FeasibilityExportJob | null>;
+
+  /**
+   * P-155: create or transition the job row for a parcel. `patch` merges
+   * onto whatever row already exists for `parcelNodeId` (or creates one);
+   * callers pass only the fields that changed for this transition, plus
+   * the invariant `jobRef` + `state`. Returns the row as persisted.
+   */
+  upsertFeasibilityExportJob?(
+    parcelNodeId: string,
+    patch: Partial<Omit<FeasibilityExportJob, "parcelNodeId" | "jobRef" | "state">> & {
+      jobRef: string;
+      state: FeasibilityExportJobState;
+    },
+  ): Promise<FeasibilityExportJob>;
 }
