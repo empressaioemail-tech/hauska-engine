@@ -172,10 +172,16 @@ export function createFactoryRoStore(options: {
     async resolvePlaceKey(countyFips, normalizedPropId) {
       const directKey = `${countyFips}:${normalizedPropId}`;
       const candidates = [directKey, ...zeroPaddedCandidates(countyFips, normalizedPropId)];
+      // Live-verified 2026-09-11 against FACTORY_DATABASE_URL_RO: this
+      // postgres.js version's `= ANY(${sql.array(...)})` fails at the
+      // database with "op ANY/ALL (array) requires array on right side";
+      // `IN ${sql(candidates)}` is the form that actually binds as a list
+      // of literal params (still a small bounded set of PK lookups, not a
+      // scan).
       const rows = await sql<Array<{ place_key: string }>>`
         SELECT place_key
           FROM parcel_record
-         WHERE place_key = ANY(${sql.array(candidates)})
+         WHERE place_key IN ${sql(candidates)}
       `;
       const found = rows.map((r) => r.place_key);
       if (found.length === 0) return { state: "not-found" };
