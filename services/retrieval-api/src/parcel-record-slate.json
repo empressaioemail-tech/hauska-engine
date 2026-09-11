@@ -1,0 +1,32 @@
+{
+  "$comment": "Vendored copy of legacy-design-tools artifacts/api-server/src/lib/parcelRecordAllowlist.ts's PARCEL_RECORD_SLATE, per P-152 dispatch step 2: 'Port the slate as DATA ... never as a second hand-typed list.' Copied verbatim (county:railKey pairs) at legacy-design-tools origin/main 3950ce9bc5d7ef83a7fae7303328d8e467a1fdd6, 2026-09-11. Re-sync both this file and legacy-design-tools's own copy together; a divergence test in each repo guards drift between publish and the next resync — see parcel-record-slate.test.ts here and the LDT-side test added in the P-152 cortex-consumer branch.",
+  "sourceRepo": "legacy-design-tools",
+  "sourceCommit": "3950ce9bc5d7ef83a7fae7303328d8e467a1fdd6",
+  "sourcePath": "artifacts/api-server/src/lib/parcelRecordAllowlist.ts",
+  "vendoredAt": "2026-09-11",
+  "slate": [
+    "48021:wells", "48209:wells", "48309:wells", "48453:wells", "48491:wells",
+    "48021:specialDistricts", "48209:specialDistricts", "48309:specialDistricts", "48453:specialDistricts", "48491:specialDistricts",
+    "48021:cityLimits", "48055:cityLimits", "48209:cityLimits", "48309:cityLimits", "48453:cityLimits", "48491:cityLimits",
+    "48021:flood", "48055:flood", "48209:flood", "48309:flood", "48453:flood", "48491:flood",
+    "48021:marketValue", "48055:marketValue", "48209:marketValue", "48309:marketValue", "48453:marketValue", "48491:marketValue",
+    "48021:assessedValue", "48055:assessedValue", "48209:assessedValue", "48309:assessedValue", "48453:assessedValue", "48491:assessedValue",
+    "48021:landValue", "48055:landValue", "48209:landValue", "48309:landValue", "48453:landValue", "48491:landValue",
+    "48021:improvementValue", "48055:improvementValue", "48209:improvementValue", "48309:improvementValue", "48453:improvementValue", "48491:improvementValue",
+    "48021:livingAreaSqft", "48055:livingAreaSqft", "48209:livingAreaSqft", "48309:livingAreaSqft", "48453:livingAreaSqft", "48491:livingAreaSqft",
+    "48021:yearBuilt", "48055:yearBuilt", "48209:yearBuilt", "48309:yearBuilt", "48453:yearBuilt", "48491:yearBuilt",
+    "48021:utilityService", "48055:utilityService", "48209:utilityService", "48309:utilityService", "48453:utilityService", "48491:utilityService",
+    "48021:overlayDistricts", "48055:overlayDistricts", "48209:overlayDistricts", "48309:overlayDistricts", "48453:overlayDistricts", "48491:overlayDistricts",
+    "48491:agValuation", "48453:agValuation",
+    "48021:schoolDistrict", "48055:schoolDistrict", "48209:schoolDistrict", "48309:schoolDistrict", "48453:schoolDistrict", "48491:schoolDistrict",
+    "48453:maxImperviousCoverPct",
+    "48021:valueHistory", "48055:valueHistory", "48209:valueHistory", "48309:valueHistory", "48453:valueHistory", "48491:valueHistory",
+    "48021:zoningDistrict", "48055:zoningDistrict", "48209:zoningDistrict", "48309:zoningDistrict", "48453:zoningDistrict", "48491:zoningDistrict",
+    "48021:setbackFrontFt", "48055:setbackFrontFt", "48209:setbackFrontFt", "48309:setbackFrontFt", "48453:setbackFrontFt", "48491:setbackFrontFt",
+    "48021:parcelAreaSqFt", "48055:parcelAreaSqFt", "48309:parcelAreaSqFt", "48453:parcelAreaSqFt", "48491:parcelAreaSqFt",
+    "48021:setbackRules", "48055:setbackRules", "48309:setbackRules", "48453:setbackRules", "48491:setbackRules",
+    "48021:maxHeightFt", "48055:maxHeightFt", "48309:maxHeightFt", "48453:maxHeightFt", "48491:maxHeightFt",
+    "48021:maxLotCoveragePct", "48055:maxLotCoveragePct", "48309:maxLotCoveragePct", "48453:maxLotCoveragePct", "48491:maxLotCoveragePct",
+    "48021:maxFootprintSqFt", "48055:maxFootprintSqFt", "48309:maxFootprintSqFt", "48453:maxFootprintSqFt", "48491:maxFootprintSqFt"
+  ]
+}

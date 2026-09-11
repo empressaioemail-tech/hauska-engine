@@ -39,6 +39,7 @@ import {
   assertSnapshotHeadroom,
   resolveMemoryLimitMib,
 } from "./resource-headroom.js";
+import { createFactoryRoStore, resolveFactoryDatabaseUrl } from "./parcel-record-db.js";
 import { startServer, buildApp } from "./server.js";
 
 /**
@@ -115,9 +116,27 @@ if (isMain) {
     );
   }
 
+  const factoryDatabaseUrl = resolveFactoryDatabaseUrl();
+  const factoryStore = factoryDatabaseUrl
+    ? createFactoryRoStore({ databaseUrl: factoryDatabaseUrl })
+    : null;
+  if (!factoryStore) {
+    console.log(
+      JSON.stringify({
+        level: "warn",
+        service: "retrieval-api",
+        event: "parcel_record.store.not_configured",
+        message:
+          "FACTORY_DATABASE_URL_RO unset — /property-nodes/:id/record declares a refusal on every request",
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
+
   const app = buildApp({
     storage,
     calibrationOverlay: overlayHandle?.port ?? null,
+    factoryStore,
   });
   // Listen before expensive substrate telemetry — Cloud Run's startup probe
   // is a TCP check on PORT. Every instance start (deploy, autoscale-out,
@@ -161,6 +180,7 @@ if (isMain) {
   const shutdown = async () => {
     await boot.close();
     if (overlayHandle) await overlayHandle.close();
+    if (factoryStore) await factoryStore.close();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
