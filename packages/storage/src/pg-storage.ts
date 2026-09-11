@@ -50,6 +50,8 @@ import { pickPreferredSetbackRule } from "./setback-rule-pick.js";
 import type {
   AtomQuery,
   AtomSearchResult,
+  FeasibilityExportJob,
+  FeasibilityExportJobState,
   GraphNodeListQuery,
   GraphNodeListResult,
   GraphNodeListRow,
@@ -1210,6 +1212,153 @@ export class PgStorage implements StoragePort {
     `;
     return rows.map((row) => row.atom_did);
   }
+
+  /** P-155: packages/storage/migrations/013_feasibility_export_jobs.sql. */
+  async getFeasibilityExportJob(parcelNodeId: string): Promise<FeasibilityExportJob | null> {
+    const rows = await this.sql<FeasibilityExportJobRow[]>`
+      SELECT * FROM feasibility_export_jobs WHERE parcel_node_id = ${parcelNodeId}
+    `;
+    return rows[0] ? rowToFeasibilityExportJob(rows[0]) : null;
+  }
+
+  async upsertFeasibilityExportJob(
+    parcelNodeId: string,
+    patch: Partial<Omit<FeasibilityExportJob, "parcelNodeId" | "jobRef" | "state">> & {
+      jobRef: string;
+      state: FeasibilityExportJobState;
+    },
+  ): Promise<FeasibilityExportJob> {
+    const rows = await this.sql<FeasibilityExportJobRow[]>`
+      INSERT INTO feasibility_export_jobs (
+        parcel_node_id,
+        job_ref,
+        state,
+        queued_at,
+        started_at,
+        completed_at,
+        failed_at,
+        error_class,
+        error_message,
+        artifact_ref,
+        result_page_count,
+        result_feasibility_page_count,
+        result_site_plan_appended,
+        result_site_plan_unavailable_reason,
+        result_section_count,
+        result_open_item_count,
+        result_narrative_is_deterministic_skeleton,
+        updated_at
+      ) VALUES (
+        ${parcelNodeId},
+        ${patch.jobRef},
+        ${patch.state},
+        ${patch.queuedAt ?? new Date().toISOString()},
+        ${patch.startedAt ?? null},
+        ${patch.completedAt ?? null},
+        ${patch.failedAt ?? null},
+        ${patch.errorClass ?? null},
+        ${patch.errorMessage ?? null},
+        ${patch.artifactRef ?? null},
+        ${patch.resultSummary?.pageCount ?? null},
+        ${patch.resultSummary?.feasibilityPageCount ?? null},
+        ${patch.resultSummary?.sitePlanAppended ?? null},
+        ${patch.resultSummary?.sitePlanUnavailableReason ?? null},
+        ${patch.resultSummary?.sectionCount ?? null},
+        ${patch.resultSummary?.openItemCount ?? null},
+        ${patch.resultSummary?.narrativeIsDeterministicSkeleton ?? null},
+        now()
+      )
+      ON CONFLICT (parcel_node_id) DO UPDATE SET
+        job_ref = EXCLUDED.job_ref,
+        state = EXCLUDED.state,
+        -- queued_at only advances on a genuinely NEW job (patch supplies
+        -- it explicitly from the route when it mints a new jobRef); a
+        -- state transition of the SAME job passes no queuedAt and keeps
+        -- the row's own original queued_at.
+        queued_at = CASE WHEN ${patch.queuedAt ?? null}::timestamptz IS NOT NULL
+          THEN EXCLUDED.queued_at ELSE feasibility_export_jobs.queued_at END,
+        started_at = COALESCE(EXCLUDED.started_at, feasibility_export_jobs.started_at),
+        completed_at = COALESCE(EXCLUDED.completed_at, feasibility_export_jobs.completed_at),
+        failed_at = COALESCE(EXCLUDED.failed_at, feasibility_export_jobs.failed_at),
+        error_class = COALESCE(EXCLUDED.error_class, feasibility_export_jobs.error_class),
+        error_message = COALESCE(EXCLUDED.error_message, feasibility_export_jobs.error_message),
+        artifact_ref = COALESCE(EXCLUDED.artifact_ref, feasibility_export_jobs.artifact_ref),
+        result_page_count = COALESCE(EXCLUDED.result_page_count, feasibility_export_jobs.result_page_count),
+        result_feasibility_page_count = COALESCE(EXCLUDED.result_feasibility_page_count, feasibility_export_jobs.result_feasibility_page_count),
+        result_site_plan_appended = COALESCE(EXCLUDED.result_site_plan_appended, feasibility_export_jobs.result_site_plan_appended),
+        result_site_plan_unavailable_reason = COALESCE(EXCLUDED.result_site_plan_unavailable_reason, feasibility_export_jobs.result_site_plan_unavailable_reason),
+        result_section_count = COALESCE(EXCLUDED.result_section_count, feasibility_export_jobs.result_section_count),
+        result_open_item_count = COALESCE(EXCLUDED.result_open_item_count, feasibility_export_jobs.result_open_item_count),
+        result_narrative_is_deterministic_skeleton = COALESCE(EXCLUDED.result_narrative_is_deterministic_skeleton, feasibility_export_jobs.result_narrative_is_deterministic_skeleton),
+        updated_at = now()
+      RETURNING *
+    `;
+    const row = rows[0];
+    if (!row) throw new Error("upsertFeasibilityExportJob: INSERT ... RETURNING produced no row");
+    return rowToFeasibilityExportJob(row);
+  }
+}
+
+interface FeasibilityExportJobRow {
+  parcel_node_id: string;
+  job_ref: string;
+  state: FeasibilityExportJobState;
+  queued_at: Date | string;
+  started_at: Date | string | null;
+  completed_at: Date | string | null;
+  failed_at: Date | string | null;
+  error_class: string | null;
+  error_message: string | null;
+  artifact_ref: string | null;
+  result_page_count: number | null;
+  result_feasibility_page_count: number | null;
+  result_site_plan_appended: boolean | null;
+  result_site_plan_unavailable_reason: string | null;
+  result_section_count: number | null;
+  result_open_item_count: number | null;
+  result_narrative_is_deterministic_skeleton: boolean | null;
+  updated_at: Date | string;
+}
+
+function toIso(value: Date | string | null): string | null {
+  if (value === null) return null;
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function rowToFeasibilityExportJob(row: FeasibilityExportJobRow): FeasibilityExportJob {
+  const hasResult =
+    row.result_page_count !== null ||
+    row.result_feasibility_page_count !== null ||
+    row.result_site_plan_appended !== null ||
+    row.result_site_plan_unavailable_reason !== null ||
+    row.result_section_count !== null ||
+    row.result_open_item_count !== null ||
+    row.result_narrative_is_deterministic_skeleton !== null;
+  return {
+    parcelNodeId: row.parcel_node_id,
+    jobRef: row.job_ref,
+    state: row.state,
+    queuedAt: toIso(row.queued_at) as string,
+    startedAt: toIso(row.started_at),
+    completedAt: toIso(row.completed_at),
+    failedAt: toIso(row.failed_at),
+    errorClass: row.error_class,
+    errorMessage: row.error_message,
+    artifactRef: row.artifact_ref,
+    resultSummary: hasResult
+      ? {
+          pageCount: row.result_page_count ?? undefined,
+          feasibilityPageCount: row.result_feasibility_page_count ?? undefined,
+          sitePlanAppended: row.result_site_plan_appended ?? undefined,
+          sitePlanUnavailableReason: row.result_site_plan_unavailable_reason ?? undefined,
+          sectionCount: row.result_section_count ?? undefined,
+          openItemCount: row.result_open_item_count ?? undefined,
+          narrativeIsDeterministicSkeleton:
+            row.result_narrative_is_deterministic_skeleton ?? undefined,
+        }
+      : null,
+    updatedAt: toIso(row.updated_at) as string,
+  };
 }
 
 function rowToSnapshot(row: JurisdictionStatusRow): JurisdictionStatusSnapshot {
