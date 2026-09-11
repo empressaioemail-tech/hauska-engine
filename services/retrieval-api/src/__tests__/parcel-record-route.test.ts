@@ -154,6 +154,42 @@ describe("GET /property-nodes/:parcelNodeId/record (P-152)", () => {
   });
 });
 
+describe("GET /parcel-record-gate-verdict/:countyFips/:railKey (P-152 lane 2 support)", () => {
+  it("serves the same verdict the /record route computes per rail, with no parcel in scope", async () => {
+    const factoryStore = memoryFactoryStore({ verdicts: [CITY_LIMITS_VERDICT_2026_09_11] });
+    const app = buildApp({ storage: new InMemoryStorage(), apiKey: "", factoryStore });
+    const res = await app.request("/parcel-record-gate-verdict/48021/cityLimits");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { verdict: { verdict: string; evaluatedAt: string } | null };
+    expect(body.verdict).toEqual({ verdict: "pass", evaluatedAt: "2026-09-11T20:03:09.067Z" });
+  });
+
+  it("returns verdict: null for a rail with no evaluated verdict, never a fabricated one", async () => {
+    const factoryStore = memoryFactoryStore({});
+    const app = buildApp({ storage: new InMemoryStorage(), apiKey: "", factoryStore });
+    const res = await app.request("/parcel-record-gate-verdict/48021/pipelines");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { verdict: unknown };
+    expect(body.verdict).toBeNull();
+  });
+
+  it("declares a 503 refusal when the factory store is not configured", async () => {
+    const app = buildApp({ storage: new InMemoryStorage(), apiKey: "", factoryStore: null });
+    const res = await app.request("/parcel-record-gate-verdict/48021/cityLimits");
+    expect(res.status).toBe(503);
+  });
+
+  it("rejects a malformed county fips with 400", async () => {
+    const app = buildApp({
+      storage: new InMemoryStorage(),
+      apiKey: "",
+      factoryStore: memoryFactoryStore({}),
+    });
+    const res = await app.request("/parcel-record-gate-verdict/notacounty/cityLimits");
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("readParcelRecord (unit)", () => {
   it("resolves a leading-zero raw place_key when only the padded form exists (no ambiguity)", async () => {
     const factoryStore = memoryFactoryStore({
