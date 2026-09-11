@@ -431,6 +431,51 @@ export function buildApp(options: ServerOptions = {}): Hono {
   });
 
   /**
+   * P-152 lane 2 support: `parcel_gate_verdict` is keyed by (county, rail)
+   * alone — there is no parcel in scope for legacy-design-tools'
+   * `parcelRecordAllowlist.ts`/`parcelGateVerdictRead.ts` call sites, which
+   * decide serve state before committing to any one parcel's `/record`
+   * fetch. A dedicated lookup, reusing the exact same `loadGateVerdict`
+   * this service's own `/record` route already uses per rail.
+   */
+  app.get("/parcel-record-gate-verdict/:countyFips/:railKey", async (c) => {
+    const countyFips = c.req.param("countyFips");
+    const railKey = c.req.param("railKey");
+    if (!/^\d{5}$/.test(countyFips) || !/^[A-Za-z][A-Za-z0-9]*$/.test(railKey)) {
+      return c.json(
+        { error: "invalid path", hint: "expected /parcel-record-gate-verdict/{5-digit fips}/{railKey}" },
+        400,
+      );
+    }
+    if (!factoryStore) {
+      return c.json(
+        {
+          error: "factory store not configured",
+          errorClass: "store-not-configured",
+          countyFips,
+          railKey,
+        },
+        503,
+      );
+    }
+    try {
+      const verdict = await factoryStore.loadGateVerdict(countyFips, railKey);
+      return c.json({ countyFips, railKey, verdict });
+    } catch (err) {
+      return c.json(
+        {
+          error: "gate verdict read failed",
+          errorClass: "read-failed",
+          countyFips,
+          railKey,
+          message: err instanceof Error ? err.message : String(err),
+        },
+        503,
+      );
+    }
+  });
+
+  /**
    * CC-A U1 / WDLL 6 — serve stranded boundary-edge graph from StoragePort.
    * Phase 0 live 404 on /boundary-edges; this is the fix.
    */
