@@ -278,4 +278,93 @@ describe("emitPdfFeasibility", () => {
     expect(decoded).toContain("Named downstream discharge point");
     expect(decoded).toContain("No modeled drainage exit point was available");
   });
+
+  // P-159 (F4, F10) / Ruling B: one buildable figure per document, or none.
+  describe("P-159: one buildable figure per document or none", () => {
+    it("(a) prints exactly ONE buildable figure and ONE consistent percent on every surface when the atom-backed (warm) and local figures differ", async () => {
+      const bareSitePlan = buildSitePlanModel();
+      const localAreaSqFt = bareSitePlan.summary.buildableAreaSqFt;
+      expect(localAreaSqFt).not.toBeNull();
+      // Deliberately far from the local figure so a leak is unmistakable.
+      const atomAreaSqFt = Math.round(localAreaSqFt!) + 4_000;
+      const atomRef = "did:hauska:buildable-envelope:48029:105129:1";
+      const sitePlan = composeSitePlanModel({
+        parcelNodeId: "48029:105129",
+        bbox,
+        ringWgs84,
+        dem,
+        contourIntervalMeters: 0.5,
+        setback,
+        boundaryEdges,
+        descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
+        zoning: { district: "R-6" },
+        floodZone: { honestUnavailable: true, reason: "sandbox has no network egress" },
+        geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
+        envelopeOutcome: { kind: "buildable", areaSqFt: atomAreaSqFt, atomDid: atomRef },
+      });
+      expect(sitePlan.summary.printedBuildable).toEqual({ kind: "atom", areaSqFt: atomAreaSqFt, atomRef });
+
+      const model = await composeParcelReportFacts({
+        parcelNodeId: "48029:105129",
+        storage: fakeStorage([]),
+        geometry: { status: "present", model: sitePlan },
+        drainage: NO_DRAINAGE,
+      });
+      const result = await emitPdfFeasibility(model, { sitePlan: { model: sitePlan } });
+      const decoded = decodeAllContentStreams(result.bytes);
+
+      const atomSqFtStr = `${atomAreaSqFt.toLocaleString("en-US")} sq ft`;
+      const localSqFtStr = `${Math.round(localAreaSqFt!).toLocaleString("en-US")} sq ft`;
+      expect(atomSqFtStr).not.toBe(localSqFtStr); // sanity: genuinely different figures
+
+      // Cover ("what can be built"), the facts page's zoning-envelope row, and
+      // the appended site-plan sheet's summary row all print the SAME sq-ft
+      // string — never the local one.
+      const occurrences = decoded.split(atomSqFtStr).length - 1;
+      expect(occurrences).toBeGreaterThanOrEqual(3);
+      expect(decoded).not.toContain(localSqFtStr);
+
+      // The percent everywhere it appears is computed from the SAME atom
+      // figure over the SAME lot area — never a different percent.
+      const expectedPct = Math.round((atomAreaSqFt / sitePlan.summary.lotAreaSqFt) * 100);
+      expect(decoded).toContain(`${expectedPct}%`);
+    });
+
+    it("(b) prints NO buildable figure and NO percent anywhere, with refused wording, when no buildable-envelope atom backs the outcome", async () => {
+      const sitePlan = buildSitePlanModel(); // no envelopeOutcome at all
+      expect(sitePlan.summary.printedBuildable.kind).toBe("refused");
+
+      const model = await composeParcelReportFacts({
+        parcelNodeId: "48029:105129",
+        storage: fakeStorage([]),
+        geometry: { status: "present", model: sitePlan },
+        drainage: NO_DRAINAGE,
+      });
+      const result = await emitPdfFeasibility(model, { sitePlan: { model: sitePlan } });
+      const decoded = decodeAllContentStreams(result.bytes);
+
+      // No percent-of-lot anywhere in the document.
+      expect(decoded).not.toMatch(/% of (the )?[\d,]*\s?(sq ft )?lot/);
+      // The cover states the refusal in place of a figure.
+      expect(decoded).toContain("Buildable area is refused");
+      // The appended site-plan sheet's header stat reads NONE, same as any
+      // other non-atom-backed outcome.
+      expect(decoded).toContain("NONE");
+      // "fi" renders as the ligature glyph in this font, so match around it.
+      expect(decoded).toContain("buildable-envelope atom not yet on");
+    });
+
+    it("(c) a narrativeWithheldNote appears as a declared Data-quality row rather than a silent skeleton", async () => {
+      const model = await buildModel([]);
+      const result = await emitPdfFeasibility(model, {
+        narrativeWithheldNote:
+          "the generated narrative stated a buildable-area figure that could not be verified against the figure printed in this document and was withheld; the summary below is the deterministic fallback.",
+      });
+      const decoded = decodeAllContentStreams(result.bytes);
+      expect(decoded).toContain("Withheld");
+      expect(decoded).toContain("could not be verified against the figure printed");
+      // The document still ships complete — the skeleton, not an error.
+      expect(result.narrativeIsDeterministicSkeleton).toBe(true);
+    });
+  });
 });

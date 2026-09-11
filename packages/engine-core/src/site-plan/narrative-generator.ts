@@ -75,7 +75,11 @@ export type NarrativeFailureReason =
   | "no-api-key"
   | "request-failed"
   | "empty-narrative"
-  | "no-citations";
+  | "no-citations"
+  /** P-159 item 3: a buildable-area sq-ft or percent figure in the generated
+   * text does not match `printedBuildable` (or one appears at all when the
+   * document prints none). See `findUnauthorizedBuildableFigures`. */
+  | "printed-figure-mismatch";
 
 export type GenerateNarrativeOutcome =
   | ({ ok: true } & GeneratedNarrative)
@@ -134,7 +138,7 @@ You are given a JSON object of FACTS assembled from public records and models. W
 
 RULES, all mandatory:
 
-1. Every sentence drawn from the FACTS must end with a marker naming the fact key it used, in square brackets, e.g. [drainageStudy] or [geometry]. A sentence with no marker will be discarded.
+1. Every sentence drawn from the FACTS must end with a marker naming the fact key it used, in square brackets, e.g. [drainageStudy] or [geometry].
 2. Reason ACROSS facts. The value of this section is what the facts mean together: what the buildable envelope plus the setbacks plus the topography imply for siting; what the drainage study means for grading and finished-floor elevation; what an absence means for the schedule. Do not restate single values that already appear in the tables.
 3. Where two facts disagree, say so plainly and say which one a reader should act on. Disagreements are the most valuable thing you can surface.
 4. An absent fact is not a negative finding. "No record was found" never becomes "there is none". Never infer a vacant site from a missing footprint.
@@ -143,6 +147,7 @@ RULES, all mandatory:
 7. LENGTH: write 350 to 500 words, in four to six paragraphs. This is the primary narrative of the document and it appears on the cover, where it is the first thing a buyer reads. A three-sentence answer is a failure of the task, not a concise version of it.
 8. Attach a marker to the sentence that actually used the fact. Do not stack unrelated markers at the end of a sentence: "[a][b][c][d][e]" tells a reader nothing about which claim rests on which fact.
 9. Lead with what a decision-maker needs first. Open with what can be built and what governs it; put the confirmations and the unknowns after that, and close with what stands between this packet and a decision.
+10. The FACTS carry exactly one buildable-area signal, at \`geometry.printedBuildable\`. When its kind is "atom", that figure is the ONLY buildable-area square footage or percentage you may write anywhere in the narrative — do not compute, round, or restate a different one. When its kind is "refused", do not state or imply ANY buildable-area square footage or percentage; say plainly that it is not yet available and why, from the \`reason\` given. A narrative citing a figure that does not match, or citing any figure when none is printed, is discarded after generation and never reaches the reader.
 
 If you used web search, put everything you learned from the web AFTER the main narrative, inside these exact delimiters:
 ${WEB_BLOCK_OPEN}
@@ -233,6 +238,49 @@ function normalizeUrl(u: string): string {
   return u.replace(/[).,;]+$/, "").replace(/\/+$/, "").toLowerCase();
 }
 
+/**
+ * P-159 item 3. Silent acceptance of a wrong or invented buildable-area figure
+ * is the defect this check exists to catch (F4): the model is handed exactly
+ * one buildable-area signal (`geometry.printedBuildable`, `buildFullNarrativeFacts`)
+ * and this scans its OWN OUTPUT — never the model's self-report — for any
+ * square-foot or percent figure in a sentence that talks about the buildable
+ * envelope, and refuses the whole narrative if it finds one that is not the
+ * printed figure (or finds any at all when nothing is printed).
+ *
+ * Scoped to sentences mentioning "buildable" or "envelope" rather than every
+ * square-foot mention in the document: the narrative is allowed to discuss lot
+ * area or living area in square feet (those are separate, printed facts of
+ * their own) — it is a BUILDABLE-area figure that must trace to `printedBuildable`.
+ */
+export function findUnauthorizedBuildableFigures(
+  narrative: string,
+  printed: { kind: "atom"; areaSqFt: number; atomRef: string } | { kind: "refused"; reason: string } | null,
+  lotAreaSqFt: number | null,
+): string[] {
+  const allowedSqFt = printed && printed.kind === "atom" ? Math.round(printed.areaSqFt) : null;
+  const allowedPct =
+    printed && printed.kind === "atom" && lotAreaSqFt != null && lotAreaSqFt > 0
+      ? Math.round((printed.areaSqFt / lotAreaSqFt) * 100)
+      : null;
+
+  const sentences = narrative.match(/[^.!?]*\b(?:buildable|envelope)\b[^.!?]*[.!?]/gi) ?? [];
+  const sqFtRe = /([\d][\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft\.?|square\s+feet)/gi;
+  const pctRe = /(\d+(?:\.\d+)?)\s*%/g;
+
+  const offenders: string[] = [];
+  for (const sentence of sentences) {
+    for (const m of sentence.matchAll(sqFtRe)) {
+      const n = Math.round(Number(m[1]!.replace(/,/g, "")));
+      if (allowedSqFt == null || Math.abs(n - allowedSqFt) > 1) offenders.push(m[0].trim());
+    }
+    for (const m of sentence.matchAll(pctRe)) {
+      const n = Math.round(Number(m[1]));
+      if (allowedPct == null || Math.abs(n - allowedPct) > 1) offenders.push(m[0].trim());
+    }
+  }
+  return offenders;
+}
+
 export async function generateFeasibilityNarrative(
   model: ParcelReportModel,
   options: GenerateNarrativeOptions = {},
@@ -289,6 +337,19 @@ export async function generateFeasibilityNarrative(
     // cross-repo client already took: prose that names no fact it drew on
     // cannot be checked against anything.
     return { ok: false, reason: "no-citations" };
+  }
+
+  // P-159 item 3: deterministic post-generation check — never trust the
+  // model's own citation to prove it used the right number.
+  const printed = model.geometry.status === "present" ? model.geometry.model.summary.printedBuildable : null;
+  const lotAreaSqFt = model.geometry.status === "present" ? model.geometry.model.summary.lotAreaSqFt : null;
+  const offenders = findUnauthorizedBuildableFigures(body, printed, lotAreaSqFt);
+  if (offenders.length > 0) {
+    return {
+      ok: false,
+      reason: "printed-figure-mismatch",
+      detail: `narrative cited a buildable-area figure not on the printed document: ${offenders.join(", ")}`,
+    };
   }
 
   return {

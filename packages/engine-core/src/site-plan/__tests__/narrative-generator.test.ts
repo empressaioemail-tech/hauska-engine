@@ -4,6 +4,7 @@ import {
   WEB_BLOCK_CLOSE,
   WEB_BLOCK_OPEN,
   extractWebFindings,
+  findUnauthorizedBuildableFigures,
   generateFeasibilityNarrative,
   splitWebBlock,
 } from "../narrative-generator.js";
@@ -166,5 +167,130 @@ describe("generateFeasibilityNarrative fails closed", () => {
       if (prev === undefined) delete process.env.XAI_API_KEY;
       else process.env.XAI_API_KEY = prev;
     }
+  });
+});
+
+// P-159 item 3. Silent acceptance of a wrong or invented buildable-area figure
+// is the defect (F4). `findUnauthorizedBuildableFigures` is the deterministic
+// scan; these tests prove it fires on a genuinely planted bad figure (the
+// pre-registered falsifier) and stays quiet on a narrative that either cites
+// the correct printed figure or discusses non-buildable square footage.
+describe("findUnauthorizedBuildableFigures: the deterministic post-generation check", () => {
+  const atomPrinted = { kind: "atom" as const, areaSqFt: 19_052, atomRef: "did:x" };
+  const refused = { kind: "refused" as const, reason: "pending — buildable-envelope atom not yet on file" };
+
+  it("FALSIFIER: fires on a planted figure that does not match the printed one", () => {
+    const offenders = findUnauthorizedBuildableFigures(
+      "The buildable area is approximately 20,349 sq ft, well within the setback lines.",
+      atomPrinted,
+      30_000,
+    );
+    expect(offenders.length).toBeGreaterThan(0);
+  });
+
+  it("accepts a narrative that cites exactly the printed figure and its percent", () => {
+    const offenders = findUnauthorizedBuildableFigures(
+      "The buildable envelope covers 19,052 sq ft, or 64% of the lot [geometry].",
+      atomPrinted,
+      30_000,
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("fires on ANY buildable figure at all when the document prints none", () => {
+    const offenders = findUnauthorizedBuildableFigures(
+      "The buildable envelope covers roughly 12,000 sq ft based on the setbacks on file.",
+      refused,
+      30_000,
+    );
+    expect(offenders.length).toBeGreaterThan(0);
+  });
+
+  it("passes when the narrative correctly says nothing prints and gives no figure", () => {
+    const offenders = findUnauthorizedBuildableFigures(
+      "The buildable envelope has not been derived from an atom for this parcel yet, so no figure is available [geometry].",
+      refused,
+      30_000,
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("NOT VACUOUS the other way: a legitimate lot-area or living-area figure outside any buildable sentence never trips it", () => {
+    const offenders = findUnauthorizedBuildableFigures(
+      "The lot is 30,000 sq ft [geometry]. The home carries 1,820 sq ft of living area built in 1975 [parcelOwnership].",
+      refused,
+      30_000,
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("catches a percent-only figure in a buildable sentence too", () => {
+    const offenders = findUnauthorizedBuildableFigures(
+      "Roughly 63% of the lot is buildable under the setbacks on file.",
+      refused,
+      30_000,
+    );
+    expect(offenders.length).toBeGreaterThan(0);
+  });
+});
+
+describe("generateFeasibilityNarrative refuses a buildable-figure mismatch (P-159)", () => {
+  function modelWithGeometry(printedBuildable: { kind: "atom"; areaSqFt: number; atomRef: string } | { kind: "refused"; reason: string }) {
+    return {
+      ...model,
+      geometry: {
+        status: "present",
+        model: {
+          summary: {
+            printedBuildable,
+            lotAreaSqFt: 30_000,
+            address: undefined,
+            countyName: "Bastrop County",
+            elevationRangeMeters: { min: 100, max: 105 },
+            verticalDatumSummary: "NAVD88 orthometric (USGS 3DEP)",
+          },
+          contourIntervalMeters: 0.5,
+          setback: { honestAbsence: false, front: 15, side: 5, rear: 15, displayLine: "15 / 5 / 15" },
+        },
+      },
+    } as unknown as import("../report-model.js").ParcelReportModel;
+  }
+
+  it("FALSIFIER: refuses (printed-figure-mismatch) a narrative that plants a wrong buildable figure", async () => {
+    const m = modelWithGeometry({ kind: "atom", areaSqFt: 19_052, atomRef: "did:x" });
+    const out = await generateFeasibilityNarrative(m, {
+      client: clientReturning(
+        "This lot supports a buildable envelope of about 20,349 sq ft under the setbacks on file [geometry].",
+      ),
+    });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.reason).toBe("printed-figure-mismatch");
+  });
+
+  it("accepts a narrative that cites the same printed figure the document prints", async () => {
+    const m = modelWithGeometry({ kind: "atom", areaSqFt: 19_052, atomRef: "did:x" });
+    const out = await generateFeasibilityNarrative(m, {
+      client: clientReturning("This lot supports a buildable envelope of 19,052 sq ft [geometry]."),
+    });
+    expect(out.ok).toBe(true);
+  });
+
+  it("refuses ANY buildable figure when the document prints none (no atom on file)", async () => {
+    const m = modelWithGeometry({ kind: "refused", reason: "pending — buildable-envelope atom not yet on file" });
+    const out = await generateFeasibilityNarrative(m, {
+      client: clientReturning("The buildable envelope covers about 12,000 sq ft based on the setbacks [geometry]."),
+    });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.reason).toBe("printed-figure-mismatch");
+  });
+
+  it("still emits a complete report when the check is not tripped: no atom on file, and the narrative correctly states none", async () => {
+    const m = modelWithGeometry({ kind: "refused", reason: "pending — buildable-envelope atom not yet on file" });
+    const out = await generateFeasibilityNarrative(m, {
+      client: clientReturning(
+        "The buildable envelope has not been derived from an atom for this parcel yet [geometry].",
+      ),
+    });
+    expect(out.ok).toBe(true);
   });
 });

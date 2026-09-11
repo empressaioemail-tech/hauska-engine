@@ -280,19 +280,28 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     const pdfRef = result.atom.artifacts["pdf-site-plan"]!.ref;
     const pdfBytes = artifactStore.data.get(pdfRef)!;
     // SHEET STANDARD §11: machine identifiers (provisional-front-edge, the
-    // atom's reason string) stay OFF the sheet — the model still carries them
-    // (buildableAreaHonestNote below), and the sheet shows the provisional
-    // qualifier + the fine-print planning-estimate sentence.
+    // atom's reason string) stay OFF the sheet. P-159 / Ruling B: a
+    // `provisional-front-edge` outcome is NOT `kind: "buildable"` — it can
+    // never be atom-backed in `printedBuildable`'s sense — so the figure this
+    // test used to assert (a provisional NUMBER) is refused outright now,
+    // same as any other non-atom-backed outcome; the sheet shows the honest
+    // UNAVAILABLE chip instead.
     expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
     const decoded = decodeAllContentStreams(pdfBytes);
-    expect(decoded).toContain("provisional planning estimate");
-    expect(decoded).toContain("planning estimate, not a permit-ready boundary");
+    expect(decoded).not.toContain("provisional planning estimate");
+    expect(decoded).toContain("buildable-envelope atom not yet on file");
   });
 
   it("honors an explicit envelopeOutcomeOverride test seam without requiring a stored buildable-envelope atom", async () => {
     const storage = new InMemoryStorage();
     const artifactStore = fakeArtifactStore();
 
+    // P-159 / Ruling B: a `provisional-front-edge` override is NOT atom-backed
+    // and now prints IDENTICALLY to no override at all (both refuse the same
+    // way) — the honesty-note paragraph this test used to size-compare on no
+    // longer prints for either case, by design. The seam is proven reaching
+    // the renderer with a `kind: "buildable"` override carrying an `atomDid`
+    // instead, which is the one case P-159 allows to print a figure at all.
     const withOverride = await authorParcelSitePlanExport({
       parcelNodeId,
       resolver: fakeResolver(ringWgs84),
@@ -304,10 +313,17 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       parseDem: fakeParseDem,
       frontEdgeIndex: 0,
       fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
-      envelopeOutcomeOverride: { kind: "provisional-front-edge", reason: "override reason" },
+      envelopeOutcomeOverride: {
+        kind: "buildable",
+        areaSqFt: 5_250,
+        atomDid: "did:hauska:buildable-envelope:test-seam:1",
+      },
     });
 
     expect(withOverride.atom.artifacts["pdf-site-plan"]?.byteCount).toBeGreaterThan(0);
+    const withOverrideRef = withOverride.atom.artifacts["pdf-site-plan"]!.ref;
+    const withOverrideBytes = artifactStore.data.get(withOverrideRef)!;
+    expect(decodeAllContentStreams(withOverrideBytes)).toContain("5,250 sq ft");
 
     const storage2 = new InMemoryStorage();
     const artifactStore2 = fakeArtifactStore();
@@ -324,13 +340,14 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
       fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
     });
 
-    // The override path renders a longer honesty-note paragraph onto the
-    // same page 2 layout, so its PDF is strictly larger than the otherwise
-    // identical export with no provisional note at all - a real, if
+    // The override path prints the atom-backed figure; the otherwise-identical
+    // export with no override refuses (no atom, no figure) — a real, if
     // indirect, end-to-end proof the override reaches the renderer.
-    expect(withOverride.atom.artifacts["pdf-site-plan"]!.byteCount).toBeGreaterThan(
-      withoutOverride.atom.artifacts["pdf-site-plan"]!.byteCount,
-    );
+    const withoutOverrideRef = withoutOverride.atom.artifacts["pdf-site-plan"]!.ref;
+    const withoutOverrideBytes = artifactStore2.data.get(withoutOverrideRef)!;
+    const withoutOverrideDecoded = decodeAllContentStreams(withoutOverrideBytes);
+    expect(withoutOverrideDecoded).not.toContain("5,250 sq ft");
+    expect(withoutOverrideDecoded).toContain("buildable-envelope atom not yet on file");
   }, 15_000);
 
   it("degrades to honest flood-zone-unavailable when the flood lookup throws, without failing the export", async () => {

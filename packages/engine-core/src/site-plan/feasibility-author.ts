@@ -224,6 +224,16 @@ export async function authorParcelFeasibilityExport(
     sitePlanUnavailableReason: model.geometry.status === "absent" ? model.geometry.reason : undefined,
     liveViewUrl: options.liveViewUrl,
     narrativeOverride,
+    // P-159 item 3: a declared note, not a silent skeleton, when the generated
+    // narrative was withheld specifically because it cited a buildable-area
+    // figure the deterministic check could not verify against the printed
+    // document. Every OTHER fallback reason (no API key, empty response, …) is
+    // an operational state, not a customer-facing data-quality finding, so it
+    // gets no note here.
+    narrativeWithheldNote:
+      narrativeFallbackReason === "printed-figure-mismatch"
+        ? "the generated narrative stated a buildable-area figure that could not be verified against the figure printed in this document (or none is printed here) and was withheld; the summary below is the deterministic fallback."
+        : undefined,
     webFindings,
     descriptorOverride: options.descriptor,
   });
