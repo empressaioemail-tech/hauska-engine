@@ -29,6 +29,8 @@ import { pickPreferredSetbackRule } from "./setback-rule-pick.js";
 import type {
   AtomQuery,
   AtomSearchResult,
+  FeasibilityExportJob,
+  FeasibilityExportJobState,
   GraphNodeListQuery,
   GraphNodeListResult,
   GraphNodeListRow,
@@ -54,6 +56,7 @@ export class InMemoryStorage implements StoragePort {
   private readonly cids = new Map<string, string>();
   private readonly links: AtomLink[] = [];
   private readonly jurisdictionStatus = new Map<string, JurisdictionStatusSnapshot>();
+  private readonly feasibilityExportJobs = new Map<string, FeasibilityExportJob>();
   private readonly cache = new HotCache();
   private readonly ipfs = new InProcessIpfsPin();
 
@@ -605,5 +608,35 @@ export class InMemoryStorage implements StoragePort {
 
   async estimateAtomCount(): Promise<number> {
     return this.atoms.size;
+  }
+
+  async getFeasibilityExportJob(parcelNodeId: string): Promise<FeasibilityExportJob | null> {
+    return this.feasibilityExportJobs.get(parcelNodeId) ?? null;
+  }
+
+  async upsertFeasibilityExportJob(
+    parcelNodeId: string,
+    patch: Partial<Omit<FeasibilityExportJob, "parcelNodeId" | "jobRef" | "state">> & {
+      jobRef: string;
+      state: FeasibilityExportJobState;
+    },
+  ): Promise<FeasibilityExportJob> {
+    const existing = this.feasibilityExportJobs.get(parcelNodeId);
+    const now = new Date().toISOString();
+    const row: FeasibilityExportJob = {
+      parcelNodeId,
+      queuedAt: existing?.queuedAt ?? now,
+      startedAt: existing?.startedAt ?? null,
+      completedAt: existing?.completedAt ?? null,
+      failedAt: existing?.failedAt ?? null,
+      errorClass: existing?.errorClass ?? null,
+      errorMessage: existing?.errorMessage ?? null,
+      artifactRef: existing?.artifactRef ?? null,
+      resultSummary: existing?.resultSummary ?? null,
+      ...patch,
+      updatedAt: now,
+    };
+    this.feasibilityExportJobs.set(parcelNodeId, row);
+    return row;
   }
 }

@@ -2,11 +2,13 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import {
   createPgStorage,
   InMemoryStorage,
   resolveSubstrateDatabaseUrl,
+  type FeasibilityExportJob,
   type StoragePort,
 } from "@hauska-engine/storage";
 import {
@@ -593,128 +595,286 @@ export function buildParcelTerrainRoutes(
     return c.body(Buffer.from(bytes));
   });
 
-  // P-32 wave 1 — Feasibility Study. Same shape as dossier-export above;
-  // engine-side atom composition (feasibility-model.ts) replaces the
-  // caller-supplied brief. No PE (hauska-map) wiring in this wave — this
-  // route exists so the report is genuinely invokable and live-verifiable
-  // end to end within this repo; the PE gating leg is wave 2.
-  app.post("/:parcelNodeId/feasibility-export/refresh", async (c) => {
-    const parsed = feasibilityRefreshBody.safeParse(await c.req.json().catch(() => ({})));
-    if (!parsed.success) return c.json({ error: "invalid_request", details: parsed.error.flatten() }, 400);
-    const parcelNodeId = c.req.param("parcelNodeId");
-    const setbackCandidate = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
-      (candidate) => candidate.entityType === "setback-rule",
-    );
-    const setback =
-      setbackCandidate && setbackCandidate.entityType === "setback-rule" ? setbackCandidate : undefined;
+  // P-32 wave 1 — Feasibility Study. Engine-side atom composition
+  // (feasibility-model.ts) replaces the caller-supplied brief.
+  //
+  // P-155 (OPS-23 FEASIBILITY, 2026-09-11): REFRESH IS ASYNCHRONOUS. F7
+  // found the engine completing Travis authoring in 85-154s while BOTH
+  // clients (PE, smartsite-mcp) abort at 55s under a 60s Vercel cap --
+  // the report succeeds and the customer is told it failed. The engine's
+  // own Cloud Run request timeout is 300s (read live 2026-09-11 against
+  // hauska-engine-api-00198-cir,`spec.template.spec.timeoutSeconds`) --
+  // comfortably wide; the bottleneck was always the CLIENT budgets, never
+  // this service. Refresh now records a job (see
+  // packages/storage/migrations/013_feasibility_export_jobs.sql,
+  // 014_feasibility_export_jobs_result.sql) and returns 202 without
+  // waiting for authoring to finish; the actual `authorParcelFeasibilityExport`
+  // call runs detached (not awaited) so the response goes out immediately.
+  //
+  // CP1 note: this Cloud Run service was read live with NO
+  // `run.googleapis.com/cpu-throttling` annotation set -- the DEFAULT
+  // (CPU allocated only while a request is being actively processed).
+  // A detached promise that keeps running after `refresh` has already
+  // responded can therefore see its CPU throttled to near-zero between
+  // requests. Two things bound that risk rather than eliminate it
+  // outright: (1) `runFeasibilityJob` below is deliberately started
+  // BEFORE the 202 is written on the SAME tick, so as long as another
+  // request reaches this instance (a poll, most likely) within the
+  // authoring window, CPU un-throttles and the job keeps making
+  // progress; (2) `describeFeasibilityJob`'s staleness check reclassifies
+  // a `running` job stuck past `FEASIBILITY_JOB_STALL_CEILING_MS` as
+  // `failed` with `errorClass: "stalled"` on the NEXT read, so a caller
+  // never polls a job that is silently wedged forever. This is the
+  // "hold the job inside a request the worker itself opens" option from
+  // two available at CP1, not the alternative (`--no-cpu-throttling` on
+  // the deploy, which changes billing/behavior for ALL traffic on this
+  // service, not just async jobs) -- see the CP1 checkpoint artifact for
+  // the full comparison. If live observation after deploy shows jobs
+  // stalling under real idle-instance reclamation, the CP1 alternative
+  // (enabling CPU-always-allocated) is the next lever, not a new design.
+  const FEASIBILITY_POLL_AFTER_MS = 5_000;
+  const FEASIBILITY_JOB_STALL_CEILING_MS = 10 * 60_000; // 10 min ~= 4x the observed 154s max.
+
+  function feasibilityStatusUrl(parcelNodeId: string): string {
+    return `/v1/property-nodes/${encodeURIComponent(parcelNodeId)}/feasibility-export`;
+  }
+  function feasibilityDownloadUrl(parcelNodeId: string): string {
+    return `/v1/property-nodes/${encodeURIComponent(parcelNodeId)}/feasibility-export/download`;
+  }
+
+  /** Coarse, customer-safe classification -- never a raw stack trace on a
+   * customer-visible path. Distinguishes the honest "this parcel can't be
+   * authored" shape (422 territory before P-155) from a true engine fault. */
+  function classifyFeasibilityJobError(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/setback/i.test(message)) return "setback_rule_missing";
+    if (/geometry/i.test(message)) return "geometry_unavailable";
+    if (/timed out|timeout/i.test(message)) return "compose_timeout";
+    return "compose_failed";
+  }
+
+  /** Read the job row and apply the staleness reclassification. Never
+   * mutates a job that isn't actually stale. */
+  async function describeFeasibilityJob(parcelNodeId: string): Promise<FeasibilityExportJob | null> {
+    if (!storage.getFeasibilityExportJob) return null;
+    const job = await storage.getFeasibilityExportJob(parcelNodeId);
+    if (!job) return null;
+    if (job.state === "running" && job.startedAt) {
+      const ageMs = Date.now() - Date.parse(job.startedAt);
+      if (Number.isFinite(ageMs) && ageMs > FEASIBILITY_JOB_STALL_CEILING_MS) {
+        if (!storage.upsertFeasibilityExportJob) return job;
+        return storage.upsertFeasibilityExportJob(parcelNodeId, {
+          jobRef: job.jobRef,
+          state: "failed",
+          failedAt: new Date().toISOString(),
+          errorClass: "stalled",
+          errorMessage: `No completion observed within ${FEASIBILITY_JOB_STALL_CEILING_MS}ms of starting.`,
+        });
+      }
+    }
+    return job;
+  }
+
+  /** Runs the SAME composition the old synchronous route ran, then writes
+   * the job to ready/failed. Never throws to its caller -- refresh has
+   * already responded by the time this settles. */
+  async function runFeasibilityJob(
+    parcelNodeId: string,
+    jobRef: string,
+    body: z.infer<typeof feasibilityRefreshBody>,
+  ): Promise<void> {
+    if (!storage.upsertFeasibilityExportJob) return;
     try {
+      const setbackCandidate = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
+        (candidate) => candidate.entityType === "setback-rule",
+      );
+      const setback =
+        setbackCandidate && setbackCandidate.entityType === "setback-rule" ? setbackCandidate : undefined;
       const result = await authorParcelFeasibilityExport({
         parcelNodeId,
-        bboxOverride: parsed.data.bboxOverride,
-        ringOverride: parsed.data.ringOverride,
-        resolutionMeters: parsed.data.resolutionMeters,
-        contourIntervalMeters: parsed.data.contourIntervalMeters,
-        frontEdgeIndex: parsed.data.frontEdgeIndex,
-        skirtDepthFeet: parsed.data.skirtDepthFeet,
-        streetAnchors: parsed.data.streetAnchors,
-        descriptor: { address: parsed.data.address, countyName: parsed.data.countyName },
-        centroidOverride: parsed.data.centroidOverride,
-        // R3/R5 (2026-09-07): the real parcel-scoped drainage study, read
-        // fresh when the persisted one is stale or missing — replaces the
-        // caller-supplied floodStudyAvailable boolean nothing ever checked.
-        // Same resolver/storage/artifactStore this route already uses for
-        // the site-plan geometry; fetchDem/runWorker/fetchRainfall default
-        // to the real adapters, same as the Flood-Drainage report's own
-        // route does today.
+        bboxOverride: body.bboxOverride,
+        ringOverride: body.ringOverride,
+        resolutionMeters: body.resolutionMeters,
+        contourIntervalMeters: body.contourIntervalMeters,
+        frontEdgeIndex: body.frontEdgeIndex,
+        skirtDepthFeet: body.skirtDepthFeet,
+        streetAnchors: body.streetAnchors,
+        descriptor: { address: body.address, countyName: body.countyName },
+        centroidOverride: body.centroidOverride,
         drainage: { runWhenStale: true },
-        // P-120 R-06 (2026-09-09 CTX-FAMILIES): the resolver is always
-        // constructed -- construction does no network IO, only .resolve()
-        // does. dischargeExitPoint is passed through when the caller
-        // supplied one; composeParcelReport now derives one from the D8
-        // drainage study's own first flow exit when the caller did not,
-        // which is the actual production shape (no real caller has ever
-        // been observed to supply an exit point in advance).
-        dischargeExitPoint: parsed.data.dischargeExitPoint,
+        dischargeExitPoint: body.dischargeExitPoint,
         dischargeResolver: createCountyHydrographyDischargeResolver(),
-        // P-120 R-06: real electric-territory who-serves read (water/sewer/
-        // water-district have no acquisition path yet -- see CP1 and
-        // who-serves-electric-only.ts's module doc). Armed here so
-        // `utilities` reaches a real partial answer instead of never
-        // running at all.
         whoServes: createElectricOnlyWhoServesResolver(),
-        liveViewUrl: parsed.data.liveViewUrl,
-        narrativeOverride: parsed.data.narrativeOverride,
+        liveViewUrl: body.liveViewUrl,
+        narrativeOverride: body.narrativeOverride,
         narrativeSection: narrativeSectionFromEnv(),
-        // P-120: the narrative now generates IN THIS SERVICE against the
-        // XAI_API_KEY already mounted here, so it no longer waits on a secret
-        // from another GCP project. Web search is opt-in per request:
-        // `webSearch: true` in the body. It costs latency and money on a
-        // synchronous customer path, so it is not on by default.
-        narrativeWebSearch: parsed.data.webSearch === true,
-        // PASSED THROUGH, not coerced. `=== true` turned an absent field into
-        // an explicit `false`, which defeated the author's own default and
-        // meant in-process generation never ran in production while the LDT
-        // fallback quietly served every request. A default in one layer is
-        // worthless if a caller hard-codes the value.
-        narrativeGenerate: parsed.data.narrative,
-        // P-120 R-04: run the floodplain-acreage, FIRM-panel, soil and
-        // electric/gas families. Injected rather than defaulted because they
-        // are live network reads; armed HERE so production actually gets them
-        // instead of three merged-but-unreached modules.
+        narrativeWebSearch: body.webSearch === true,
+        narrativeGenerate: body.narrative,
         factResolvers: LIVE_PARCEL_REPORT_FACT_RESOLVERS,
         resolver,
         setback,
         storage,
         artifactStore,
       });
-      return c.json({
-        atom: result.atom,
-        artifacts: { "pdf-feasibility": result.atom.artifacts["pdf-feasibility"] },
-        pageCount: result.pageCount,
-        feasibilityPageCount: result.feasibilityPageCount,
-        sitePlanAppended: result.sitePlanAppended,
-        sitePlanUnavailableReason: result.sitePlanUnavailableReason,
-        sectionCount: result.sectionCount,
-        openItemCount: result.openItemCount,
-        // P-120: the backfill worklist. `kind` separates "the source ran and
-        // found nothing" from "nobody asked" and "the read broke"; only the
-        // latter two are jobs.
-        absentFields: result.absentFields,
-        suggestedFileBaseName: result.suggestedFileBaseName,
-        webFindings: result.webFindings,
-        ...(result.narrativeUsage ? { narrativeUsage: result.narrativeUsage } : {}),
-        narrativeIsDeterministicSkeleton: result.narrativeIsDeterministicSkeleton,
-        // Declared degradation: WHY the skeleton was used, and what the
-        // generated narrative actually cited. A bare boolean does not say
-        // whether the feature is off, misconfigured, or refused this run.
-        ...(result.narrativeFallbackReason
-          ? { narrativeFallbackReason: result.narrativeFallbackReason }
-          : {}),
-        ...(result.narrativeCitedSections
-          ? { narrativeCitedSections: result.narrativeCitedSections }
-          : {}),
-      }, 201);
+      await storage.upsertFeasibilityExportJob(parcelNodeId, {
+        jobRef,
+        state: "ready",
+        completedAt: new Date().toISOString(),
+        artifactRef: result.atom.artifacts["pdf-feasibility"]?.ref ?? null,
+        resultSummary: {
+          pageCount: result.pageCount,
+          feasibilityPageCount: result.feasibilityPageCount,
+          sitePlanAppended: result.sitePlanAppended,
+          sitePlanUnavailableReason: result.sitePlanUnavailableReason,
+          sectionCount: result.sectionCount,
+          openItemCount: result.openItemCount,
+          narrativeIsDeterministicSkeleton: result.narrativeIsDeterministicSkeleton,
+        },
+      });
     } catch (error) {
+      console.log(JSON.stringify({
+        level: "error",
+        service: "engine-api",
+        event: "feasibility_export.job_failed",
+        parcelNodeId,
+        jobRef,
+        message: error instanceof Error ? error.message : String(error),
+        ts: new Date().toISOString(),
+      }));
+      await storage.upsertFeasibilityExportJob(parcelNodeId, {
+        jobRef,
+        state: "failed",
+        failedAt: new Date().toISOString(),
+        errorClass: classifyFeasibilityJobError(error),
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  app.post("/:parcelNodeId/feasibility-export/refresh", async (c) => {
+    const parsed = feasibilityRefreshBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: "invalid_request", details: parsed.error.flatten() }, 400);
+    const parcelNodeId = c.req.param("parcelNodeId");
+
+    // Feature-detect: an older/test StoragePort without the P-155 methods
+    // keeps the pre-P-155 behavior it always had (used by
+    // __tests__/*.test.ts doubles that construct routes directly) rather
+    // than silently losing the response shape those tests assert on.
+    if (!storage.getFeasibilityExportJob || !storage.upsertFeasibilityExportJob) {
       return c.json({
         error: "feasibility_export_failed",
-        message: error instanceof Error ? error.message : String(error),
-      }, 422);
+        message: "Storage backend does not support async feasibility job state (P-155).",
+      }, 500);
     }
+
+    const existingJob = await describeFeasibilityJob(parcelNodeId);
+    if (existingJob && existingJob.state === "running") {
+      // Never starts a second job while one is in flight for this parcel
+      // (P-155 item 2) -- hands back the SAME job's reference.
+      return c.json({
+        state: "running",
+        jobRef: existingJob.jobRef,
+        pollAfterMs: FEASIBILITY_POLL_AFTER_MS,
+        statusUrl: feasibilityStatusUrl(parcelNodeId),
+        downloadUrl: feasibilityDownloadUrl(parcelNodeId),
+      }, 202);
+    }
+
+    const jobRef = randomUUID();
+    const queuedAt = new Date().toISOString();
+    await storage.upsertFeasibilityExportJob(parcelNodeId, { jobRef, state: "queued", queuedAt });
+    // Marked `running` BEFORE responding so a poll landing immediately
+    // after this 202 never reads a stale `queued` for a job already
+    // authoring.
+    await storage.upsertFeasibilityExportJob(parcelNodeId, {
+      jobRef,
+      state: "running",
+      startedAt: new Date().toISOString(),
+    });
+
+    // Deliberately not awaited -- see the CP1 note above the constants.
+    void runFeasibilityJob(parcelNodeId, jobRef, parsed.data);
+
+    return c.json({
+      state: "queued",
+      jobRef,
+      pollAfterMs: FEASIBILITY_POLL_AFTER_MS,
+      statusUrl: feasibilityStatusUrl(parcelNodeId),
+      downloadUrl: feasibilityDownloadUrl(parcelNodeId),
+    }, 202);
   });
   app.get("/:parcelNodeId/feasibility-export", async (c) => {
-    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+    const parcelNodeId = c.req.param("parcelNodeId");
+    const job = await describeFeasibilityJob(parcelNodeId);
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId))
       .find((candidate) => candidate.entityType === "parcel-terrain-model");
-    if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
-    return c.json({ atom, artifacts: { "pdf-feasibility": atom.artifacts["pdf-feasibility"] } });
+    if (!job) {
+      // `never-requested` is its own answer -- P-155 item 1 -- never
+      // reported as `deferred`. A pre-P-155 atom with an artifact already
+      // on file (from before this deploy) still reports its state honestly
+      // via the artifact record below, even with no job row.
+      if (!atom || atom.entityType !== "parcel-terrain-model" || !atom.artifacts["pdf-feasibility"]) {
+        return c.json({ state: "never-requested" }, 200);
+      }
+      return c.json({
+        state: atom.artifacts["pdf-feasibility"]?.deferred ? "failed" : "ready",
+        atom,
+        artifacts: { "pdf-feasibility": atom.artifacts["pdf-feasibility"] },
+      });
+    }
+    return c.json({
+      state: job.state,
+      jobRef: job.jobRef,
+      queuedAt: job.queuedAt,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      failedAt: job.failedAt,
+      errorClass: job.errorClass,
+      errorMessage: job.errorMessage,
+      pollAfterMs: (job.state === "queued" || job.state === "running") ? FEASIBILITY_POLL_AFTER_MS : undefined,
+      ...(job.state === "ready" ? { result: job.resultSummary ?? {} } : {}),
+      ...(atom && atom.entityType === "parcel-terrain-model"
+        ? { atom, artifacts: { "pdf-feasibility": atom.artifacts["pdf-feasibility"] } }
+        : {}),
+    });
   });
   app.get("/:parcelNodeId/feasibility-export/download", async (c) => {
-    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+    const parcelNodeId = c.req.param("parcelNodeId");
+    const job = await describeFeasibilityJob(parcelNodeId);
+
+    if (job && (job.state === "queued" || job.state === "running")) {
+      // A DECLARED wait, never a 404-as-absence (P-155 item 1): the report
+      // was asked for and is being authored, not missing.
+      return c.json({
+        error: "export_in_progress",
+        state: job.state,
+        jobRef: job.jobRef,
+        pollAfterMs: FEASIBILITY_POLL_AFTER_MS,
+        message: "Feasibility Study is still being authored for this parcel.",
+      }, 404);
+    }
+    if (job && job.state === "failed") {
+      return c.json({
+        error: "feasibility_export_failed",
+        errorClass: job.errorClass ?? "compose_failed",
+        message: job.errorMessage ?? "Feasibility study could not be produced for this parcel.",
+      }, 422);
+    }
+
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId))
       .find((candidate) => candidate.entityType === "parcel-terrain-model");
-    if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
+    if (!atom || atom.entityType !== "parcel-terrain-model") {
+      return c.json({
+        error: "artifact_unavailable",
+        state: "never-requested",
+        message: "No pdf-feasibility artifact for this parcel; call feasibility-export/refresh first.",
+      }, 404);
+    }
     const artifact = atom.artifacts["pdf-feasibility"];
     if (!artifact || artifact.deferred) {
       return c.json({
         error: "artifact_unavailable",
+        state: job ? job.state : "never-requested",
         message: artifact?.deferredReason ?? "No pdf-feasibility artifact for this parcel",
       }, 404);
     }
@@ -725,15 +885,14 @@ export function buildParcelTerrainRoutes(
         message: "Artifact bytes are no longer on this instance; call feasibility-export/refresh again",
       }, 410);
     }
-    const safeNodeId = c.req.param("parcelNodeId").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const safeNodeId = parcelNodeId.replace(/[^a-zA-Z0-9._-]/g, "_");
     // Named by parcel id here on purpose. The address-first name is computed
-    // at render time and returned on the REFRESH response as
-    // `suggestedFileBaseName`; the atom's artifact record is a closed type and
-    // cannot carry it, so this route has no address to read at download time.
-    // The customer-visible name is set by Property Explorer's BFF anyway
-    // (`feasibilityFilename` in hauska-map), which re-serves these bytes and
-    // writes its own Content-Disposition — so renaming the download for a
-    // customer is a hauska-map change, not this one.
+    // at render time; the atom's artifact record is a closed type and
+    // cannot carry it, so this route has no address to read at download
+    // time. The customer-visible name is set by Property Explorer's BFF
+    // anyway (`feasibilityFilename` in hauska-map), which re-serves these
+    // bytes and writes its own Content-Disposition — so renaming the
+    // download for a customer is a hauska-map change, not this one.
     c.header("Content-Type", "application/pdf");
     c.header("Content-Disposition", `attachment; filename="${safeNodeId}_feasibility_study.pdf"`);
     return c.body(Buffer.from(bytes));
