@@ -126,6 +126,44 @@ gcloud run deploy hauska-retrieval-api \
 image runs the service with `tsx` (no tsc step — workspace packages
 ship source-direct exports per `REPO_NOTES.md`).
 
+**This block is a skeleton, not what production actually runs.** The live
+revision also carries `--set-secrets` for `SUBSTRATE_DATABASE_URL` (Gate A,
+below) and reads `OVERLAY_DATABASE_URL`/`CORTEX_DATABASE_URL`/
+`DEPLOYMENT_DATABASE_URL` per `pg-calibration-overlay.ts`. Fleet memory:
+deploys can silently drop manually-set env/secrets that a prior `gcloud run
+deploy` call did not repeat, and `:latest` resolves the secret VERSION at
+deploy time, not at request time. Before any hand deploy, read the CURRENT
+serving revision's actual `--set-secrets`/`--set-env-vars` from
+`gcloud run services describe hauska-retrieval-api --project=hauska-prod-497015
+--region=us-central1 --format=json` and carry every one of them forward —
+never assume this doc's command is complete.
+
+### FACTORY_DATABASE_URL_RO (P-152)
+
+`GET /property-nodes/:parcelNodeId/record` reads the Factory's
+`parcel_record` store read-only via `FACTORY_DATABASE_URL_RO` (Postgres
+role `parcel_record_ro`, SELECT only on `parcel_record` /
+`parcel_record_cell` / `parcel_record_companion_row` / `parcel_gate_verdict`
+— the same credential legacy-design-tools' `parcelRecordCellRead.ts` already
+uses). Confirmed present in Secret Manager, project `hauska-prod-497015`,
+2026-09-11. **Mounting this onto a production Cloud Run service is an
+operator-approved action (P-152 dispatch step 1) — do not run the
+`--update-secrets` below without that go, even though the rest of this file
+documents lane-owned deploys.** Missing the mount is safe: the route
+declares a `503 store-not-configured` refusal rather than serving an empty
+`rails` map (see `server.ts`).
+
+```bash
+gcloud run services update hauska-retrieval-api \
+  --project=hauska-prod-497015 \
+  --region=us-central1 \
+  --update-secrets=FACTORY_DATABASE_URL_RO=FACTORY_DATABASE_URL_RO:latest
+```
+
+Carry this flag forward on every subsequent `gcloud run deploy`/`services
+update` too, or the next hand deploy silently drops it (same class of bug
+this section's opening warning names).
+
 **Startup probe:** boot listens on `PORT` before `countAtoms()` telemetry
 (postgres-serve can block minutes on a cold COUNT). If deploy fails with
 `Startup probes timed out`, widen the probe and/or deploy with no traffic
@@ -196,6 +234,22 @@ curl -s -H "Authorization: Bearer <key>" \
 
 curl -s -H "Authorization: Bearer <key>" \
   "https://<service-url>/atoms/did:hauska:zoning-fact:48209:156346"
+```
+
+### P-152 reader (ONE-READER)
+
+Requires `FACTORY_DATABASE_URL_RO` mounted (above) or every rail declares
+`store-not-configured`, not a value.
+
+```bash
+# 65 rails, per-rail serve state; 200 even for a parcel outside the six
+# CTX counties (every rail legacy-transitional or absent, never a 500)
+curl -s -H "Authorization: Bearer <key>" \
+  "https://<service-url>/property-nodes/48021:34049/record"
+
+# without the secret mounted: 503 { errorClass: "store-not-configured" }
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer <key>" \
+  "https://<service-url>/property-nodes/48021:34049/record"
 ```
 
 ### Gate C I-E — calibration overlay read-through (Master WDLL 3.10)

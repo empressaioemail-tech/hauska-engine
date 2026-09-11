@@ -27,6 +27,8 @@ import {
   readSpineHealthSummary,
   runBastropSpineHealthPack,
 } from "./spine-health/run-pack.js";
+import type { ParcelFactoryStore } from "./parcel-record-db.js";
+import { readParcelRecord } from "./parcel-record-reader.js";
 
 function isPublicHealthPath(path: string): boolean {
   return (
@@ -129,6 +131,14 @@ export interface ServerOptions {
    * READ resolves calibratedConfidence via parcel-node / atom DID keys.
    */
   calibrationOverlay?: CalibrationOverlayPort | null;
+  /**
+   * Factory parcel_record read-only store (P-152). `null` (the default)
+   * means not configured — every /record request declares a refusal
+   * rather than serving an empty rails map. Resolved from
+   * FACTORY_DATABASE_URL_RO outside buildApp, same convention as
+   * calibrationOverlay.
+   */
+  factoryStore?: ParcelFactoryStore | null;
 }
 
 export function buildApp(options: ServerOptions = {}): Hono {
@@ -139,6 +149,7 @@ export function buildApp(options: ServerOptions = {}): Hono {
   const apiKey = options.apiKey ?? process.env.RETRIEVAL_API_KEY ?? "";
   const substrateDatabaseUrl = options.substrateDatabaseUrl;
   const overlayDatabaseUrl = options.overlayDatabaseUrl;
+  const factoryStore = options.factoryStore ?? null;
   const startedAt = new Date().toISOString();
 
   const app = new Hono();
@@ -360,6 +371,63 @@ export function buildApp(options: ServerOptions = {}): Hono {
     }
     const chain = await retrieval.getPropertyAtomChain(parcelNodeId);
     return c.json(chain);
+  });
+
+  /**
+   * P-152 ONE-READER — the ledger-as-serving-path reader for the Factory's
+   * parcel_record store. Walks the closed 65-rail registry for one parcel,
+   * decides serve state (record/refused/legacy-transitional) exactly as
+   * legacy-design-tools' parcelRecordAllowlist.ts decides it today, and
+   * dereferences an atom when a cell names one. `factoryStore === null`
+   * (not configured) and any read failure both declare a refusal — never
+   * an empty rails map. See OPS-23 P-152 dispatch.
+   */
+  app.get("/property-nodes/:parcelNodeId{.+}/record", async (c) => {
+    const parcelNodeId = decodeURIComponent(c.req.param("parcelNodeId"));
+    const match = /^(\d{5}):([A-Za-z0-9._-]+)$/.exec(parcelNodeId);
+    if (!match) {
+      return c.json(
+        {
+          error: "invalid parcelNodeId",
+          hint: "expected {county_fips}:{prop_id} e.g. 48021:34049",
+          parcelNodeId,
+        },
+        400,
+      );
+    }
+    if (!factoryStore) {
+      return c.json(
+        {
+          error: "factory store not configured",
+          errorClass: "store-not-configured",
+          parcelNodeId,
+          message:
+            "parcel_record lives in the Factory store, read via the SELECT-only FACTORY_DATABASE_URL_RO credential. That credential is not configured on this service. Refusing rather than serving an empty rails map.",
+        },
+        503,
+      );
+    }
+    const [countyFips, normalizedPropId] = [match[1]!, match[2]!];
+    try {
+      const record = await readParcelRecord(
+        factoryStore,
+        retrieval,
+        parcelNodeId,
+        countyFips,
+        normalizedPropId,
+      );
+      return c.json(record);
+    } catch (err) {
+      return c.json(
+        {
+          error: "parcel_record read failed",
+          errorClass: "read-failed",
+          parcelNodeId,
+          message: err instanceof Error ? err.message : String(err),
+        },
+        503,
+      );
+    }
   });
 
   /**
