@@ -24,6 +24,13 @@ vi.mock("@hauska-engine/engine-core/site-plan", () => ({
   // must export both or the module import fails before any assertion.
   createCountyHydrographyDischargeResolver: vi.fn(() => ({ resolve: vi.fn() })),
   createElectricOnlyWhoServesResolver: vi.fn(() => ({ resolve: vi.fn() })),
+  // P152-RAILS (OPS-23 P-152 lane 3): the route now constructs this
+  // unconditionally too (same reason as the two resolvers above — RETRIEVAL_API_URL/KEY
+  // are unset in this test, so the real recordReaderFromEnv would return
+  // undefined anyway; the mock must still export the name or the module
+  // import fails before any assertion, exactly the failure this file's own
+  // comment above already documents for the P-120 R-06 case).
+  recordReaderFromEnv: vi.fn(() => undefined),
   authorParcelSitePlanExport: vi.fn(),
   authorParcelPropertyDossierExport: vi.fn(),
   authorParcelFeasibilityExport: vi.fn(
