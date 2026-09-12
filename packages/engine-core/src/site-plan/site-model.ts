@@ -21,7 +21,7 @@ import { anyNotSpecified, formatSetbackSummaryLine } from "./setback-display.js"
 import {
   mapBuildableDisplay,
   type BuildableDisplayKind,
-} from "./buildable-display-vocab.js";
+} from "@empressaio/atom-contract/display";
 
 const METERS_PER_FOOT = 0.3048;
 
