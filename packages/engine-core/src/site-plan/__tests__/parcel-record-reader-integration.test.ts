@@ -24,12 +24,30 @@ function rail(serve: ParcelRecordRail["serve"], cell: Record<string, unknown> | 
   return { cell, gate: { verdict: null, evaluatedAt: null }, serve, atom: null, atomBacked: false, rendering: null, companions };
 }
 
+/**
+ * A REAL macrotask delay (setTimeout), not a bare `async () => value` that
+ * resolves on the next microtask. This is deliberate: a fake reader that
+ * resolves instantly can mask a real bug in how the caller races/bounds the
+ * fetch, because an instant resolution wins a Promise.race by MICROTASK
+ * REGISTRATION ORDER regardless of whether the "loser" branch is even
+ * correct. This exact class of masking hid a real production defect (a
+ * temporal-dead-zone reference inside the bounded-timeout branch,
+ * synchronously rejected at Promise-construction time — see
+ * report-model.ts's own comment at the `readBudgetMs` declaration) that
+ * every OTHER test in this file, using an instant fake reader, did not
+ * catch. Any test asserting composeParcelReportFacts actually USES the
+ * reader's result should go through this helper, not a bare async arrow.
+ */
+function delayed<T>(value: T, ms = 5): Promise<T> {
+  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+}
+
 function fakeReader(record: ParcelRecordResponse): RecordReaderClient {
-  return { fetchRecord: async () => ({ ok: true, record }) };
+  return { fetchRecord: () => delayed({ ok: true, record }) };
 }
 
 function failingReader(reason: string): RecordReaderClient {
-  return { fetchRecord: async () => ({ ok: false, reason }) };
+  return { fetchRecord: () => delayed({ ok: false, reason }) };
 }
 
 const ABSENT_GEOMETRY = { status: "absent" as const, reason: "not needed for this fixture" };
