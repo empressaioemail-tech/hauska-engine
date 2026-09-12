@@ -11,7 +11,7 @@ import {
   primaryCountSql,
   primaryRetagSql,
   resolveRetagSourceUrl,
-} from "./retag-building-footprint-county.mjs";
+} from "./retag-building-footprint-county-lib.mjs";
 
 describe("retag-building-footprint-county (P-158 phase 3)", () => {
   it("parses a comma-separated county list, trimming and dropping empties", () => {
