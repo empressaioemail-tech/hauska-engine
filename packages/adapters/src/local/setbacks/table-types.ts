@@ -31,6 +31,15 @@ export interface SetbackDisplayMeta {
   split_zone_minor_zones?: SetbackSplitZoneMinorZone[];
   /** R25 — conflicting second source (e.g. Bastrop layer-83 Revisions). */
   second_source?: SetbackSecondSourceDisclosure;
+  /**
+   * P-154 (R-1, most-current-source-wins) — this row's date, read AT
+   * SOURCE, and how (see `SetbackDateBasis` in
+   * `most-current-setback-resolver.ts`). `null`/absent means unreadable —
+   * never a placeholder date such as "1970-01-01" or an emit timestamp.
+   */
+  source_date?: string | null;
+  date_basis?: string;
+  date_precision?: "day" | "year";
 }
 
 /** Per locked decision #9 — one row per zoning district per jurisdiction. */
@@ -55,5 +64,20 @@ export interface SetbackTable {
   jurisdictionDisplayName: string;
   /** Optional context note for fallback / statewide-default tables. */
   note?: string;
+  /**
+   * P-154 (R-1) — the ordinance/corpus edition's own effective date
+   * (ISO yyyy-mm-dd), read at source. Was previously read only via an
+   * ad hoc `(table as { effectiveDate?: string })` cast (see
+   * legacy-design-tools `authoritativeSetbackSource.ts`
+   * `effectiveDateForTable`); typed here so this repo's own callers don't
+   * need the same cast. The `@empressaio/setback-corpus` package DOES
+   * carry this field on `bastrop-development-code` ("2026-04-14") even
+   * though the frozen local vendored JSON in this repo's own
+   * `bastrop-development-code.json` does not (verified 2026-09-12) — that
+   * file is documented as a retiring comparison baseline, not the served
+   * table (`index.ts`'s own header comment); this field describes the
+   * SERVED shape.
+   */
+  effectiveDate?: string;
   districts: SetbackDistrict[];
 }

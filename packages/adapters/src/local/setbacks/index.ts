@@ -31,6 +31,11 @@ import type { SetbackDistrict, SetbackTable } from "./table-types.js";
 import {
   setbackTableFromBastropPerParcelRecord,
 } from "./bastrop-per-parcel-record.js";
+import {
+  dateFromTableEffectiveDate,
+  resolveMostCurrentSetback,
+  type SetbackCandidate,
+} from "./most-current-setback-resolver.js";
 
 /**
  * The jurisdictions this package actually serves — a curated subset of the
@@ -164,6 +169,128 @@ export function getSetbackTable(jurisdictionKey: string): SetbackTable | null {
  * County / other jurisdictions: fall through to the keyed table
  * (e.g. bastrop-tx legacy R-MD rows for non-city codes).
  */
+/**
+ * P-154 (R-1, most-current-source-wins) — Bastrop's own two-candidate case:
+ * a codified Euclidean chart row (SF-1/SF-2/SF-3/RR) versus the live
+ * per-parcel layer-23 record for that same district. Returns null when
+ * there is no codified chart row to compare against (MU/GC/PDD/PI/IND/OS —
+ * per-parcel-record-only districts, R13) — the caller then falls through
+ * to the per-parcel record as the sole candidate, unchanged from before
+ * this wave, since there is nothing to resolve BETWEEN.
+ *
+ * On a genuine conflict (disagreement with an unreadable date on either
+ * side, or the resolver's other conflict rule) this still returns the
+ * per-parcel table, exactly as this function always did before P-154 —
+ * but now with `display_meta.source_date`/`date_basis` on that table
+ * honestly marked, plus a `second_source` disclosure carrying the OTHER
+ * candidate's own value/date/citation, so a caller reading display_meta
+ * sees the disagreement rather than a bare, unqualified number. A hard
+ * refusal (no value at all on conflict) needs this function's return type
+ * to grow a `conflict` variant, which ripples into every existing caller of
+ * `getSetbackTableForZoning` across this repo; out of scope for this wave
+ * (see close `leave_behind`) — reported, not silently worked around.
+ */
+function resolveBastropEuclideanCandidate(
+  normalized: string,
+  district: string,
+  perParcelRecord: NonNullable<SetbackTableResolveOptions["bastropPerParcelRecord"]>,
+): SetbackTable {
+  const perParcelTable = setbackTableFromBastropPerParcelRecord(perParcelRecord, district);
+  const perParcelDistrict = perParcelTable.districts[0]!;
+
+  const chartTable =
+    normalized === "bastrop-development-code" || normalized === "bastrop-tx" || normalized === "bastrop-city-tx"
+      ? SETBACK_TABLES["bastrop-development-code"]
+      : undefined;
+  const wanted = leadingDistrictToken(district);
+  const chartDistrict = chartTable?.districts.find(
+    (d) => leadingDistrictToken(d.district_name) === wanted,
+  );
+  if (!chartTable || !chartDistrict) {
+    // No codified row to resolve against (e.g. MU/GC/PDD/PI/IND/OS) —
+    // per-parcel record is the only candidate; nothing to compare.
+    return perParcelTable;
+  }
+
+  const chartCandidate: SetbackCandidate = {
+    id: "bastrop-development-code",
+    sourceKind: "codified-ordinance",
+    sourceLabel: chartTable.jurisdictionDisplayName,
+    scalars: {
+      front_ft: chartDistrict.front_ft,
+      side_ft: chartDistrict.side_ft,
+      rear_ft: chartDistrict.rear_ft,
+      side_corner_ft: chartDistrict.side_corner_ft,
+    },
+    citationUrl: chartDistrict.citation_url ?? null,
+    ...dateFromTableEffectiveDate(chartTable.effectiveDate),
+  };
+  const perParcelCandidate: SetbackCandidate = {
+    id: "bastrop-per-parcel-record",
+    sourceKind: "gis-per-parcel",
+    sourceLabel: perParcelTable.jurisdictionDisplayName,
+    scalars: {
+      front_ft: perParcelDistrict.front_ft,
+      side_ft: perParcelDistrict.side_ft,
+      rear_ft: perParcelDistrict.rear_ft,
+      side_corner_ft: perParcelDistrict.side_corner_ft,
+    },
+    citationUrl: perParcelDistrict.citation_url ?? null,
+    sourceDate: perParcelRecord.sourceDate,
+    dateBasis: perParcelRecord.dateBasis,
+    ...(perParcelRecord.datePrecision ? { datePrecision: perParcelRecord.datePrecision } : {}),
+  };
+
+  const resolution = resolveMostCurrentSetback([chartCandidate, perParcelCandidate]);
+
+  if (resolution.status === "resolved" && resolution.winner.id === "bastrop-development-code") {
+    return {
+      ...chartTable,
+      districts: chartTable.districts.map((d) =>
+        d === chartDistrict
+          ? {
+              ...d,
+              display_meta: {
+                ...(d.display_meta ?? {}),
+                source_date: chartCandidate.sourceDate,
+                date_basis: chartCandidate.dateBasis,
+                ...(chartCandidate.datePrecision ? { date_precision: chartCandidate.datePrecision } : {}),
+                second_source: {
+                  source: perParcelCandidate.sourceLabel,
+                  note: `Superseded by the codified table under R-1 (most-current source wins): per-parcel record dated ${perParcelCandidate.sourceDate ?? "unreadable"} (${perParcelCandidate.dateBasis}) reads ${perParcelDistrict.front_ft}/${perParcelDistrict.side_ft}/${perParcelDistrict.rear_ft}/${perParcelDistrict.side_corner_ft ?? "?"} (front/side/rear/corner).`,
+                  citation_url: perParcelCandidate.citationUrl ?? undefined,
+                },
+              },
+            }
+          : d,
+      ),
+    };
+  }
+
+  // Resolved in favor of the per-parcel record, OR a genuine conflict
+  // (resolution.status === "conflict") — either way, return the per-parcel
+  // table (this function's historical behavior on conflict; see docstring)
+  // with an honest second-source disclosure naming the OTHER candidate.
+  const conflictNote =
+    resolution.status === "conflict"
+      ? `CONFLICT under R-1 (most-current source wins): ${resolution.reason} Codified table reads ${chartDistrict.front_ft}/${chartDistrict.side_ft}/${chartDistrict.rear_ft}/${chartDistrict.side_corner_ft ?? "?"} (front/side/rear/corner), dated ${chartCandidate.sourceDate ?? "unreadable"} (${chartCandidate.dateBasis}).`
+      : `Per-parcel record is more current under R-1: codified table dated ${chartCandidate.sourceDate ?? "unreadable"} (${chartCandidate.dateBasis}) reads ${chartDistrict.front_ft}/${chartDistrict.side_ft}/${chartDistrict.rear_ft}/${chartDistrict.side_corner_ft ?? "?"} (front/side/rear/corner).`;
+  return {
+    ...perParcelTable,
+    districts: perParcelTable.districts.map((d) => ({
+      ...d,
+      display_meta: {
+        ...(d.display_meta ?? {}),
+        second_source: {
+          source: chartCandidate.sourceLabel,
+          note: conflictNote,
+          citation_url: chartCandidate.citationUrl ?? undefined,
+        },
+      },
+    })),
+  };
+}
+
 export function getSetbackTableForZoning(
   jurisdictionKey: string,
   zoningCode: string | null | undefined,
@@ -175,10 +302,7 @@ export function getSetbackTableForZoning(
   if (options?.bastropPerParcelRecord && isBastropCityJurisdiction(normalized)) {
     const district = (options.districtCode ?? code).trim();
     if (!district) return null;
-    return setbackTableFromBastropPerParcelRecord(
-      options.bastropPerParcelRecord,
-      district,
-    );
+    return resolveBastropEuclideanCandidate(normalized, district, options.bastropPerParcelRecord);
   }
 
   if (isBastropCityJurisdiction(normalized)) {

@@ -118,6 +118,7 @@
     "write-rail-corridor-fact-county": "tsx scripts/write-rail-corridor-fact-county.mjs",
     "write-rrc-pipeline-fact-county": "tsx scripts/write-rrc-pipeline-fact-county.mjs",
     "write-building-footprint-county": "tsx scripts/write-building-footprint-county.mjs",
+    "retag-building-footprint-county": "tsx scripts/retag-building-footprint-county.mjs",
     "join-zoning-district-to-parcels": "tsx scripts/join-zoning-district-to-parcels.mjs",
     "write-special-district-fact-county": "tsx scripts/write-special-district-fact-county.mjs",
     "write-flood-hazard-fact-county": "tsx scripts/write-flood-hazard-fact-county.mjs",
@@ -133,7 +134,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "@empressaio/atom-contract": "^1.22.0",
+    "@empressaio/atom-contract": "^1.33.1",
     "@gltf-transform/core": "^4.2.1",
     "@hauska-engine/adapters": "workspace:*",
     "@hauska-engine/atoms": "workspace:*",

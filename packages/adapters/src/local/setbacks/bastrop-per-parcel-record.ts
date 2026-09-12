@@ -17,6 +17,10 @@ import type {
   SetbackTable,
 } from "./table-types.js";
 import bastropDevelopmentCode from "./bastrop-development-code.json" with { type: "json" };
+import {
+  parseYearSequenceOrdinanceCitation,
+  type SetbackDateBasis,
+} from "./most-current-setback-resolver.js";
 
 /** Layer 23 — per-parcel setback numbers + Ordinance_Link. */
 export const BASTROP_PARCELS_ONE_CLICK_LAYER_23 =
@@ -163,6 +167,19 @@ export type BastropPerParcelSetbackParsed = {
   minLotSize?: string;
   ordinanceLink: string;
   sourceUrl: string;
+  /**
+   * P-154 (R-1, most-current-source-wins) — this record's date, read at
+   * source, and how. `null` sourceDate means unreadable: the row's
+   * `Ordinance_` citation didn't match the known year-sequence convention
+   * (`parseYearSequenceOrdinanceCitation`) and no row-level or layer-level
+   * edit date fallback has been wired yet (left_behind: only the citation
+   * path is implemented this wave; a `dataLastEditDate` fallback needs a
+   * second live call to the layer root and is not yet threaded through
+   * `fetchBastropPerParcelSetbackRecord`). Never a placeholder date.
+   */
+  sourceDate: string | null;
+  dateBasis: SetbackDateBasis;
+  datePrecision?: "day" | "year";
   /** R26 — district resolved from the DOMINANT-area layer-23 row (may differ from engine stamp). */
   resolvedDistrictCode?: string | null;
   /** R26/R25 — split-zone minor zones present on this parcel, for honest disclosure. */
@@ -198,6 +215,31 @@ function pickString(attrs: Record<string, unknown>, ...keys: string[]): string {
     if (typeof v === "string" && v.trim()) return v.trim();
   }
   return "";
+}
+
+/**
+ * P-154 — a layer-23 row's date, read at source, per R-1: "a per-parcel GIS
+ * row [is dated] by the effective date of the ordinance the row cites when
+ * that citation resolves to a known ordinance, else by the layer's
+ * `dataLastEditDate` ..., with `dateBasis` saying which."
+ *
+ * Only the citation path is implemented this wave (see
+ * `BastropPerParcelSetbackParsed.sourceDate` docstring) — a citation that
+ * doesn't resolve returns `unreadable`, not a silent fall-through to a
+ * layer-wide edit stamp this function doesn't have access to.
+ */
+function dateForBastropPerParcelCitation(
+  ordinanceCitation: string,
+): { sourceDate: string | null; dateBasis: SetbackDateBasis; datePrecision?: "year" } {
+  const resolved = parseYearSequenceOrdinanceCitation(ordinanceCitation);
+  if (resolved) {
+    return {
+      sourceDate: resolved.sourceDate,
+      dateBasis: "gis-row-citation-ordinance",
+      datePrecision: resolved.datePrecision,
+    };
+  }
+  return { sourceDate: null, dateBasis: "unreadable" };
 }
 
 function pickPropId(attrs: Record<string, unknown>): string {
@@ -321,8 +363,20 @@ export function parseBastropPerParcelAttributes(
   const frontRaw = pickString(attrs, "FrontSetback_", "FrontSetback");
   const sideRaw = pickString(attrs, "SideSetback", "SideSetback_");
   const rearRaw = pickString(attrs, "RearSetback_", "RearSetback");
-  const ordinanceLink = pickString(attrs, "Ordinance_Link", "OrdinanceLink");
+  // P-154 fix (2026-09-12): the live layer-23 field is `Ordinance_` (e.g.
+  // "2019-51") — live-verified 2026-09-12 via `?f=json` on the layer, which
+  // lists `Ordinance_` and has NO `Ordinance_Link`/`OrdinanceLink` field at
+  // all. Requesting either of the latter in `outFields` doesn't just come
+  // back empty — ArcGIS 400s the WHOLE query ("'outFields' parameter is
+  // invalid", reproduced live), so `fetchBastropPerParcelSetbackRecord`'s
+  // live fetch was failing outright, not degrading to an empty citation as
+  // previously believed. `Ordinance_Link`/`OrdinanceLink` are kept as a
+  // fallback read (harmless if this layer ever adds either) but are no
+  // longer requested in outFields below, and `Ordinance_` is checked first.
+  const ordinanceCitation = pickString(attrs, "Ordinance_", "Ordinance_Link", "OrdinanceLink");
+  const ordinanceLink = ordinanceCitation;
   const minLotSize = pickString(attrs, "MinimumLotSize_", "MinimumLotSize");
+  const { sourceDate, dateBasis, datePrecision } = dateForBastropPerParcelCitation(ordinanceCitation);
 
   const frontFt = parseScalarSetbackFeet(frontRaw);
   const rearFt = parseScalarSetbackFeet(rearRaw);
@@ -362,6 +416,9 @@ export function parseBastropPerParcelAttributes(
         ordinanceLink ||
         "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/23",
       sourceUrl: BASTROP_PARCELS_ONE_CLICK_LAYER_23,
+      sourceDate,
+      dateBasis,
+      ...(datePrecision ? { datePrecision } : {}),
       raw: {
         frontSetback: frontRaw || undefined,
         sideSetback: sideRaw || undefined,
@@ -391,6 +448,9 @@ export function parseBastropPerParcelAttributes(
       ordinanceLink ||
       "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/23",
     sourceUrl: BASTROP_PARCELS_ONE_CLICK_LAYER_23,
+    sourceDate,
+    dateBasis,
+    ...(datePrecision ? { datePrecision } : {}),
     raw: {
       frontSetback: frontRaw || undefined,
       sideSetback: sideRaw || undefined,
@@ -452,9 +512,41 @@ export function flagBastropChartDisagreement(
   };
 }
 
-/** Layer 83 (Zoned_Parcels Revisions) — Bastrop's CONFLICTING second setback schedule (R25). */
+/**
+ * Layer 83 (Zoned_Parcels Revisions) — Bastrop's CONFLICTING second setback
+ * schedule (R25).
+ *
+ * P-154 fix (2026-09-12): this used to point at
+ * `Parcels_One_Click/FeatureServer/83`, which does not exist — live-verified
+ * 2026-09-12, that URL answers `{"error":{"code":400,"message":"",
+ * "details":["The requested layer (layerId: 83) was not found."]}}`. The
+ * live Revisions layer is `Zoned_Parcels/FeatureServer/83` (confirmed live:
+ * id 83, name `Zoned_Parcels_Revisions_Clip`, `editingInfo.lastEditDate`
+ * 1784844239427 = 2026-07-23T22:03:59.427Z). This constant was dead — any
+ * caller that actually queried it (none do today; it is cited but not
+ * fetched) would have gotten this same 400.
+ *
+ * IMPORTANT, checked explicitly (adversarial review, 2026-09-12): this
+ * layer carries NO `Ordinance_`, `Ordinance_Link`, or `OrdinanceLink`
+ * field of its own — live-verified via `?f=json` on THIS url; its real
+ * fields are OBJECTID, CALC_ACRE, prop_id, ParcelInfo, ZoneType,
+ * ZoneTypeClass, ZoneDesc, TypicalUses, MinimumLotSize, FrontSetback,
+ * SideSetback, RearSetback, CornerSideSetbacks, AccessoryStructSetback,
+ * HighwayCorridorSetback, MaxBuildingHeight, MinLotWidth,
+ * MaxImpervisionCoverage, ParkingRequirements, SFHA, PDD_doc_ord,
+ * Shape__Area, Shape__Length. `Ordinance_` is a LAYER-23 field
+ * (`Parcels_One_Click/FeatureServer/23`) only — do not carry it over to a
+ * query against THIS url; `outFields=Ordinance_` against this layer 400s
+ * exactly like `Ordinance_Link` did (reproduced live). No code here does
+ * that (`bastropLayer83SecondSourceDisclosure` below cites this layer's
+ * own URL as `citation_url`, never an ordinance number sourced from it —
+ * this layer has none to source), and
+ * `bastropPerParcelRecordLiveFieldCheck.test.ts` now asserts both facts
+ * so a future edit that tries to fetch an ordinance field from layer 83
+ * fails loudly instead of silently.
+ */
 export const BASTROP_LAYER_83_REVISIONS_URL =
-  "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Parcels_One_Click/FeatureServer/83";
+  "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83";
 
 /** Per-district layer-83 conflict text (block-13 answer key, confirmed 2026-07-30). */
 const BASTROP_LAYER_83_CONFLICT_BY_DISTRICT: Readonly<Record<string, string>> = {
@@ -513,6 +605,12 @@ export function setbackTableFromBastropPerParcelRecord(
       const second = bastropLayer83SecondSourceDisclosure(code);
       return second ? { second_source: second } : {};
     })(),
+    // P-154 (R-1) — this record's date, read at source, and how. Always
+    // present (even when null) so a caller checking display_meta cannot
+    // mistake an absent key for "not yet wired" versus "genuinely unreadable".
+    source_date: record.sourceDate,
+    date_basis: record.dateBasis,
+    ...(record.datePrecision ? { date_precision: record.datePrecision } : {}),
   };
   const district: SetbackDistrict = {
     district_name: `${code} (per-parcel layer 23)`,
@@ -603,7 +701,7 @@ export async function fetchBastropPerParcelSetbackRecord(
       serviceUrl: BASTROP_PARCELS_ONE_CLICK_LAYER_23,
       where: `prop_id = ${numeric}`,
       outFields:
-        "prop_id,ZoneTypeClass,FrontSetback_,FrontSetback,SideSetback_,SideSetback,RearSetback_,RearSetback,MaxBuildingHt,MinimumLotSize_,MaxImpervisionCoverage,Ordinance_Link,Shape__Area",
+        "prop_id,ZoneTypeClass,FrontSetback_,FrontSetback,SideSetback_,SideSetback,RearSetback_,RearSetback,MaxBuildingHt,MinimumLotSize_,MaxImpervisionCoverage,Ordinance_,Shape__Area",
       returnGeometry: false,
       fetchImpl: options.fetchImpl,
       signal: options.signal,
@@ -629,7 +727,7 @@ export async function fetchBastropPerParcelSetbackRecord(
         longitude: lng,
         latitude: lat,
         outFields:
-          "prop_id,ZoneTypeClass,FrontSetback_,FrontSetback,SideSetback_,SideSetback,RearSetback_,RearSetback,MaxBuildingHt,MinimumLotSize_,MaxImpervisionCoverage,Ordinance_Link,Shape__Area",
+          "prop_id,ZoneTypeClass,FrontSetback_,FrontSetback,SideSetback_,SideSetback,RearSetback_,RearSetback,MaxBuildingHt,MinimumLotSize_,MaxImpervisionCoverage,Ordinance_,Shape__Area",
         returnGeometry: false,
         fetchImpl: options.fetchImpl,
         signal: options.signal,
