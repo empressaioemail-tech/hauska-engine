@@ -1,0 +1,81 @@
+# P-158 phase 3 (OPS-23 / _decisions/2026-09-12_footprint_merge_421_count_before_acquiring.md
+# follow-on; the mistagging finding is in _inbox/2026-09-12_p158-footprint_close.json).
+#
+# A NEW Cloud Run Job, us-east4, mirroring P-169's pattern
+# (cloudbuild.atoms-writer-p169.yaml): build, push, describe-for-digest,
+# deploy pinned to the digest, never a floating tag. Deliberately its OWN
+# job (hauska-engine-footprint-retag), not folded into hauska-engine-atoms-writer:
+# this job corrects tx_building_footprint.county_fips on the cortex/neondb
+# store and never touches the atoms store, so it does not belong in the
+# atoms-writer's writer allowlist (cad-parcel-roll / well-fact /
+# building-footprint / utility-easement / setback all MINT atoms; this job
+# mints nothing -- it corrects a staging-table tag).
+#
+#   gcloud builds submit --config=cloudbuild.footprint-retag.yaml --project=hauska-prod-497015
+#
+#   dry run (no write, reports would-retag counts):
+#     gcloud run jobs execute hauska-engine-footprint-retag --project=hauska-prod-497015 \
+#       --region=us-east4 --wait --args=--target=staging,--county=48021,48453
+#
+#   apply (staging first, per the standing decision):
+#     ...,--args=--target=staging,--county=48021,48453,--apply
+#
+#   full statewide one-shot (no --county => all 254 tx_county_boundary rows):
+#     ...,--args=--target=staging,--apply
+#     ...,--args=--target=production,--apply
+#
+# A laptop run of retag-building-footprint-county.mjs with --apply refuses
+# LAPTOP_WRITE_FROZEN (via writer-apply-lease.mjs refuseApplyOutsideCloudRunJob)
+# before any connection is opened -- CLOUD_RUN_JOB is set by the Cloud Run
+# Jobs platform itself, never by a caller-supplied flag. Verified live
+# 2026-09-12 (laptop --apply refused with exit 2 before this job existed).
+substitutions:
+  _REGION: "us-east4"
+  _IMAGE: "us-east4-docker.pkg.dev/hauska-prod-497015/hauska-factory/footprint-retag"
+  _IMAGE_TAG: "p158"
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID
+      - -f
+      - Dockerfile.footprint-retag
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID"]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        DIGEST="$$(gcloud artifacts docker images describe ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID --format='value(image_summary.fully_qualified_digest)')"
+        case "$$DIGEST" in
+          *@sha256:*) ;;
+          *) echo "REFUSE: describe did not return a digest: $$DIGEST" >&2; exit 2 ;;
+        esac
+        echo "pinning hauska-engine-footprint-retag to $$DIGEST"
+
+        gcloud run jobs deploy hauska-engine-footprint-retag \
+          --project=hauska-prod-497015 \
+          --region=${_REGION} \
+          --image="$$DIGEST" \
+          --task-timeout=21600 \
+          --max-retries=0 \
+          --memory=4Gi \
+          --cpu=2 \
+          --command=pnpm,--filter,@hauska-engine/engine-core,exec,tsx,scripts/retag-building-footprint-county.mjs \
+          --set-secrets=CORTEX_DATABASE_URL=CORTEX_DATABASE_URL:latest,STAGING_NEONDB_URL=STAGING_NEONDB_URL:latest,PRODUCTION_NEONDB_URL=PRODUCTION_NEONDB_URL:latest \
+          --set-env-vars=IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION}
+
+images:
+  - ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+timeout: 3600s

@@ -1,0 +1,15 @@
+# P-158 phase 3 (OPS-23). One-shot, idempotent county_fips correction for
+# tx_building_footprint. Cloud Run Job in us-east4, mirroring the
+# hauska-engine-atoms-writer image (Dockerfile.atoms-writer / P-169) --
+# same base image, same install step, different entrypoint script. This job
+# never mints atoms and never touches the atoms store; it corrects the
+# staging/cortex table's county_fips column by point-in-polygon against
+# tx_county_boundary. See packages/engine-core/scripts/retag-building-footprint-county.mjs.
+FROM node:22-slim
+RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
+WORKDIR /app
+COPY . .
+RUN pnpm install --frozen-lockfile
+ENV RETAG_BUILDING_FOOTPRINT_COUNTY_PATH=1
+ENTRYPOINT ["pnpm", "--filter", "@hauska-engine/engine-core", "exec", "tsx", "scripts/retag-building-footprint-county.mjs"]
+CMD []
