@@ -3,6 +3,7 @@ import { createWidthedConfidence } from "@empressaio/atom-contract/read-contract
 
 import {
   ATOMS_WRITER_LEASE_HELD_BY_OTHER,
+  ATOMS_WRITER_LEASE_NOT_HELD,
   ATOMS_WRITER_LEASE_V1_RETIRED,
   LEASE_EXPIRED,
   LEASE_REQUIRED,
@@ -12,6 +13,7 @@ import {
   assertAndHeartbeatWriterLease,
   assertScopeOnAtoms,
   lockAndHeartbeatLease,
+  releaseScopedLease,
   takeScopedLease,
   takeWriterLease,
   type HeldLease,
@@ -324,5 +326,184 @@ describe("atoms writer lease v2", () => {
     expect(() => assertScopeOnAtoms(b, [bexarCadStub()])).toThrow(
       expect.objectContaining({ code: SCOPE_MISMATCH }),
     );
+  });
+});
+
+describe("atoms_writer_lease_history (P-173)", () => {
+  it("a fresh take inserts exactly one history row (taken_at set, no release columns) and issues no history UPDATE", async () => {
+    const { sql, calls } = makeSqlFake(async (text) => {
+      if (text.includes("INSERT INTO atoms_writer_lease_v2")) {
+        return [
+          {
+            scope_type: "write",
+            scope_id: "cad-parcel-roll:48029",
+            holder_token: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            holder_label: "me",
+            run_id: "run-fresh",
+            taken_at: "2026-09-12T18:00:00.000Z",
+            heartbeat: "2026-09-12T18:00:00.000Z",
+            expires: "2026-09-12T18:15:00.000Z",
+            stolen_from: null,
+          },
+        ];
+      }
+      return [];
+    });
+    const lease = await takeScopedLease(sql as never, {
+      scope: { scope_type: "write", entity_type: "cad-parcel-roll", county_fips: "48029" },
+      holder_label: "me",
+      run_id: "run-fresh",
+    });
+    expect(lease.stolen_from).toBeNull();
+
+    const historyInserts = calls.filter((c) => c.text.includes("INSERT INTO atoms_writer_lease_history"));
+    const historyUpdates = calls.filter((c) => c.text.includes("UPDATE atoms_writer_lease_history"));
+    expect(historyInserts.length).toBe(1);
+    expect(historyUpdates.length).toBe(0);
+    // run_id, holder_token and taken_at all travel into the history row.
+    expect(historyInserts[0]!.params).toContain("run-fresh");
+    expect(historyInserts[0]!.params).toContain("me");
+  });
+
+  it("a take that steals an expired scope closes the prior open history row as expired BEFORE inserting its own row", async () => {
+    const { sql, calls } = makeSqlFake(async (text) => {
+      if (text.includes("INSERT INTO atoms_writer_lease_v2")) {
+        return [
+          {
+            scope_type: "write",
+            scope_id: "cad-parcel-roll:48029",
+            holder_token: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            holder_label: "me",
+            run_id: "run-steal",
+            taken_at: "2026-09-12T18:00:00.000Z",
+            heartbeat: "2026-09-12T18:00:00.000Z",
+            expires: "2026-09-12T18:15:00.000Z",
+            stolen_from: "dead-writer",
+          },
+        ];
+      }
+      return [];
+    });
+    await takeScopedLease(sql as never, {
+      scope: { scope_type: "write", entity_type: "cad-parcel-roll", county_fips: "48029" },
+      holder_label: "me",
+      run_id: "run-steal",
+    });
+
+    const updateIdx = calls.findIndex(
+      (c) => c.text.includes("UPDATE atoms_writer_lease_history") && c.text.includes("expired"),
+    );
+    const insertIdx = calls.findIndex((c) => c.text.includes("INSERT INTO atoms_writer_lease_history"));
+    expect(updateIdx).toBeGreaterThanOrEqual(0);
+    expect(insertIdx).toBeGreaterThanOrEqual(0);
+    expect(updateIdx).toBeLessThan(insertIdx);
+    // the expiry-close targets the SCOPE (no holder_token for the dead
+    // holder ever reached this function), and only ever the open row.
+    expect(calls[updateIdx]!.text).toContain("released_at IS NULL");
+  });
+
+  it("a take on a scope with no prior history (legacy row from before this migration) still succeeds and writes only its own row", async () => {
+    // The steal path finds zero rows to close (0-row UPDATE is not an
+    // error) when the scope predates atoms_writer_lease_history entirely --
+    // "a write before this table's creation has no history row by
+    // construction," per the audit script's own README.
+    const { sql, calls } = makeSqlFake(async (text) => {
+      if (text.includes("INSERT INTO atoms_writer_lease_v2")) {
+        return [
+          {
+            scope_type: "write",
+            scope_id: "well-fact:48453",
+            holder_token: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            holder_label: "me",
+            run_id: "run-legacy",
+            taken_at: "2026-09-12T18:00:00.000Z",
+            heartbeat: "2026-09-12T18:00:00.000Z",
+            expires: "2026-09-12T18:15:00.000Z",
+            stolen_from: "pre-history-holder",
+          },
+        ];
+      }
+      return []; // the history UPDATE affects 0 rows -- not an error.
+    });
+    await expect(
+      takeScopedLease(sql as never, {
+        scope: { scope_type: "write", entity_type: "well-fact", county_fips: "48453" },
+        holder_label: "me",
+        run_id: "run-legacy",
+      }),
+    ).resolves.toMatchObject({ run_id: "run-legacy" });
+    expect(calls.some((c) => c.text.includes("INSERT INTO atoms_writer_lease_history"))).toBe(true);
+  });
+
+  it("release updates released_at/released_by/release_reason on the history row and never issues DELETE against it", async () => {
+    const { sql, calls } = makeSqlFake(async (text) => {
+      if (text.includes("DELETE FROM atoms_writer_lease_v2")) {
+        return [
+          {
+            scope_type: "write",
+            scope_id: "zoning-fact:48021",
+            holder_token: "00000000-0000-4000-8000-000000000001",
+            holder_label: "test-writer",
+            run_id: "run-1",
+            taken_at: "2026-08-13T18:00:00.000Z",
+            heartbeat: "2026-08-13T18:00:00.000Z",
+            expires: "2026-08-13T18:15:00.000Z",
+            stolen_from: null,
+          },
+        ];
+      }
+      return [];
+    });
+    await releaseScopedLease(sql as never, heldWrite());
+
+    const historyUpdates = calls.filter((c) => c.text.includes("UPDATE atoms_writer_lease_history"));
+    expect(historyUpdates.length).toBe(1);
+    expect(historyUpdates[0]!.text).toContain("released_at IS NULL");
+    // default release_reason is 'normal' and released_by defaults to the
+    // lease's own holder_label when the caller passes no options.
+    expect(historyUpdates[0]!.params).toContain("normal");
+    expect(historyUpdates[0]!.params).toContain("test-writer");
+    expect(calls.some((c) => c.text.includes("DELETE FROM atoms_writer_lease_history"))).toBe(false);
+  });
+
+  it("release threads an explicit release_reason='killed' and released_by through to the history UPDATE", async () => {
+    const { sql, calls } = makeSqlFake(async (text) => {
+      if (text.includes("DELETE FROM atoms_writer_lease_v2")) {
+        return [
+          {
+            scope_type: "write",
+            scope_id: "zoning-fact:48021",
+            holder_token: "00000000-0000-4000-8000-000000000001",
+            holder_label: "test-writer",
+            run_id: "run-1",
+            taken_at: "2026-08-13T18:00:00.000Z",
+            heartbeat: "2026-08-13T18:00:00.000Z",
+            expires: "2026-08-13T18:15:00.000Z",
+            stolen_from: null,
+          },
+        ];
+      }
+      return [];
+    });
+    await releaseScopedLease(sql as never, heldWrite(), {
+      release_reason: "killed",
+      released_by: "overseer-kill-switch",
+    });
+
+    const historyUpdates = calls.filter((c) => c.text.includes("UPDATE atoms_writer_lease_history"));
+    expect(historyUpdates.length).toBe(1);
+    expect(historyUpdates[0]!.params).toContain("killed");
+    expect(historyUpdates[0]!.params).toContain("overseer-kill-switch");
+  });
+
+  it("release refuses ATOMS_WRITER_LEASE_NOT_HELD and touches no history row when the mutex row is already gone", async () => {
+    const { sql, calls } = makeSqlFake(async (text) => {
+      if (text.includes("DELETE FROM atoms_writer_lease_v2")) return [];
+      return [];
+    });
+    await expect(releaseScopedLease(sql as never, heldWrite())).rejects.toMatchObject({
+      code: ATOMS_WRITER_LEASE_NOT_HELD,
+    });
+    expect(calls.some((c) => c.text.includes("UPDATE atoms_writer_lease_history"))).toBe(false);
   });
 });
