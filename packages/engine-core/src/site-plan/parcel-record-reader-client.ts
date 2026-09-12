@@ -124,9 +124,42 @@ export function recordScalarValue(rail: ParcelRecordRail | undefined): string | 
   return typeof v === "string" || typeof v === "number" || typeof v === "boolean" || v === null ? v : undefined;
 }
 
+/**
+ * P152-RAILS follow-up (2026-09-12, live finding): yearBuilt/livingAreaSqft
+ * composed correctly from the reader on the first live check, but
+ * marketValue/assessedValue did not, even though the planner's own direct
+ * curl of the SAME /record response showed both present with serve:record.
+ * All six of these rails share the identical "scalar"/"cad" registry grain
+ * (parcel-record-rail-registry.ts) and this composer's identical call
+ * pattern (`recordScalarNumber(record?.rails.<key>)`) — the only
+ * remaining explanation consistent with "some scalar cad rails work, others
+ * with the identical shape don't" is that this composer was too strict
+ * about the PRIMITIVE TYPE of `cell.value`, not about anything structural.
+ * `parcel-record-db.ts` (this repo) reads `cell_state` "verbatim" from a
+ * jsonb column with zero transformation, so whatever primitive the
+ * factory's landing payload originally carried for a dollar amount is what
+ * ships here — and dollar amounts, unlike a plain integer yearBuilt or
+ * livingAreaSqft, are exactly the class of CAD source field that commonly
+ * arrives (or gets stored, e.g. a Postgres NUMERIC column serialized by a
+ * driver) as a numeric STRING rather than a JSON number. `recordScalarValue`
+ * already treats a string as a legitimate primitive (matching hauska-map's
+ * own `asNullableStringOrNumber` precedent for CAD source columns "not
+ * coerced by the writer"); this function was the one link in the chain that
+ * only accepted `typeof v === "number"`, silently discarding a genuine
+ * numeric string instead of composing it. Coerces here, once, rather than
+ * asking every future caller to remember to do it — never invents a number
+ * from a non-numeric string (an empty/garbage string still refuses).
+ */
 export function recordScalarNumber(rail: ParcelRecordRail | undefined): number | undefined {
   const v = recordScalarValue(rail);
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+  if (typeof v === "string") {
+    const cleaned = v.trim().replace(/^\$/, "").replace(/,/g, "");
+    if (!cleaned) return undefined;
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
 }
 
 export function recordScalarString(rail: ParcelRecordRail | undefined): string | undefined {

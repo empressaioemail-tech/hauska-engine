@@ -133,6 +133,72 @@ describe("P152-RAILS item 4: composeParcelReportFacts composes the four dollar r
     }
   });
 
+  it("P152-RAILS follow-up (live finding): a dollar rail whose cell.value arrives as a NUMERIC STRING (not a JS number) still composes -- yearBuilt/livingAreaSqft worked on the first live deploy, marketValue/assessedValue did not, and this is the one difference between them this composer can control for without a confirmed raw payload dump", async () => {
+    const record: ParcelRecordResponse = {
+      parcelNodeId,
+      placeKey: parcelNodeId,
+      countyFips: "48453",
+      railRegistrySha: "sha",
+      readAt: "2026-09-12T00:00:00.000Z",
+      rails: {
+        // Exact live values from the dispatch planner's direct retrieval-api
+        // curl for 48453:474034, deliberately encoded as strings here since
+        // this composer cannot yet confirm which primitive the real /record
+        // response actually used for these two fields.
+        marketValue: rail("record", { kind: "value", value: "969365" }),
+        assessedValue: rail("record", { kind: "value", value: "969365.00" }),
+        landValue: rail("record", { kind: "value", value: "$111,628" }),
+        improvementValue: rail("record", { kind: "value", value: 857737 }), // a plain number must still work too
+        yearBuilt: rail("record", { kind: "value", value: 2001 }),
+        livingAreaSqft: rail("record", { kind: "value", value: 4168 }),
+      },
+      refused: null,
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader(record),
+    });
+
+    expect(model.facts.parcelOwnership.status).toBe("present");
+    if (model.facts.parcelOwnership.status === "present") {
+      expect(model.facts.parcelOwnership.marketValue).toBe(969365);
+      expect(model.facts.parcelOwnership.assessedValue).toBe(969365);
+      expect(model.facts.parcelOwnership.landValue).toBe(111628);
+      expect(model.facts.parcelOwnership.improvementValue).toBe(857737);
+      expect(model.facts.parcelOwnership.yearBuilt).toBe(2001);
+      expect(model.facts.parcelOwnership.livingAreaSqft).toBe(4168);
+    }
+  });
+
+  it("never fabricates a number from a non-numeric string -- a genuinely absent/garbage cell value stays undefined", async () => {
+    const record: ParcelRecordResponse = {
+      parcelNodeId,
+      placeKey: parcelNodeId,
+      countyFips: "48453",
+      railRegistrySha: "sha",
+      readAt: "2026-09-12T00:00:00.000Z",
+      rails: {
+        marketValue: rail("record", { kind: "value", value: "N/A" }),
+        assessedValue: rail("record", { kind: "value", value: "" }),
+      },
+      refused: null,
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader(record),
+    });
+    // Neither rail supplied a usable number, and there is no substrate cad
+    // atom either -- the section stays absent rather than "present" with
+    // every field undefined.
+    expect(model.facts.parcelOwnership.status).toBe("absent");
+  });
+
   it("the reader wins per-field over the substrate cad-parcel-roll atom for exactly the rails it slates 'record'; a legacy-transitional rail keeps the substrate value", async () => {
     const cadRoll = {
       entityType: "cad-parcel-roll" as const,
