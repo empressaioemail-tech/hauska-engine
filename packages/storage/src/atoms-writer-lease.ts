@@ -25,6 +25,15 @@ export const WRITER_LEASE_HOLDER_ENV = "ATOMS_WRITER_LEASE_HOLDER";
 
 export const DEFAULT_LEASE_TTL_MS = 15 * 60 * 1000;
 
+/**
+ * atoms_writer_lease_history release_reason (P-173 / OPS-23). 'normal' is a
+ * caller-initiated releaseScopedLease; 'expired' is set by a LATER
+ * takeScopedLease that steals the scope from a lease whose TTL had already
+ * passed; 'killed' is for an operator/lane that kills a rogue holder
+ * out-of-band and must say so explicitly via releaseScopedLease's options.
+ */
+export type LeaseReleaseReason = "normal" | "expired" | "killed";
+
 export class AtomsWriterLeaseV1RetiredError extends Error {
   readonly code = ATOMS_WRITER_LEASE_V1_RETIRED;
   constructor() {
@@ -219,48 +228,83 @@ export async function takeScopedLease(
   const scope_id = scopeIdOf(options.scope);
   const scope_type = options.scope.scope_type;
 
-  const rows = await sql<LeaseV2Row[]>`
-    INSERT INTO atoms_writer_lease_v2 (
-      scope_type, scope_id, holder_token, holder_label, run_id,
-      taken_at, heartbeat, expires, stolen_from
-    ) VALUES (
-      ${scope_type},
-      ${scope_id},
-      ${holder_token}::uuid,
-      ${holder_label},
-      ${run_id},
-      ${nowIso}::timestamptz,
-      ${nowIso}::timestamptz,
-      ${expiresIso}::timestamptz,
-      NULL
-    )
-    ON CONFLICT (scope_type, scope_id) DO UPDATE SET
-      holder_token = EXCLUDED.holder_token,
-      holder_label = EXCLUDED.holder_label,
-      run_id = EXCLUDED.run_id,
-      taken_at = EXCLUDED.taken_at,
-      heartbeat = EXCLUDED.heartbeat,
-      expires = EXCLUDED.expires,
-      stolen_from = atoms_writer_lease_v2.holder_label
-    WHERE atoms_writer_lease_v2.expires <= ${nowIso}::timestamptz
-    RETURNING
-      scope_type, scope_id, holder_token, holder_label, run_id,
-      taken_at, heartbeat, expires, stolen_from
-  `;
-  if (rows.length === 0) {
-    const current = await sql<LeaseV2Row[]>`
-      SELECT scope_type, scope_id, holder_token, holder_label, run_id,
-             taken_at, heartbeat, expires, stolen_from
-        FROM atoms_writer_lease_v2
-       WHERE scope_type = ${scope_type}
-         AND scope_id = ${scope_id}
+  return sql.begin(async (txn) => {
+    const rows = await txn<LeaseV2Row[]>`
+      INSERT INTO atoms_writer_lease_v2 (
+        scope_type, scope_id, holder_token, holder_label, run_id,
+        taken_at, heartbeat, expires, stolen_from
+      ) VALUES (
+        ${scope_type},
+        ${scope_id},
+        ${holder_token}::uuid,
+        ${holder_label},
+        ${run_id},
+        ${nowIso}::timestamptz,
+        ${nowIso}::timestamptz,
+        ${expiresIso}::timestamptz,
+        NULL
+      )
+      ON CONFLICT (scope_type, scope_id) DO UPDATE SET
+        holder_token = EXCLUDED.holder_token,
+        holder_label = EXCLUDED.holder_label,
+        run_id = EXCLUDED.run_id,
+        taken_at = EXCLUDED.taken_at,
+        heartbeat = EXCLUDED.heartbeat,
+        expires = EXCLUDED.expires,
+        stolen_from = atoms_writer_lease_v2.holder_label
+      WHERE atoms_writer_lease_v2.expires <= ${nowIso}::timestamptz
+      RETURNING
+        scope_type, scope_id, holder_token, holder_label, run_id,
+        taken_at, heartbeat, expires, stolen_from
     `;
-    const held = current[0];
-    throw new AtomsWriterLeaseHeldByOtherError(
-      `live lease held by ${held?.holder_label ?? "unknown"} until ${held?.expires ?? "unknown"}`,
-    );
-  }
-  return rowToHeldLease(rows[0]!, options.scope);
+    if (rows.length === 0) {
+      const current = await txn<LeaseV2Row[]>`
+        SELECT scope_type, scope_id, holder_token, holder_label, run_id,
+               taken_at, heartbeat, expires, stolen_from
+          FROM atoms_writer_lease_v2
+         WHERE scope_type = ${scope_type}
+           AND scope_id = ${scope_id}
+      `;
+      const held = current[0];
+      throw new AtomsWriterLeaseHeldByOtherError(
+        `live lease held by ${held?.holder_label ?? "unknown"} until ${held?.expires ?? "unknown"}`,
+      );
+    }
+    const taken = rows[0]!;
+
+    // P-173: this take succeeded. If it stole an expired scope
+    // (stolen_from set), the PRIOR holder's history row -- the one open
+    // (released_at IS NULL) row for this exact scope, per the partial
+    // unique index -- never got a releaseScopedLease call and must be
+    // closed as 'expired' before this take's own row is inserted, so the
+    // one-open-row-per-scope invariant never breaks.
+    if (taken.stolen_from != null) {
+      await txn`
+        UPDATE atoms_writer_lease_history
+           SET released_at = ${nowIso}::timestamptz,
+               released_by = ${`stolen-by:${holder_label}`},
+               release_reason = 'expired'
+         WHERE scope_type = ${scope_type}
+           AND scope_id = ${scope_id}
+           AND released_at IS NULL
+      `;
+    }
+
+    await txn`
+      INSERT INTO atoms_writer_lease_history (
+        scope_type, scope_id, holder_token, holder_label, run_id, taken_at
+      ) VALUES (
+        ${scope_type},
+        ${scope_id},
+        ${holder_token}::uuid,
+        ${holder_label},
+        ${run_id},
+        ${nowIso}::timestamptz
+      )
+    `;
+
+    return rowToHeldLease(taken, options.scope);
+  });
 }
 
 export async function lockAndHeartbeatLease(
@@ -342,19 +386,41 @@ export function assertScopeOnAtoms(
 export async function releaseScopedLease(
   sql: postgres.Sql,
   lease: HeldLease,
+  options?: { released_by?: string; release_reason?: LeaseReleaseReason },
 ): Promise<void> {
-  const rows = await sql<LeaseV2Row[]>`
-    DELETE FROM atoms_writer_lease_v2
-     WHERE holder_token = ${lease.holder_token}::uuid
-    RETURNING
-      scope_type, scope_id, holder_token, holder_label, run_id,
-      taken_at, heartbeat, expires, stolen_from
-  `;
-  if (rows.length === 0) {
-    throw new AtomsWriterLeaseNotHeldError(
-      `release failed — no lease row for token`,
-    );
-  }
+  const now = new Date().toISOString();
+  const released_by = (options?.released_by ?? lease.holder_label).trim() || lease.holder_label;
+  const release_reason: LeaseReleaseReason = options?.release_reason ?? "normal";
+
+  await sql.begin(async (txn) => {
+    const rows = await txn<LeaseV2Row[]>`
+      DELETE FROM atoms_writer_lease_v2
+       WHERE holder_token = ${lease.holder_token}::uuid
+      RETURNING
+        scope_type, scope_id, holder_token, holder_label, run_id,
+        taken_at, heartbeat, expires, stolen_from
+    `;
+    if (rows.length === 0) {
+      throw new AtomsWriterLeaseNotHeldError(
+        `release failed — no lease row for token`,
+      );
+    }
+
+    // P-173: close this holder's own history row. This is the ONE
+    // permitted UPDATE atoms_writer_lease_history_guard allows -- released_at
+    // still NULL on the matched row, and only released_at/released_by/
+    // release_reason change. Matching by holder_token (unique per take)
+    // rather than by scope means a release can never accidentally close a
+    // DIFFERENT holder's row for the same scope.
+    await txn`
+      UPDATE atoms_writer_lease_history
+         SET released_at = ${now}::timestamptz,
+             released_by = ${released_by},
+             release_reason = ${release_reason}
+       WHERE holder_token = ${lease.holder_token}::uuid
+         AND released_at IS NULL
+    `;
+  });
 }
 
 /** v1 status read. Retired with the env holder. */
