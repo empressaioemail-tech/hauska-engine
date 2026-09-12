@@ -245,6 +245,7 @@ const summary = {
   verified: 0,
   verifyFailures: [],
   errors: 0,
+  supersededAbsenceAtomsDeleted: 0,
 };
 
 try {
@@ -551,6 +552,47 @@ try {
             written: summary.atomsWritten,
             verified: summary.verified,
             ofTotal: atoms.length,
+          }),
+        );
+      }
+
+      // Present and per-parcel-absence atoms for the SAME parcel carry
+      // DIFFERENT entity_id values (`{parcelNodeId}:footprint:{footprintId}`
+      // vs `{parcelNodeId}:footprint:none`, packages/atoms/src/building-footprint-writer.ts),
+      // so atoms_entity_composite_unique / the ON CONFLICT (atom_did) upsert
+      // does NOT collide them and does NOT supersede a stale absence atom
+      // when a present one is minted for the same parcel later -- confirmed
+      // live 2026-09-12: after this county's write, `48021:34049:footprint`
+      // (present, new) and `48021:34049:footprint:none` (absence, from the
+      // unattributed 2026-09-07 run) coexisted as two separate rows.
+      // listBuildingFootprintsNearBbox already filters `body->'absence' IS
+      // NULL`, so near-bbox is unaffected either way, but a facets reader
+      // that walks by parcelNodeId without that filter could read either
+      // row. This is a delete-and-mint supersede, scoped to entity_ids this
+      // writer's own county prefix owns, deleting ONLY an absence atom that
+      // now has a present sibling for the identical parcelNodeId -- never a
+      // present atom, never an absence atom with no present sibling (a
+      // parcel that is genuinely still absent keeps its absence atom).
+      const supersededRows = await handle.sql`
+        DELETE FROM atoms stale
+        WHERE stale.entity_type = 'building-footprint'
+          AND stale.entity_id LIKE ${args.county + ":%:footprint:none"}
+          AND EXISTS (
+            SELECT 1 FROM atoms present
+            WHERE present.entity_type = 'building-footprint'
+              AND present.body->>'parcelNodeId' = stale.body->>'parcelNodeId'
+              AND NOT (present.body ? 'absence')
+          )
+        RETURNING stale.entity_id
+      `;
+      summary.supersededAbsenceAtomsDeleted = supersededRows.length;
+      if (supersededRows.length > 0) {
+        console.log(
+          JSON.stringify({
+            event: "building-footprint-county.superseded-absence-deleted",
+            county: args.county,
+            count: supersededRows.length,
+            sample: supersededRows.slice(0, 5).map((r) => r.entity_id),
           }),
         );
       }
