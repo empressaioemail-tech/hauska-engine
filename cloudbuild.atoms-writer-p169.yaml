@@ -26,6 +26,18 @@
 # (write-building-footprint-county.mjs, via writer-apply-lease.mjs) before any
 # lease is taken — CLOUD_RUN_JOB is set by the Cloud Run Jobs platform itself,
 # never by a caller-supplied flag.
+#
+# P-158 phase 3 (2026-09-12): memory raised 4Gi/2cpu -> 16Gi/4cpu, plus
+# NODE_OPTIONS=--max-old-space-size=14336, after the building-footprint
+# writer for Travis County (48453, ~895K raw parcel rows / ~364K staged
+# footprints, ~12x Bastrop's volume) crashed with "JavaScript heap out of
+# memory" (V8 hit its old-space ceiling near 1991MB well under the 4Gi
+# container limit -- Node did not auto-scale its heap to the container's
+# memory in this environment) after running ~90 minutes. Re-run at 16Gi +
+# the explicit heap flag completed successfully. A future writer for an
+# even larger county (Harris 48201, Dallas 48113, etc.) may need this
+# raised further; watch for the same OOM signature in Cloud Logging
+# (search "heap out of memory") before assuming a hang.
 substitutions:
   _REGION: "us-east4"
   _IMAGE: "us-east4-docker.pkg.dev/hauska-prod-497015/hauska-factory/atoms-writer"
@@ -63,11 +75,11 @@ steps:
           --image="$$DIGEST" \
           --task-timeout=21600 \
           --max-retries=0 \
-          --memory=4Gi \
-          --cpu=2 \
+          --memory=16Gi \
+          --cpu=4 \
           --command=pnpm,--filter,@hauska-engine/engine-core,exec,tsx,scripts/atoms-writer-job.mjs \
           --set-secrets=DATABASE_URL=ATOMS_DATABASE_URL:latest,SUBSTRATE_DATABASE_URL=ATOMS_DATABASE_URL:latest,CORTEX_DATABASE_URL=SOURCE_DATABASE_URL:latest,STAGING_HAUSKA_MCP_URL=STAGING_HAUSKA_MCP_URL:latest,PRODUCTION_HAUSKA_MCP_URL=PRODUCTION_HAUSKA_MCP_URL:latest,STAGING_NEONDB_URL=STAGING_NEONDB_URL:latest,PRODUCTION_NEONDB_URL=PRODUCTION_NEONDB_URL:latest \
-          --set-env-vars=IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION}
+          --set-env-vars=IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION},NODE_OPTIONS=--max-old-space-size=14336
 
 images:
   - ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID
