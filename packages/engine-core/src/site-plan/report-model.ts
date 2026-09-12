@@ -468,18 +468,65 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
     atomsFetchFailureReason = `Parcel atom read failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 
+  // P152-RAILS: `readBudgetMs` MUST be initialized before the first call to
+  // `bounded` below -- `bounded` is a hoisted function DECLARATION (its name
+  // is usable from anywhere in this function body), but it closes over the
+  // `const readBudgetMs` binding from the ENCLOSING scope, and a `const` is
+  // NOT initialized just because the function that reads it is hoisted.
+  // Calling `bounded` before this line executes throws "Cannot access
+  // 'readBudgetMs' before initialization" INSIDE the Promise executor that
+  // arms the timeout race -- the Promise constructor swallows that throw and
+  // turns it into an already-rejected promise, which then wins Promise.race
+  // against the real fetch almost every time in production (a real network
+  // call takes real wall-clock time; the TDZ rejection is next-microtask
+  // instant). This was a genuine live defect (found via a fresh production
+  // probe on 48453:474034, 2026-09-12: the reader was reachable, authenticated,
+  // and returned correct record-served data, but composeParcelReportFacts's
+  // output reflected none of it) that this file's own unit tests did not
+  // catch, because every fake `recordReader.fetchRecord` in this package's
+  // tests resolves with no real `await` inside -- exactly as instant as the
+  // TDZ rejection, so simple Promise.race MICROTASK REGISTRATION ORDER (the
+  // real fetch's `.then` is attached first, inside the `Promise.race` array
+  // literal, ahead of the timeout branch) let the fake reader win the race
+  // every time regardless of the bug. A test that cannot fail for the right
+  // reason (DEV_PROCESS 2.2) -- see the new delayed-fake-reader regression
+  // test below this function for the fix that actually exercises this path.
+  const readBudgetMs = options.factReadTimeoutMs ?? DEFAULT_FACT_READ_TIMEOUT_MS;
+
+  async function bounded<T>(
+    label: string,
+    run: () => Promise<T>,
+  ): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const value = await Promise.race([
+        run(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${label} exceeded the ${readBudgetMs}ms read budget`)),
+            readBudgetMs,
+          );
+        }),
+      ]);
+      return { ok: true, value };
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   // P152-RAILS: fetched EARLY (ahead of parcelOwnership/specialDistricts/
   // jurisdiction below, which are computed synchronously via safeSection)
-  // rather than alongside the later floodplain/soil/electric Promise.all --
-  // `bounded` is a hoisted function declaration further down this same
-  // function body, so calling it here is valid. Any failure (timeout,
-  // non-2xx, invalid JSON, or a whole-parcel refusal) leaves `record` null
-  // and every composer below falls back to its existing substrate-atom /
-  // constant path -- never a crash, never a fabricated record value (same
-  // "declared, never silent" posture as hauska-map's own outage handling,
-  // P152-RAILS item 3 -- this read simply has no wire surface of its own to
-  // declare the outage on, since the ENGINE'S existing fallback already IS
-  // an honest, independently-sourced absence, not a copy of a stale value).
+  // rather than alongside the later floodplain/soil/electric Promise.all.
+  // Any failure (timeout, non-2xx, invalid JSON, or a whole-parcel refusal)
+  // leaves `record` null and every composer below falls back to its existing
+  // substrate-atom / constant path -- never a crash, never a fabricated
+  // record value (same "declared, never silent" posture as hauska-map's own
+  // outage handling, P152-RAILS item 3 -- this read simply has no wire
+  // surface of its own to declare the outage on, since the ENGINE'S existing
+  // fallback already IS an honest, independently-sourced absence, not a copy
+  // of a stale value).
   const recordFetch = options.recordReader
     ? await bounded("parcel_record reader read", () => options.recordReader!.fetchRecord(parcelNodeId))
     : null;
@@ -766,30 +813,10 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   // bounded. A source that hangs now costs the budget once rather than the
   // whole report, and a source that exceeds it reports `failed-this-run` --
   // which is true, ours, and never mistakable for a finding about the parcel.
-  const readBudgetMs = options.factReadTimeoutMs ?? DEFAULT_FACT_READ_TIMEOUT_MS;
-
-  async function bounded<T>(
-    label: string,
-    run: () => Promise<T>,
-  ): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const value = await Promise.race([
-        run(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error(`${label} exceeded the ${readBudgetMs}ms read budget`)),
-            readBudgetMs,
-          );
-        }),
-      ]);
-      return { ok: true, value };
-    } catch (error) {
-      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
+  // (`readBudgetMs` and `bounded` itself now declared earlier in this
+  // function, ahead of the P152-RAILS record fetch that also needs them --
+  // see that declaration's own comment for why moving it was the fix for a
+  // real live defect.)
 
   const notRequested = (family: string) =>
     absent<never>(
