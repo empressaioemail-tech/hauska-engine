@@ -54,6 +54,13 @@ import type {
   ElectricProviderResult,
   GasProviderResult,
 } from "../electric-provider-fact/index.js";
+import {
+  recordCityLimitsDisposition,
+  recordScalarNumber,
+  recordSpecialDistrictNames,
+  type ParcelRecordResponse,
+  type RecordReaderClient,
+} from "./parcel-record-reader-client.js";
 
 /**
  * The composition root (P-120 reports re-cut, R1-R3).
@@ -227,6 +234,16 @@ export interface ComposeParcelReportFactsOptions {
    * for a reason more specific than "not requested" -- see dischargePoint's
    * own section below for why this matters. */
   dischargeUnavailableReason?: { kind: AbsenceKind; reason: string };
+  /**
+   * P152-RAILS (OPS-23 P-152 lane 3): the Hauska retrieval service reader —
+   * the SAME `/property-nodes/:id/record` the Property Explorer panel and
+   * cortex already consume (R-6, one reader). Omit to skip (honest
+   * unresolved/absent, same shape as every other optional resolver here —
+   * never a blocking failure). See `recordReaderFromEnv` for how the caller
+   * builds this from `RETRIEVAL_API_URL`/`RETRIEVAL_API_KEY`, which are NOT
+   * mounted on hauska-engine-api in production as of this lane's close.
+   */
+  recordReader?: RecordReaderClient;
 }
 
 const JURISDICTION_ACTION_SENTENCE = "Confirm city-limits and ETJ status with the county before proceeding.";
@@ -409,13 +426,27 @@ function composePackageLayer(model: Omit<ParcelReportModel, "package">): Package
   }
   items.push({ section: "hoa", actionSentence: HOA_ACTION_SENTENCE });
 
+  const specialDistrictsDisagreement =
+    model.facts.specialDistricts.status === "present" &&
+    model.facts.specialDistricts.substrateOnlyDistricts &&
+    model.facts.specialDistricts.substrateOnlyDistricts.length > 0
+      ? `Special districts: the Hauska retrieval reader names ${model.facts.specialDistricts.districts
+          .map((d) => d.districtName)
+          .filter(Boolean)
+          .join(", ") || "no district"}; this engine's own TCEQ-sourced records separately name ${model.facts.specialDistricts.substrateOnlyDistricts.join(
+          ", ",
+        )}. Both are shown; neither is discarded (P152-RAILS item 7 — not resolved here).`
+      : null;
+
   const dataQuality: DataQualityNote = {
-    supersededNotes:
-      model.facts.flood.status === "present" && model.drainage.status === "present"
+    supersededNotes: [
+      ...(model.facts.flood.status === "present" && model.drainage.status === "present"
         ? [
             "Flood determination: the parcel-scoped drainage study supersedes the statewide screening fact; the screening value is not shown as a second, independent finding.",
           ]
-        : [],
+        : []),
+      ...(specialDistrictsDisagreement ? [specialDistrictsDisagreement] : []),
+    ],
   };
 
   return {
@@ -437,28 +468,78 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
     atomsFetchFailureReason = `Parcel atom read failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 
+  // P152-RAILS: fetched EARLY (ahead of parcelOwnership/specialDistricts/
+  // jurisdiction below, which are computed synchronously via safeSection)
+  // rather than alongside the later floodplain/soil/electric Promise.all --
+  // `bounded` is a hoisted function declaration further down this same
+  // function body, so calling it here is valid. Any failure (timeout,
+  // non-2xx, invalid JSON, or a whole-parcel refusal) leaves `record` null
+  // and every composer below falls back to its existing substrate-atom /
+  // constant path -- never a crash, never a fabricated record value (same
+  // "declared, never silent" posture as hauska-map's own outage handling,
+  // P152-RAILS item 3 -- this read simply has no wire surface of its own to
+  // declare the outage on, since the ENGINE'S existing fallback already IS
+  // an honest, independently-sourced absence, not a copy of a stale value).
+  const recordFetch = options.recordReader
+    ? await bounded("parcel_record reader read", () => options.recordReader!.fetchRecord(parcelNodeId))
+    : null;
+  const record: ParcelRecordResponse | null =
+    recordFetch && recordFetch.ok && recordFetch.value.ok && !recordFetch.value.record.refused
+      ? recordFetch.value.record
+      : null;
+
   const parcelOwnership = safeSection<ParcelOwnershipFacts>("parcelOwnership", () => {
     if (atomsFetchFailureReason) return absent("failed-this-run", atomsFetchFailureReason);
     const cadRoll = atoms.find((a): a is CadParcelRollAtomInstance => a.entityType === "cad-parcel-roll");
     const owner = atoms.find((a): a is OwnerFactAtomInstance => a.entityType === "owner-fact");
     const landUse = atoms.find((a): a is LandUseFactAtomInstance => a.entityType === "land-use-fact");
-    if (!cadRoll && !owner) {
+
+    // P152-RAILS: the reader wins per-field, over the substrate cad-parcel-
+    // roll atom, for exactly the rails it slates "record" for this county --
+    // never a wider override, matching hauska-map's own per-rail pattern.
+    // This is what fixes FS-48453-474034 (values UNAVAILABLE beside the
+    // card's dollars): that parcel has no cad-parcel-roll atom in the
+    // engine's substrate store, but its marketValue/assessedValue rails ARE
+    // slated "record" (wave-3 verify doc B6), so the reader alone can now
+    // make this section present where the substrate atom never could.
+    const marketValue = recordScalarNumber(record?.rails.marketValue) ?? cadRoll?.marketValue;
+    const assessedValue = recordScalarNumber(record?.rails.assessedValue) ?? cadRoll?.assessedValue;
+    const landValue = recordScalarNumber(record?.rails.landValue) ?? cadRoll?.landValue;
+    const improvementValue = recordScalarNumber(record?.rails.improvementValue) ?? cadRoll?.improvementValue;
+    const yearBuilt = recordScalarNumber(record?.rails.yearBuilt) ?? cadRoll?.yearBuilt;
+    const livingAreaSqft = recordScalarNumber(record?.rails.livingAreaSqft) ?? cadRoll?.livingAreaSqft;
+    const recordSuppliedAnything =
+      marketValue !== undefined ||
+      assessedValue !== undefined ||
+      landValue !== undefined ||
+      improvementValue !== undefined ||
+      yearBuilt !== undefined ||
+      livingAreaSqft !== undefined;
+
+    if (!cadRoll && !owner && !recordSuppliedAnything) {
       return absent(
         "blocked-at-source",
         "The county appraisal roll carries no record for this parcel.",
         "Ownership, value and building characteristics cannot be stated. Order a title or CAD roll pull before relying on any of them.",
       );
     }
+    const usedRecordForAnyField =
+      recordScalarNumber(record?.rails.marketValue) !== undefined ||
+      recordScalarNumber(record?.rails.assessedValue) !== undefined ||
+      recordScalarNumber(record?.rails.landValue) !== undefined ||
+      recordScalarNumber(record?.rails.improvementValue) !== undefined ||
+      recordScalarNumber(record?.rails.yearBuilt) !== undefined ||
+      recordScalarNumber(record?.rails.livingAreaSqft) !== undefined;
     return present<ParcelOwnershipFacts>(
       {
         legalDescription: cadRoll?.legalDescription,
         exemptionCodes: cadRoll?.exemptionCodes,
-        marketValue: cadRoll?.marketValue,
-        assessedValue: cadRoll?.assessedValue,
-        landValue: cadRoll?.landValue,
-        improvementValue: cadRoll?.improvementValue,
-        yearBuilt: cadRoll?.yearBuilt,
-        livingAreaSqft: cadRoll?.livingAreaSqft,
+        marketValue,
+        assessedValue,
+        landValue,
+        improvementValue,
+        yearBuilt,
+        livingAreaSqft,
         ownerName: owner?.ownerName,
         ownerMailingAddress: owner?.ownerMailingAddress,
         absenteeOwner:
@@ -468,7 +549,14 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
         landUseCode: landUse?.landUseCode,
         landUseLabel: landUse?.landUseLabel,
       },
-      { sourceCitation: cadRoll?.sourceCitation ?? owner?.sourceCitation, asOfIso: cadRoll?.extractedAt ?? owner?.extractedAt },
+      {
+        sourceCitation: usedRecordForAnyField
+          ? cadRoll?.sourceCitation
+            ? `parcel_record (Hauska retrieval reader), supplementing the county appraisal roll (${cadRoll.sourceCitation})`
+            : "parcel_record (Hauska retrieval reader)"
+          : cadRoll?.sourceCitation ?? owner?.sourceCitation,
+        asOfIso: cadRoll?.extractedAt ?? owner?.extractedAt ?? record?.readAt,
+      },
     );
   });
 
@@ -498,10 +586,32 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
     // persist an honest "checked, found nothing" row carrying an `absence`
     // field, rather than having no row at all — filtering on entityType
     // alone would read that row as a present fact.
-    const districts = atoms.filter(
+    const substrateDistricts = atoms.filter(
       (a): a is SpecialDistrictFactAtomInstance => a.entityType === "special-district-fact" && !a.absence,
     );
-    if (districts.length === 0) {
+
+    // P152-RAILS item 7: the reader's specialDistricts rail wins when it
+    // serves "record" for this parcel -- the SAME precedence every other
+    // rail in this program applies (R-6). The substrate TCEQ atoms are never
+    // discarded: when they name a district the reader's list does not,
+    // that's reported on `substrateOnlyDistricts`, not silently dropped
+    // (dispatch item 7: "a disagreement... is reported... not resolved
+    // here").
+    const recordDistrictNames = recordSpecialDistrictNames(record?.rails.specialDistricts);
+    if (recordDistrictNames && recordDistrictNames.length > 0) {
+      const substrateNames = substrateDistricts.map((d) => d.districtName).filter((n): n is string => !!n);
+      const recordSet = new Set(recordDistrictNames.map((n) => n.trim().toLowerCase()));
+      const substrateOnly = substrateNames.filter((n) => !recordSet.has(n.trim().toLowerCase()));
+      return present<SpecialDistrictFacts>(
+        {
+          districts: recordDistrictNames.map((districtName) => ({ districtName })),
+          ...(substrateOnly.length > 0 ? { substrateOnlyDistricts: substrateOnly } : {}),
+        },
+        { sourceCitation: "parcel_record (Hauska retrieval reader)", asOfIso: record?.readAt },
+      );
+    }
+
+    if (substrateDistricts.length === 0) {
       // An absence-carrying row means the source RAN and found nothing. No row
       // at all means nothing ever looked. Same empty list, opposite meanings,
       // and collapsing them is the absent/zero/unmeasured error directly.
@@ -518,7 +628,9 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
             "District membership is unknown, not absent. Confirm with the county tax office.",
           );
     }
-    return present<SpecialDistrictFacts>({ districts: districts.map((d) => ({ districtName: d.districtName, districtType: d.districtType })) });
+    return present<SpecialDistrictFacts>({
+      districts: substrateDistricts.map((d) => ({ districtName: d.districtName, districtType: d.districtType })),
+    });
   });
 
   const wellsPipelines = safeSection<WellsPipelinesFacts>("wellsPipelines", () => {
@@ -788,10 +900,19 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
     );
   });
 
+  // P152-RAILS item 4: composed from the reader's cityLimits rail when it
+  // serves "record" for this parcel -- replacing the constant every parcel
+  // in every county previously carried (report-model.ts:791-796 before this
+  // lane; deleted per the wave-3 verify doc A2). "unresolved" remains the
+  // honest default when no recordReader was supplied, the fetch failed, or
+  // the rail is not yet slated "record".
+  const cityLimits = recordCityLimitsDisposition(record?.rails.cityLimits);
   const jurisdiction: JurisdictionFacts = {
     countyFips: geometry.status === "present" ? geometry.model.summary.countyFips : null,
     countyName: geometry.status === "present" ? geometry.model.summary.countyName : undefined,
-    cityLimitsStatus: "unresolved",
+    cityLimitsStatus: cityLimits?.status ?? "unresolved",
+    ...(cityLimits?.cityName ? { cityName: cityLimits.cityName } : {}),
+    ...(cityLimits ? { cityLimitsSourceCitation: `parcel_record (${cityLimits.source})` } : {}),
     etjStatus: "unresolved",
   };
 
@@ -915,6 +1036,8 @@ export interface ComposeParcelReportOptions extends Omit<AuthorParcelSitePlanExp
   factResolvers?: ParcelReportFactResolvers;
   dischargeExitPoint?: { lat: number; lng: number };
   dischargeResolver?: DischargePointResolver;
+  /** P152-RAILS: threaded straight through to composeParcelReportFacts — see its own option doc. */
+  recordReader?: RecordReaderClient;
   /** Omit entirely to skip drainage composition (absent, zero IO cost) —
    * the default for every caller that has not asked for it. */
   drainage?: { runWhenStale?: boolean; staleAfterMs?: number } & Omit<
@@ -1031,6 +1154,7 @@ export async function composeParcelReport(options: ComposeParcelReportOptions): 
     drainage: drainageResult.state,
     centroid,
     whoServes: options.whoServes,
+    ...(options.recordReader ? { recordReader: options.recordReader } : {}),
     dischargeExitPoint,
     dischargeResolver: options.dischargeResolver,
     ...(dischargeUnavailableReason ? { dischargeUnavailableReason } : {}),

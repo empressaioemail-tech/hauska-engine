@@ -153,6 +153,12 @@ export {
   type ResolveParcelDrainageOptions,
   type ResolveParcelDrainageResult,
 } from "./report-model.js";
+export {
+  recordReaderFromEnv,
+  type RecordReaderClient,
+  type ParcelRecordResponse,
+  type ParcelRecordRail,
+} from "./parcel-record-reader-client.js";
 
 export {
   SITE_PLAN_MANIFEST,

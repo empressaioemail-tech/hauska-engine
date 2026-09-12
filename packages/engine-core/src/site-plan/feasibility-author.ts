@@ -9,6 +9,7 @@ import {
   type ComposeParcelReportOptions,
   type ReadableTerrainArtifactStore,
 } from "./report-model.js";
+import type { RecordReaderClient } from "./parcel-record-reader-client.js";
 import { emitPdfFeasibility, type PdfFeasibilityResult } from "./pdf/feasibility.js";
 import { generateFeasibilityNarrative } from "./narrative-generator.js";
 import {
@@ -94,6 +95,8 @@ export interface AuthorParcelFeasibilityExportOptions
    * should not, to stay off the network — see report-model.ts's module doc).
    */
   drainage?: ComposeParcelReportOptions["drainage"];
+  /** P152-RAILS: the Hauska retrieval reader — see report-model.ts's ComposeParcelReportFactsOptions.recordReader doc. Omit to skip (honest fallback to the substrate atoms, never a blocking failure). */
+  recordReader?: RecordReaderClient;
 }
 
 export interface AuthorParcelFeasibilityExportResult {
