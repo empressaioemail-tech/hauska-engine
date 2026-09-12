@@ -19,9 +19,11 @@ import path from "node:path";
 
 import {
   applyWriterPathEnv,
+  refusePooler,
   requireWriterEnv,
   resolveWriterJob,
 } from "./atoms-writer-allowlist.mjs";
+import { resolveWriterTargetStores } from "./writer-target-env.mjs";
 
 export {
   COUNTY_REQUIRED,
@@ -37,6 +39,7 @@ export {
   resolveWriterSelection,
   writerJobRunScope,
 } from "./atoms-writer-allowlist.mjs";
+export { resolveWriterTargetStores } from "./writer-target-env.mjs";
 
 function printRefuse(err) {
   console.error(
@@ -56,16 +59,33 @@ async function main() {
     process.exit(2);
   }
 
-  const { writer, county, rest, runScope } = resolved;
-  console.log(JSON.stringify({ event: "atoms-writer.run-scope", ...runScope }));
+  const { writer, county, target, rest, runScope } = resolved;
+  console.log(JSON.stringify({ event: "atoms-writer.run-scope", ...runScope, target: target ?? null }));
 
-  const urls = requireWriterEnv(process.env);
+  // P-169: --target is optional and additive. Present -> resolve the
+  // staging/production store pair and use it. Absent -> read
+  // DATABASE_URL/CORTEX_DATABASE_URL directly, exactly as before this
+  // change, so an execution that never passes --target (e.g. the
+  // already-deployed factory-atoms-cad job, if ever rebuilt) is unaffected.
+  let atomsUrl;
+  let sourceUrl;
+  if (target) {
+    const stores = resolveWriterTargetStores(process.env, target);
+    refusePooler(stores.DATABASE_URL, stores.varNames.atoms);
+    refusePooler(stores.CORTEX_DATABASE_URL, stores.varNames.source);
+    atomsUrl = stores.DATABASE_URL;
+    sourceUrl = stores.CORTEX_DATABASE_URL;
+  } else {
+    const urls = requireWriterEnv(process.env);
+    atomsUrl = urls.atomsUrl;
+    sourceUrl = urls.sourceUrl;
+  }
   const childEnv = applyWriterPathEnv(
     {
       ...process.env,
-      DATABASE_URL: urls.atomsUrl,
-      SUBSTRATE_DATABASE_URL: urls.atomsUrl,
-      CORTEX_DATABASE_URL: urls.sourceUrl,
+      DATABASE_URL: atomsUrl,
+      SUBSTRATE_DATABASE_URL: atomsUrl,
+      CORTEX_DATABASE_URL: sourceUrl,
     },
     writer,
   );

@@ -117,6 +117,24 @@ describe("atoms-writer-job allowlist selection", () => {
     expect(flags.county).toBe("48021");
   });
 
+  it("--target is optional (P-169): absent stays null, present resolves, and it never lands in rest/childArgs", () => {
+    const absent = parseWriterJobFlags(["--writer=building-footprint", "--county=48453"]);
+    expect(absent.target).toBeNull();
+    expect(absent.rest).toEqual([]);
+
+    const present = parseWriterJobFlags([
+      "--writer=building-footprint",
+      "--county=48453",
+      "--target=staging",
+    ]);
+    expect(present.target).toBe("staging");
+    expect(present.rest).toEqual([]);
+
+    const resolved = resolveWriterJob(["--writer=building-footprint", "--county=48453", "--target=staging"]);
+    expect(resolved.target).toBe("staging");
+    expect(resolved.writer.id).toBe("building-footprint");
+  });
+
   it("WRITER_NAME is an explicit allowlist key, not a CAD default", () => {
     const resolved = resolveWriterJob(["--county=48021"], { WRITER_NAME: "setback" });
     expect(resolved.writer.id).toBe("setback");

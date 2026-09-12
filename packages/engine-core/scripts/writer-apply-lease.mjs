@@ -31,6 +31,37 @@ export function refuseApplyWithoutRunId(event, apply, runId) {
   return true;
 }
 
+export const LAPTOP_WRITE_FROZEN_MESSAGE =
+  "--apply is Cloud Run Job only (no break-glass, 2026-09-12 ruling: " +
+  "_decisions/2026-09-12_loaders_get_cloud_jobs_no_break_glass.md, P-169). " +
+  "CLOUD_RUN_JOB is unset — this process is not running inside a Cloud Run Job execution.";
+
+/**
+ * P-169 / A-132: a real --apply requires running inside a Cloud Run Job.
+ * CLOUD_RUN_JOB is the Cloud Run Jobs platform's own environment marker —
+ * set automatically on every job execution, never something a caller's
+ * flag can supply — the same class of detection hauska-factory's own
+ * FACTORY_CLOUD gate uses (control/runs.mjs executionIdentity). Unlike
+ * refuseApplyWithoutRunId (which only requires *a* --run-id string, the
+ * gap the 2026-09-07 no-execution-log write exploited per P-171), this
+ * checks the process's actual execution environment, not a caller-supplied
+ * argument. Exported here so every writer sharing this module CAN adopt
+ * it without duplicating the check; P-169 wires it into
+ * write-building-footprint-county.mjs only — the other three writers
+ * (well-fact, utility-easement, setback) are a different lane's scope.
+ */
+export function refuseApplyOutsideCloudRunJob(event, apply, env = process.env) {
+  if (!apply || env.CLOUD_RUN_JOB) return false;
+  console.error(
+    JSON.stringify({
+      event,
+      code: "LAPTOP_WRITE_FROZEN",
+      message: LAPTOP_WRITE_FROZEN_MESSAGE,
+    }),
+  );
+  return true;
+}
+
 export function railLeaseArgs({ entityType, countyFips, runId, holderFallback }) {
   if (entityType === "cad-parcel-roll") {
     throw new Error(

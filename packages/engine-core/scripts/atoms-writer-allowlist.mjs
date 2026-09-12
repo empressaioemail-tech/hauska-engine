@@ -73,10 +73,13 @@ export function requireWriterEnv(env = process.env) {
 /**
  * Parse --name=value and --name value. Writer name from --writer or WRITER_NAME.
  * Neither is a CAD default. County is parsed here so equals-form cannot be dropped.
+ * --target (P-169) is OPTIONAL: absent means "read DATABASE_URL / CORTEX_DATABASE_URL
+ * directly, unchanged" (see writer-target-env.mjs header for why this stays additive).
  */
 export function parseWriterJobFlags(argv, env = {}) {
   let writer = null;
   let county = null;
+  let target = null;
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -88,6 +91,10 @@ export function parseWriterJobFlags(argv, env = {}) {
       county = String(argv[++i] ?? "").trim();
     } else if (a.startsWith("--county=")) {
       county = a.slice("--county=".length).trim();
+    } else if (a === "--target") {
+      target = String(argv[++i] ?? "").trim();
+    } else if (a.startsWith("--target=")) {
+      target = a.slice("--target=".length).trim();
     } else {
       rest.push(a);
     }
@@ -98,7 +105,8 @@ export function parseWriterJobFlags(argv, env = {}) {
   }
   if (writer === "") writer = null;
   if (county === "") county = null;
-  return { writer, county, rest };
+  if (target === "") target = null;
+  return { writer, county, target, rest };
 }
 
 /** Unknown or absent writer name refuses. Never defaults to CAD. */
@@ -153,5 +161,5 @@ export function resolveWriterJob(argv, env = {}) {
   const writer = resolveWriterSelection(flags.writer);
   const county = requireCountyFips(flags.county);
   const runScope = writerJobRunScope({ writer, county });
-  return { writer, county, rest: flags.rest, runScope };
+  return { writer, county, target: flags.target, rest: flags.rest, runScope };
 }

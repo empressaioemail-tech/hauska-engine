@@ -1,0 +1,78 @@
+# P-169 / A-132 (_decisions/2026-09-12_loaders_get_cloud_jobs_no_break_glass.md):
+# a NEW Cloud Run Job for the shared atoms-writer image, us-east4.
+#
+# Deliberately a SEPARATE job from the already-deployed `factory-atoms-cad`
+# (built from this same Dockerfile.atoms-writer, baked to
+# --args=--writer=cad-parcel-roll, production secrets only, no --target and
+# no CLOUD_RUN_JOB-checked LAPTOP_WRITE_FROZEN gate) rather than a
+# redeploy over it: P-171 is still investigating that job's 2026-09-07
+# write-with-no-execution-log history, and AGENT_CONTRACT section 5 warns
+# against disturbing a resource another in-flight investigation is reading.
+# This job carries the P-169 additions (an optional --target selector, the
+# real environment-marker LAPTOP_WRITE_FROZEN check) and is left
+# unspecialized: no --writer is baked, so every execution names its own
+# writer, county and target, e.g.:
+#
+#   gcloud builds submit --config=cloudbuild.atoms-writer-p169.yaml --project=hauska-prod-497015
+#
+#   dry run (building-footprint, staging target env selected but nothing written):
+#     gcloud run jobs execute hauska-engine-atoms-writer --project=hauska-prod-497015 \
+#       --region=us-east4 --wait --args=--writer=building-footprint,--county=48453,--target=staging
+#
+#   apply (staging, CP2 pilot only — leaves the atoms_writer_lease_v2 row + a real write):
+#     ...,--args=--writer=building-footprint,--county=48453,--target=staging,--apply,--run-id=<factory-runs-row-id>
+#
+# A laptop run of atoms-writer-job.mjs with --apply refuses LAPTOP_WRITE_FROZEN
+# (write-building-footprint-county.mjs, via writer-apply-lease.mjs) before any
+# lease is taken — CLOUD_RUN_JOB is set by the Cloud Run Jobs platform itself,
+# never by a caller-supplied flag.
+substitutions:
+  _REGION: "us-east4"
+  _IMAGE: "us-east4-docker.pkg.dev/hauska-prod-497015/hauska-factory/atoms-writer"
+  _IMAGE_TAG: "p169"
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID
+      - -f
+      - Dockerfile.atoms-writer
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID"]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        DIGEST="$$(gcloud artifacts docker images describe ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID --format='value(image_summary.fully_qualified_digest)')"
+        case "$$DIGEST" in
+          *@sha256:*) ;;
+          *) echo "REFUSE: describe did not return a digest: $$DIGEST" >&2; exit 2 ;;
+        esac
+        echo "pinning hauska-engine-atoms-writer to $$DIGEST"
+
+        gcloud run jobs deploy hauska-engine-atoms-writer \
+          --project=hauska-prod-497015 \
+          --region=${_REGION} \
+          --image="$$DIGEST" \
+          --task-timeout=21600 \
+          --max-retries=0 \
+          --memory=4Gi \
+          --cpu=2 \
+          --command=pnpm,--filter,@hauska-engine/engine-core,exec,tsx,scripts/atoms-writer-job.mjs \
+          --set-secrets=DATABASE_URL=ATOMS_DATABASE_URL:latest,SUBSTRATE_DATABASE_URL=ATOMS_DATABASE_URL:latest,CORTEX_DATABASE_URL=SOURCE_DATABASE_URL:latest,STAGING_HAUSKA_MCP_URL=STAGING_HAUSKA_MCP_URL:latest,PRODUCTION_HAUSKA_MCP_URL=PRODUCTION_HAUSKA_MCP_URL:latest,STAGING_NEONDB_URL=STAGING_NEONDB_URL:latest,PRODUCTION_NEONDB_URL=PRODUCTION_NEONDB_URL:latest \
+          --set-env-vars=IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION}
+
+images:
+  - ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+timeout: 3600s

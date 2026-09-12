@@ -7,8 +7,10 @@ import { describe, expect, it } from "vitest";
 import {
   APPLY_LEASE_MESSAGE,
   consumeRunIdArg,
+  LAPTOP_WRITE_FROZEN_MESSAGE,
   persistRailAtoms,
   railLeaseArgs,
+  refuseApplyOutsideCloudRunJob,
   refuseApplyWithoutRunId,
 } from "./writer-apply-lease.mjs";
 
@@ -79,6 +81,17 @@ describe("writer-apply-lease helpers", () => {
         holderFallback: "no",
       }),
     ).toThrow(/cad-parcel-roll/);
+  });
+
+  it("refuseApplyOutsideCloudRunJob (P-169): refuses only a real apply attempt with CLOUD_RUN_JOB unset", () => {
+    expect(refuseApplyOutsideCloudRunJob("x.refused", true, {})).toBe(true);
+    expect(refuseApplyOutsideCloudRunJob("x.refused", true, { CLOUD_RUN_JOB: "" })).toBe(true);
+    expect(
+      refuseApplyOutsideCloudRunJob("x.refused", true, { CLOUD_RUN_JOB: "hauska-engine-atoms-writer" }),
+    ).toBe(false);
+    // Falsifier: a dry run (apply=false) must never refuse, even with CLOUD_RUN_JOB unset —
+    // dry-runs are slot-free and parallel per AGENT_CONTRACT section 3.
+    expect(refuseApplyOutsideCloudRunJob("x.refused", false, {})).toBe(false);
   });
 
   it("persistRailAtoms refuses a missing lease and threads a present one", async () => {
@@ -166,6 +179,63 @@ describe("four writers: --apply without --run-id is LEASE_REQUIRED before planni
     expect(leaseAt).toBeGreaterThan(-1);
     expect(holdAt).toBeGreaterThan(leaseAt);
     expect(planAt).toBeGreaterThan(holdAt);
+  });
+
+  it("LAPTOP_WRITE_FROZEN precedes poolUrl in write-building-footprint-county.mjs source (P-169)", () => {
+    const src = readFileSync(path.join(here, "write-building-footprint-county.mjs"), "utf8");
+    // Match CALL sites (identifier immediately followed by "("), not the
+    // import statement — the import list's alphabetical order otherwise
+    // shadows the real call order and this assertion would pass or fail
+    // for the wrong reason.
+    const runIdRefuseAt = src.indexOf("refuseApplyWithoutRunId(");
+    const cloudRunRefuseAt = src.indexOf("refuseApplyOutsideCloudRunJob(");
+    const poolAt = src.indexOf("const poolUrl");
+    expect(runIdRefuseAt).toBeGreaterThan(-1);
+    expect(cloudRunRefuseAt).toBeGreaterThan(-1);
+    expect(poolAt).toBeGreaterThan(-1);
+    expect(runIdRefuseAt).toBeLessThan(cloudRunRefuseAt);
+    expect(cloudRunRefuseAt).toBeLessThan(poolAt);
+  });
+
+  it("write-building-footprint-county.mjs: --apply with --run-id but no CLOUD_RUN_JOB refuses LAPTOP_WRITE_FROZEN, not LEASE_REQUIRED (falsifier: a laptop apply with a fabricated --run-id would otherwise pass, exactly the 2026-09-07 / P-171 gap)", () => {
+    const r = spawnSync(
+      process.execPath,
+      [
+        tsxCli,
+        path.join(here, "write-building-footprint-county.mjs"),
+        "--apply",
+        "--county=48021",
+        "--run-id=row-1",
+      ],
+      { env: spawnEnv({ BUILDING_FOOTPRINT_PATH: "1" }), encoding: "utf8" },
+    );
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("LAPTOP_WRITE_FROZEN");
+    expect(r.stderr).toContain(LAPTOP_WRITE_FROZEN_MESSAGE);
+    expect(r.stderr).not.toContain("LEASE_REQUIRED");
+    expect(r.stdout).not.toMatch(/dry-run-prediction|\.plan\b|atomsBuilt/);
+  });
+
+  it("write-building-footprint-county.mjs: the SAME call with CLOUD_RUN_JOB set clears both apply gates (falsifier: the new gate over-refusing a legitimate job execution) and fails later, on the missing store connection instead", () => {
+    const r = spawnSync(
+      process.execPath,
+      [
+        tsxCli,
+        path.join(here, "write-building-footprint-county.mjs"),
+        "--apply",
+        "--county=48021",
+        "--run-id=row-1",
+      ],
+      {
+        env: spawnEnv({ BUILDING_FOOTPRINT_PATH: "1", CLOUD_RUN_JOB: "hauska-engine-atoms-writer" }),
+        encoding: "utf8",
+      },
+    );
+    expect(r.stderr).not.toContain("LEASE_REQUIRED");
+    expect(r.stderr).not.toContain("LAPTOP_WRITE_FROZEN");
+    // Neither apply gate fired; it fails later for an unrelated, expected reason
+    // (no CORTEX_DATABASE_URL/TXGIO_DATABASE_URL/DATABASE_URL in this test env).
+    expect(r.stderr).toContain("FATAL");
   });
 
   it("setback --apply with --run-id still refuses SETBACK_APPLY_HELD", () => {
