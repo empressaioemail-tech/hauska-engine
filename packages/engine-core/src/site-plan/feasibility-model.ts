@@ -90,10 +90,21 @@ export function absent<T extends object>(
 export interface JurisdictionFacts {
   countyFips: string | null;
   countyName?: string;
-  /** No city-limits or ETJ atom type exists in this engine today (gap matrix
-   * row 35: no adapter). Always the honest three-state "unresolved" per the
-   * approved spec — never fabricated, never silently omitted. */
-  cityLimitsStatus: "unresolved";
+  /**
+   * P152-RAILS (OPS-23 P-152 lane 3, 2026-09-12): composed from the Hauska
+   * retrieval service's `cityLimits` rail (`GET /property-nodes/:id/record`)
+   * when that rail serves `"record"` for this parcel — the SAME reader
+   * hauska-map's Property Explorer panel composes `cityLimitsFact` from
+   * (P152-PANEL). "unresolved" remains the honest default when no
+   * `recordReader` option was supplied, the fetch failed, or the rail is not
+   * yet slated `"record"` for this county — never fabricated, never
+   * silently omitted. No engine ETJ source exists (no rail carries it
+   * either) — `etjStatus` stays the literal "unresolved" always.
+   */
+  cityLimitsStatus: "unresolved" | "incorporated" | "unincorporated";
+  cityName?: string;
+  /** Set only when cityLimitsStatus came from the reader, not the "unresolved" default. */
+  cityLimitsSourceCitation?: string;
   etjStatus: "unresolved";
 }
 
@@ -148,6 +159,18 @@ export interface SpecialDistrictFacts {
     districtName?: string;
     districtType?: string;
   }>;
+  /**
+   * P152-RAILS (OPS-23 P-152 lane 3): district names present in the engine's
+   * OWN substrate `special-district-fact` (TCEQ) atoms but NOT in
+   * `districts` above, when `districts` came from the Hauska retrieval
+   * reader's `specialDistricts` rail instead. Two independently maintained
+   * stores that can genuinely disagree (found live, F17: "Lake Pointe MUD"
+   * on the record vs. "West Travis County MUD 3" in the substrate atoms for
+   * 48453:474034) — reported here, not silently reconciled. Undefined when
+   * `districts` itself came from the substrate atoms (no reader data to
+   * disagree with) or when both stores agree.
+   */
+  substrateOnlyDistricts?: ReadonlyArray<string>;
 }
 
 // ── Section 8: wells and pipelines ──────────────────────────────────────

@@ -24,6 +24,7 @@ import {
   authorParcelSitePlanExport,
   createCountyHydrographyDischargeResolver,
   createElectricOnlyWhoServesResolver,
+  recordReaderFromEnv,
 } from "@hauska-engine/engine-core/site-plan";
 import {
   GcsTerrainArtifactStore,
@@ -711,6 +712,12 @@ export function buildParcelTerrainRoutes(
         narrativeWebSearch: body.webSearch === true,
         narrativeGenerate: body.narrative,
         factResolvers: LIVE_PARCEL_REPORT_FACT_RESOLVERS,
+        // P152-RAILS: recordReaderFromEnv() returns undefined (honest no-op,
+        // same contract as narrativeSectionFromEnv above) unless
+        // RETRIEVAL_API_URL/RETRIEVAL_API_KEY are mounted -- NOT true on
+        // hauska-engine-api in production as of this lane's close. See the
+        // close's leave_behind for the exact mount command.
+        recordReader: recordReaderFromEnv(),
         resolver,
         setback,
         storage,

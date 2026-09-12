@@ -185,19 +185,33 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
       factOrChip("County", countyDisplayName(facts.jurisdiction.countyName) ?? countyDisplayName(facts.jurisdiction.countyFips), {
         absentReason: REASON.noCountyName,
       }),
-      // ONE row, and a real absence. This was two rows both printing the
-      // pseudo-value "Unresolved" — a non-empty string, so `factOrChip`
-      // rendered it as a FINDING and silently dropped the reason. Two
-      // identical negatives stacked, neither saying why. City limits and ETJ
-      // come from the same missing adapter and fail together, so they are one
-      // fact with one reason and one consequence.
-      factOrChip("City limits and ETJ", undefined, {
-        absentReason:
-          "No city-limits or ETJ boundary source is wired for this county yet, so annexation status is unverified.",
+      // P152-RAILS (OPS-23 P-152 lane 3, 2026-09-12): split back into two
+      // rows. They used to fail together (one missing adapter, one shared
+      // reason) — that stopped being true the moment `cityLimitsStatus` got
+      // a real source (the Hauska retrieval reader's `cityLimits` rail,
+      // report-model.ts). City limits can now be a genuine finding while ETJ
+      // remains honestly unverified (no ETJ rail exists on ANY path today);
+      // printing them as one fact would misrepresent a resolved city-limits
+      // finding as an unresolved pair.
+      facts.jurisdiction.cityLimitsStatus === "unresolved"
+        ? factOrChip("City limits", undefined, {
+            absentReason: "No city-limits boundary source is wired for this county yet, so annexation status is unverified.",
+          })
+        : factOrChip(
+            "City limits",
+            facts.jurisdiction.cityLimitsStatus === "incorporated"
+              ? `Incorporated${facts.jurisdiction.cityName ? ` (${facts.jurisdiction.cityName})` : ""}`
+              : "Unincorporated",
+            { source: facts.jurisdiction.cityLimitsSourceCitation },
+          ),
+      factOrChip("ETJ", undefined, {
+        absentReason: "No ETJ boundary source is wired for this county yet, so extraterritorial-jurisdiction status is unverified.",
       }),
       factOrChip(
         CONSEQUENCE_ROW_LABEL,
-        "Which authority reviews a permit here is not established. Confirm with the county and with any city whose ETJ may reach this parcel before assuming a review path.",
+        facts.jurisdiction.cityLimitsStatus === "unresolved"
+          ? "Which authority reviews a permit here is not established. Confirm with the county and with any city whose ETJ may reach this parcel before assuming a review path."
+          : "ETJ reach beyond the resolved city limits is not established. Confirm with the county and with any city whose ETJ may reach this parcel before assuming a review path.",
       ),
     ],
   });
