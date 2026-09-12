@@ -525,6 +525,25 @@ export function flagBastropChartDisagreement(
  * 1784844239427 = 2026-07-23T22:03:59.427Z). This constant was dead — any
  * caller that actually queried it (none do today; it is cited but not
  * fetched) would have gotten this same 400.
+ *
+ * IMPORTANT, checked explicitly (adversarial review, 2026-09-12): this
+ * layer carries NO `Ordinance_`, `Ordinance_Link`, or `OrdinanceLink`
+ * field of its own — live-verified via `?f=json` on THIS url; its real
+ * fields are OBJECTID, CALC_ACRE, prop_id, ParcelInfo, ZoneType,
+ * ZoneTypeClass, ZoneDesc, TypicalUses, MinimumLotSize, FrontSetback,
+ * SideSetback, RearSetback, CornerSideSetbacks, AccessoryStructSetback,
+ * HighwayCorridorSetback, MaxBuildingHeight, MinLotWidth,
+ * MaxImpervisionCoverage, ParkingRequirements, SFHA, PDD_doc_ord,
+ * Shape__Area, Shape__Length. `Ordinance_` is a LAYER-23 field
+ * (`Parcels_One_Click/FeatureServer/23`) only — do not carry it over to a
+ * query against THIS url; `outFields=Ordinance_` against this layer 400s
+ * exactly like `Ordinance_Link` did (reproduced live). No code here does
+ * that (`bastropLayer83SecondSourceDisclosure` below cites this layer's
+ * own URL as `citation_url`, never an ordinance number sourced from it —
+ * this layer has none to source), and
+ * `bastropPerParcelRecordLiveFieldCheck.test.ts` now asserts both facts
+ * so a future edit that tries to fetch an ordinance field from layer 83
+ * fails loudly instead of silently.
  */
 export const BASTROP_LAYER_83_REVISIONS_URL =
   "https://services7.arcgis.com/qOeXJdBtGknaCJC4/arcgis/rest/services/Zoned_Parcels/FeatureServer/83";

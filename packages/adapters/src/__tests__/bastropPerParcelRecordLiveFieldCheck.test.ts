@@ -26,6 +26,7 @@ import { describe, expect, it } from "vitest";
 import {
   BASTROP_LAYER_83_REVISIONS_URL,
   BASTROP_PARCELS_ONE_CLICK_LAYER_23,
+  bastropLayer83SecondSourceDisclosure,
 } from "../local/setbacks/bastrop-per-parcel-record.js";
 
 /** The exact outFields list `fetchBastropPerParcelSetbackRecord` sends live. */
@@ -95,5 +96,42 @@ describe("Bastrop layer 23 / layer 83 — live field-list check (network require
     expect(errorEnv, `layer 83 URL is dead: ${JSON.stringify(errorEnv)}`).toBeUndefined();
     expect((meta as { id?: number }).id).toBe(83);
     expect((meta as { name?: string }).name).toBe("Zoned_Parcels_Revisions_Clip");
+
+    // Adversarial-review lock (2026-09-12): layer 83 carries NO
+    // Ordinance_/Ordinance_Link/OrdinanceLink field of its own. Confirmed
+    // both ways: (1) it is absent from this layer's own field list, and
+    // (2) requesting it in outFields against THIS url 400s exactly like
+    // the original Ordinance_Link bug did against layer 23 -- reviewer
+    // reproduced this live and it's locked in here so nobody "fixes"
+    // layer 23's outFields bug by pointing it at layer 83 instead.
+    const fieldNames = ((meta as { fields?: Array<{ name?: string }> }).fields ?? []).map((f) => f.name);
+    expect(fieldNames).not.toContain("Ordinance_");
+    expect(fieldNames).not.toContain("Ordinance_Link");
+    expect(fieldNames).not.toContain("OrdinanceLink");
+  });
+
+  it("requesting Ordinance_ in outFields against layer 83 (not layer 23) 400s the whole query -- this repo's code must never do this", async () => {
+    if (!networkReachable) return;
+    const url = new URL(`${BASTROP_LAYER_83_REVISIONS_URL}/query`);
+    url.searchParams.set("where", "1=1");
+    url.searchParams.set("outFields", "Ordinance_");
+    url.searchParams.set("resultRecordCount", "1");
+    url.searchParams.set("returnGeometry", "false");
+    url.searchParams.set("f", "json");
+    let json: unknown;
+    try {
+      json = await getJson(url.toString());
+    } catch (err) {
+      console.warn(`[SKIP: no network] ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const errorEnv = (json as { error?: { message?: string; details?: string[] } }).error;
+    expect(errorEnv, "expected layer 83 to reject Ordinance_ in outFields (it has no such field)").toBeDefined();
+  });
+
+  it("the layer-83 disclosure cites the layer's own URL, never a fabricated ordinance number sourced from a field layer 83 doesn't have", () => {
+    const disclosure = bastropLayer83SecondSourceDisclosure("SF-1");
+    expect(disclosure).toBeDefined();
+    expect(disclosure!.citation_url).toBe(BASTROP_LAYER_83_REVISIONS_URL);
   });
 });
