@@ -32,6 +32,7 @@ import {
 import {
   consumeRunIdArg,
   railLeaseArgs,
+  refuseApplyOutsideCloudRunJob,
   refuseApplyWithoutRunId,
 } from "./writer-apply-lease.mjs";
 
@@ -120,6 +121,12 @@ if (process.env.BUILDING_FOOTPRINT_PATH !== "1") {
 
 const args = parseArgs(process.argv.slice(2));
 if (refuseApplyWithoutRunId("building-footprint-county.refused", args.apply, args.runId)) {
+  process.exit(2);
+}
+// P-169 / A-132: --run-id alone is a caller-supplied string, not proof this
+// process runs inside the job (the exact gap the 2026-09-07 no-execution-log
+// write left open, per P-171). This checks the actual execution environment.
+if (refuseApplyOutsideCloudRunJob("building-footprint-county.refused", args.apply)) {
   process.exit(2);
 }
 
