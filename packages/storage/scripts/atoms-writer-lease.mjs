@@ -7,7 +7,11 @@
  *   DATABASE_URL=... node packages/storage/scripts/atoms-writer-lease.mjs \
  *     take --entity-type=cad-parcel-roll --county=48029 --label=loader --run-id=UUID
  *   DATABASE_URL=... node packages/storage/scripts/atoms-writer-lease.mjs \
- *     release --token=UUID
+ *     release --token=UUID [--release-reason=normal|expired|killed] [--released-by=label]
+ *
+ * P-173: release also closes the matching atoms_writer_lease_history row
+ * (taken by the same take call above). --release-reason defaults to
+ * "normal"; --released-by defaults to --label.
  */
 
 import postgres from "postgres";
@@ -31,6 +35,8 @@ function parseArgs(argv) {
     database: null,
     ttlSec: 900,
     v1Holder: false,
+    releaseReason: "normal",
+    releasedBy: null,
   };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
@@ -52,6 +58,10 @@ function parseArgs(argv) {
     else if (a === "--ttl-sec") out.ttlSec = Number(argv[++i] || 900);
     else if (a.startsWith("--ttl-sec=")) out.ttlSec = Number(a.slice("--ttl-sec=".length));
     else if (a === "--holder" || a.startsWith("--holder=")) out.v1Holder = true;
+    else if (a === "--release-reason") out.releaseReason = String(argv[++i] || "normal").trim();
+    else if (a.startsWith("--release-reason=")) out.releaseReason = a.slice("--release-reason=".length).trim();
+    else if (a === "--released-by") out.releasedBy = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--released-by=")) out.releasedBy = a.slice("--released-by=".length).trim() || null;
     else rest.push(a);
   }
   out.cmd = rest[0] ?? null;
@@ -96,19 +106,33 @@ try {
       console.error("FATAL: --token required for v2 release.");
       process.exitCode = 1;
     } else {
-      await releaseScopedLease(sql, {
-        holder_token: args.token,
-        holder_label: args.label ?? "",
-        run_id: args.runId ?? "",
-        scope: {
-          scope_type: "write",
-          entity_type: args.entityType ?? "unknown",
-          county_fips: args.county ?? "00000",
+      await releaseScopedLease(
+        sql,
+        {
+          holder_token: args.token,
+          holder_label: args.label ?? "",
+          run_id: args.runId ?? "",
+          scope: {
+            scope_type: "write",
+            entity_type: args.entityType ?? "unknown",
+            county_fips: args.county ?? "00000",
+          },
+          expires: new Date().toISOString(),
+          stolen_from: null,
         },
-        expires: new Date().toISOString(),
-        stolen_from: null,
-      });
-      console.log(JSON.stringify({ event: "atoms-writer-lease.released", token: args.token }));
+        {
+          released_by: args.releasedBy ?? args.label ?? undefined,
+          release_reason: args.releaseReason,
+        },
+      );
+      console.log(
+        JSON.stringify({
+          event: "atoms-writer-lease.released",
+          token: args.token,
+          releaseReason: args.releaseReason,
+          releasedBy: args.releasedBy ?? args.label ?? null,
+        }),
+      );
     }
   } else if (args.cmd === "heartbeat" || args.cmd === "status") {
     const err = new Error("v1 writer lease is retired");
