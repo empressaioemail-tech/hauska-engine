@@ -4,10 +4,13 @@ import {
   RESIDUAL_UNRESOLVED_ROWS_SQL,
   RESIDUAL_UNRESOLVED_SQL,
   TABLE,
+  TARGET_ENV_MISSING,
+  TARGET_UNKNOWN,
   fallbackLargestOverlapSql,
   parseCountyList,
   primaryCountSql,
   primaryRetagSql,
+  resolveRetagSourceUrl,
 } from "./retag-building-footprint-county.mjs";
 
 describe("retag-building-footprint-county (P-158 phase 3)", () => {
@@ -55,6 +58,34 @@ describe("retag-building-footprint-county (P-158 phase 3)", () => {
     expect(RESIDUAL_UNRESOLVED_SQL).toMatch(/MATERIALIZED/);
     expect(RESIDUAL_UNRESOLVED_ROWS_SQL).toMatch(/NOT EXISTS/);
     expect(RESIDUAL_UNRESOLVED_ROWS_SQL).toMatch(/MATERIALIZED/);
+  });
+
+  it("resolveRetagSourceUrl reads ONLY the cortex/neondb source pair, never the atoms pair (falsifier: this job's Cloud Run execution refused TARGET_ENV_MISSING naming STAGING_HAUSKA_MCP_URL, a secret this job's spec never grants and should not need, before this fix)", () => {
+    expect(resolveRetagSourceUrl({ STAGING_NEONDB_URL: "postgres://staging-source/db" }, "staging")).toBe(
+      "postgres://staging-source/db",
+    );
+    expect(
+      resolveRetagSourceUrl({ PRODUCTION_NEONDB_URL: "postgres://prod-source/db" }, "production"),
+    ).toBe("postgres://prod-source/db");
+  });
+
+  it("resolveRetagSourceUrl refuses a missing variable by naming it, never falling back across targets", () => {
+    try {
+      resolveRetagSourceUrl({ PRODUCTION_NEONDB_URL: "x" }, "staging");
+      expect.fail("expected TARGET_ENV_MISSING");
+    } catch (err) {
+      expect(err.code).toBe(TARGET_ENV_MISSING);
+      expect(err.missing).toEqual(["STAGING_NEONDB_URL"]);
+    }
+  });
+
+  it("resolveRetagSourceUrl refuses an unknown target", () => {
+    try {
+      resolveRetagSourceUrl({}, "prod");
+      expect.fail("expected TARGET_UNKNOWN");
+    } catch (err) {
+      expect(err.code).toBe(TARGET_UNKNOWN);
+    }
   });
 
   it("the fallback picks the LARGEST overlap area among bbox-adjacent counties, never the first match", () => {

@@ -69,7 +69,41 @@
 import postgres from "postgres";
 
 import { refuseApplyOutsideCloudRunJob } from "./writer-apply-lease.mjs";
-import { resolveWriterTargetStores } from "./writer-target-env.mjs";
+
+export const TARGET_ENV_MISSING = "TARGET_ENV_MISSING";
+export const TARGET_UNKNOWN = "TARGET_UNKNOWN";
+
+// This job only ever reads the cortex/neondb SOURCE store (it corrects a
+// staging-table tag, never mints an atom), so it deliberately does NOT reuse
+// writer-target-env.mjs's resolveWriterTargetStores -- that helper requires
+// BOTH the atoms pair (STAGING_HAUSKA_MCP_URL/PRODUCTION_HAUSKA_MCP_URL) and
+// the source pair present for a target to resolve at all (proven live: the
+// Cloud Run job refused TARGET_ENV_MISSING naming STAGING_HAUSKA_MCP_URL --
+// a secret this job's own spec never grants and should not need to). Naming
+// only the variable this job actually reads keeps its credential footprint
+// to the one store it touches.
+const SOURCE_VAR = Object.freeze({
+  staging: "STAGING_NEONDB_URL",
+  production: "PRODUCTION_NEONDB_URL",
+});
+
+export function resolveRetagSourceUrl(env, target) {
+  if (!(target in SOURCE_VAR)) {
+    const err = new Error(`unknown target: ${String(target)}`);
+    err.code = TARGET_UNKNOWN;
+    throw err;
+  }
+  const varName = SOURCE_VAR[target];
+  const value = env?.[varName];
+  if (typeof value !== "string" || value.trim() === "") {
+    const err = new Error(`target ${target} is missing ${varName}`);
+    err.code = TARGET_ENV_MISSING;
+    err.target = target;
+    err.missing = [varName];
+    throw err;
+  }
+  return value;
+}
 
 export const TABLE = "tx_building_footprint";
 export const BOUNDARY_TABLE = "tx_county_boundary";
@@ -237,8 +271,7 @@ async function main() {
   let cortexUrl;
   if (args.target) {
     try {
-      const stores = resolveWriterTargetStores(process.env, args.target);
-      cortexUrl = stores.CORTEX_DATABASE_URL;
+      cortexUrl = resolveRetagSourceUrl(process.env, args.target);
     } catch (err) {
       refuse(err.code || "TARGET_ENV_MISSING", err.message, { target: args.target });
       return;
