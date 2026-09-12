@@ -25,7 +25,7 @@
 // defense-in-depth); this client never reads or surfaces an owner field.
 
 import { formatSetbackDisplay } from "./setback-not-specified.js"; // VENDOR-PATH-REWRITE (was ../../api/_lib/setback-not-specified)
-import { mapBuildableDisplay } from "./buildable-display-vocab.js"; // VENDOR-PATH-REWRITE (extension added)
+import { mapBuildableDisplay } from "@empressaio/atom-contract/display"; // P-167: no longer vendored; both this file and hauska-map's own baked-facets.ts import the package directly, so this line needs no vendor-path rewrite.
 import type {
   EnvelopeProvenanceRefs,
   SetbackFieldProvenance,
@@ -182,8 +182,14 @@ export interface BakedCardModel {
   // file is separately, substantially stale vs current hauska-map (tracked,
   // not fixed here); this one member was added only so it compiles against
   // the just-synced buildable-display-vocab.ts vendor copy, which can now
-  // return "not-applicable".
-  buildableDisplayKind: // VENDOR-DRIFT-PATCH: added "not-applicable" (see comment above)
+  // return "not-applicable". P-167 (2026-09-12): a second member,
+  // "modelled-figure-withheld", added for the same reason -- mapBuildableDisplay
+  // now comes from @empressaio/atom-contract/display (the file this field's
+  // vendored copy used to mirror never carried P-153's token; see that
+  // lane's close leave_behind) and can return it. Same posture: this local
+  // field widened to admit a value the real function now actually produces,
+  // not a fix to this file's broader drift against hauska-map.
+  buildableDisplayKind: // VENDOR-DRIFT-PATCH: added "not-applicable", then "modelled-figure-withheld" (see comment above)
     | "absent"
     | "loading"
     | "pending"
@@ -191,7 +197,8 @@ export interface BakedCardModel {
     | "buildable-with-area"
     | "declined-consume"
     | "not_specified"
-    | "not-applicable";
+    | "not-applicable"
+    | "modelled-figure-withheld";
   /** Stable cross-surface probe token (map card ↔ inspect ↔ PDF). */
   buildableAgreementToken: string;
   /** Provenance: parcel + land-use source and vintage for the citation line. */

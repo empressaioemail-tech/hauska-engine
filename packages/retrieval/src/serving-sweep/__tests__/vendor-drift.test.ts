@@ -52,11 +52,6 @@ const VENDORED: Array<{
     allowedRewrites: [],
   },
   {
-    file: "buildable-display-vocab.ts",
-    origin: "src/lib/buildable-display-vocab.ts",
-    allowedRewrites: [],
-  },
-  {
     file: "buildable-envelope-types.d.ts",
     origin: "src/lib/buildable-envelope.d.ts",
     allowedRewrites: [],
@@ -69,10 +64,11 @@ const VENDORED: Array<{
         'import { formatSetbackDisplay } from "./setback-not-specified.js"; // VENDOR-PATH-REWRITE (was ../../api/_lib/setback-not-specified)',
         'import { formatSetbackDisplay } from "../../api/_lib/setback-not-specified";',
       ],
-      [
-        'import { mapBuildableDisplay } from "./buildable-display-vocab.js"; // VENDOR-PATH-REWRITE (extension added)',
-        'import { mapBuildableDisplay } from "./buildable-display-vocab";',
-      ],
+      // P-167: mapBuildableDisplay's import line needed a rewrite pair here
+      // only while both sides imported a relative ./buildable-display-vocab
+      // copy under slightly different extensions. Both sides now import
+      // "@empressaio/atom-contract/display" verbatim, so the two lines
+      // match with no declared exception.
       [
         '} from "./buildable-envelope-types.js"; // VENDOR-PATH-REWRITE (was ./buildable-envelope.js; the shim stays a .d.ts, verbatim)',
         '} from "./buildable-envelope.js";',
