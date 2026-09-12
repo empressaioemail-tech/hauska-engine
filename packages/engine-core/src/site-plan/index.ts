@@ -87,7 +87,7 @@ export {
   type BuildableDisplayInput,
   type BuildableDisplayKind,
   type BuildableDisplayVocab,
-} from "./buildable-display-vocab.js";
+} from "@empressaio/atom-contract/display";
 
 export {
   buildDxfSitePlanRequest,
