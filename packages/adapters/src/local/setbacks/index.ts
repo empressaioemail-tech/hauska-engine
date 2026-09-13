@@ -22,6 +22,13 @@
  * Adding a new jurisdiction: add it to `@empressaio/setback-corpus`
  * (see that package's own README), bump the dependency version here, and
  * add its key to `VENDORED_JURISDICTION_KEYS` below.
+ *
+ * 2026-09-13 (P-154 wave 4, share): `resolveMostCurrentSetback` and its
+ * date-basis helpers repointed from this package's own (now-retired)
+ * `./most-current-setback-resolver.js` to the published
+ * `@empressaio/setback-corpus/resolve` subpath — see
+ * `_decisions/2026-09-13_share_the_most_current_setback_resolver.md`. The
+ * algorithm and its public names are unchanged; only the import path moved.
  */
 import { getSetbackTable as getCorpusSetbackTable } from "@empressaio/setback-corpus";
 
@@ -35,7 +42,7 @@ import {
   dateFromTableEffectiveDate,
   resolveMostCurrentSetback,
   type SetbackCandidate,
-} from "./most-current-setback-resolver.js";
+} from "@empressaio/setback-corpus/resolve";
 
 /**
  * The jurisdictions this package actually serves — a curated subset of the

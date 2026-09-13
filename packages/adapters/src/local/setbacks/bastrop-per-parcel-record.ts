@@ -20,7 +20,7 @@ import bastropDevelopmentCode from "./bastrop-development-code.json" with { type
 import {
   parseYearSequenceOrdinanceCitation,
   type SetbackDateBasis,
-} from "./most-current-setback-resolver.js";
+} from "@empressaio/setback-corpus/resolve";
 
 /** Layer 23 — per-parcel setback numbers + Ordinance_Link. */
 export const BASTROP_PARCELS_ONE_CLICK_LAYER_23 =

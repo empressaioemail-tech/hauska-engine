@@ -34,8 +34,10 @@ export interface SetbackDisplayMeta {
   /**
    * P-154 (R-1, most-current-source-wins) — this row's date, read AT
    * SOURCE, and how (see `SetbackDateBasis` in
-   * `most-current-setback-resolver.ts`). `null`/absent means unreadable —
-   * never a placeholder date such as "1970-01-01" or an emit timestamp.
+   * `@empressaio/setback-corpus/resolve`, wave 4; formerly this package's
+   * own now-retired `most-current-setback-resolver.ts`). `null`/absent
+   * means unreadable — never a placeholder date such as "1970-01-01" or an
+   * emit timestamp.
    */
   source_date?: string | null;
   date_basis?: string;
