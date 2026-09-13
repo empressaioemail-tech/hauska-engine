@@ -52,6 +52,15 @@ export type FeasibilityFactState<T> =
  * - `failed-this-run`   a system gap. Never dress this as any of the above;
  *                       it is the only one that means WE failed, and it is
  *                       the one that must never quietly read as "clear".
+ * - `entitlement-required` the data exists and is known to us, but the
+ *                       caller's access tier does not include it (P152-
+ *                       ENTITLEMENT, OPS-23 wave 4, CP1 approved
+ *                       2026-09-13). A commercial/access-control fact, not
+ *                       a data-quality gap — deliberately distinct from
+ *                       `out-of-scope` (a scope decision we made) and from
+ *                       `blocked-at-source` (the source itself lacks it):
+ *                       conflating "you didn't pay for this" with either of
+ *                       those would misstate what is actually true.
  *
  * `clear` and `blocked-at-source` are the pair most easily confused, and the
  * test is coverage: only claim `clear` when the source actually covers this
@@ -63,7 +72,8 @@ export type AbsenceKind =
   | "not-applicable"
   | "out-of-scope"
   | "blocked-at-source"
-  | "failed-this-run";
+  | "failed-this-run"
+  | "entitlement-required";
 
 export function present<T extends object>(
   value: T,
@@ -84,6 +94,53 @@ export function absent<T extends object>(
   consequence?: string,
 ): FeasibilityFactState<T> {
   return { status: "absent", kind, reason, ...(consequence ? { consequence } : {}) };
+}
+
+/**
+ * P152-ENTITLEMENT (OPS-23 wave 4, CP1 approved 2026-09-13). Deliberately
+ * duplicated from `services/engine-api/src/gate-front-context.ts`'s
+ * `GateFrontAccessTier` rather than imported: this package (`engine-core`)
+ * must not depend on the HTTP transport service that happens to sit in
+ * front of it today (`services/engine-api`) — the same "composition layer
+ * must not depend on the presentation layer" rule this file already follows
+ * for `countyNameOrUnresolved` in `report-model.ts`. The four literal values
+ * must stay identical to `GateFrontAccessTier`'s; a caller assigns
+ * `GateFrontAccessTier` values here with no cast because both are the same
+ * closed string-literal union structurally.
+ */
+export type CallerAccessTier =
+  | "public-free"
+  | "public-paid"
+  | "platform-internal"
+  | "tenant-private";
+
+/**
+ * P152-ENTITLEMENT (OPS-23 wave 4, CP1 approved 2026-09-13, Q2). Which
+ * access tiers grant Studio-or-better composition of `parcelOwnership`
+ * (the dollar rails — marketValue/assessedValue/landValue/improvementValue
+ * — and owner info — ownerName/ownerMailingAddress/absenteeOwner). Approved
+ * allowlist: `public-paid` (what both real callers, the Property Explorer
+ * BFF and smartsite-mcp's `export_instrument` feasibility path, already send
+ * for every caller their own local Studio/property-unlock check has already
+ * let through) plus `platform-internal` and `tenant-private` (unexercised by
+ * any live caller as of this date — approved anyway per the CP1 ruling:
+ * "both unused values read as internal/trusted-tenant by design intent...
+ * refusing them would have no security upside and could silently break a
+ * future legitimate caller"). Refuses only `public-free`.
+ *
+ * `tier === undefined` (the option omitted entirely) returns `true` —
+ * PRESENT, this function's pre-gate default — so every existing caller and
+ * unit test that does not pass `callerTier` keeps its prior behavior
+ * unchanged. This is safe in production because the only caller that can
+ * omit it is a test double: the real route
+ * (`services/engine-api/src/routes/parcel-terrain.ts`) always resolves and
+ * passes a concrete tier, since `server.ts`'s top-level middleware already
+ * refuses (401) any request that lacks valid gate-front headers before any
+ * route — including this one — is ever reached.
+ */
+export function parcelOwnershipEntitledForTier(tier: CallerAccessTier | undefined): boolean {
+  if (tier === undefined) return true;
+  return tier !== "public-free";
 }
 
 // ── Section 3: location and jurisdiction ────────────────────────────────

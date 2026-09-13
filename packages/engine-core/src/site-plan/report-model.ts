@@ -42,6 +42,8 @@ import {
   type OpenItem,
   type DischargePointFacts,
   type AbsenceKind,
+  type CallerAccessTier,
+  parcelOwnershipEntitledForTier,
 } from "./feasibility-model.js";
 import type {
   FirmPanelCitation,
@@ -244,6 +246,15 @@ export interface ComposeParcelReportFactsOptions {
    * mounted on hauska-engine-api in production as of this lane's close.
    */
   recordReader?: RecordReaderClient;
+  /**
+   * P152-ENTITLEMENT (OPS-23 wave 4, CP1 approved 2026-09-13). The caller's
+   * resolved access tier, gating the `parcelOwnership` section only (see
+   * `parcelOwnershipEntitledForTier`). Omit to preserve this function's
+   * pre-gate default (present) — every existing caller/test that does not
+   * pass this keeps its prior behavior; the real route always resolves and
+   * passes a concrete value (see that function's own doc for why).
+   */
+  callerTier?: CallerAccessTier;
 }
 
 const JURISDICTION_ACTION_SENTENCE = "Confirm city-limits and ETJ status with the county before proceeding.";
@@ -536,6 +547,18 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
       : null;
 
   const parcelOwnership = safeSection<ParcelOwnershipFacts>("parcelOwnership", () => {
+    // P152-ENTITLEMENT (OPS-23 wave 4, CP1 approved 2026-09-13): checked
+    // FIRST, ahead of every data-availability check below. An unentitled
+    // caller gets "you need to upgrade", never "blocked-at-source" or
+    // "failed-this-run" — those would misstate that the data itself is
+    // unavailable when it may well exist; the caller simply may not see it.
+    if (!parcelOwnershipEntitledForTier(options.callerTier)) {
+      return absent(
+        "entitlement-required",
+        "Studio or Team access (or a property unlock for this parcel) is required to view ownership and valuation.",
+        "Ownership, market value, assessed value, land value and improvement value are withheld pending upgrade.",
+      );
+    }
     if (atomsFetchFailureReason) return absent("failed-this-run", atomsFetchFailureReason);
     const cadRoll = atoms.find((a): a is CadParcelRollAtomInstance => a.entityType === "cad-parcel-roll");
     const owner = atoms.find((a): a is OwnerFactAtomInstance => a.entityType === "owner-fact");
@@ -1065,6 +1088,8 @@ export interface ComposeParcelReportOptions extends Omit<AuthorParcelSitePlanExp
   dischargeResolver?: DischargePointResolver;
   /** P152-RAILS: threaded straight through to composeParcelReportFacts — see its own option doc. */
   recordReader?: RecordReaderClient;
+  /** P152-ENTITLEMENT: threaded straight through to composeParcelReportFacts — see its own option doc. */
+  callerTier?: CallerAccessTier;
   /** Omit entirely to skip drainage composition (absent, zero IO cost) —
    * the default for every caller that has not asked for it. */
   drainage?: { runWhenStale?: boolean; staleAfterMs?: number } & Omit<
@@ -1182,6 +1207,7 @@ export async function composeParcelReport(options: ComposeParcelReportOptions): 
     centroid,
     whoServes: options.whoServes,
     ...(options.recordReader ? { recordReader: options.recordReader } : {}),
+    ...(options.callerTier ? { callerTier: options.callerTier } : {}),
     dischargeExitPoint,
     dischargeResolver: options.dischargeResolver,
     ...(dischargeUnavailableReason ? { dischargeUnavailableReason } : {}),

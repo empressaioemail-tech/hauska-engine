@@ -29,6 +29,10 @@ import {
 import {
   GcsTerrainArtifactStore,
 } from "../terrain/gcs-artifact-store.js";
+import { parcelOwnershipEntitledForTier, type CallerAccessTier } from "@hauska-engine/engine-core/site-plan";
+import { resolveCallerAccessTier } from "../entitlement-gate.js";
+import type { GateFrontContext } from "../gate-front-context.js";
+import type { GateContextPayload } from "../gate-context-verify.js";
 
 const bbox = z.object({
   westLng: z.number(), southLat: z.number(), eastLng: z.number(), northLat: z.number(),
@@ -683,6 +687,17 @@ export function buildParcelTerrainRoutes(
     parcelNodeId: string,
     jobRef: string,
     body: z.infer<typeof feasibilityRefreshBody>,
+    // P152-ENTITLEMENT (OPS-23 wave 4): optional, not because an
+    // unauthenticated caller is an intended production case (server.ts's
+    // top-level middleware already 401s any request with no gate-front
+    // context before this route is ever reached) but because this
+    // function's own pre-existing test doubles construct
+    // buildParcelTerrainRoutes() as a standalone sub-app with no gateFront
+    // middleware at all (feasibility-export-route.test.ts) — `undefined`
+    // preserves composeParcelReportFacts's own documented default
+    // (present) for exactly that harness, never a silent behavior change
+    // for tests that predate this lane.
+    callerTier: CallerAccessTier | undefined,
   ): Promise<void> {
     if (!storage.upsertFeasibilityExportJob) return;
     try {
@@ -718,6 +733,10 @@ export function buildParcelTerrainRoutes(
         // hauska-engine-api in production as of this lane's close. See the
         // close's leave_behind for the exact mount command.
         recordReader: recordReaderFromEnv(),
+        // P152-ENTITLEMENT (OPS-23 wave 4): gates ONLY the parcelOwnership
+        // section (dollar rails + owner info) inside composeParcelReportFacts.
+        // Every other section is unaffected by this value.
+        callerTier,
         resolver,
         setback,
         storage,
@@ -799,8 +818,21 @@ export function buildParcelTerrainRoutes(
       startedAt: new Date().toISOString(),
     });
 
+    // P152-ENTITLEMENT (OPS-23 wave 4): resolved from THIS request's
+    // gate-front context. `c.get("gateFront")` is guaranteed set in
+    // production (server.ts's top-level middleware 401s any request
+    // without valid gate-front headers before any route, this one
+    // included, is ever reached) but is undefined when this sub-app is
+    // built and driven standalone, as feasibility-export-route.test.ts's
+    // pre-existing tests do -- `undefined` there is intentional, not a bug
+    // (see runFeasibilityJob's own parameter doc).
+    const gateFrontForTier = c.get("gateFront") as GateFrontContext | undefined;
+    const callerTier = gateFrontForTier
+      ? resolveCallerAccessTier(gateFrontForTier, c.get("gateContextVerified") as GateContextPayload | undefined)
+      : undefined;
+
     // Deliberately not awaited -- see the CP1 note above the constants.
-    void runFeasibilityJob(parcelNodeId, jobRef, parsed.data);
+    void runFeasibilityJob(parcelNodeId, jobRef, parsed.data, callerTier);
 
     return c.json({
       state: "queued",
@@ -815,6 +847,32 @@ export function buildParcelTerrainRoutes(
     const job = await describeFeasibilityJob(parcelNodeId);
     const atom = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId))
       .find((candidate) => candidate.entityType === "parcel-terrain-model");
+    // P152-ENTITLEMENT (OPS-23 wave 4, CP1 Q4): a typed, always-present
+    // marker so a caller never has to diff which section changed to detect
+    // a refusal -- computed fresh from THIS request's own gate-front
+    // context, not persisted with the job (no storage/schema change; see
+    // this lane's close for why). CAVEAT, stated precisely rather than
+    // silently: the async job (and its rendered PDF bytes) is cached and
+    // shared PER PARCEL, not per caller (P-155) -- on a cache hit this
+    // marker reflects the CURRENT request's own tier correctly, but a
+    // caller reading an artifact an earlier, differently-entitled caller
+    // triggered gets bytes composed under THAT caller's tier. This is safe
+    // for both real callers (Property Explorer BFF, smartsite-mcp) because
+    // each re-checks its own local Studio/property-unlock gate on every
+    // call regardless of this cache, so a less-entitled caller never
+    // reaches this route in the first place; it does not add protection
+    // beyond the already-flagged direct-to-engine bypass gap (CP1 Q5,
+    // escalated to the operator separately).
+    const gateFrontForTier = c.get("gateFront") as GateFrontContext | undefined;
+    const callerTier = gateFrontForTier
+      ? resolveCallerAccessTier(gateFrontForTier, c.get("gateContextVerified") as GateContextPayload | undefined)
+      : undefined;
+    const entitlement = {
+      tier: callerTier,
+      granted: parcelOwnershipEntitledForTier(callerTier),
+      requiredTier: "studio-or-property-unlock" as const,
+      gatedSections: ["parcelOwnership"] as const,
+    };
     if (!job) {
       // `never-requested` is its own answer -- P-155 item 1 -- never
       // reported as `deferred`. A pre-P-155 atom with an artifact already
@@ -827,6 +885,7 @@ export function buildParcelTerrainRoutes(
         state: atom.artifacts["pdf-feasibility"]?.deferred ? "failed" : "ready",
         atom,
         artifacts: { "pdf-feasibility": atom.artifacts["pdf-feasibility"] },
+        entitlement,
       });
     }
     return c.json({
@@ -839,7 +898,7 @@ export function buildParcelTerrainRoutes(
       errorClass: job.errorClass,
       errorMessage: job.errorMessage,
       pollAfterMs: (job.state === "queued" || job.state === "running") ? FEASIBILITY_POLL_AFTER_MS : undefined,
-      ...(job.state === "ready" ? { result: job.resultSummary ?? {} } : {}),
+      ...(job.state === "ready" ? { result: job.resultSummary ?? {}, entitlement } : {}),
       ...(atom && atom.entityType === "parcel-terrain-model"
         ? { atom, artifacts: { "pdf-feasibility": atom.artifacts["pdf-feasibility"] } }
         : {}),

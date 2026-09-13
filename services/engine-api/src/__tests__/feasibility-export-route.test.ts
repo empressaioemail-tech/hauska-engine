@@ -31,6 +31,16 @@ vi.mock("@hauska-engine/engine-core/site-plan", () => ({
   // import fails before any assertion, exactly the failure this file's own
   // comment above already documents for the P-120 R-06 case).
   recordReaderFromEnv: vi.fn(() => undefined),
+  // P152-ENTITLEMENT (OPS-23 wave 4): the GET status route now calls this
+  // unconditionally (construction itself does no network IO, same reason
+  // as the two resolvers above) — the mock must export it or the module
+  // import fails before any assertion, matching this file's own established
+  // pattern for every other unconditionally-constructed dependency. The
+  // route's own gating behavior is exercised for real in
+  // p152-entitlement-gate.test.ts (this repo does not re-import the real
+  // implementation here to keep this file's existing mock-everything
+  // contract intact).
+  parcelOwnershipEntitledForTier: vi.fn((tier: string | undefined) => tier !== "public-free"),
   authorParcelSitePlanExport: vi.fn(),
   authorParcelPropertyDossierExport: vi.fn(),
   authorParcelFeasibilityExport: vi.fn(
@@ -83,7 +93,9 @@ vi.mock("@hauska-engine/engine-core/site-plan", () => ({
 
 import { authorParcelFeasibilityExport } from "@hauska-engine/engine-core/site-plan";
 import { buildParcelTerrainRoutes, type ReadableArtifactStore } from "../routes/parcel-terrain.js";
-import type { Hono } from "hono";
+import { buildApp } from "../server.js";
+import type { EngineApiConfig } from "../config.js";
+import { Hono } from "hono";
 
 const parcelNodeId = "48021:47595";
 
@@ -299,5 +311,150 @@ describe("feasibility-export routes (P-155 async)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.state).toBe("never-requested");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// P152-ENTITLEMENT (OPS-23 wave 4, CP1 approved 2026-09-13). This file's
+// own docstring scopes it to ROUTE CONTRACT concerns with a fully mocked
+// author — real dollar/owner redaction is proven in engine-core's
+// p152-entitlement-gate.test.ts against the REAL composeParcelReportFacts.
+// What belongs here is WIRING: does the route resolve a tier from
+// gate-front context and actually thread it to the author, and does the
+// GET status response's `entitlement` marker match the request that asked?
+//
+// buildParcelTerrainRoutes() returns a standalone sub-app with no
+// knowledge of server.ts's gate-front middleware (every test above this
+// block calls it directly, `c.get("gateFront")` undefined throughout,
+// which is why runFeasibilityJob's callerTier parameter is optional) — so
+// this block wraps it in a two-line stand-in for that middleware to
+// exercise the gated path specifically.
+// ─────────────────────────────────────────────────────────────────────────
+import type { GateFrontContext } from "../gate-front-context.js";
+
+function mountWithGateFront(sub: Hono, accessTier: GateFrontContext["accessTier"]): Hono {
+  const wrapper = new Hono();
+  wrapper.use("*", async (c, next) => {
+    c.set("gateFront", {
+      gateCredentialId: "test-cred",
+      product: "cortex",
+      tenantId: "test-tenant",
+      packageId: "feasibility-export",
+      accessTier,
+      requestId: "test-req",
+    });
+    return next();
+  });
+  wrapper.route("/", sub);
+  return wrapper;
+}
+
+describe("feasibility-export routes: entitlement wiring (P152-ENTITLEMENT)", () => {
+  beforeEach(() => {
+    vi.mocked(authorParcelFeasibilityExport).mockClear();
+  });
+
+  it("public-free caller: the author receives callerTier:'public-free'", async () => {
+    const storage = new InMemoryStorage();
+    const sub = buildParcelTerrainRoutes(nullResolver, storage, memoryArtifactStore());
+    const app = mountWithGateFront(sub, "public-free");
+    await app.request(`/${parcelNodeId}/feasibility-export/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await waitForJobSettled(app, parcelNodeId);
+    expect(authorParcelFeasibilityExport).toHaveBeenCalledOnce();
+    const call = vi.mocked(authorParcelFeasibilityExport).mock.calls[0]![0]! as { callerTier?: string };
+    expect(call.callerTier).toBe("public-free");
+  });
+
+  it("public-paid caller: the author receives callerTier:'public-paid'", async () => {
+    const storage = new InMemoryStorage();
+    const sub = buildParcelTerrainRoutes(nullResolver, storage, memoryArtifactStore());
+    const app = mountWithGateFront(sub, "public-paid");
+    await app.request(`/${parcelNodeId}/feasibility-export/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await waitForJobSettled(app, parcelNodeId);
+    const call = vi.mocked(authorParcelFeasibilityExport).mock.calls[0]![0]! as { callerTier?: string };
+    expect(call.callerTier).toBe("public-paid");
+  });
+
+  it("GET status: the entitlement marker reflects THIS request's own tier — refused for public-free", async () => {
+    const storage = new InMemoryStorage();
+    const sub = buildParcelTerrainRoutes(nullResolver, storage, memoryArtifactStore());
+    const entitledApp = mountWithGateFront(sub, "public-paid");
+    await entitledApp.request(`/${parcelNodeId}/feasibility-export/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await waitForJobSettled(entitledApp, parcelNodeId);
+
+    // A DIFFERENT wrapper, same sub-app/storage, simulating a public-free
+    // caller polling the SAME already-composed job (the cache-hit scenario
+    // this lane's close documents as a known, accepted limitation for the
+    // direct-bypass threat model only).
+    const freeApp = mountWithGateFront(sub, "public-free");
+    const res = await freeApp.request(`/${parcelNodeId}/feasibility-export`);
+    const body = (await res.json()) as { entitlement?: { tier: string; granted: boolean } };
+    expect(body.entitlement).toEqual({
+      tier: "public-free",
+      granted: false,
+      requiredTier: "studio-or-property-unlock",
+      gatedSections: ["parcelOwnership"],
+    });
+  });
+
+  it("GET status: the entitlement marker grants for public-paid", async () => {
+    const storage = new InMemoryStorage();
+    const sub = buildParcelTerrainRoutes(nullResolver, storage, memoryArtifactStore());
+    const app = mountWithGateFront(sub, "public-paid");
+    await app.request(`/${parcelNodeId}/feasibility-export/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await waitForJobSettled(app, parcelNodeId);
+    const res = await app.request(`/${parcelNodeId}/feasibility-export`);
+    const body = (await res.json()) as { entitlement?: { tier: string; granted: boolean } };
+    expect(body.entitlement?.granted).toBe(true);
+    expect(body.entitlement?.tier).toBe("public-paid");
+  });
+
+  it("no gate-front context at all (server.ts's own middleware would already 401 before this route -- this proves the route itself does not crash and falls back to the pre-gate default) still returns a value, matching every OTHER test in this file that predates this lane", async () => {
+    const storage = new InMemoryStorage();
+    const app = buildParcelTerrainRoutes(nullResolver, storage, memoryArtifactStore());
+    await app.request(`/${parcelNodeId}/feasibility-export/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await waitForJobSettled(app, parcelNodeId);
+    const call = vi.mocked(authorParcelFeasibilityExport).mock.calls[0]![0]! as { callerTier?: string };
+    expect(call.callerTier).toBeUndefined();
+  });
+
+  it("MISSING HEADER FAIL-CLOSED (CP1 negative-test requirement, mirrors flood-drainage-route.test.ts's own gate-front test): a request through the REAL buildApp() with no gate-front headers at all gets 401 before the route -- and therefore the author -- is ever reached", async () => {
+    const config: EngineApiConfig = {
+      port: 8080,
+      gateServiceToken: "test-gate-token",
+      startedAt: "2026-09-13T00:00:00.000Z",
+      gateContextSigningKey: "",
+      gateContextMode: "off",
+    };
+    const app = buildApp({ config });
+    const res = await app.request(`/v1/property-nodes/${parcelNodeId}/feasibility-export/refresh`, {
+      method: "POST",
+      headers: { Authorization: "Bearer test-gate-token", "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("gate_front_context_required");
+    expect(authorParcelFeasibilityExport).not.toHaveBeenCalled();
   });
 });
