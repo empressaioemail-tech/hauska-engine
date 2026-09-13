@@ -284,6 +284,34 @@ try {
     };
 
     const parcelInputs = [];
+    // Keyset-paginate on (tile_key, feature_index), the trailing two columns
+    // of txgio_parcel's own primary key (county_fips, tile_key,
+    // feature_index) -- NOT on feature_index alone. feature_index is only
+    // unique WITHIN a tile_key (a large county spans many 0.02-degree
+    // tile_keys, e.g. Travis 48453 has hundreds), and its ranges OVERLAP
+    // across tiles (confirmed live: tile g0.02:-97.38000,30.38000 held
+    // feature_index 185893-192955 while the adjacent tile
+    // g0.02:-97.38000,30.40000 held 188958-833270 -- the same numbers
+    // recur across different tiles). Paginating and DISTINCT-ON'ing by
+    // feature_index alone was BOTH a correctness bug (rows from different
+    // tiles sharing a feature_index number could be silently collapsed by
+    // DISTINCT ON) and a catastrophic performance bug for any
+    // multi-tile county: PostgreSQL cannot use the (county_fips, tile_key,
+    // feature_index) index for a bare `feature_index > N` predicate over
+    // ALL tiles, so every page fell back to a parallel bitmap heap scan
+    // plus an external merge sort over the county's ENTIRE remaining row
+    // set -- measured live for Travis (48453, ~895K rows): a single page
+    // (LIMIT 500) took 52.4s via EXPLAIN ANALYZE (Sort Method: external
+    // merge, Rows Removed by Index Recheck: 441875, lossy bitmap heap
+    // blocks), and individual page queries were observed running 53+
+    // minutes under production load before this fix -- on track to exceed
+    // the writer job's task-timeout without ever completing. The row-value
+    // comparison below (tile_key, feature_index) > (lastTileKey,
+    // lastFeature) matches the primary key's own column order exactly, so
+    // Postgres uses a plain Index Scan: the identical page took 32ms in
+    // the same EXPLAIN ANALYZE test -- a ~1,600x reduction, verified
+    // before this fix was written, not assumed.
+    let lastTileKey = "";
     let lastFeature = -1;
     while (true) {
       if (args.limit > 0 && parcelInputs.length >= args.limit) break;
@@ -291,13 +319,13 @@ try {
         args.limit > 0 ? args.limit - parcelInputs.length : Math.min(args.batch, 2000);
       const pageSize = Math.max(1, Math.min(args.batch, remaining, 2000));
       const page = await sql`
-        SELECT DISTINCT ON (feature_index)
-               feature_index, prop_id, geometry,
+        SELECT DISTINCT ON (tile_key, feature_index)
+               tile_key, feature_index, prop_id, geometry,
                west_lng, south_lat, east_lng, north_lat
         FROM txgio_parcel
         WHERE county_fips = ${args.county}
-          AND feature_index > ${lastFeature}
-        ORDER BY feature_index
+          AND (tile_key, feature_index) > (${lastTileKey}, ${lastFeature})
+        ORDER BY tile_key, feature_index
         LIMIT ${pageSize}
       `;
       if (page.length === 0) break;
@@ -322,7 +350,9 @@ try {
               : null,
         });
       }
-      lastFeature = page[page.length - 1].feature_index;
+      const lastRow = page[page.length - 1];
+      lastTileKey = lastRow.tile_key;
+      lastFeature = lastRow.feature_index;
       if (page.length < pageSize) break;
     }
 
