@@ -9,6 +9,7 @@ import {
   type ComposeParcelReportOptions,
   type ReadableTerrainArtifactStore,
 } from "./report-model.js";
+import type { CallerAccessTier } from "./feasibility-model.js";
 import type { RecordReaderClient } from "./parcel-record-reader-client.js";
 import { emitPdfFeasibility, type PdfFeasibilityResult } from "./pdf/feasibility.js";
 import { generateFeasibilityNarrative } from "./narrative-generator.js";
@@ -97,6 +98,8 @@ export interface AuthorParcelFeasibilityExportOptions
   drainage?: ComposeParcelReportOptions["drainage"];
   /** P152-RAILS: the Hauska retrieval reader — see report-model.ts's ComposeParcelReportFactsOptions.recordReader doc. Omit to skip (honest fallback to the substrate atoms, never a blocking failure). */
   recordReader?: RecordReaderClient;
+  /** P152-ENTITLEMENT (OPS-23 wave 4): the caller's resolved access tier — see report-model.ts's ComposeParcelReportFactsOptions.callerTier doc. */
+  callerTier?: CallerAccessTier;
 }
 
 export interface AuthorParcelFeasibilityExportResult {

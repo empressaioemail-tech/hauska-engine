@@ -120,7 +120,9 @@ export {
 export {
   present as presentFeasibilityFact,
   absent as absentFeasibilityFact,
+  parcelOwnershipEntitledForTier,
   type FeasibilityFactState,
+  type AbsenceKind,
   type JurisdictionFacts,
   type ParcelOwnershipFacts,
   type FloodFacts,
@@ -134,6 +136,7 @@ export {
   type DataQualityNote,
   type OpenItem,
   type DischargePointFacts,
+  type CallerAccessTier,
 } from "./feasibility-model.js";
 
 export {
