@@ -2,6 +2,8 @@ import { inflateSync } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
 
+import { envelopeHuman } from "@empressaio/atom-contract/display";
+
 import { composeSitePlanModel } from "../../site-model.js";
 import { boundaryEdgesForRing } from "../../__tests__/boundary-edge-fixture.js";
 import { AERIAL_UNAVAILABLE_NOTE } from "../aerial.js";
@@ -260,16 +262,21 @@ describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
     // The LOCAL offset ring still resolves a number (it still drives the
     // drawn inset polygon, R-2) — it just may never PRINT as a figure.
     expect(model.summary.buildableAreaSqFt).not.toBeNull();
+    // P-167 wave 5: this used to be a hardcoded literal; it now reads
+    // envelopeHuman("atom_path_pending") from the shared vocabulary — the
+    // same sentence the MCP's overlay reasonDisplayText already prints for
+    // this exact disposition (R-2: no figure leak; R-4: byte-identical
+    // wording across the PDF and the MCP).
     expect(model.summary.printedBuildable).toEqual({
       kind: "refused",
-      reason: "pending — buildable-envelope atom not yet on file",
+      reason: envelopeHuman("atom_path_pending"),
     });
     const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
     // No figure, no "provisional planning estimate" qualifier — the row is an
     // honest UNAVAILABLE chip naming the same refusal reason.
     expect(decoded).not.toContain("provisional planning estimate");
-    expect(decoded).toContain("buildable-envelope atom not yet on file");
+    expect(decoded).toContain(envelopeHuman("atom_path_pending"));
   });
 
   // HEADER = DRAWING (2026-07-28): the live defect printed a warm number in

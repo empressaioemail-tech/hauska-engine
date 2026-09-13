@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { InMemoryStorage } from "@hauska-engine/storage";
 import type { CadParcelRollAtomInstance, SetbackRuleAtomInstance } from "@hauska-engine/atoms";
+import { envelopeHuman } from "@empressaio/atom-contract/display";
 
 import { authorParcelFeasibilityExport } from "../feasibility-author.js";
 import type { ParcelGeometryResolver, TerrainArtifactStore } from "../../parcel-terrain/author.js";
@@ -263,5 +264,115 @@ describe("authorParcelFeasibilityExport", { timeout: 60_000 }, () => {
 
     const allAtoms = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
     expect(allAtoms.filter((a) => a.entityType === "parcel-terrain-model").length).toBe(1);
+  });
+
+  /**
+   * P-167 wave 5 (OPS-23 R-4). This is the actual customer PDF surface the
+   * wave-4 probe found leaking the raw "no-zoning-stamp" code on ("WHAT
+   * BINDS IT" / `factOrChip("Zoning district", ..., {absentReason: ...})`
+   * in pdf/feasibility.ts, fed by `report-model.ts` ->
+   * `composeSitePlanModelForParcel` -> author.ts's `resolveZoningSummary`,
+   * which this lane fixed to prefer the atom's own `absence.reason` over
+   * `absence.kind`). Unlike render.ts's site-plan SHEET (see
+   * author.test.ts), this renderer has no word-count house-style gate, so
+   * the atom's own honest-absence sentence prints verbatim.
+   */
+  it("prints the zoning-fact atom's own honest-absence sentence, never the raw no-zoning-stamp code, on the feasibility PDF's WHAT BINDS IT section (P-167)", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+    const honestAbsenceReason =
+      "No zoning district observed for parcel — honest absence, no fallback district invented.";
+    await storage.writePropertyAtom({
+      entityType: "zoning-fact",
+      atomDid: "bastrop_tx/zoning-fact/48453:474034/1",
+      entityId: `${parcelNodeId}:zoning:1`,
+      jurisdictionTenant: "bastrop_tx",
+      parcelNodeId,
+      fetchedAt: new Date().toISOString(),
+      extractedAt: new Date().toISOString(),
+      sourceAdapter: "bastrop-tx-zoning",
+      sourceUrl: "https://gis.bastroptx.gov/zoning",
+      sourceCitation: "Bastrop zoning GIS",
+      accessPolicy: "public-free",
+      atomTier: "data",
+      status: "active",
+      versionStamp: `${parcelNodeId}:zoning-fact:1`,
+      district: null,
+      absence: { kind: "no-zoning-stamp", reason: honestAbsenceReason },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const result = await authorParcelFeasibilityExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchAerialImage: stubAerialFetch,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
+      descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
+    });
+
+    const artifact = result.atom.artifacts["pdf-feasibility"];
+    expect(artifact).toBeDefined();
+    const bytes = await artifactStore.get(artifact!.ref);
+    const decoded = decodeAllContentStreams(bytes!);
+    expect(decoded).not.toContain("no-zoning-stamp");
+    expect(decoded).toContain(honestAbsenceReason);
+    // Same sentence the MCP's overlay reasonDisplayText reads via
+    // envelopeHuman for this token — proves both surfaces read one source,
+    // not two independently hand-typed wordings for the same disposition.
+    expect(envelopeHuman("no-zoning-stamp")).toBe(honestAbsenceReason);
+  });
+
+  /**
+   * P-167 wave 5 falsifier: if `absence.reason` is ever missing on the
+   * stored atom (an older atom, or a kind this atom-contract version has
+   * not been told about), the document must still never fall to the raw
+   * code — it falls to the shared vocabulary's own humanization first.
+   */
+  it("falls back to the vocabulary's humanization, never the raw code, when the zoning-fact atom carries no absence.reason", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+    await storage.writePropertyAtom({
+      entityType: "zoning-fact",
+      atomDid: "bastrop_tx/zoning-fact/48453:113408/1",
+      entityId: `${parcelNodeId}:zoning:1`,
+      jurisdictionTenant: "bastrop_tx",
+      parcelNodeId,
+      fetchedAt: new Date().toISOString(),
+      extractedAt: new Date().toISOString(),
+      sourceAdapter: "bastrop-tx-zoning",
+      sourceUrl: "https://gis.bastroptx.gov/zoning",
+      sourceCitation: "Bastrop zoning GIS",
+      accessPolicy: "public-free",
+      atomTier: "data",
+      status: "active",
+      versionStamp: `${parcelNodeId}:zoning-fact:1`,
+      district: null,
+      absence: { kind: "no-zoning-stamp" },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const result = await authorParcelFeasibilityExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchAerialImage: stubAerialFetch,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
+      descriptor: { address: "1127 N PINE ST, SAN ANTONIO, TX 78202", countyName: "Bexar County" },
+    });
+
+    const artifact = result.atom.artifacts["pdf-feasibility"];
+    const bytes = await artifactStore.get(artifact!.ref);
+    const decoded = decodeAllContentStreams(bytes!);
+    expect(decoded).not.toContain("no-zoning-stamp");
+    expect(decoded).toContain(envelopeHuman("no-zoning-stamp"));
   });
 });

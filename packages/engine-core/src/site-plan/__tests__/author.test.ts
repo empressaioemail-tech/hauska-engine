@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { InMemoryStorage } from "@hauska-engine/storage";
 import type { SetbackRuleAtomInstance } from "@hauska-engine/atoms";
 
+import { envelopeHuman } from "@empressaio/atom-contract/display";
+
 import { authorParcelSitePlanExport } from "../author.js";
 import type { ParcelGeometryResolver } from "../../parcel-terrain/author.js";
 import type { TerrainArtifactStore } from "../../parcel-terrain/author.js";
@@ -239,6 +241,66 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     expect((result.atom.artifacts["pdf-site-plan"] as any)?.zoningHonestAbsence).toBe(false);
   });
 
+  /**
+   * P-167 wave 5 (OPS-23 R-4). This sheet (render.ts's `pdf-site-plan`, the
+   * 3-page SITE PLAN / SUMMARY / AERIAL export) has its OWN pre-existing
+   * §6/§11 house-style gate (`sheetReason`/`isCleanReasonSentence`: sentence
+   * case, <=12 words, no colon, ends in a period) that already rejected the
+   * bare "no-zoning-stamp" code (no trailing period) BEFORE this lane's
+   * fix, falling back to the fixed `REASON.noZoning` sentence — so this
+   * sheet never actually leaked the raw code. It is not this lane's to
+   * loosen that gate (out of mandate: "do not widen a check to admit a
+   * value it does not satisfy"), so this documents the pre-existing,
+   * UNCHANGED behavior rather than asserting the (13-word, gate-failing)
+   * shared vocabulary sentence appears verbatim here. The actual customer
+   * PDF surface wave 4 probed (`pdf-feasibility`, "WHAT BINDS IT") has no
+   * such gate; its regression test lives in feasibility-author.test.ts.
+   */
+  it("no-zoning-stamp on the SITE-PLAN SHEET (pdf-site-plan): unchanged by this lane, still the sheet's fixed fallback, never the raw code (P-167, out of mandate to change the sheet's own word-count gate)", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = fakeArtifactStore();
+    await storage.writePropertyAtom({
+      entityType: "zoning-fact",
+      atomDid: "bastrop_tx/zoning-fact/48453:474034/1",
+      entityId: `${parcelNodeId}:zoning:1`,
+      jurisdictionTenant: "bastrop_tx",
+      parcelNodeId,
+      fetchedAt: new Date().toISOString(),
+      extractedAt: new Date().toISOString(),
+      sourceAdapter: "bastrop-tx-zoning",
+      sourceUrl: "https://gis.bastroptx.gov/zoning",
+      sourceCitation: "Bastrop zoning GIS",
+      accessPolicy: "public-free",
+      atomTier: "data",
+      status: "active",
+      versionStamp: `${parcelNodeId}:zoning-fact:1`,
+      district: null,
+      absence: {
+        kind: "no-zoning-stamp",
+        reason: envelopeHuman("no-zoning-stamp"),
+      },
+    } as any);
+
+    const result = await authorParcelSitePlanExport({
+      parcelNodeId,
+      resolver: fakeResolver(ringWgs84),
+      setback,
+      storage,
+      artifactStore,
+      fetchAerialImage: stubAerialFetch,
+      fetchDem: fakeFetchDem,
+      parseDem: fakeParseDem,
+      fetchFloodZone: async () => ({ honestUnavailable: true, reason: "test stub" }),
+    });
+
+    expect(result.zoningHonestAbsence).toBe(true);
+    const pdfRef = result.atom.artifacts["pdf-site-plan"]!.ref;
+    const pdfBytes = artifactStore.data.get(pdfRef)!;
+    const decoded = decodeAllContentStreams(pdfBytes);
+    expect(decoded).not.toContain("no-zoning-stamp");
+    expect(decoded).toContain("No zoning record on file for this parcel.");
+  });
+
   it("resolves a provisional-front-edge buildable-envelope atom from storage and threads it into the PDF's buildable-area honesty note (planner HOLD-1)", async () => {
     const storage = new InMemoryStorage();
     const artifactStore = fakeArtifactStore();
@@ -285,11 +347,15 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     // never be atom-backed in `printedBuildable`'s sense — so the figure this
     // test used to assert (a provisional NUMBER) is refused outright now,
     // same as any other non-atom-backed outcome; the sheet shows the honest
-    // UNAVAILABLE chip instead.
+    // UNAVAILABLE chip instead. P-167 wave 5: the reason text itself now
+    // reads `envelopeHuman("atom_path_pending")` from the shared vocabulary
+    // instead of a hardcoded literal — the same sentence the MCP's overlay
+    // reasonDisplayText already prints for this exact disposition (R-2: no
+    // figure leak; R-4: byte-identical wording).
     expect(result.atom.artifacts["pdf-site-plan"]).toBeTruthy();
     const decoded = decodeAllContentStreams(pdfBytes);
     expect(decoded).not.toContain("provisional planning estimate");
-    expect(decoded).toContain("buildable-envelope atom not yet on file");
+    expect(decoded).toContain(envelopeHuman("atom_path_pending"));
   });
 
   it("honors an explicit envelopeOutcomeOverride test seam without requiring a stored buildable-envelope atom", async () => {
@@ -347,7 +413,7 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
     const withoutOverrideBytes = artifactStore2.data.get(withoutOverrideRef)!;
     const withoutOverrideDecoded = decodeAllContentStreams(withoutOverrideBytes);
     expect(withoutOverrideDecoded).not.toContain("5,250 sq ft");
-    expect(withoutOverrideDecoded).toContain("buildable-envelope atom not yet on file");
+    expect(withoutOverrideDecoded).toContain(envelopeHuman("atom_path_pending"));
   }, 15_000);
 
   it("degrades to honest flood-zone-unavailable when the flood lookup throws, without failing the export", async () => {

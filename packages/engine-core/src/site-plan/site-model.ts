@@ -19,6 +19,7 @@ import {
 } from "./ring-geometry.js";
 import { anyNotSpecified, formatSetbackSummaryLine } from "./setback-display.js";
 import {
+  envelopeHuman,
   mapBuildableDisplay,
   type BuildableDisplayKind,
 } from "@empressaio/atom-contract/display";
@@ -654,9 +655,20 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           // Kept to one short line deliberately (§21 vertical-rhythm gate: this
           // reason renders as a "kv-row" chip on the site-plan summary sheet,
           // sized the same as every other REASON constant there).
+          //
+          // P-167 wave 5 (OPS-23 R-2/R-4). buildable-with-area / provisional's
+          // OWN buildableVocab.pdfLabel is a raw local or warm figure — it must
+          // never leak into a "refused" reason (that is the exact number this
+          // field exists to withhold). This used to be a hardcoded literal;
+          // it now reads the SAME vocabulary function the MCP's overlay
+          // reasonDisplayText already calls for the identical disposition
+          // (setbacks/geometry present, buildable-envelope atom not yet
+          // minted) — `envelopeHuman("atom_path_pending")` — so the PDF and
+          // the MCP say the identical sentence instead of two hand-typed
+          // wordings for the same honest refusal, with no figure leak.
           reason:
             buildableVocab.kind === "buildable-with-area" || buildableVocab.kind === "provisional"
-              ? "pending — buildable-envelope atom not yet on file"
+              ? (envelopeHuman("atom_path_pending") ?? "Withheld, setbacks unruled")
               : buildableVocab.pdfLabel,
         };
 
