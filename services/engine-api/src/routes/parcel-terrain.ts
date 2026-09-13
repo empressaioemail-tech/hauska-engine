@@ -961,6 +961,19 @@ export function buildParcelTerrainRoutes(
     // download for a customer is a hauska-map change, not this one.
     c.header("Content-Type", "application/pdf");
     c.header("Content-Disposition", `attachment; filename="${safeNodeId}_feasibility_study.pdf"`);
+    // P-155 wave-5 (F23): the served document's own age, on the wire beside
+    // the bytes. Sourced from the job row's completedAt at download time --
+    // the most authoritative point, read at the exact moment the bytes were
+    // fetched, not threaded from a caller's earlier separate status call
+    // (which could in principle race a concurrent refresh). smartsite-mcp
+    // reads this and surfaces it as `generatedAt` in its envelope so a
+    // caller can see it is not being handed stale bytes silently. Omitted
+    // for the legacy no-job-row case (a pre-P-155 atom with an artifact on
+    // file but no completedAt anywhere), where there is no honest timestamp
+    // to report -- the header is simply absent, never fabricated.
+    if (job?.completedAt) {
+      c.header("X-Feasibility-Generated-At", job.completedAt);
+    }
     return c.body(Buffer.from(bytes));
   });
 

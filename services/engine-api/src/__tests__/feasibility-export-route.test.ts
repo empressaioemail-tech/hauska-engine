@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InMemoryStorage } from "@hauska-engine/storage";
+import type { PropertyAtomInstance } from "@hauska-engine/atoms";
 
 // Mirrors dossier-export-route.test.ts's pattern exactly: the engine-core
 // author is mocked here to pin the ROUTE contract (validation, job-state
@@ -275,6 +276,58 @@ describe("feasibility-export routes (P-155 async)", () => {
     expect(res.headers.get("content-type")).toBe("application/pdf");
     const bytes = new Uint8Array(await res.arrayBuffer());
     expect(new TextDecoder().decode(bytes)).toContain("%PDF-1.7 fake feasibility bytes");
+  });
+
+  // P-155 WAVE-5 (F23, overseer 2026-09-13): the served document's age is
+  // now on the wire beside the bytes. Sourced fresh from the job row's own
+  // completedAt at download time (the most authoritative point), so
+  // smartsite-mcp can surface `generatedAt` without guessing from an
+  // earlier, separately-read status response.
+  it("GET download: X-Feasibility-Generated-At carries the job's completedAt (P-155 wave-5 F23)", async () => {
+    const storage = new InMemoryStorage();
+    const app = buildParcelTerrainRoutes(nullResolver, storage, memoryArtifactStore());
+    await app.request(`/${parcelNodeId}/feasibility-export/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const settled = await waitForJobSettled(app, parcelNodeId);
+    const completedAt = settled.completedAt as string;
+    expect(typeof completedAt).toBe("string");
+
+    const res = await app.request(`/${parcelNodeId}/feasibility-export/download`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-feasibility-generated-at")).toBe(completedAt);
+  });
+
+  it("GET download: no X-Feasibility-Generated-At when there is no job row (legacy pre-P-155 atom) -- absent, never fabricated", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = memoryArtifactStore();
+    const app = buildParcelTerrainRoutes(nullResolver, storage, artifactStore);
+    const ref = await artifactStore.put({
+      parcelNodeId,
+      format: "pdf-feasibility",
+      bytes: FAKE_PDF,
+      contentType: "application/pdf",
+    });
+    // Minimal legacy fixture: the route reads only entityType + artifacts.
+    // Cast because a full ParcelTerrainModelAtomInstance carries many fields
+    // irrelevant here; this file's own mock author likewise writes a
+    // minimal atom at runtime (its writePropertyAtom param is `unknown`).
+    await storage.writePropertyAtom({
+      entityType: "parcel-terrain-model",
+      atomDid: `pterrain_feasibility_legacy_${parcelNodeId}`,
+      entityId: parcelNodeId,
+      parcelNodeId,
+      contentHash: "",
+      artifacts: {
+        "pdf-feasibility": { format: "pdf-feasibility", ref, byteCount: FAKE_PDF.byteLength },
+      },
+    } as unknown as PropertyAtomInstance);
+
+    const res = await app.request(`/${parcelNodeId}/feasibility-export/download`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-feasibility-generated-at")).toBeNull();
   });
 
   it("job settles to failed with an errorClass on the author's honest failure — never ready, never silently deferred", async () => {
