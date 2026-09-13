@@ -350,8 +350,12 @@ describe("emitPdfFeasibility", () => {
       // The appended site-plan sheet's header stat reads NONE, same as any
       // other non-atom-backed outcome.
       expect(decoded).toContain("NONE");
-      // "fi" renders as the ligature glyph in this font, so match around it.
-      expect(decoded).toContain("buildable-envelope atom not yet on");
+      // P-167 wave 5: this used to be a hardcoded literal in site-model.ts;
+      // it now reads envelopeHuman("atom_path_pending") from the shared
+      // vocabulary — the same sentence the MCP's overlay reasonDisplayText
+      // already prints for this exact disposition (R-2: no figure leak;
+      // R-4: byte-identical wording).
+      expect(decoded).toContain("Withheld, setbacks unruled");
     });
 
     it("(c) a narrativeWithheldNote appears as a declared Data-quality row rather than a silent skeleton", async () => {

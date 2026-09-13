@@ -6,6 +6,7 @@ import {
   type BboxWgs84,
 } from "@hauska-engine/adapters";
 import { femaNfhlAdapter } from "@hauska-engine/adapters/federal/fema-nfhl";
+import { envelopeHuman } from "@empressaio/atom-contract/display";
 import type {
   BoundaryEdgeAtomInstance,
   BuildableEnvelopeAtomInstance,
@@ -113,9 +114,21 @@ async function resolveZoningSummary(parcelNodeId: string, storage: StoragePort):
   if (zoningFact.district) {
     return { district: zoningFact.district };
   }
+  // P-167 wave 5 (OPS-23 R-4). This used to read `absence?.kind` — the RAW
+  // machine code (e.g. "no-zoning-stamp") — straight onto the PDF's summary
+  // sheet verbatim. The atom already carries a human sentence for this same
+  // absence in `absence?.reason` (emit-zoning-fact.ts sets both together);
+  // prefer it. Where a `reason` is missing (older atoms, or a kind this
+  // package's vocabulary has not been told about), fall back to the shared
+  // vocabulary's own humanization of the kind before ever falling to the
+  // bare code, so this sheet never regresses to printing a machine token.
   return {
     honestAbsence: true,
-    reason: zoningFact.absence?.kind ?? "zoning-fact atom carries no district (honest absence).",
+    reason:
+      zoningFact.absence?.reason ??
+      envelopeHuman(zoningFact.absence?.kind) ??
+      zoningFact.absence?.kind ??
+      "zoning-fact atom carries no district (honest absence).",
   };
 }
 
