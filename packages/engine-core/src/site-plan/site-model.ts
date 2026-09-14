@@ -233,6 +233,13 @@ export interface SitePlanSetbackModel {
    * (a card, an MCP section) can place the sentence without re-deriving it.
    */
   conflictNote?: string;
+  /**
+   * P-154 wave 6 (R-1) — the followed source's own name, effective date and
+   * citation, as read at source, already inside `displayLine`. Present only
+   * when the atom carried something to say, so a value never prints without
+   * the citation it rests on and a pre-wave-6 atom prints as it did before.
+   */
+  sourceClause?: string;
   honestAbsenceReason?: string;
   /** Honest F/S/R summary for PDF (never prints silent axes as real 0 ft). */
   displayLine: string;
@@ -524,6 +531,24 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           notSpecified,
           { ringWgs84: inputs.ringWgs84, bbox: inputs.bbox },
         );
+  // P-154 wave 6 (R-1). Composed ONCE, here, and carried on the model as two
+  // pieces so a surface that prints its own layout (the sheet's summary grid)
+  // can place each fact without re-deriving either: the source clause (the
+  // followed source's own name, effective date and citation) and the ONE
+  // conflict sentence (only when two dated sources disagree). `displayLine`
+  // then delivers both, verbatim, to every surface that prints one line.
+  const setbackSourceClause = setbackHonestAbsence
+    ? ""
+    : formatSetbackSourceClause({
+        sourceLabel: inputs.setback.sourceLabel,
+        citation: inputs.setback.sourceCitation,
+        sourceDate: inputs.setback.sourceDate,
+        dateBasis: inputs.setback.dateBasis,
+      });
+  const setbackConflictNote =
+    setbackHonestAbsence || !inputs.setback.conflict
+      ? ""
+      : ` ${conflictNote(inputs.setback.conflict)}`;
   const setback: SitePlanSetbackModel = {
     front: inputs.setback.front,
     side: inputs.setback.side,
@@ -539,17 +564,14 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           rear: inputs.setback.rear,
           notSpecified,
         }) +
-        formatSetbackSourceClause({
-          sourceLabel: inputs.setback.sourceLabel,
-          citation: inputs.setback.sourceCitation,
-          sourceDate: inputs.setback.sourceDate,
-          dateBasis: inputs.setback.dateBasis,
-          conflict: inputs.setback.conflict,
-        }),
+        setbackSourceClause +
+        setbackConflictNote,
     sourceCodeAtomRef: inputs.setback.sourceCodeAtomRef,
-    ...(setbackHonestAbsence || !inputs.setback.conflict
-      ? {}
-      : { conflictNote: conflictNote(inputs.setback.conflict) }),
+    // Both fields are omitted, never empty, when there is nothing read at
+    // source to say: a pre-wave-6 atom prints exactly what it printed before,
+    // and a surface can test presence without testing a blank string.
+    ...(setbackSourceClause ? { sourceClause: setbackSourceClause } : {}),
+    ...(setbackConflictNote ? { conflictNote: setbackConflictNote.trim() } : {}),
     basis: offset.basis,
     segments: offset.segments,
     offsetRingLocal: offset.offsetRing,

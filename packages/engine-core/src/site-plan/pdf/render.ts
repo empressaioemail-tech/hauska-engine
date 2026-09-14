@@ -1375,6 +1375,24 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
   // `buildableAreaSqFt` — a resolved local geometry with no buildable-envelope
   // atom behind it is a REFUSAL now (it used to print, "provisional" qualifier
   // and all; that provisional print is exactly the F4 defect class).
+  // P-154 wave 6 (R-1). The row above prints the three numbers; these two
+  // carry what the numbers rest on, so a sheet never prints a setback value
+  // without the citation it came from. Both are omitted entirely when the
+  // model carries nothing (pre-wave-6 atom) — and the conflict row is omitted
+  // when the sources AGREE, because a note on agreement would mean the
+  // detector, not the data, is what fired.
+  //
+  // They ride the grey qualifier cell, not the value cell: the summary row's
+  // value is a single unwrapped line (§7), and a conflict sentence is a
+  // sentence. §7/§11's one-qualifier rule governs the setbacks VALUE row, and
+  // that row is untouched.
+  const setbackSource: SummaryRow | null = model.setback.sourceClause
+    ? { label: "Setback source", qualifier: model.setback.sourceClause.replace(/^\s*—\s*/, "") }
+    : null;
+  const setbackConflict: SummaryRow | null = model.setback.conflictNote
+    ? { label: "Setback conflict", qualifier: model.setback.conflictNote }
+    : null;
+
   const buildable: SummaryRow =
     s.printedBuildable.kind === "atom"
       ? {
@@ -1434,6 +1452,8 @@ function buildSummaryGroups(model: SitePlanModel): Array<{ heading: string; rows
         zoning,
         { label: "Lot area", value: formatSqFt(s.lotAreaSqFt), qualifier: formatAcresQualifier(s.lotAreaSqFt) },
         setbacks,
+        ...(setbackSource ? [setbackSource] : []),
+        ...(setbackConflict ? [setbackConflict] : []),
         buildable,
       ],
     },

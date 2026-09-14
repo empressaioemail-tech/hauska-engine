@@ -551,3 +551,122 @@ describe("SHEET STANDARD v1.2 — §3 frame clip, §11 street naming, §11 count
     expect(wide.text).not.toContain("N/A");
   });
 });
+
+/**
+ * P-154 wave 6 (OPS-23 R-1 CONFLICT ROW) — the sheet prints the followed
+ * setback values WITH the source's own citation and effective date, and, when
+ * two of the city's own sources disagree, the ONE conflict sentence from
+ * `@empressaio/atom-contract/display` (A-148).
+ *
+ * The two falsifiers the wave pre-registered are encoded below: a note where
+ * the sources AGREE means the detector fired on agreement (not on a conflict),
+ * and a value printed without a citation means the disclosure is missing.
+ */
+describe("P-154 wave 6 — R-1 conflict row on the sheet (§7)", () => {
+  // Amendment A-148's exact sentence, asserted character for character. The
+  // same characters must appear on the panel, the MCP read and this sheet.
+  const A148_SENTENCE =
+    "The city's One Click card shows 25/5/25 from unrefreshed numeric columns of its zoning layer; the same layer's text and Ordinance 2026-06 say 30/10/30/20 (confirmed with the City of Bastrop 2026-09-14)";
+
+  function buildWave6Model(
+    setback: Parameters<typeof composeSitePlanModel>[0]["setback"],
+  ): SitePlanModel {
+    const ringWgs84: Array<[number, number]> = [
+      [-97.32, 30.11],
+      [-97.3191, 30.11],
+      [-97.3191, 30.1111],
+      [-97.32, 30.1111],
+      [-97.32, 30.11],
+    ];
+    return composeSitePlanModel({
+      parcelNodeId: "48021:34049",
+      bbox: { westLng: -97.3202, eastLng: -97.3189, southLat: 30.1098, northLat: 30.1113 },
+      ringWgs84,
+      dem: syntheticDem(8, 140, 2),
+      contourIntervalMeters: 0.5,
+      setback: {
+        sourceCodeAtomRef: {
+          atomDid: "bastrop-tx/dev-code:sec-14.02.003",
+          role: "rule",
+          entityType: "code-section",
+        },
+        ...setback,
+      },
+      frontEdgeIndex: 0,
+      geometrySourceRef: "p154-wave6-synthetic-ring",
+      demSourceCitation: "synthetic-fixture DEM (P-154 wave 6 conflict-row sample; not live 3DEP)",
+      descriptor: { address: "1109 Pecan St, Bastrop, TX", countyName: "Bastrop County" },
+      zoning: { district: "SF-1", fixture: true },
+      floodZone: { honestUnavailable: true, reason: "FEMA NFHL not queried on this run." },
+    });
+  }
+
+  it("prints the followed values, the source's own citation and effective date, and the A-148 conflict sentence", async () => {
+    const rendered = await render(
+      buildWave6Model({
+        front: 30,
+        side: 10,
+        rear: 30,
+        sourceLabel: "Bastrop Development Code Sec. 14.02.003",
+        sourceCitation: "2026-06",
+        sourceDate: "2026-04-14",
+        dateBasis: "ordinance-effective-date",
+        conflict: {
+          shape: "stale-numeric-columns",
+          secondSourceLabel: "One Click card",
+          numeric: { front: 25, side: 5, rear: 25 },
+          text: { front: 30, side: 10, rear: 30, corner: 20 },
+          ordinance: "2026-06",
+          confirmedWith: "the City of Bastrop",
+          confirmedOn: "2026-09-14",
+          source_date: "2026-08-24",
+          date_basis: "gis-layer-edit-date",
+        },
+      }),
+      aerialStubOk,
+    );
+    const spaced = spacedText(rendered.decoded);
+    // The followed values, with what they rest on — never a bare number.
+    expect(spaced).toContain("Setback source");
+    expect(spaced).toContain("effective 2026-04-14");
+    expect(spaced).toContain("citing Ord. 2026-06");
+    // The one conflict sentence, both claims and both sources named.
+    expect(spaced).toContain("Setback conflict");
+    expect(spaced).toContain(A148_SENTENCE);
+  });
+
+  it("FALSIFIER: a second source that AGREES adds no conflict row — a note on agreement means the detector is wrong", async () => {
+    const rendered = await render(
+      buildWave6Model({
+        front: 30,
+        side: 10,
+        rear: 30,
+        sourceLabel: "Bastrop Development Code Sec. 14.02.003",
+        sourceCitation: "2026-06",
+        sourceDate: "2026-04-14",
+        dateBasis: "ordinance-effective-date",
+      }),
+      aerialStubOk,
+    );
+    const spaced = spacedText(rendered.decoded);
+    // The source clause still travels (the values carry their citation)...
+    expect(spaced).toContain("Setback source");
+    expect(spaced).toContain("citing Ord. 2026-06");
+    // ...and nothing claims a disagreement.
+    expect(spaced).not.toContain("Setback conflict");
+    expect(spaced).not.toContain("One Click card");
+    expect(spaced).not.toContain("unrefreshed numeric columns");
+  });
+
+  it("a pre-wave-6 atom (no source read at source) prints exactly what it printed before: no source and no conflict row", async () => {
+    const rendered = await render(
+      buildWave6Model({ front: 30, side: 10, rear: 30 }),
+      aerialStubOk,
+    );
+    const spaced = spacedText(rendered.decoded);
+    expect(spaced).not.toContain("Setback source");
+    expect(spaced).not.toContain("Setback conflict");
+    // The values themselves still print (§7 unchanged).
+    expect(spaced).toContain("30' / 10' / 30'");
+  });
+});
