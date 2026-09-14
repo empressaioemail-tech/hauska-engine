@@ -120,10 +120,11 @@ export interface BuildDrainageGradientOptions {
   /**
    * G-125: the note's return-period phrase, e.g. "100-yr" or "~15-yr
    * (interpolated)" — computed by the caller (which holds the rainfall
-   * source + curve) and passed in verbatim. Defaults to the historical
-   * "100-yr" ONLY when omitted, so every pre-G-125 caller is unaffected;
-   * a caller that knows the run was parameter-sourced should always pass
-   * the honest label rather than rely on this default.
+   * source + curve) and passed in verbatim. Undefined means the caller
+   * determined no return-period claim is honest (a parameter-sourced run
+   * with no captured curve): the note OMITS the return-period clause
+   * rather than assuming 100-yr. The sole caller (flood-drainage-study.ts)
+   * always computes and passes this field explicitly.
    */
   returnPeriodLabel?: string;
 }
@@ -244,11 +245,21 @@ export function featherIntensity(
 }
 
 function buildGradientNote(options: BuildDrainageGradientOptions): string {
-  const returnPeriodPhrase = options.returnPeriodLabel ?? "100-yr";
+  // G-125: `returnPeriodLabel` undefined means "the caller determined no
+  // return-period claim is honest here" (a parameter-sourced run with no
+  // captured curve) -- it must NOT fall back to "100-yr", or a made-up
+  // depth silently inherits the 100-yr claim it does not carry. Omitting
+  // the return-period clause entirely (matching the PDF's own pattern) is
+  // the only caller of this function (flood-drainage-study.ts) always
+  // computing and passing the field explicitly, so there is no legacy
+  // caller relying on an implicit 100-yr default to preserve.
+  const designStormPhrase = options.returnPeriodLabel
+    ? `${options.rainfallDepthInches} inch, ${options.returnPeriodLabel} 24-hr`
+    : `${options.rainfallDepthInches} inch, 24-hr`;
   return (
     "Modeled water gradient derived from D8 flow accumulation with modeled ponding, " +
     `blended and alpha graded, over the USGS 3DEP elevation model at ${options.demResolutionMeters} m per pixel. ` +
-    `Design storm ${options.rainfallDepthInches} inch, ${returnPeriodPhrase} 24-hr. ` +
+    `Design storm ${designStormPhrase}. ` +
     "Visualization aid, not a measurement source."
   );
 }
