@@ -9,6 +9,28 @@
  *     pnpm --filter @hauska-engine/engine-core run depth-warm-city-batch -- \
  *       --row-id=Bastrop [--limit=500] [--offset=0] [--promote] [--dry-run] ...
  *
+ * BOUNDED PER-PARCEL RE-MINT (P-186, OPS-23 wave 6). `--parcel=<nodeId>` selects
+ * a ONE-PARCEL cohort (the SQL below is scoped with
+ * `body->>'parcelNodeId' = <value>` and the cohort branches are guarded
+ * `&& !args.parcel`), and `--row-id` stays REQUIRED. That arm is the only path
+ * that persists a `setback-rule` atom, and its apply leg is Cloud-Run-Job-only
+ * (P-169): the job declaration is `cloudbuild.depth-warm-remint.yaml`, the
+ * runbook is `RUNBOOK.depth-warm-remint.md`. Two legs:
+ *
+ *   dry (pre-write check; NEVER writes):
+ *     ... --row-id=Bastrop --parcel=48021:34049 --dry-run --remint-preview
+ *   apply (separate, gated execution):
+ *     ... --row-id=Bastrop --parcel=48021:34049 --promote
+ *
+ * `--remint-preview` is a DRY-LEG-only flag: it renders the exact property-atom
+ * bodies the apply leg would upsert (see `src/depth-warm/remint-preview.ts`),
+ * including whether the body carries `displayMeta.secondSource.conflict`, and it
+ * REFUSES if combined with `--promote` or used without `--parcel`. Note that
+ * `promoteDepthWarmToStorage` writes through `writePropertyAtom`, which takes NO
+ * lease (unlike `writePropertyAtomsBatch`), so nothing in the storage layer
+ * mutually excludes two concurrent re-mints — the runbook's preflight is the
+ * exclusion, and it is documented there.
+ *
  * Retired per-city scripts (depth-warm-bastrop-batch, -elgin-batch, -caldwell-batch)
  * are stubs that exit 2 and point here.
  */
@@ -36,6 +58,11 @@ import {
 } from "../src/boundary-primitive/index.ts";
 import { openRing, projectRing } from "../src/depth-warm/geometry.ts";
 import { warmThenVerify } from "../src/depth-warm/warm-then-verify.ts";
+import {
+  buildRemintPreview,
+  emptyRemintPreview,
+  remintPreviewRefusal,
+} from "../src/depth-warm/remint-preview.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import {
   bucketVerifyFailReasons,
@@ -186,6 +213,8 @@ function parseArgs(argv) {
     refusedRosterOut: null,
     districtPrefix: null,
     excludeParcels: new Set(),
+    remintPreview: false,
+    remintPreviewOut: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -228,6 +257,13 @@ function parseArgs(argv) {
     }
     else if (a.startsWith("--refused-roster-out=")) {
       out.refusedRosterOut = a.slice("--refused-roster-out=".length).trim() || null;
+    }
+    else if (a === "--remint-preview") out.remintPreview = true;
+    else if (a === "--remint-preview-out") {
+      out.remintPreviewOut = String(argv[++i] || "").trim() || null;
+    }
+    else if (a.startsWith("--remint-preview-out=")) {
+      out.remintPreviewOut = a.slice("--remint-preview-out=".length).trim() || null;
     }
   }
   if (out.forceOverwrite) out.forceRepromote = true;
@@ -301,6 +337,19 @@ const dryRun = args.dryRun || !args.promote;
 
 if (!dryRun && process.env.PROPERTY_ATOM_PATH !== "1") {
   console.error("FATAL: PROPERTY_ATOM_PATH=1 required for promote.");
+  process.exit(1);
+}
+
+// P-186 — the re-mint preview is the BOUNDED arm's dry leg and nothing else. The
+// refusal lives in `remint-preview.ts` (`remintPreviewRefusal`) so it is
+// executable in a test; it is applied here, before any store connection opens.
+const previewRefusal = remintPreviewRefusal({
+  remintPreview: args.remintPreview,
+  parcel: args.parcel,
+  dryRun,
+});
+if (previewRefusal) {
+  console.error(previewRefusal);
   process.exit(1);
 }
 
@@ -665,6 +714,8 @@ const sampleOutcomes = [];
 const failureSamples = [];
 /** @type {{ parcelNodeId: string; reason: string }[]} */
 const refusedParcels = [];
+/** @type {import("../src/depth-warm/remint-preview.ts").RemintPreview[]} */
+const remintPreviews = [];
 
 /** @param {string} parcelNodeId @param {string} reason */
 function recordRefusedParcel(parcelNodeId, reason) {
@@ -1018,6 +1069,14 @@ for (const row of parcelRows) {
   stats.processed++;
   stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
 
+  // P-186 — the dry leg renders the exact bodies the apply leg would upsert.
+  // `result.atoms` is `emitDepthWarmPromotion`'s pure output and is non-null
+  // only when mechanical verify passed, which is the same precondition the
+  // apply leg's write path has.
+  if (args.remintPreview && result.atoms) {
+    remintPreviews.push(buildRemintPreview(parcelNodeId, result.atoms));
+  }
+
   if (result.verify.pass) {
     stats.verifyPass++;
     if (!dryRun && result.promoted) {
@@ -1146,6 +1205,53 @@ const costJson = {
 };
 
 console.log(JSON.stringify(costJson, null, 2));
+
+if (args.remintPreview) {
+  // The bounded arm has a cohort of 0 or 1 parcels. An EMPTY preview must say
+  // so with its reason rather than print `[]` — "nothing would be written" and
+  // "the A-148 detector did not fire" are different findings and both matter.
+  // The operator reads this BEFORE the apply execution (see
+  // RUNBOOK.depth-warm-remint.md step 3).
+  let previews = remintPreviews;
+  if (previews.length === 0) {
+    let reason;
+    if (parcelRows.length === 0) {
+      reason =
+        "no non-absence zoning-fact atom with a non-empty district exists for this parcel — " +
+        "the --parcel arm selected an empty cohort, so nothing was warmed and nothing would be written";
+    } else if (refusedParcels.length > 0) {
+      reason = `${refusedParcels[0].parcelNodeId} declined (${refusedParcels[0].reason}) — no atom would be written`;
+    } else {
+      reason = "mechanical verify did not pass for this parcel — no atom would be written";
+    }
+    previews = [emptyRemintPreview(args.parcel, reason)];
+  }
+  const previewDoc = {
+    event: "depth-warm.remint-preview.doc",
+    rowId: args.rowId,
+    parcel: args.parcel,
+    countyFips: COUNTY_FIPS,
+    dryRun,
+    engineNote:
+      "bodies below are what `--promote` would upsert via writePropertyAtom " +
+      "(INSERT ... ON CONFLICT (atom_did) DO UPDATE SET body = EXCLUDED.body). " +
+      "This leg wrote nothing.",
+    previews,
+  };
+  console.log(JSON.stringify(previewDoc, null, 2));
+  if (args.remintPreviewOut) {
+    writeFileSync(args.remintPreviewOut, `${JSON.stringify(previewDoc, null, 2)}\n`, {
+      encoding: "utf8",
+    });
+    console.log(
+      JSON.stringify({
+        event: "depth-warm.remint-preview.written",
+        path: args.remintPreviewOut,
+        previewCount: previews.length,
+      }),
+    );
+  }
+}
 
 const refusedRosterPath =
   args.refusedRosterOut ??

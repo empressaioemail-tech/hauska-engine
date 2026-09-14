@@ -1,0 +1,137 @@
+# P-186 / OPS-23 wave 6 (plan row P-154) — the Cloud Run Job wrapper for the
+# BOUNDED per-parcel depth-warm RE-MINT.
+#
+# WHY THIS FILE EXISTS. `depth-warm-city-batch.mjs --parcel=<nodeId> --promote`
+# is the ONLY path that persists a `setback-rule` atom (promote.ts ->
+# emitSetbackRule -> writePropertyAtomIfEnabled -> PgStorage.writePropertyAtom),
+# and P-169 / A-132 (`_decisions/2026-09-12_loaders_get_cloud_jobs_no_break_glass.md`)
+# makes any writing run Cloud-Run-Job-only. Until this file, that path had no
+# Cloud Run or Cloud Build wrapper at all. Two alternatives were REJECTED by the
+# operator on 2026-09-14: a one-off seat-run exception, and the sanctioned
+# county/city-cohort form (`--city-cohort --force-overwrite`, the Elgin
+# precedent, 3,762 parcels, which rewrites stored envelope geometry across the
+# whole cohort).
+#
+# SHAPE. Deliberately mirrors the engine's own P-169 writer jobs —
+# `cloudbuild.atoms-writer-p169.yaml` and `cloudbuild.footprint-retag.yaml`
+# (which in turn follow hauska-factory's `cloudbuild.publish.yaml` convention):
+# build, push, describe-for-DIGEST, deploy pinned to the digest, never a floating
+# tag. DIGEST PINNING IS NOT DECORATION: a floating tag silently deploys on a
+# stale resolution (the R2/R5 incidents, A-020).
+#
+# EXECUTION-TIME VALUES ARE OVERRIDES, NEVER TEMPLATE VALUES. As in
+# `cloudbuild.publish.yaml`, nothing here is edited to change a run — an
+# execution names its own row/parcel via `--args`, and the deploy step is never
+# re-run to change one (`gcloud run jobs update` is never run on a live template).
+#
+# THE BAKED ARGS ARE THE DRY LEG, ON PURPOSE. The default invocation of this job
+# is the pre-write check:
+#
+#   gcloud run jobs execute hauska-engine-depth-warm-remint \
+#     --project=hauska-prod-497015 --region=us-east4 --wait
+#
+# That runs `--row-id=Bastrop --parcel=48021:34049 --dry-run --remint-preview`
+# and WRITES NOTHING. The apply leg is a separate, explicit execution whose
+# `--args` override swaps the dry leg for `--promote`:
+#
+#   gcloud run jobs execute hauska-engine-depth-warm-remint \
+#     --project=hauska-prod-497015 --region=us-east4 --wait \
+#     --args=--row-id=Bastrop,--parcel=48021:34049,--promote
+#
+# The reason the APPLY args are not baked: a bare `gcloud run jobs execute` would
+# then fire a live in-place upsert of a real atom with no deliberate act. The
+# P-169 atoms-writer job is left unspecialized for the same class of reason ("no
+# --writer is baked, so every execution names its own writer, county and target").
+# A wrapper whose default action is a write would be a wrapper that can be fired
+# by accident. `--remint-preview` additionally REFUSES to be combined with
+# `--promote` inside the runner, so the dry leg cannot be mistaken for the apply
+# leg in either direction.
+#
+# A bare execute with no `--args` at all cannot write either, and cannot be
+# silently wrong: `--row-id` is REQUIRED and the runner FATALs without it.
+#
+# P-169 SATISFACTION IS BY CONSTRUCTION. `CLOUD_RUN_JOB` is set by the Cloud Run
+# Jobs platform on every job execution and can never be supplied by a caller
+# flag. (Honest gap, carried in the PR close: the depth-warm runner itself has no
+# `refuseApplyOutsideCloudRunJob` gate the way `write-building-footprint-county.mjs`
+# does — `writer-apply-lease.mjs` exports it and P-169 wired it into that writer
+# only. Nothing in code stops a laptop that sets PROPERTY_ATOM_PATH=1 from
+# running the apply leg; this job is the sanctioned instrument, not yet a code
+# gate. Named as a leave-behind, not silently fixed here.)
+#
+# SERIALIZATION — READ THE RUNBOOK FIRST. `writePropertyAtom` takes NO lease
+# (unlike `writePropertyAtomsBatch`, which throws `LeaseRequiredError` without a
+# `HeldLease`), so the storage layer provides NO mutual exclusion for this write.
+# `RUNBOOK.depth-warm-remint.md` step 1-2 is the exclusion: a read-only capture
+# of the live row (the only rollback artifact that can exist — there is no version
+# or history table for property atoms) plus an in-flight preflight before the
+# apply execution.
+substitutions:
+  _REGION: "us-east4"
+  _IMAGE: "us-east4-docker.pkg.dev/hauska-prod-497015/hauska-factory/atoms-writer"
+  _IMAGE_TAG: "depth-warm-remint"
+  # Dry-leg defaults. Execution-time values — override with --args on execute;
+  # never edit-and-redeploy to change a run.
+  _ROW_ID: "Bastrop"
+  _PARCEL: "48021:34049"
+  _TASK_TIMEOUT: "3600"
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID
+      - -f
+      - Dockerfile.atoms-writer
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID"]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        DIGEST="$$(gcloud artifacts docker images describe ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID --format='value(image_summary.fully_qualified_digest)')"
+        # A-020: refuse anything that is not shaped like a real digest. A
+        # deploy pin that is not a digest can silently resolve a stale tag.
+        case "$$DIGEST" in
+          *@sha256:*) ;;
+          *) echo "REFUSE: describe did not return a digest: $$DIGEST" >&2; exit 2 ;;
+        esac
+        echo "pinning hauska-engine-depth-warm-remint to $$DIGEST"
+
+        # DATABASE_URL is the mutation target: set to the ATOMS store explicitly
+        # and never left to fall through (SUBSTRATE_DATABASE_URL is the name
+        # resolveSubstrateDatabaseUrl reads first; both are set to the same
+        # secret so the atoms store cannot be inferred).
+        # TXGIO_DATABASE_URL is the read-only store holding `txgio_parcel`
+        # (StratMap/LDT deployment). Naming CORTEX_DATABASE_URL as well is for
+        # the storage/adapters helpers that fall back to it, never a second
+        # mutation target. Secret names mirror hauska-engine-atoms-writer
+        # (cloudbuild.atoms-writer-p169.yaml).
+        gcloud run jobs deploy hauska-engine-depth-warm-remint \
+          --project=hauska-prod-497015 \
+          --region=${_REGION} \
+          --image="$$DIGEST" \
+          --task-timeout=${_TASK_TIMEOUT} \
+          --tasks=1 \
+          --parallelism=1 \
+          --max-retries=0 \
+          --memory=4Gi \
+          --cpu=2 \
+          --command=pnpm,--filter,@hauska-engine/engine-core,exec,tsx,scripts/depth-warm-city-batch.mjs \
+          --args=--row-id=${_ROW_ID},--parcel=${_PARCEL},--dry-run,--remint-preview \
+          --set-secrets=SUBSTRATE_DATABASE_URL=ATOMS_DATABASE_URL:latest,DATABASE_URL=ATOMS_DATABASE_URL:latest,TXGIO_DATABASE_URL=SOURCE_DATABASE_URL:latest,CORTEX_DATABASE_URL=SOURCE_DATABASE_URL:latest \
+          --set-env-vars=IMAGE_DIGEST=$$DIGEST,CLOUD_RUN_REGION=${_REGION},PROPERTY_ATOM_PATH=1,NODE_OPTIONS=--use-system-ca
+
+images:
+  - ${_IMAGE}:${_IMAGE_TAG}-$BUILD_ID
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+timeout: 3600s
