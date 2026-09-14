@@ -16,6 +16,16 @@
  *
  *   FACTORY_DATABASE_URL=... node packages/engine-core/scripts/gate-rail-cli.mjs --county=48055 --rail=flood
  *
+ * P-195: evaluateRailGate now REQUIRES the program-wide declared-ahead rail
+ * set (see publish-gate.ts). --declared-ahead=<comma,separated,list> lets a
+ * caller looping over many (county, rail) pairs compute it ONCE and pass it
+ * to every invocation, avoiding one full-table parcel_record_cell scan per
+ * subprocess (AGENT_CONTRACT section 4, heavy-scan serialization). Omit the
+ * flag entirely for a standalone one-off run and this CLI computes it itself
+ * via loadProgramWideLiveRailKeys -- correct but a real scan, so never loop
+ * this CLI without the flag. --declared-ahead= (present, empty) means
+ * "nothing is declared ahead," distinct from the flag being absent.
+ *
  * Prints one JSON verdict line to stdout. Non-zero exit on any query/DB
  * error; exit 0 regardless of ok:true/false in the verdict itself (a REFUSE
  * verdict is a successful evaluation, not a CLI failure — the caller reads
@@ -23,13 +33,22 @@
  */
 import postgres from "postgres";
 
-import { loadCountyRailCells, evaluateRailGate } from "../src/parcel-record/index.ts";
+import {
+  loadCountyRailCells,
+  evaluateRailGate,
+  loadProgramWideLiveRailKeys,
+  declaredAheadFromLiveRailKeys,
+} from "../src/parcel-record/index.ts";
 
 function parseArgs(argv) {
-  const out = { county: null, rail: null };
+  const out = { county: null, rail: null, declaredAhead: null };
   for (const a of argv) {
     if (a.startsWith("--county=")) out.county = a.slice("--county=".length).trim();
     else if (a.startsWith("--rail=")) out.rail = a.slice("--rail=".length).trim();
+    else if (a.startsWith("--declared-ahead=")) {
+      const raw = a.slice("--declared-ahead=".length).trim();
+      out.declaredAhead = raw.length === 0 ? [] : raw.split(",").map((s) => s.trim()).filter(Boolean);
+    }
   }
   if (!out.county) {
     console.error("FATAL: --county=<fips> is required");
@@ -55,11 +74,21 @@ async function main() {
   await sql`SET default_transaction_read_only = on`;
   await sql`SET statement_timeout = '30s'`;
 
+  let declaredAhead = args.declaredAhead;
+  let declaredAheadReadAt = null;
+  if (declaredAhead === null) {
+    const liveness = await loadProgramWideLiveRailKeys(sql);
+    declaredAhead = declaredAheadFromLiveRailKeys(liveness.liveRailKeys);
+    declaredAheadReadAt = liveness.readAt;
+  }
+
   const loadStart = Date.now();
   const loaded = await loadCountyRailCells(sql, args.county, args.rail);
   const loadMs = Date.now() - loadStart;
 
-  const verdict = evaluateRailGate(loaded.cells, args.rail);
+  const verdict = evaluateRailGate(loaded.cells, args.rail, {
+    programWideDeclaredAheadRailKeys: declaredAhead,
+  });
 
   const payload = {
     kind: "parcel-b-gate-sched-rail-verdict",
@@ -70,6 +99,8 @@ async function main() {
     pageCount: loaded.pageCount,
     parcelRowCount: loaded.parcelRowCount,
     readAt: loaded.readAt,
+    declaredAheadSource: args.declaredAhead === null ? "computed-live" : "flag",
+    declaredAheadReadAt,
     verdict,
   };
 
