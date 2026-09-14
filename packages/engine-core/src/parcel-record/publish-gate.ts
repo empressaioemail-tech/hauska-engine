@@ -156,15 +156,23 @@ export function allRailKeys(): readonly ParcelRecordRailKey[] {
  */
 
 /**
- * P-195: this county has zero earned cells for a rail that is NOT
- * declared-ahead program-wide, and at least one cell here is genuinely
- * `unaccounted` (never a rail whose cells are entirely `not-applicable` --
- * see evaluateRailGate's doc comment). Distinct from a normal `ok:false`
- * (some cells unaccounted among a live rail) because here NO cell in this
- * county earned anything at all: either the county itself has zero cells
- * (never instantiated) or this specific rail was simply never run for it,
- * while the rail is live somewhere else in the program. Both read the same
- * to a caller that only has this county's data, hence one code.
+ * P-195: cells.length === 0 for a (county, rail) pair -- loadCountyRailCells
+ * guarantees this happens ONLY when the county itself has zero parcel_record
+ * rows (never instantiated; every real parcel carries a cell for every
+ * rail), so this is a structural "this county does not exist yet" signal,
+ * never a per-rail scoping decision. A rail that IS built and live
+ * elsewhere in the program still earning a clean excludedDeclaredAhead for
+ * such a county is the exact defect this row exists to close: an empty
+ * county produced 65 clean excluded verdicts and the gate passed it.
+ *
+ * Deliberately NOT triggered by a populated county whose cells are all
+ * unaccounted or all not-applicable for one rail -- that shape is
+ * indistinguishable from (and, in real, ratified production behavior, IS)
+ * a rail deliberately scoped to a subset of counties by design (e.g.
+ * maxImperviousCoverPct's writer is hard-scoped to Travis only and never
+ * writes so much as a not-applicable cell anywhere else; see hauska-factory
+ * test/gate-county-scoped-rail.test.mjs, which this change must not
+ * regress). That shape keeps reading excludedDeclaredAhead, unchanged.
  */
 export const RAIL_NEVER_FILLED = "RAIL_NEVER_FILLED";
 
@@ -174,9 +182,9 @@ export interface RailGateVerdict {
   cellCount: number;
   unaccountedCount: number;
   unaccountedSamples: Array<{ placeKey: string }>;
-  /** Required, same as PublishGateVerdict: [railKey] when the rail is legitimately excluded from scoring (declared-ahead program-wide, or entirely not-applicable in this county), else []. */
+  /** Required, same as PublishGateVerdict: [railKey] when the rail is legitimately excluded from scoring, else []. */
   excludedDeclaredAhead: readonly ParcelRecordRailKey[];
-  /** Present only when ok is false because this county earned nothing at all for railKey (P-195). */
+  /** Present only when ok is false because this (county, rail) pair carried zero cells at all (P-195). */
   code?: typeof RAIL_NEVER_FILLED;
 }
 
@@ -186,13 +194,13 @@ export interface RailGateOptions {
    * Rail keys with zero earned cells ANYWHERE in the store, across every
    * county -- e.g. the complement of loadProgramWideLiveRailKeys's result
    * against PARCEL_RECORD_RAIL_KEYS. REQUIRED, no default: without it this
-   * function cannot distinguish "declared ahead, nobody has attempted this
-   * rail on the whole program yet" from "this county specifically was
-   * never filled for a rail the program already uses elsewhere" -- the
-   * P-195 defect (a totally empty/never-filled county read every rail as
-   * excluded and the gate passed it cleanly). A caller with no way to
-   * supply this must not call evaluateRailGate; there is no silent
-   * fallback, per ENFORCEMENT's rule against fail-open defaults.
+   * function cannot distinguish, for a structurally empty county
+   * (cells.length === 0), "declared ahead, nobody has attempted this rail
+   * on the whole program yet" (nothing to report) from "this rail is live
+   * elsewhere but this county was never filled at all" (P-195, a real
+   * gap). A caller with no way to supply this must not call
+   * evaluateRailGate; there is no silent fallback, per ENFORCEMENT's rule
+   * against fail-open defaults.
    */
   programWideDeclaredAheadRailKeys:
     | ReadonlySet<ParcelRecordRailKey>
@@ -211,6 +219,28 @@ export function evaluateRailGate(
       : new Set(options.programWideDeclaredAheadRailKeys);
   const live = cells.some((c) => isEarnedCell(c.state));
 
+  if (!live) {
+    if (cells.length === 0 && !declaredAheadProgramWide.has(railKey)) {
+      return {
+        ok: false,
+        railKey,
+        cellCount: 0,
+        unaccountedCount: 0,
+        unaccountedSamples: [],
+        excludedDeclaredAhead: [],
+        code: RAIL_NEVER_FILLED,
+      };
+    }
+    return {
+      ok: true,
+      railKey,
+      cellCount: cells.length,
+      unaccountedCount: 0,
+      unaccountedSamples: [],
+      excludedDeclaredAhead: [railKey],
+    };
+  }
+
   const unaccountedSamples: RailGateVerdict["unaccountedSamples"] = [];
   let unaccountedCount = 0;
   for (const cell of cells) {
@@ -220,42 +250,6 @@ export function evaluateRailGate(
         unaccountedSamples.push({ placeKey: cell.placeKey });
       }
     }
-  }
-
-  if (!live) {
-    // Entirely not-applicable (never empty by vacuous truth -- cells.length
-    // must be > 0 for this to hold) is a legitimate, deliberately-stamped
-    // accounted state, county-specific, and stays excluded regardless of
-    // whether the rail is declared-ahead program-wide: a fully
-    // unincorporated county's zoningDistrict cells, for example, are
-    // correctly not-applicable everywhere in it even though zoningDistrict
-    // is very much live in other counties. See __tests__/rail-gate.test.ts,
-    // "not-applicable cells are neither earned nor unaccounted."
-    const allNotApplicable =
-      cells.length > 0 && cells.every((c) => c.state.kind === "not-applicable");
-    if (allNotApplicable || declaredAheadProgramWide.has(railKey)) {
-      return {
-        ok: true,
-        railKey,
-        cellCount: cells.length,
-        unaccountedCount: 0,
-        unaccountedSamples: [],
-        excludedDeclaredAhead: [railKey],
-      };
-    }
-    // Zero earned cells, not all not-applicable, and not declared-ahead
-    // anywhere in the program: either this county has no cells at all
-    // (never instantiated) or this rail specifically was never run for it.
-    // Never a silent pass -- P-195.
-    return {
-      ok: false,
-      railKey,
-      cellCount: cells.length,
-      unaccountedCount,
-      unaccountedSamples,
-      excludedDeclaredAhead: [],
-      code: RAIL_NEVER_FILLED,
-    };
   }
 
   return {

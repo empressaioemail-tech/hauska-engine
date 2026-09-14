@@ -103,12 +103,12 @@ describe("evaluateRailGate (PARCEL-B-GATE-SCHED)", () => {
       expect(verdict.code).toBeUndefined();
     });
 
-    it("a real, filled county where this rail was simply never run (all cells unaccounted, not not-applicable) REFUSES even though the county has other data (this is the actual P-195 shape: partial rollout, not a structurally empty county)", () => {
+    it("a POPULATED county where this rail was simply never run (all cells unaccounted, not not-applicable, cells.length > 0) stays EXCLUDED, not refused -- this is deliberately NOT the P-195 shape: a rail can be legitimately scoped to a subset of counties by design (hauska-factory maxImperviousCoverPct is Travis-only), and this fix must not regress that (hauska-factory test/gate-county-scoped-rail.test.mjs)", () => {
       const cells = [cell("48021:1", "unaccounted"), cell("48021:2", "unaccounted"), cell("48021:3", "unaccounted")];
       const verdict = evaluateRailGate(cells, "flood", { programWideDeclaredAheadRailKeys: [] });
-      expect(verdict.ok).toBe(false);
-      expect(verdict.code).toBe(RAIL_NEVER_FILLED);
-      expect(verdict.unaccountedCount).toBe(3);
+      expect(verdict.ok).toBe(true);
+      expect(verdict.code).toBeUndefined();
+      expect(verdict.excludedDeclaredAhead).toEqual(["flood"]);
     });
 
     it("a genuinely declared-ahead rail on a filled county still excludes, not refuses (dispatch fixture b)", () => {
@@ -118,12 +118,12 @@ describe("evaluateRailGate (PARCEL-B-GATE-SCHED)", () => {
       expect(verdict.excludedDeclaredAhead).toEqual(["flood"]);
     });
 
-    it("a mix of not-applicable and unaccounted cells (NOT all not-applicable) refuses when the rail is live elsewhere -- proves the not-applicable exemption requires EVERY cell to qualify, not just one", () => {
+    it("a POPULATED county with a mix of not-applicable and unaccounted cells for a rail (cells.length > 0) also stays excluded, not refused -- same reasoning as the all-unaccounted case above: only cells.length === 0 (a structurally empty county) triggers RAIL_NEVER_FILLED", () => {
       const cells = [cell("48021:1", "not-applicable"), cell("48021:2", "unaccounted")];
       const verdict = evaluateRailGate(cells, "zoningDistrict", { programWideDeclaredAheadRailKeys: [] });
-      expect(verdict.ok).toBe(false);
-      expect(verdict.code).toBe(RAIL_NEVER_FILLED);
-      expect(verdict.unaccountedCount).toBe(1);
+      expect(verdict.ok).toBe(true);
+      expect(verdict.code).toBeUndefined();
+      expect(verdict.excludedDeclaredAhead).toEqual(["zoningDistrict"]);
     });
 
     it("a partially filled county (some earned, some unaccounted) refuses exactly as before -- no widening from this fix (dispatch fixture c)", () => {
