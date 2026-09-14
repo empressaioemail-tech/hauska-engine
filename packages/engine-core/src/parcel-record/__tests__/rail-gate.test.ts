@@ -5,6 +5,7 @@ import {
   loadCountyRailCells,
   loadCountyRailCellsPage,
   countyRailCellsFirstAfter,
+  RAIL_NEVER_FILLED,
   type ParcelRecordSqlClient,
   type RailCell,
   type RailGateVerdict,
@@ -27,17 +28,18 @@ function cell(placeKey: string, kind: "value" | "absent-verified" | "refused" | 
 }
 
 describe("evaluateRailGate (PARCEL-B-GATE-SCHED)", () => {
-  it("a rail with zero earned cells is declared-ahead and passes trivially (matches deriveLiveRailKeys' definition of live)", () => {
+  it("a rail with zero earned cells, declared-ahead PROGRAM-WIDE, passes trivially (matches deriveLiveRailKeys' definition of live)", () => {
     const cells = [cell("48021:1", "unaccounted"), cell("48021:2", "unaccounted")];
-    const verdict = evaluateRailGate(cells, "flood");
+    const verdict = evaluateRailGate(cells, "flood", { programWideDeclaredAheadRailKeys: ["flood"] });
     expect(verdict.ok).toBe(true);
     expect(verdict.excludedDeclaredAhead).toEqual(["flood"]);
     expect(verdict.unaccountedCount).toBe(0);
+    expect(verdict.code).toBeUndefined();
   });
 
   it("a live rail (at least one earned cell) with zero unaccounted cells passes and is NOT excluded (falsifier: a live, fully-accounted rail must never appear in excludedDeclaredAhead)", () => {
     const cells = [cell("48021:1", "value"), cell("48021:2", "absent-verified")];
-    const verdict = evaluateRailGate(cells, "flood");
+    const verdict = evaluateRailGate(cells, "flood", { programWideDeclaredAheadRailKeys: [] });
     expect(verdict.ok).toBe(true);
     expect(verdict.excludedDeclaredAhead).toEqual([]);
     expect(verdict.unaccountedCount).toBe(0);
@@ -45,7 +47,7 @@ describe("evaluateRailGate (PARCEL-B-GATE-SCHED)", () => {
 
   it("a live rail with at least one unaccounted cell refuses (falsifier: this is the case the whole gate exists to catch)", () => {
     const cells = [cell("48021:1", "value"), cell("48021:2", "unaccounted")];
-    const verdict = evaluateRailGate(cells, "flood");
+    const verdict = evaluateRailGate(cells, "flood", { programWideDeclaredAheadRailKeys: [] });
     expect(verdict.ok).toBe(false);
     expect(verdict.unaccountedCount).toBe(1);
     expect(verdict.unaccountedSamples[0]?.placeKey).toBe("48021:2");
@@ -54,32 +56,83 @@ describe("evaluateRailGate (PARCEL-B-GATE-SCHED)", () => {
 
   it("refused counts as earned, matching isEarnedCell — a rail live only via refused cells is scored, not excluded", () => {
     const cells = [cell("48021:1", "refused"), cell("48021:2", "unaccounted")];
-    const verdict = evaluateRailGate(cells, "wells");
+    const verdict = evaluateRailGate(cells, "wells", { programWideDeclaredAheadRailKeys: [] });
     expect(verdict.excludedDeclaredAhead).toEqual([]);
     expect(verdict.ok).toBe(false);
     expect(verdict.unaccountedCount).toBe(1);
   });
 
-  it("not-applicable cells are neither earned nor unaccounted — a county entirely not-applicable for a rail is declared-ahead, not a refusal (falsifier: not-applicable must not be miscounted as unaccounted)", () => {
+  it("not-applicable cells are neither earned nor unaccounted — a county entirely not-applicable for a rail is declared-ahead, not a refusal, EVEN WHEN the rail is live elsewhere in the program (falsifier: not-applicable must not be miscounted as unaccounted, and must not be swept into RAIL_NEVER_FILLED just because programWideDeclaredAheadRailKeys omits it)", () => {
     const cells = [cell("48021:1", "not-applicable"), cell("48021:2", "not-applicable")];
-    const verdict = evaluateRailGate(cells, "zoningDistrict");
+    const verdict = evaluateRailGate(cells, "zoningDistrict", { programWideDeclaredAheadRailKeys: [] });
     expect(verdict.ok).toBe(true);
     expect(verdict.unaccountedCount).toBe(0);
     expect(verdict.excludedDeclaredAhead).toEqual(["zoningDistrict"]);
+    expect(verdict.code).toBeUndefined();
   });
 
   it("cellCount always reflects the input size regardless of verdict shape", () => {
     const cells = [cell("48021:1", "value"), cell("48021:2", "value"), cell("48021:3", "unaccounted")];
-    const verdict = evaluateRailGate(cells, "flood");
+    const verdict = evaluateRailGate(cells, "flood", { programWideDeclaredAheadRailKeys: [] });
     expect(verdict.cellCount).toBe(3);
   });
 
   it("verdict shape matches PublishGateVerdict's field names (ok/unaccountedCount/excludedDeclaredAhead) so a B-READER consumer generalizes across both instruments", () => {
-    const verdict: RailGateVerdict = evaluateRailGate([cell("48021:1", "value")], "flood");
+    const verdict: RailGateVerdict = evaluateRailGate([cell("48021:1", "value")], "flood", {
+      programWideDeclaredAheadRailKeys: [],
+    });
     expect(verdict).toHaveProperty("ok");
     expect(verdict).toHaveProperty("unaccountedCount");
     expect(verdict).toHaveProperty("excludedDeclaredAhead");
     expect(Array.isArray(verdict.excludedDeclaredAhead)).toBe(true);
+  });
+
+  describe("P-195: total absence must never pass", () => {
+    it("an empty county (zero cells -- never instantiated) REFUSES with RAIL_NEVER_FILLED when the rail is not declared-ahead program-wide (fixture a)", () => {
+      const verdict = evaluateRailGate([], "flood", { programWideDeclaredAheadRailKeys: [] });
+      expect(verdict.ok).toBe(false);
+      expect(verdict.code).toBe(RAIL_NEVER_FILLED);
+      expect(verdict.excludedDeclaredAhead).toEqual([]);
+      expect(verdict.cellCount).toBe(0);
+    });
+
+    it("an empty county for a rail that IS declared-ahead program-wide still excludes, not refuses (no behavior change for a genuinely never-built rail)", () => {
+      const verdict = evaluateRailGate([], "flood", { programWideDeclaredAheadRailKeys: ["flood"] });
+      expect(verdict.ok).toBe(true);
+      expect(verdict.excludedDeclaredAhead).toEqual(["flood"]);
+      expect(verdict.code).toBeUndefined();
+    });
+
+    it("a real, filled county where this rail was simply never run (all cells unaccounted, not not-applicable) REFUSES even though the county has other data (this is the actual P-195 shape: partial rollout, not a structurally empty county)", () => {
+      const cells = [cell("48021:1", "unaccounted"), cell("48021:2", "unaccounted"), cell("48021:3", "unaccounted")];
+      const verdict = evaluateRailGate(cells, "flood", { programWideDeclaredAheadRailKeys: [] });
+      expect(verdict.ok).toBe(false);
+      expect(verdict.code).toBe(RAIL_NEVER_FILLED);
+      expect(verdict.unaccountedCount).toBe(3);
+    });
+
+    it("a genuinely declared-ahead rail on a filled county still excludes, not refuses (dispatch fixture b)", () => {
+      const cells = [cell("48021:1", "unaccounted"), cell("48021:2", "unaccounted")];
+      const verdict = evaluateRailGate(cells, "flood", { programWideDeclaredAheadRailKeys: ["flood"] });
+      expect(verdict.ok).toBe(true);
+      expect(verdict.excludedDeclaredAhead).toEqual(["flood"]);
+    });
+
+    it("a mix of not-applicable and unaccounted cells (NOT all not-applicable) refuses when the rail is live elsewhere -- proves the not-applicable exemption requires EVERY cell to qualify, not just one", () => {
+      const cells = [cell("48021:1", "not-applicable"), cell("48021:2", "unaccounted")];
+      const verdict = evaluateRailGate(cells, "zoningDistrict", { programWideDeclaredAheadRailKeys: [] });
+      expect(verdict.ok).toBe(false);
+      expect(verdict.code).toBe(RAIL_NEVER_FILLED);
+      expect(verdict.unaccountedCount).toBe(1);
+    });
+
+    it("a partially filled county (some earned, some unaccounted) refuses exactly as before -- no widening from this fix (dispatch fixture c)", () => {
+      const cells = [cell("48021:1", "value"), cell("48021:2", "unaccounted")];
+      const verdict = evaluateRailGate(cells, "flood", { programWideDeclaredAheadRailKeys: [] });
+      expect(verdict.ok).toBe(false);
+      expect(verdict.code).toBeUndefined();
+      expect(verdict.unaccountedCount).toBe(1);
+    });
   });
 });
 

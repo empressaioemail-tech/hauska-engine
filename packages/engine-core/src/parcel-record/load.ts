@@ -15,6 +15,7 @@
  */
 
 import type { AnyCellState } from "./cell-state.js";
+import { RAIL_LIVENESS_SQL } from "./liveness.js";
 import { PARCEL_RECORD_RAIL_KEYS } from "./rail-keys.js";
 import type { ParcelRecordRailKey } from "./rail-keys.js";
 import type { ParcelRecordCells, ParcelRecordRow } from "./record-shape.js";
@@ -265,4 +266,48 @@ export async function loadCountyRailCells(
     parcelRowCount,
     readAt: new Date().toISOString(),
   };
+}
+
+export interface ProgramWideRailLivenessResult {
+  /** Rail keys with at least one earned (value | absent-verified | refused) cell anywhere in the store, across every county. */
+  liveRailKeys: readonly ParcelRecordRailKey[];
+  readAt: string;
+}
+
+/**
+ * P-195: the program-wide (all-counties) rail liveness evaluateRailGate
+ * needs to distinguish "declared ahead, nobody has attempted this rail on
+ * the whole program yet" from "this county specifically was never filled."
+ * ONE GROUP BY over parcel_record_cell, no county filter -- a genuine heavy
+ * scan, so a caller evaluating many (county, rail) pairs in one run computes
+ * this ONCE and reuses the result, never once per pair (AGENT_CONTRACT
+ * section 4: at most one heavy scan at a time). Executes RAIL_LIVENESS_SQL
+ * verbatim (constructed as a zero-placeholder tagged-template call) rather
+ * than a re-typed copy of the same text, so the query this function runs
+ * and the query liveness.ts documents as the SQL contract can never diverge
+ * (DEV_PROCESS 2.4).
+ */
+export async function loadProgramWideLiveRailKeys(
+  sql: ParcelRecordSqlClient,
+): Promise<ProgramWideRailLivenessResult> {
+  const template = Object.assign([RAIL_LIVENESS_SQL], {
+    raw: [RAIL_LIVENESS_SQL],
+  }) as unknown as TemplateStringsArray;
+  const rows = await sql<{ rail_key: string }>(template);
+  return {
+    liveRailKeys: rows.map((r) => r.rail_key as ParcelRecordRailKey),
+    readAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Complement of loadProgramWideLiveRailKeys against the full rail set --
+ * the exact input evaluateRailGate's programWideDeclaredAheadRailKeys
+ * option needs.
+ */
+export function declaredAheadFromLiveRailKeys(
+  liveRailKeys: readonly ParcelRecordRailKey[],
+): readonly ParcelRecordRailKey[] {
+  const live = new Set(liveRailKeys);
+  return PARCEL_RECORD_RAIL_KEYS.filter((k) => !live.has(k));
 }

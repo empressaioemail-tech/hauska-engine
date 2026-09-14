@@ -116,6 +116,7 @@ export {
   poisonCell,
   allRailKeys,
   evaluateRailGate,
+  RAIL_NEVER_FILLED,
   type PublishGateVerdict,
   type PublishGateOptions,
   type PublishGateWarning,
@@ -128,12 +129,15 @@ export {
   loadCountyRailCells,
   loadCountyRailCellsPage,
   countyRailCellsFirstAfter,
+  loadProgramWideLiveRailKeys,
+  declaredAheadFromLiveRailKeys,
   DEFAULT_RAIL_CELL_PAGE_SIZE,
   type ParcelRecordSqlClient,
   type LoadCountyParcelRecordsResult,
   type RailCell,
   type RailCellPage,
   type LoadCountyRailCellsResult,
+  type ProgramWideRailLivenessResult,
 } from "./load.js";
 
 export {
