@@ -17,12 +17,13 @@ import {
   type SetbackAssignment,
   type SetbackOffsetResult,
 } from "./ring-geometry.js";
-import { anyNotSpecified, formatSetbackSummaryLine } from "./setback-display.js";
+import { anyNotSpecified, conflictNote, formatSetbackSourceClause, formatSetbackSummaryLine } from "./setback-display.js";
 import {
   envelopeHuman,
   mapBuildableDisplay,
   type BuildableDisplayKind,
 } from "@empressaio/atom-contract/display";
+import type { SetbackSecondSourceConflict } from "@hauska-engine/adapters";
 
 const METERS_PER_FOOT = 0.3048;
 
@@ -45,6 +46,22 @@ export interface SetbackRuleInput {
   honestAbsence?: boolean;
   /** Reason surfaced on the sheet when `honestAbsence` is set. */
   honestAbsenceReason?: string;
+  /**
+   * P-154 wave 6 (R-1) — the source these values rest on, as read at source:
+   * its own name, its own citation (ordinance URL or ordinance number), and
+   * its own effective date. Printed beside the values on every sheet, so a
+   * value never appears without the citation it rests on.
+   */
+  sourceLabel?: string | null;
+  sourceCitation?: string | null;
+  sourceDate?: string | null;
+  dateBasis?: string | null;
+  /**
+   * P-154 wave 6 (R-1) — present only when two dated sources disagree on a
+   * value: the structured payload of the one conflict sentence every surface
+   * prints (`setbackConflictNote` in `@empressaio/atom-contract/display`).
+   */
+  conflict?: SetbackSecondSourceConflict | null;
 }
 
 export interface StreetAnchorInput {
@@ -209,6 +226,13 @@ export interface SitePlanSetbackModel {
   notSpecified?: { front?: boolean; side?: boolean; rear?: boolean };
   /** True when no setback-rule atom exists at all (whole layer honest-absent). */
   honestAbsence?: boolean;
+  /**
+   * P-154 wave 6 (R-1 CONFLICT ROW) — the one conflict sentence, present only
+   * when two dated sources disagree on a setback value. It is already inside
+   * `displayLine`; carried separately so a surface that prints its own layout
+   * (a card, an MCP section) can place the sentence without re-deriving it.
+   */
+  conflictNote?: string;
   honestAbsenceReason?: string;
   /** Honest F/S/R summary for PDF (never prints silent axes as real 0 ft). */
   displayLine: string;
@@ -514,8 +538,18 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           side: inputs.setback.side,
           rear: inputs.setback.rear,
           notSpecified,
+        }) +
+        formatSetbackSourceClause({
+          sourceLabel: inputs.setback.sourceLabel,
+          citation: inputs.setback.sourceCitation,
+          sourceDate: inputs.setback.sourceDate,
+          dateBasis: inputs.setback.dateBasis,
+          conflict: inputs.setback.conflict,
         }),
     sourceCodeAtomRef: inputs.setback.sourceCodeAtomRef,
+    ...(setbackHonestAbsence || !inputs.setback.conflict
+      ? {}
+      : { conflictNote: conflictNote(inputs.setback.conflict) }),
     basis: offset.basis,
     segments: offset.segments,
     offsetRingLocal: offset.offsetRing,

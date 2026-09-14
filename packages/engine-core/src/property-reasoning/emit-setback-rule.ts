@@ -196,6 +196,18 @@ export function emitSetbackRule(
                     })),
                 }
               : {}),
+            ...(setbackTableRow.display_meta.source_date !== undefined
+              ? { sourceDate: setbackTableRow.display_meta.source_date }
+              : {}),
+            ...(setbackTableRow.display_meta.date_basis
+              ? { dateBasis: setbackTableRow.display_meta.date_basis }
+              : {}),
+            ...(setbackTableRow.display_meta.date_precision
+              ? { datePrecision: setbackTableRow.display_meta.date_precision }
+              : {}),
+            ...(setbackTableRow.display_meta.citation_url
+              ? { citationUrl: setbackTableRow.display_meta.citation_url }
+              : {}),
             ...(setbackTableRow.display_meta.second_source
               ? {
                   secondSource: {
@@ -205,6 +217,14 @@ export function emitSetbackRule(
                       ? {
                           citationUrl:
                             setbackTableRow.display_meta.second_source.citation_url,
+                        }
+                      : {}),
+                    // P-154 wave 6 (R-1) — the structured conflict payload the
+                    // surfaces format through the one vocabulary sentence.
+                    ...(setbackTableRow.display_meta.second_source.conflict
+                      ? {
+                          conflict:
+                            setbackTableRow.display_meta.second_source.conflict,
                         }
                       : {}),
                   },

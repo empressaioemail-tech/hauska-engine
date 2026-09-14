@@ -61,7 +61,9 @@ export function resolveCodifiedSetbacksForStamp(
   if (!cityKey || !districtCode) return null;
   if (requiresPerParcelSetbackRecord(cityKey)) return null;
 
-  const adapterTable = getSetbackTableForZoning(cityKey, districtCode);
+  // Wave 6: `.table` is the source R-1 follows; a disagreeing second source is
+  // disclosed on the same table's display_meta, so nothing is dropped here.
+  const adapterTable = getSetbackTableForZoning(cityKey, districtCode)?.table;
   if (!adapterTable) return null;
 
   const setbackTable = setbackTableDescriptorFromAdapter(adapterTable);
@@ -115,7 +117,7 @@ export function emitTableBackedSetbackAtoms(
   if (!cityKey || !district) return null;
   if (requiresPerParcelSetbackRecord(cityKey)) return null;
 
-  const adapterTable = getSetbackTableForZoning(cityKey, district);
+  const adapterTable = getSetbackTableForZoning(cityKey, district)?.table;
   const setbackTable = setbackTableDescriptorFromAdapter(adapterTable);
   if (!setbackTable) return null;
 

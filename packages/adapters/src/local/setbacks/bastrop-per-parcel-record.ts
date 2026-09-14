@@ -184,6 +184,27 @@ export type BastropPerParcelSetbackParsed = {
   resolvedDistrictCode?: string | null;
   /** R26/R25 — split-zone minor zones present on this parcel, for honest disclosure. */
   splitZoneMinorZones?: BastropSplitZoneMinorZone[];
+  /**
+   * P-154 / A-148 — which columns supplied the scalars this record SERVES.
+   * `"numeric-column"` means the numeric shortcut columns (`FrontSetback_`,
+   * `SideSetback_`, `RearSetback_`) — the ones the city's One Click join reads
+   * and the ones A-148 established were never refreshed. `"text-field"` means
+   * the row's own text fields. Read per row, at source.
+   */
+  scalarFieldSource: "numeric-column" | "text-field";
+  /**
+   * P-154 / A-148 — the SAME row's TEXT fields versus the numeric shortcut
+   * columns its join reads, present ONLY when both sides are readable AND they
+   * disagree. This is the second shape of R-1 conflict the wave-6 detector
+   * must catch: ONE source, two readings, the TEXT value followed and the
+   * numeric column named as the second source. When this is present the served
+   * scalars are the TEXT values (that is what A-148 resolved), never the
+   * stale numbers.
+   */
+  textNumericDisagreement?: {
+    text: { front: number; side: number; rear: number; corner: number | null };
+    numeric: { front: number; side: number; rear: number };
+  };
   raw: {
     frontSetback?: string;
     sideSetback?: string;
@@ -215,6 +236,26 @@ function pickString(attrs: Record<string, unknown>, ...keys: string[]): string {
     if (typeof v === "string" && v.trim()) return v.trim();
   }
   return "";
+}
+
+/**
+ * P-154 / A-148 — a layer's NUMERIC shortcut column, read as a number or
+ * `null`. Separate from `pickString` so the detector can tell which of the two
+ * readings a row actually carries: `FrontSetback_` (double) is the shortcut
+ * column the city's join reads, `FrontSetback` (string, "30 feet") is the text
+ * field. Never coerces a text field into the numeric slot.
+ */
+export function pickNumericField(
+  attrs: Record<string, unknown>,
+  key: string,
+): number | null {
+  const v = attrs[key];
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim()) {
+    const n = Number(v.trim());
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
 }
 
 /**
@@ -378,8 +419,70 @@ export function parseBastropPerParcelAttributes(
   const minLotSize = pickString(attrs, "MinimumLotSize_", "MinimumLotSize");
   const { sourceDate, dateBasis, datePrecision } = dateForBastropPerParcelCitation(ordinanceCitation);
 
-  const frontFt = parseScalarSetbackFeet(frontRaw);
-  const rearFt = parseScalarSetbackFeet(rearRaw);
+  // P-154 / A-148 — read the row TWICE: the numeric shortcut columns the
+  // city's One Click join reads, and the row's OWN text fields. When both
+  // sides are readable and they disagree, the row carries two claims; A-148
+  // resolved that the TEXT value is the one this operation follows and the
+  // numeric column is the second source, so the served scalars come from the
+  // text fields and the disagreement is carried for the note. This is the
+  // detector for the second, same-layer shape of R-1 conflict.
+  const numericReadings = {
+    front: pickNumericField(attrs, "FrontSetback_"),
+    side: pickNumericField(attrs, "SideSetback_"),
+    rear: pickNumericField(attrs, "RearSetback_"),
+  };
+  const textFrontFt = parseScalarSetbackFeet(pickString(attrs, "FrontSetback"));
+  const textRearFt = parseScalarSetbackFeet(pickString(attrs, "RearSetback"));
+  const textSideParsed = parseSideSetbackText(pickString(attrs, "SideSetback"));
+  const textSideFt = textSideParsed.ok ? textSideParsed.sideInteriorFt : null;
+  // A-148 — the authoritative zoning layer publishes the corner in its OWN
+  // text field (`CornerSideStreetSetback`, e.g. "20 feet"), not inside the side
+  // text; the older One Click join kept it in the side parenthetical. Read the
+  // dedicated field first (it exists only on the authoritative layer) and fall
+  // back to the parenthetical, so the corner we print is a value read at source
+  // either way. There is never a numeric corner column to read (A-148).
+  const textCornerFieldFt = parseScalarSetbackFeet(pickString(attrs, "CornerSideStreetSetback"));
+  const textSideCornerFt =
+    textCornerFieldFt ?? (textSideParsed.ok ? textSideParsed.sideCornerFt : null);
+
+  const textNumericDisagreement =
+    numericReadings.front != null &&
+    numericReadings.side != null &&
+    numericReadings.rear != null &&
+    textFrontFt != null &&
+    textSideFt != null &&
+    textRearFt != null &&
+    (numericReadings.front !== textFrontFt ||
+      numericReadings.side !== textSideFt ||
+      numericReadings.rear !== textRearFt)
+      ? {
+          text: {
+            front: textFrontFt,
+            side: textSideFt,
+            rear: textRearFt,
+            corner: textSideCornerFt,
+          },
+          numeric: {
+            front: numericReadings.front,
+            side: numericReadings.side,
+            rear: numericReadings.rear,
+          },
+        }
+      : undefined;
+
+  const scalarFieldSource: "numeric-column" | "text-field" = textNumericDisagreement
+    ? "text-field"
+    : numericReadings.front != null && numericReadings.rear != null
+      ? "numeric-column"
+      : "text-field";
+  const disagreementFields = textNumericDisagreement ? { textNumericDisagreement } : {};
+
+  const frontFt = textNumericDisagreement
+    ? textNumericDisagreement.text.front
+    : parseScalarSetbackFeet(frontRaw);
+  const rearFt = textNumericDisagreement
+    ? textNumericDisagreement.text.rear
+    : parseScalarSetbackFeet(rearRaw);
   if (frontFt == null || rearFt == null) {
     return {
       kind: "honest-decline",
@@ -409,6 +512,8 @@ export function parseBastropPerParcelAttributes(
       sideCornerFt: frontFt,
       sideNonScalar: true,
       sideDeclineReason: sideParsed.reason,
+      scalarFieldSource,
+      ...disagreementFields,
       maxHeightFt: maxHeightFt ?? undefined,
       maxImperviousPct,
       minLotSize: minLotSize || undefined,
@@ -433,8 +538,14 @@ export function parseBastropPerParcelAttributes(
     frontFt,
     rearFt,
     sideInteriorFt: sideParsed.sideInteriorFt,
-    sideCornerFt: sideParsed.sideCornerFt,
+    // A-148 — prefer the authoritative layer's own `CornerSideStreetSetback`
+    // text field; fall back to the side text's parenthetical (the older One
+    // Click join kept the corner inside `SideSetback_`). Never a numeric corner
+    // column: the layer publishes none.
+    sideCornerFt: textCornerFieldFt ?? sideParsed.sideCornerFt,
     sideNonScalar: false,
+    scalarFieldSource,
+    ...disagreementFields,
     ...(sideParsed.fireCodeDeferral
       ? {
           sideFireCodeDeferral: true,

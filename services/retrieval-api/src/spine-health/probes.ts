@@ -835,7 +835,7 @@ export async function probeRuleSetback(
   const now = (ctx.now ?? (() => new Date()))();
   const baseline = resolveBaseline(probeId, ctx.baselines);
   try {
-    const table = getSetbackTableForZoning("bastrop-tx", GOLD_DISTRICT);
+    const table = getSetbackTableForZoning("bastrop-tx", GOLD_DISTRICT)?.table;
     const wanted = GOLD_DISTRICT.toUpperCase();
     const district =
       table?.districts.find((d) => {
