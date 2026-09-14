@@ -420,6 +420,31 @@ describe("runFloodDrainageStudy", () => {
     expect(dflt.study.rainfallCurve).toBeUndefined();
   });
 
+  // G-125 regression: caught by a LIVE probe against the real deployed
+  // canary (2026-09-14, real Bastrop parcel 48021:34049) -- a
+  // parameter-sourced run with the live NOAA fetch failing (the current
+  // real-world state; see the leave-behind finding) produced a gradient
+  // note that STILL claimed "100-yr", through this exact call path.
+  it("a parameter run with no curve produces a gradient note that never claims 100-yr (this is what the live probe caught)", async () => {
+    const dem = slopedDem();
+    const result = await runFloodDrainageStudy({
+      parcelNodeId,
+      resolver,
+      parseDem: async () => dem,
+      runWorker: async (req: HydrologyWorkerRequest) => {
+        void req;
+        return mockWorkerResult();
+      },
+      fetchDem: fakeFetchDem().fn,
+      fetchRainfall: failingRainfall,
+      rainfallDepthInches: 4,
+    });
+    expect(result.study.rainfallSource).toBe("parameter");
+    expect(result.study.rainfallCurve).toBeUndefined();
+    expect(result.study.gradient?.note).toContain("4 inch");
+    expect(result.study.gradient?.note).not.toContain("100-yr");
+  });
+
   it("the default (no-param) path is byte-identical on every RESOLVED field regardless of the G-125 curve capture", async () => {
     // The one new field is additive (rainfallCurve); every other resolved
     // value must match what a pre-G-125 caller would have seen.

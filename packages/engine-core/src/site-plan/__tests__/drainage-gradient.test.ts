@@ -141,6 +141,50 @@ describe("buildDrainageGradient", () => {
     expect(gradient!.note).toContain("10 m per pixel");
     expect(gradient!.note).toContain("9.5 inch");
     expect(gradient!.note).toContain("not a measurement source");
+    // No returnPeriodLabel passed -> this call site's default source is
+    // effectively noaa-atlas14/default territory in every real caller, but
+    // the omitted-clause behavior below is what actually matters.
+  });
+
+  // G-125 regression: caught by a LIVE probe against the real deployed
+  // canary (2026-09-14) -- a parameter-sourced run with no captured NOAA
+  // curve still printed "100-yr" in this note, because the first fix left
+  // a `?? "100-yr"` fallback that re-asserted the false claim whenever the
+  // caller explicitly passed `returnPeriodLabel: undefined` (honest
+  // absence), which is indistinguishable from "field omitted" under `??`.
+  it("omits the return-period clause entirely when returnPeriodLabel is undefined -- never falls back to a false '100-yr' claim", () => {
+    const d8 = computeD8Field(valleyDem(W, H, 24), W, H);
+    const gradient = buildDrainageGradient({
+      elevation: valleyDem(W, H, 24),
+      width: W,
+      height: H,
+      accumulation: d8.accumulation,
+      bbox,
+      rainfallDepthMm: 102,
+      demResolutionMeters: 10,
+      rainfallDepthInches: 4,
+      returnPeriodLabel: undefined,
+    });
+    expect(gradient).not.toBeNull();
+    expect(gradient!.note).toContain("4 inch");
+    expect(gradient!.note).not.toContain("100-yr");
+    expect(gradient!.note).not.toContain("yr");
+  });
+
+  it("carries an explicit interpolated return-period label verbatim", () => {
+    const d8 = computeD8Field(valleyDem(W, H, 24), W, H);
+    const gradient = buildDrainageGradient({
+      elevation: valleyDem(W, H, 24),
+      width: W,
+      height: H,
+      accumulation: d8.accumulation,
+      bbox,
+      rainfallDepthMm: 102,
+      demResolutionMeters: 10,
+      rainfallDepthInches: 4,
+      returnPeriodLabel: "~15-yr (interpolated)",
+    });
+    expect(gradient!.note).toContain("4 inch, ~15-yr (interpolated) 24-hr");
   });
 
   it("encodes a TRANSPARENT-background PNG: alpha 0 on nodata + below-floor cells, visible water elsewhere", () => {
