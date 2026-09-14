@@ -18,7 +18,7 @@ import type { GeoJsonFeatureCollection } from "@hauska-engine/adapters/hydrology
 import polygonClipping from "polygon-clipping";
 
 import { gradientRampColor } from "../drainage-gradient.js";
-import type { FloodDrainageStudy } from "../flood-drainage-study.js";
+import { rainfallReturnPeriodLabel, type FloodDrainageStudy } from "../flood-drainage-study.js";
 import {
   AERIAL_IMAGERY_ATTRIBUTION,
   AERIAL_UNAVAILABLE_NOTE,
@@ -1416,12 +1416,25 @@ export async function emitPdfFloodDrainage(
         : study.rainfallSource === "parameter"
           ? "depth supplied by the requesting application"
           : "documented regional default, live estimate unavailable";
+    // The "N-yr" claim is only TRUE by construction for noaa-atlas14/default
+    // (both are keyed to the 100-yr row). A parameter depth's return-period
+    // EQUIVALENT is an interpolation over the live curve when one was
+    // captured (shared with the gradient note so the two surfaces agree);
+    // absent a curve, the PDF states the depth with no fabricated year
+    // claim rather than defaulting to 100-yr.
+    const returnPeriodLabel = rainfallReturnPeriodLabel({
+      source: study.rainfallSource,
+      depthInches: study.rainfallDepthInches,
+      curve: study.rainfallCurve,
+    });
     cursor = drawFdKvRow(
       page,
       pageNo,
       {
         label: "Design storm",
-        value: `${study.rainfallDepthInches} in · 24-hr · 100-yr`,
+        value: returnPeriodLabel
+          ? `${study.rainfallDepthInches} in · 24-hr · ${returnPeriodLabel}`
+          : `${study.rainfallDepthInches} in · 24-hr`,
         grey: sourceQualifier,
       },
       cursor,

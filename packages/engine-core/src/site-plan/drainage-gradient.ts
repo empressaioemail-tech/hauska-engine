@@ -117,6 +117,15 @@ export interface BuildDrainageGradientOptions {
   /** For the note. */
   demResolutionMeters: number;
   rainfallDepthInches: number;
+  /**
+   * G-125: the note's return-period phrase, e.g. "100-yr" or "~15-yr
+   * (interpolated)" — computed by the caller (which holds the rainfall
+   * source + curve) and passed in verbatim. Defaults to the historical
+   * "100-yr" ONLY when omitted, so every pre-G-125 caller is unaffected;
+   * a caller that knows the run was parameter-sourced should always pass
+   * the honest label rather than rely on this default.
+   */
+  returnPeriodLabel?: string;
 }
 
 /**
@@ -235,10 +244,11 @@ export function featherIntensity(
 }
 
 function buildGradientNote(options: BuildDrainageGradientOptions): string {
+  const returnPeriodPhrase = options.returnPeriodLabel ?? "100-yr";
   return (
     "Modeled water gradient derived from D8 flow accumulation with modeled ponding, " +
     `blended and alpha graded, over the USGS 3DEP elevation model at ${options.demResolutionMeters} m per pixel. ` +
-    `Design storm ${options.rainfallDepthInches} inch, 100-yr 24-hr. ` +
+    `Design storm ${options.rainfallDepthInches} inch, ${returnPeriodPhrase} 24-hr. ` +
     "Visualization aid, not a measurement source."
   );
 }
