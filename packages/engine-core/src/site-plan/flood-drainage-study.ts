@@ -155,6 +155,14 @@ export interface FloodDrainageStudy {
   flowLinesGeoJson: GeoJsonFeatureCollection;
   rainfallDepthInches: number;
   rainfallSource: RainfallSource;
+  /**
+   * G-125 additive field (feature-detect; absent-safe for old consumers,
+   * same pattern as gradient/flowPaths): the full NOAA Atlas 14 frequency
+   * curve for this parcel centroid, present only when the live PFDS fetch
+   * succeeded. Lets a client convert between an inches depth and its
+   * return-period equivalent for THIS location without a second lookup.
+   */
+  rainfallCurve?: ReadonlyArray<RainfallCurvePoint>;
   demProvenance: FloodDrainageDemProvenance;
   /** Layman briefing — deterministic sentences from real study values. */
   briefing: string;
@@ -600,11 +608,25 @@ export function deriveDrainageZones(
 // Rainfall forcing (honest source labeling).
 // ─────────────────────────────────────────────────────────────────────────
 
+export interface RainfallCurvePoint {
+  returnPeriodYears: number;
+  depthInches: number;
+}
+
 export interface ResolvedRainfall {
   depthInches: number;
   source: RainfallSource;
   /** Provenance detail for the sheet's SOURCE column / study payload. */
   detail: string;
+  /**
+   * The FULL NOAA Atlas 14 frequency curve for this parcel centroid (G-125:
+   * one source answers both "N inches" and "the Y-year storm" without a
+   * second lookup) — present only when the live PFDS fetch actually
+   * succeeded, honest-absent otherwise (a `parameter`-sourced run still
+   * fetches this, concurrently, same as the DEM fetch; it is never a second
+   * serial round trip). Never derived or guessed when the fetch fails.
+   */
+  curve?: ReadonlyArray<RainfallCurvePoint>;
 }
 
 export async function resolveStudyRainfall(
@@ -612,6 +634,26 @@ export async function resolveStudyRainfall(
   parameterDepthInches: number | undefined,
   fetchRainfall: typeof fetchNoaaAtlas14PointEstimate,
 ): Promise<ResolvedRainfall> {
+  // ALWAYS attempt the live curve fetch, even when a parameter depth is
+  // supplied — it runs concurrently with the DEM fetch (same as the
+  // pre-G-125 no-param path already did), so a parameter-sourced run pays
+  // no extra serial latency for it. The curve is additive context; it never
+  // overrides a supplied parameter and never changes rainfallDepthInches/
+  // rainfallSource resolution below (the pre-G-125 behavior is unchanged).
+  let estimate: NoaaAtlas14PointEstimate | null = null;
+  try {
+    estimate = await fetchRainfall({ lat: centroid.lat, lng: centroid.lng });
+  } catch {
+    estimate = null;
+  }
+  const curve: ReadonlyArray<RainfallCurvePoint> | undefined =
+    estimate && estimate.designStorms.length > 0
+      ? estimate.designStorms.map((s) => ({
+          returnPeriodYears: s.returnPeriodYears,
+          depthInches: s.depthInches,
+        }))
+      : undefined;
+
   if (
     typeof parameterDepthInches === "number" &&
     Number.isFinite(parameterDepthInches) &&
@@ -621,13 +663,8 @@ export async function resolveStudyRainfall(
       depthInches: parameterDepthInches,
       source: "parameter",
       detail: "depth supplied by the requesting application",
+      ...(curve ? { curve } : {}),
     };
-  }
-  let estimate: NoaaAtlas14PointEstimate | null = null;
-  try {
-    estimate = await fetchRainfall({ lat: centroid.lat, lng: centroid.lng });
-  } catch {
-    estimate = null;
   }
   const storm = estimate?.designStorms.find(
     (s) => s.returnPeriodYears === DESIGN_STORM_RETURN_PERIOD_YEARS,
@@ -637,13 +674,113 @@ export async function resolveStudyRainfall(
       depthInches: storm.depthInches,
       source: "noaa-atlas14",
       detail: `NOAA Atlas 14 PFDS point estimate (${DESIGN_STORM_RETURN_PERIOD_YEARS}-yr 24-hr)`,
+      ...(curve ? { curve } : {}),
     };
   }
   return {
     depthInches: DEFAULT_RAINFALL_DEPTH_INCHES,
     source: "default",
     detail: DEFAULT_RAINFALL_CITATION,
+    ...(curve ? { curve } : {}),
   };
+}
+
+/**
+ * G-125 two-vocabulary conversion: interpolate a rainfall curve (log-linear
+ * in return period, the standard PFDS convention) to answer "what return
+ * period does N inches correspond to here" and the inverse. Both directions
+ * CLAMP at the curve's ends and say so — never extrapolate a fabricated
+ * number past NOAA's own [2yr, 500yr] published range.
+ */
+export interface RainfallCurveLookup {
+  value: number;
+  /** Set when the input fell outside the curve's own range and the
+   * returned value is the curve's boundary, not an interpolation. */
+  clamped?: "low" | "high";
+}
+
+function sortedCurve(
+  curve: ReadonlyArray<RainfallCurvePoint>,
+): RainfallCurvePoint[] {
+  return [...curve].sort((a, b) => a.returnPeriodYears - b.returnPeriodYears);
+}
+
+export function depthInchesForReturnPeriod(
+  curve: ReadonlyArray<RainfallCurvePoint>,
+  returnPeriodYears: number,
+): RainfallCurveLookup | null {
+  const pts = sortedCurve(curve);
+  if (pts.length === 0) return null;
+  const first = pts[0]!;
+  const last = pts[pts.length - 1]!;
+  if (returnPeriodYears <= first.returnPeriodYears) {
+    return { value: first.depthInches, clamped: returnPeriodYears < first.returnPeriodYears ? "low" : undefined };
+  }
+  if (returnPeriodYears >= last.returnPeriodYears) {
+    return { value: last.depthInches, clamped: returnPeriodYears > last.returnPeriodYears ? "high" : undefined };
+  }
+  for (let i = 1; i < pts.length; i++) {
+    const lo = pts[i - 1]!;
+    const hi = pts[i]!;
+    if (returnPeriodYears <= hi.returnPeriodYears) {
+      const t =
+        (Math.log(returnPeriodYears) - Math.log(lo.returnPeriodYears)) /
+        (Math.log(hi.returnPeriodYears) - Math.log(lo.returnPeriodYears));
+      return { value: lo.depthInches + (hi.depthInches - lo.depthInches) * t };
+    }
+  }
+  return { value: last.depthInches };
+}
+
+export function returnPeriodYearsForDepthInches(
+  curve: ReadonlyArray<RainfallCurvePoint>,
+  depthInches: number,
+): RainfallCurveLookup | null {
+  const pts = sortedCurve(curve);
+  if (pts.length === 0) return null;
+  const first = pts[0]!;
+  const last = pts[pts.length - 1]!;
+  if (depthInches <= first.depthInches) {
+    return { value: first.returnPeriodYears, clamped: depthInches < first.depthInches ? "low" : undefined };
+  }
+  if (depthInches >= last.depthInches) {
+    return { value: last.returnPeriodYears, clamped: depthInches > last.depthInches ? "high" : undefined };
+  }
+  for (let i = 1; i < pts.length; i++) {
+    const lo = pts[i - 1]!;
+    const hi = pts[i]!;
+    if (depthInches <= hi.depthInches) {
+      const t = (depthInches - lo.depthInches) / (hi.depthInches - lo.depthInches);
+      const logYears =
+        Math.log(lo.returnPeriodYears) + (Math.log(hi.returnPeriodYears) - Math.log(lo.returnPeriodYears)) * t;
+      return { value: Math.exp(logYears) };
+    }
+  }
+  return { value: last.returnPeriodYears };
+}
+
+/**
+ * The return-period phrase for a resolved rainfall (G-125), shared by the
+ * gradient note and the PDF's Design-storm row so the two surfaces can
+ * never disagree: true "{100}-yr" for the two sources actually keyed to
+ * that row (noaa-atlas14, default); for a parameter depth, the interpolated
+ * equivalent over the SAME curve fetch, disclosed as an estimate;
+ * undefined only when a parameter run captured no curve at all (honest
+ * absence — callers fall back to their own historical default/no claim).
+ */
+export function rainfallReturnPeriodLabel(input: {
+  source: RainfallSource;
+  depthInches: number;
+  curve?: ReadonlyArray<RainfallCurvePoint>;
+}): string | undefined {
+  if (input.source !== "parameter") return `${DESIGN_STORM_RETURN_PERIOD_YEARS}-yr`;
+  if (!input.curve || input.curve.length === 0) return undefined;
+  const lookup = returnPeriodYearsForDepthInches(input.curve, input.depthInches);
+  if (!lookup) return undefined;
+  const years = Math.round(lookup.value);
+  if (lookup.clamped === "low") return `<${years}-yr (interpolated)`;
+  if (lookup.clamped === "high") return `>${years}-yr (interpolated)`;
+  return `~${years}-yr (interpolated)`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -867,6 +1004,7 @@ export async function runFloodDrainageStudy(
     parcelNodeId: options.parcelNodeId,
     rainfallDepthInches: rainfall.depthInches,
     rainfallSource: rainfall.source,
+    ...(rainfall.curve ? { rainfallCurve: rainfall.curve } : {}),
     demProvenance,
     parcelRingWgs84: ringWgs84,
     catchmentBbox,
@@ -943,6 +1081,7 @@ export async function runFloodDrainageStudy(
     rainfallDepthMm: inchesToMm(rainfall.depthInches),
     demResolutionMeters: resolutionMetersAdapted,
     rainfallDepthInches: rainfall.depthInches,
+    returnPeriodLabel: rainfallReturnPeriodLabel(rainfall),
   });
 
   // TRACED FLOW PATHS + CATCHMENT SWATHS (v3 pinned contract): same D8

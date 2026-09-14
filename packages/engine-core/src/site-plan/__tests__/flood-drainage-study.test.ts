@@ -15,12 +15,15 @@ import {
   HONEST_EMPTY_FLAT_TERRAIN,
   MIN_DRAINAGE_RESOLUTION_METERS,
   buildFloodDrainageBriefing,
+  depthInchesForReturnPeriod,
   deriveDrainageZones,
   negligibleCatchmentThresholdSqFt,
   paddedCatchmentBbox,
   pointInRing,
+  rainfallReturnPeriodLabel,
   resolveFlowExits,
   resolvePourPoint,
+  returnPeriodYearsForDepthInches,
   runFloodDrainageStudy,
   type FloodDrainageStudyStats,
 } from "../flood-drainage-study.js";
@@ -368,6 +371,74 @@ describe("runFloodDrainageStudy", () => {
     });
     expect(dflt.study.rainfallSource).toBe("default");
     expect(dflt.study.rainfallDepthInches).toBe(DEFAULT_RAINFALL_DEPTH_INCHES);
+  });
+
+  // G-125: the two-vocabulary control needs the FULL curve, not just the
+  // 100-yr row it used to keep, and it needs it EVEN on a parameter-sourced
+  // run (one fetch, both vocabularies — no second lookup).
+  it("captures the full rainfallCurve on a PARAMETER run (one fetch answers both vocabularies)", async () => {
+    const dem = slopedDem();
+    const base = {
+      parcelNodeId,
+      resolver,
+      parseDem: async () => dem,
+      runWorker: async (req: HydrologyWorkerRequest) => {
+        void req;
+        return mockWorkerResult();
+      },
+    };
+    const param = await runFloodDrainageStudy({
+      ...base,
+      fetchDem: fakeFetchDem().fn,
+      fetchRainfall: atlasRainfall,
+      rainfallDepthInches: 6.25,
+    });
+    expect(param.study.rainfallSource).toBe("parameter");
+    expect(param.study.rainfallDepthInches).toBe(6.25); // unchanged by the curve fetch
+    expect(param.study.rainfallCurve).toEqual([
+      { returnPeriodYears: 25, depthInches: 7.1 },
+      { returnPeriodYears: 100, depthInches: 9.8 },
+    ]);
+  });
+
+  it("omits rainfallCurve honestly when the live NOAA fetch fails, on every source path", async () => {
+    const dem = slopedDem();
+    const base = {
+      parcelNodeId,
+      resolver,
+      parseDem: async () => dem,
+      runWorker: async (req: HydrologyWorkerRequest) => {
+        void req;
+        return mockWorkerResult();
+      },
+      fetchDem: fakeFetchDem().fn,
+      fetchRainfall: failingRainfall,
+    };
+    const param = await runFloodDrainageStudy({ ...base, rainfallDepthInches: 4 });
+    expect(param.study.rainfallCurve).toBeUndefined();
+    const dflt = await runFloodDrainageStudy(base);
+    expect(dflt.study.rainfallCurve).toBeUndefined();
+  });
+
+  it("the default (no-param) path is byte-identical on every RESOLVED field regardless of the G-125 curve capture", async () => {
+    // The one new field is additive (rainfallCurve); every other resolved
+    // value must match what a pre-G-125 caller would have seen.
+    const dem = slopedDem();
+    const base = {
+      parcelNodeId,
+      resolver,
+      parseDem: async () => dem,
+      runWorker: async (req: HydrologyWorkerRequest) => {
+        void req;
+        return mockWorkerResult();
+      },
+      fetchDem: fakeFetchDem().fn,
+      fetchRainfall: atlasRainfall,
+    };
+    const result = await runFloodDrainageStudy(base);
+    expect(result.study.rainfallSource).toBe("noaa-atlas14");
+    expect(result.study.rainfallDepthInches).toBe(9.8);
+    expect(result.study.gradient?.note).toContain("Design storm 9.8 inch, 100-yr 24-hr.");
   });
 
   it("feeds the worker a PARCEL-AWARE pour point: max-accumulation cell touching the parcel, never the bbox center", async () => {
@@ -1100,5 +1171,68 @@ describe("deriveDrainageZones", () => {
         (f) => (f.properties as { concentration: number }).concentration === 0,
       ),
     ).toBe(true);
+  });
+});
+
+// ─── G-125: two-vocabulary curve interpolation (pure functions) ──────────
+describe("rainfall curve interpolation (G-125 two-vocabulary control)", () => {
+  const curve = [
+    { returnPeriodYears: 2, depthInches: 3.5 },
+    { returnPeriodYears: 10, depthInches: 5.5 },
+    { returnPeriodYears: 25, depthInches: 7.1 },
+    { returnPeriodYears: 100, depthInches: 9.5 },
+    { returnPeriodYears: 500, depthInches: 13.0 },
+  ];
+
+  it("returnPeriodYearsForDepthInches interpolates between two known curve points", () => {
+    // Exact points round-trip.
+    expect(returnPeriodYearsForDepthInches(curve, 9.5)!.value).toBeCloseTo(100, 5);
+    expect(returnPeriodYearsForDepthInches(curve, 3.5)!.value).toBeCloseTo(2, 5);
+    // Sylvia's four inches sits between the 2-yr (3.5in) and 10-yr (5.5in) rows.
+    const four = returnPeriodYearsForDepthInches(curve, 4)!;
+    expect(four.value).toBeGreaterThan(2);
+    expect(four.value).toBeLessThan(10);
+    expect(four.clamped).toBeUndefined();
+  });
+
+  it("depthInchesForReturnPeriod is the inverse", () => {
+    const ret = returnPeriodYearsForDepthInches(curve, 4)!;
+    const back = depthInchesForReturnPeriod(curve, ret.value)!;
+    expect(back.value).toBeCloseTo(4, 3);
+  });
+
+  it("clamps at the curve's ends rather than extrapolating a fabricated number", () => {
+    const below = returnPeriodYearsForDepthInches(curve, 1);
+    expect(below!.value).toBe(2);
+    expect(below!.clamped).toBe("low");
+    const above = returnPeriodYearsForDepthInches(curve, 20);
+    expect(above!.value).toBe(500);
+    expect(above!.clamped).toBe("high");
+  });
+
+  it("returns null for an empty curve rather than a fabricated conversion", () => {
+    expect(returnPeriodYearsForDepthInches([], 4)).toBeNull();
+    expect(depthInchesForReturnPeriod([], 10)).toBeNull();
+  });
+
+  it("rainfallReturnPeriodLabel: true 100-yr for noaa-atlas14/default, interpolated label for parameter", () => {
+    expect(
+      rainfallReturnPeriodLabel({ source: "noaa-atlas14", depthInches: 9.5, curve }),
+    ).toBe("100-yr");
+    expect(
+      rainfallReturnPeriodLabel({ source: "default", depthInches: 9.5 }),
+    ).toBe("100-yr");
+    expect(
+      rainfallReturnPeriodLabel({ source: "parameter", depthInches: 4, curve }),
+    ).toMatch(/^~\d+-yr \(interpolated\)$/);
+    // No curve captured (e.g. the live NOAA fetch failed) -> honest absence,
+    // never a fabricated year claim.
+    expect(
+      rainfallReturnPeriodLabel({ source: "parameter", depthInches: 4 }),
+    ).toBeUndefined();
+    // Below the curve's floor -> disclosed as a bound, not a false precise year.
+    expect(
+      rainfallReturnPeriodLabel({ source: "parameter", depthInches: 1, curve }),
+    ).toBe("<2-yr (interpolated)");
   });
 });
