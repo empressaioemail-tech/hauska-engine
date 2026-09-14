@@ -72,10 +72,13 @@ export async function buildBastropPerParcelSetbackDescriptor(
   // from the engine zoning stamp when a parcel is split-zoned (e.g. a sliver).
   const governingDistrict = (fetched.resolvedDistrictCode ?? district).trim() || district;
 
+  // Wave 6: the resolution's `table` is the source R-1 follows; when two
+  // sources disagree the same table already carries the conflict disclosure
+  // in its own display_meta.second_source, so the atom emits it either way.
   const adapterTable = getSetbackTableForZoning(cityKey, governingDistrict, {
     bastropPerParcelRecord: fetched,
     districtCode: governingDistrict,
-  });
+  })?.table;
   const setbackTable = setbackTableDescriptorFromAdapter(adapterTable);
   if (!setbackTable?.rows?.length) {
     return {

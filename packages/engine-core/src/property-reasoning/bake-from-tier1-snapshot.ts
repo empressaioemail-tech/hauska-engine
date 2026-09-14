@@ -203,7 +203,7 @@ export function emitFromTier1Snapshot(
       ? snap.zoning.district.trim()
       : null;
   const adapterTable = cityKey
-    ? getSetbackTableForZoning(cityKey, zoningDistrict)
+    ? getSetbackTableForZoning(cityKey, zoningDistrict)?.table
     : null;
   const setbackTable = setbackTableDescriptorFromAdapter(adapterTable);
   const descriptor = descriptorForCounty(

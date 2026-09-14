@@ -97,11 +97,14 @@ describe("elgin-development-code.json — ratified shape", () => {
     expect(getSetbackTable("elgin-tx")).not.toBeNull();
     expect(getSetbackTable("elgin-tx")).toBe(getSetbackTable("elgin-development-code"));
     expect(getSetbackTableForZoning("elgin-development-code", "R-1")).not.toBeNull();
-    expect(getSetbackTableForZoning("elgin-development-code", "R-1")?.jurisdictionKey).toBe(
+    expect(getSetbackTableForZoning("elgin-development-code", "R-1")?.table.jurisdictionKey).toBe(
       "elgin-development-code",
     );
+    // Wave 6: a single keyed table is the `kind: "table"` arm — there is no
+    // second source in Elgin, so there is nothing to disclose.
+    expect(getSetbackTableForZoning("elgin-development-code", "R-1")?.kind).toBe("table");
     expect(getSetbackTableForZoning("elgin-tx", "R-1")).not.toBeNull();
-    expect(getSetbackTableForZoning("elgin-tx", "R-1")).toBe(
+    expect(getSetbackTableForZoning("elgin-tx", "R-1")).toEqual(
       getSetbackTableForZoning("elgin-development-code", "R-1"),
     );
   });

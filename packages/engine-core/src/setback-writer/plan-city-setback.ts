@@ -109,7 +109,7 @@ function resolveDistrictRow(
   aliases: Readonly<Record<string, string>>,
 ): { districtCode: string; citation: string } | null {
   const aliased = applyDistrictAlias(districtRaw, aliases);
-  const table = getSetbackTableForZoning(cityKey, aliased);
+  const table = getSetbackTableForZoning(cityKey, aliased)?.table;
   if (!table || !Array.isArray(table.districts) || table.districts.length === 0) {
     return null;
   }

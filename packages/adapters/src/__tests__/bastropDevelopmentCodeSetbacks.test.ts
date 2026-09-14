@@ -66,8 +66,10 @@ describe("bastrop-development-code setback router (WDLL STEP 3 + R13)", () => {
   });
 
   it("legacy county R-MD still uses bastrop-tx table (not BDC city path)", () => {
-    const table = getSetbackTableForZoning("bastrop-tx", "R-MD");
-    expect(table!.jurisdictionKey).toBe("bastrop-tx");
+    const resolution = getSetbackTableForZoning("bastrop-tx", "R-MD");
+    // One source (the legacy county table) — kind "table", never a conflict row.
+    expect(resolution!.kind).toBe("table");
+    expect(resolution!.table.jurisdictionKey).toBe("bastrop-tx");
     const d = getSetbackDistrict("bastrop-tx", "R-MD Residential Medium Density");
     expect(d!.front_ft).toBe(25);
   });

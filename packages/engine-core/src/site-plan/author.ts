@@ -501,6 +501,18 @@ export async function composeSitePlanModelForParcel(
           rear: options.setback!.rear,
           sourceCodeAtomRef: options.setback!.sourceCodeAtomRef,
           notSpecified,
+          // P-154 wave 6 (R-1) — what the sheet's setback line cites, and the
+          // conflict row when two dated sources disagree. The atom carried no
+          // source date before wave 6, so a pre-wave-6 atom contributes
+          // nothing here and its sheet is byte-identical to before.
+          sourceLabel: options.setback!.sourceCitation ?? null,
+          sourceCitation:
+            options.setback!.displayMeta?.citationUrl ??
+            options.setback!.sourceUrl ??
+            null,
+          sourceDate: options.setback!.displayMeta?.sourceDate ?? null,
+          dateBasis: options.setback!.displayMeta?.dateBasis ?? null,
+          conflict: options.setback!.displayMeta?.secondSource?.conflict ?? null,
         },
     boundaryEdges,
     frontEdgeIndex: options.frontEdgeIndex,

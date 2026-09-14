@@ -7,6 +7,7 @@
 
 import type { AtomInputRef } from "@empressaio/atom-contract/property";
 import type { WidthedConfidence } from "@empressaio/atom-contract/read-contract";
+import type { SetbackSecondSourceConflict } from "@hauska-engine/adapters";
 import type {
   AccessPolicy,
   MatchBasis,
@@ -38,7 +39,19 @@ export interface SetbackRowDisplayMeta {
   side_city_language?: string;
   resolved_district_code?: string | null;
   split_zone_minor_zones?: Array<{ district_code: string | null; shape_area?: number }>;
-  second_source?: { source: string; note: string; citation_url?: string };
+  /** P-154 wave 6 (R-1) — this row's own source date, read at source, and how. */
+  source_date?: string | null;
+  date_basis?: string;
+  date_precision?: "day" | "year";
+  /** The followed row's own citation (ordinance URL or ordinance number). */
+  citation_url?: string;
+  second_source?: {
+    source: string;
+    note: string;
+    citation_url?: string;
+    /** P-154 wave 6 — the structured conflict payload every surface formats. */
+    conflict?: SetbackSecondSourceConflict;
+  };
 }
 
 export interface SetbackTableRowProvenance {

@@ -24,6 +24,8 @@ type AdapterDistrict = {
   rear_ft: number;
   side_ft: number;
   side_corner_ft: number;
+  /** The row's own citation (ordinance URL or ordinance number), carried onto the row. */
+  citation_url?: string;
   max_height_ft?: number;
   max_lot_coverage_pct?: number;
   max_impervious_pct?: number;
@@ -74,6 +76,12 @@ function rowFromDistrict(d: AdapterDistrict): SetbackTableRowProvenance | null {
     p.rear_ft?.atom_did ||
     p.side_ft?.atom_did ||
     `${district_code}/setback-table`;
+  // P-154 wave 6 (R-1): the row's OWN citation travels with the row, so a
+    // surface can print the followed value with the citation it rests on.
+  const displayMeta = {
+    ...(d.display_meta ?? {}),
+    ...(d.citation_url ? { citation_url: d.citation_url } : {}),
+  };
   return {
     atom_did,
     match_basis: "exact",
@@ -93,7 +101,7 @@ function rowFromDistrict(d: AdapterDistrict): SetbackTableRowProvenance | null {
       p.max_impervious_pct,
       0.6,
     ),
-    ...(d.display_meta ? { display_meta: d.display_meta } : {}),
+    ...(Object.keys(displayMeta).length > 0 ? { display_meta: displayMeta } : {}),
   };
 }
 

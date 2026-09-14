@@ -307,8 +307,59 @@ export interface SetbackRuleDisplayMeta {
   resolvedDistrictCode?: string | null;
   /** R26/R25 — minor zones present on a split-zoned parcel. */
   splitZoneMinorZones?: Array<{ districtCode: string | null; shapeArea?: number }>;
+  /**
+   * P-154 wave 6 (R-1) — the date on THIS row's own source, read at source,
+   * and how; `null` means unreadable (never a placeholder). Absent on rows
+   * emitted before wave 6.
+   */
+  sourceDate?: string | null;
+  dateBasis?: string;
+  datePrecision?: "day" | "year";
+  /** The followed row's own citation (ordinance URL or an ordinance number). */
+  citationUrl?: string;
   /** R25 — conflicting second source (e.g. Bastrop layer-83 Revisions). */
-  secondSource?: { source: string; note: string; citationUrl?: string };
+  secondSource?: {
+    source: string;
+    note: string;
+    citationUrl?: string;
+    /**
+     * P-154 wave 6 — the same disagreement as data, for the one conflict
+     * sentence every surface prints through `@empressaio/atom-contract`
+     * (`setbackConflictNote`). Present only where two sources disagree on a
+     * value (R-1: never a silent pick).
+     */
+    conflict?:
+      | {
+          /** Two dated instruments disagree. */
+          shape: "second-source";
+          secondSourceLabel: string;
+          front: number;
+          side: number;
+          rear: number;
+          corner?: number | null;
+          citation: string | null;
+          source_date: string | null;
+          date_basis: string;
+          repealedByEffectiveDate: string | null;
+        }
+      | {
+          /**
+           * A-148 — ONE layer whose unrefreshed numeric shortcut columns (the
+           * ones its own One Click join reads) disagree with its TEXT fields.
+           * Three numeric axes and NO corner: the layer publishes no numeric
+           * corner column.
+           */
+          shape: "stale-numeric-columns";
+          secondSourceLabel: string;
+          numeric: { front: number; side: number; rear: number };
+          text: { front: number; side: number; rear: number; corner?: number | null };
+          ordinance: string;
+          confirmedWith?: string | null;
+          confirmedOn?: string | null;
+          source_date: string | null;
+          date_basis: string;
+        };
+  };
 }
 
 export type SetbackRuleAtomInstance = ContractSetbackRuleAtomInstance &

@@ -266,7 +266,7 @@ export function buildLayer23DescriptorFromIndex(
   const adapterTable = getSetbackTableForZoning(cityKey, governingDistrict, {
     bastropPerParcelRecord: parsed,
     districtCode: governingDistrict,
-  });
+  })?.table;
   const setbackTable = setbackTableDescriptorFromAdapter(adapterTable);
   if (!setbackTable?.rows?.length) {
     return {

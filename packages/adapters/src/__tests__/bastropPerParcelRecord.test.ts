@@ -140,16 +140,34 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 1)", () => {
     const parsed = parseBastropPerParcelAttributes(FIXTURES["105054"]!);
     expect(parsed.kind).toBe("parsed");
     if (parsed.kind !== "parsed") return;
-    const table = getSetbackTableForZoning("bastrop-city-tx", "SF-1", {
+    const resolution = getSetbackTableForZoning("bastrop-city-tx", "SF-1", {
       bastropPerParcelRecord: parsed,
     });
-    expect(table!.jurisdictionKey).toBe("bastrop-per-parcel-record");
-    const row = table!.districts[0]!;
+    // Wave 6: this fixture's row cites no resolvable ordinance (its
+    // `Ordinance_Link` is a URL), so the resolver cannot order the two
+    // sources — the served value stays the per-parcel record AND the
+    // disagreement is now a disclosed conflict row rather than a silent pick.
+    expect(resolution!.kind).toBe("conflict");
+    const table = resolution!.table;
+    expect(table.jurisdictionKey).toBe("bastrop-per-parcel-record");
+    const row = table.districts[0]!;
     expect(row.front_ft).toBe(25);
     expect(row.side_ft).toBe(5);
     expect(row.side_corner_ft).toBe(15);
     expect(row.rear_ft).toBe(25);
     expect(row.citation_url).toContain("105054");
+    if (resolution!.kind !== "conflict") return;
+    expect(resolution!.secondSource.id).toBe("bastrop-development-code");
+    // Wave 6 / A-148: the note payload is a discriminated union — this case is
+    // the TWO-INSTRUMENT arm (the codified chart is the second source here),
+    // whose values live in the camelCase input fields.
+    if (resolution!.note.shape !== "second-source") throw new Error("expected the two-instrument shape");
+    expect(resolution!.note.front).toBe(30);
+    expect(resolution!.note.side).toBe(10);
+    expect(resolution!.note.rear).toBe(30);
+    expect(resolution!.note.corner).toBe(20);
+    // No repeal claim: our follower here is the per-parcel record, not an ordinance text.
+    expect(resolution!.note.repealedByEffectiveDate).toBeNull();
   });
 
   it("fetchBastropPerParcelSetbackRecord hits layer 23 by prop_id", async () => {
@@ -192,11 +210,14 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 2 — MU/GC/PDD)", () => {
     const parsed = parseBastropPerParcelAttributes(FIXTURES["34089"]!);
     expect(parsed.kind).toBe("parsed");
     if (parsed.kind !== "parsed") return;
-    const table = getSetbackTableForZoning("bastrop-city-tx", "GC", {
+    const resolution = getSetbackTableForZoning("bastrop-city-tx", "GC", {
       bastropPerParcelRecord: parsed,
       districtCode: "GC",
     });
-    const row = table!.districts[0]!;
+    // GC has no codified chart row (R13 per-parcel-only district), so there
+    // is one source and nothing to disclose — never a conflict row.
+    expect(resolution!.kind).toBe("table");
+    const row = resolution!.table.districts[0]!;
     expect(row.front_ft).toBe(20);
     expect(row.side_ft).toBe(5);
     expect(row.side_corner_ft).toBe(10);
@@ -210,11 +231,13 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 2 — MU/GC/PDD)", () => {
     const parsed = parseBastropPerParcelAttributes(FIXTURES["34841_mu_non_scalar"]!);
     expect(parsed.kind).toBe("parsed");
     if (parsed.kind !== "parsed") return;
-    const table = getSetbackTableForZoning("bastrop-city-tx", "MU", {
+    const resolution = getSetbackTableForZoning("bastrop-city-tx", "MU", {
       bastropPerParcelRecord: parsed,
       districtCode: "MU",
     });
-    const row = table!.districts[0]!;
+    // MU is per-parcel-only (no chart row): one source, no conflict row.
+    expect(resolution!.kind).toBe("table");
+    const row = resolution!.table.districts[0]!;
     expect(row.front_ft).toBe(15);
     expect(row.rear_ft).toBe(15);
     expect(row.side_ft).toBe(5);

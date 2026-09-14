@@ -17,12 +17,13 @@ import {
   type SetbackAssignment,
   type SetbackOffsetResult,
 } from "./ring-geometry.js";
-import { anyNotSpecified, formatSetbackSummaryLine } from "./setback-display.js";
+import { anyNotSpecified, conflictNote, formatSetbackSourceClause, formatSetbackSummaryLine } from "./setback-display.js";
 import {
   envelopeHuman,
   mapBuildableDisplay,
   type BuildableDisplayKind,
 } from "@empressaio/atom-contract/display";
+import type { SetbackSecondSourceConflict } from "@hauska-engine/adapters";
 
 const METERS_PER_FOOT = 0.3048;
 
@@ -45,6 +46,22 @@ export interface SetbackRuleInput {
   honestAbsence?: boolean;
   /** Reason surfaced on the sheet when `honestAbsence` is set. */
   honestAbsenceReason?: string;
+  /**
+   * P-154 wave 6 (R-1) — the source these values rest on, as read at source:
+   * its own name, its own citation (ordinance URL or ordinance number), and
+   * its own effective date. Printed beside the values on every sheet, so a
+   * value never appears without the citation it rests on.
+   */
+  sourceLabel?: string | null;
+  sourceCitation?: string | null;
+  sourceDate?: string | null;
+  dateBasis?: string | null;
+  /**
+   * P-154 wave 6 (R-1) — present only when two dated sources disagree on a
+   * value: the structured payload of the one conflict sentence every surface
+   * prints (`setbackConflictNote` in `@empressaio/atom-contract/display`).
+   */
+  conflict?: SetbackSecondSourceConflict | null;
 }
 
 export interface StreetAnchorInput {
@@ -209,6 +226,20 @@ export interface SitePlanSetbackModel {
   notSpecified?: { front?: boolean; side?: boolean; rear?: boolean };
   /** True when no setback-rule atom exists at all (whole layer honest-absent). */
   honestAbsence?: boolean;
+  /**
+   * P-154 wave 6 (R-1 CONFLICT ROW) — the one conflict sentence, present only
+   * when two dated sources disagree on a setback value. It is already inside
+   * `displayLine`; carried separately so a surface that prints its own layout
+   * (a card, an MCP section) can place the sentence without re-deriving it.
+   */
+  conflictNote?: string;
+  /**
+   * P-154 wave 6 (R-1) — the followed source's own name, effective date and
+   * citation, as read at source, already inside `displayLine`. Present only
+   * when the atom carried something to say, so a value never prints without
+   * the citation it rests on and a pre-wave-6 atom prints as it did before.
+   */
+  sourceClause?: string;
   honestAbsenceReason?: string;
   /** Honest F/S/R summary for PDF (never prints silent axes as real 0 ft). */
   displayLine: string;
@@ -500,6 +531,24 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           notSpecified,
           { ringWgs84: inputs.ringWgs84, bbox: inputs.bbox },
         );
+  // P-154 wave 6 (R-1). Composed ONCE, here, and carried on the model as two
+  // pieces so a surface that prints its own layout (the sheet's summary grid)
+  // can place each fact without re-deriving either: the source clause (the
+  // followed source's own name, effective date and citation) and the ONE
+  // conflict sentence (only when two dated sources disagree). `displayLine`
+  // then delivers both, verbatim, to every surface that prints one line.
+  const setbackSourceClause = setbackHonestAbsence
+    ? ""
+    : formatSetbackSourceClause({
+        sourceLabel: inputs.setback.sourceLabel,
+        citation: inputs.setback.sourceCitation,
+        sourceDate: inputs.setback.sourceDate,
+        dateBasis: inputs.setback.dateBasis,
+      });
+  const setbackConflictNote =
+    setbackHonestAbsence || !inputs.setback.conflict
+      ? ""
+      : ` ${conflictNote(inputs.setback.conflict)}`;
   const setback: SitePlanSetbackModel = {
     front: inputs.setback.front,
     side: inputs.setback.side,
@@ -514,8 +563,15 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           side: inputs.setback.side,
           rear: inputs.setback.rear,
           notSpecified,
-        }),
+        }) +
+        setbackSourceClause +
+        setbackConflictNote,
     sourceCodeAtomRef: inputs.setback.sourceCodeAtomRef,
+    // Both fields are omitted, never empty, when there is nothing read at
+    // source to say: a pre-wave-6 atom prints exactly what it printed before,
+    // and a surface can test presence without testing a blank string.
+    ...(setbackSourceClause ? { sourceClause: setbackSourceClause } : {}),
+    ...(setbackConflictNote ? { conflictNote: setbackConflictNote.trim() } : {}),
     basis: offset.basis,
     segments: offset.segments,
     offsetRingLocal: offset.offsetRing,
