@@ -39,11 +39,21 @@ export const PRINT = {
   warn: hex("#8A5A12"), // --ss-print-warn
 
   // Gold is paper-only (two rulings, report-chrome README "Two rulings to
-  // carry forward"). ss-gold is 2.3:1 on paper and fails as text; the
+  // carry forward"). ss-gold is 2.293:1 on paper and fails as text; the
   // wordmark letterforms take ss-print-gold, the ring dot keeps true gold.
   // Never add a gold rule, sheet counter or accent anywhere else in the frame.
-  gold: hex("#E8963B"), // --ss-gold — ring dot only
-  printGold: hex("#B87116"), // --ss-print-gold — wordmark "SITE" letterforms only (4.6:1)
+  //
+  // CONTRAST FIGURE CORRECTED (P-239). This line read "(4.6:1)" from the day it
+  // landed. Measured against --ss-paper #FCFBF9 by the WCAG relative-luminance
+  // formula, #B87116 is 3.752:1 — it does NOT meet the 4.5:1 normal-text floor
+  // it was recorded as meeting. It DOES meet the 3:1 LARGE-text floor, and the
+  // wordmark is the only thing that wears it, at ~17.9pt bold (above the
+  // 14pt-bold large-text threshold), so the colour stays and only the claim
+  // changes. Do not reuse this hue for body copy, labels or meta on the
+  // strength of the old number. Canonical #F5B95C is 1.695:1 here and fails
+  // even the large-text floor, which is why a paper substitution exists at all.
+  gold: hex("#E8963B"), // --ss-gold — ring dot only (2.293:1; a filled mark, not text)
+  printGold: hex("#B87116"), // --ss-print-gold — wordmark "SITE" letterforms only (3.752:1, AA large text)
 } as const;
 
 /** Page geometry (report-chrome.css `:root`), px @96dpi -> PDF points. */
@@ -55,7 +65,12 @@ export const CHROME_MARGIN = {
 
 /** Masthead (sheet 1 of the document only). */
 export const MASTHEAD = {
-  logoWidth: pt(175),
+  // logoWidth: the canonical lockup is 320x76, so at logoHeight it renders
+  // 320/76 * 40 = 168.42px wide. The old pt(175) was 420/96 * 40, derived from
+  // the redrawn asset's box rather than the real one (P-239). NOTE: nothing
+  // reads this token — drawMastheadWordmark returns its own measured width and
+  // the doctype sets flush right — so it is corrected rather than relied on.
+  logoWidth: pt((320 / 76) * 40),
   logoHeight: pt(40),
   doctypeSize: pt(12),
   doctypeTracking: 0.16,
