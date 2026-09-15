@@ -1,0 +1,78 @@
+{
+  "$comment": [
+    "Vendored brand assets. hauska-map OWNS these files; this repo is a CONSUMER and",
+    "never edits them. P-239 exists because the masthead mark was redrawn by hand from a",
+    "redrawing, with nobody comparing either against the canonical file.",
+    "",
+    "The lock that makes drift LOUD instead of silent is brand-provenance.test.ts: it",
+    "re-hashes each vendored file on disk against sha256 below, and compares the SVG text",
+    "inlined in smart-site-brand.ts byte-for-byte against the file. Editing any one of the",
+    "three without the other two fails the suite.",
+    "",
+    "Refresh procedure: re-copy from the source repo at a NEW commit, update commit +",
+    "sha256 here, re-run the suite, and state the geometry delta in the PR.",
+    "",
+    "`.gitattributes` pins these paths to eol=lf. Without it core.autocrlf=true rewrites",
+    "them on checkout and the sha256 lock fails on every Windows clone -- a guardrail that",
+    "does not survive a clone is not a guardrail."
+  ],
+  "source": {
+    "repo": "empressaioemail-tech/hauska-map",
+    "ref": "main",
+    "commit": "b3601384537afe61a816c41689bffaee2ca9450c",
+    "commitDate": "2026-09-15T08:12:04-05:00",
+    "retrievedAt": "2026-09-15",
+    "retrievedBy": "claude-p239 (P-239)"
+  },
+  "brandVersion": {
+    "id": "v1-logo-current-under-v2",
+    "note": [
+      "The brand package has a v2 (docs/smart-site-brand/v2/), but v2 is a TOKEN and",
+      "COMPONENT system -- it does not redefine the mark. Verified two ways: the v2 commit",
+      "adds no file under logo/, and the two logo blob shas are identical before and after",
+      "it (5c121bb / 22e27be at both HEAD and origin/main). v2/README.md restates the same",
+      "mark ruling, 'Gold #E8963B is the brand mark and nothing else'. These two files are",
+      "therefore CURRENT canon under v2, not a superseded v1 asset."
+    ]
+  },
+  "files": [
+    {
+      "path": "smart-site-lockup.svg",
+      "sourcePath": "apps/property-explorer/docs/smart-site-brand/logo/smart-site-lockup.svg",
+      "blob": "5c121bbbffa6010626554488d6623b22be9923f6",
+      "sha256": "4fff54e1e2e5a1cc0facf928ee7f484c22aeb8a3a0209182164ae90f135db2bc",
+      "usedBy": "drawMastheadWordmark -- masthead, document sheet 1"
+    },
+    {
+      "path": "smart-site-mark-crosshair.svg",
+      "sourcePath": "apps/property-explorer/docs/smart-site-brand/logo/smart-site-mark-crosshair.svg",
+      "blob": "22e27be88f215f6de9c3933a072f56d2e567912a",
+      "sha256": "447a0f5a396d8132e3cc2e67049df541adec41587fc45094b4bc343e09285639",
+      "usedBy": "drawRunningHeaderMark -- running header, document sheets 2..N"
+    }
+  ],
+  "paperSubstitutions": [
+    {
+      "element": "ring stroke and 'SMART' letterforms",
+      "canonical": "#ffffff",
+      "onPaper": "#2A2A28",
+      "contrastOnPaper": 13.906,
+      "reason": "Canon targets a dark ground. #ffffff measures 1.034:1 on --ss-paper #FCFBF9 -- not low-contrast, invisible. The substitution is forced."
+    },
+    {
+      "element": "'SITE' letterforms",
+      "canonical": "#F5B95C",
+      "onPaper": "#B87116",
+      "contrastOnPaper": 3.752,
+      "reason": "#F5B95C measures 1.695:1 on paper and fails even the 3:1 large-text floor. --ss-print-gold #B87116 measures 3.752:1, which passes WCAG AA for LARGE text; the wordmark renders at ~17.9pt bold, above the 14pt-bold threshold. NOTE: 3.752 is BELOW the 4.5:1 normal-text floor, so this colour is valid for the wordmark ONLY. report-chrome-tokens.ts recorded this as '4.6:1'; that figure was wrong and is corrected in the same change."
+    },
+    {
+      "element": "centre dot",
+      "canonical": "#E8963B",
+      "onPaper": "#E8963B",
+      "contrastOnPaper": 2.293,
+      "reason": "UNCHANGED from canon. A filled graphic element, not text, so the text contrast floors do not apply; the existing frame ruling keeps true --ss-gold for the dot alone."
+    }
+  ],
+  "geometryChanges": "NONE. Every stroke weight, radius, tick extent and coordinate is read from the vendored SVG at module load. No hand-entered geometry constant remains in report-chrome.ts to drift."
+}

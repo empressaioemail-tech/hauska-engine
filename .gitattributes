@@ -3,3 +3,10 @@ packages/adapters/src/local/setbacks/*.json text eol=lf
 
 # Vendored Inter TTFs (site-plan PDF embed) — binary, never line-ending-munged.
 *.ttf binary
+
+# P-239: vendored Smart Site brand SVGs are hash-locked to hauska-map in
+# brand/PROVENANCE.json and re-hashed on disk by brand-provenance.test.ts.
+# core.autocrlf=true would rewrite them on checkout and break that sha256 on
+# every Windows clone — a guardrail that does not survive a clone is not a
+# guardrail. Pin to LF so the hash is the same bytes everywhere.
+packages/engine-core/src/site-plan/pdf/brand/*.svg text eol=lf

@@ -4,6 +4,7 @@ import { DEEP_LINK_HOST, FOOTER, MASTHEAD, PARKED_DEEP_LINK_HOST, PRINT, RUNHEAD
 import { MARGIN_BOTTOM, MARGIN_TOP, MARGIN_X, PAGE_HEIGHT, PAGE_WIDTH } from "./page-geometry.js";
 import { drawHairlineRule, drawTrackedText, trackedWidth, wrapTextToWidth, type Fonts } from "./render.js";
 import { pt } from "./template-tokens.js";
+import { SMART_SITE_LOCKUP, SMART_SITE_MARK, type BrandMark } from "./brand/smart-site-brand.js";
 
 /**
  * Report CHROME — masthead, running header, footer. Option 1a "Rule",
@@ -56,91 +57,131 @@ export function chromeMonoFonts(body: PDFFont, bodyMedium: PDFFont): { mono: PDF
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// SMART SITE ring mark — logo-mark.svg / logo-wordmark-print.svg redrawn as
-// pdf-lib vector primitives (stroked ring, four ticks, filled dot). Both
-// source SVGs share one geometry in a 96-tall viewBox (mark: 96x96; wordmark
-// ring: the same ring within a 420x96 viewBox); the only per-variant
-// differences are stroke weight and tick length, both parameterized below.
-// No SVG rasterization pipeline exists in this repo (no sharp/resvg/canvas
-// anywhere) and the ring is simple enough that redrawing it exactly is lower
-// risk than adding one. See CP1 for the wordmark-text font substitution.
+// SMART SITE ring mark — drawn from the CANONICAL brand asset.
+//
+// P-239. This used to be four hand-typed numbers per variant, eyeballed from
+// `_design/report-chrome/logo-*.svg` on doc_repo — which were themselves a
+// redrawing of the real asset that nobody compared against it. The measured
+// result was not the brand: stroke 40-60% too thin, dot 34-47% too small,
+// ring 21% too small for its box, and — because `outer = 76 - inner` mixed a
+// 76-unit coordinate space into a 96-unit one while the source SVG's own
+// translate(10,10) was dropped — the crosshair came out ASYMMETRIC, with the
+// N/S/W ticks floating detached OUTSIDE the ring and the E tick 2.4x longer
+// and crossing it. Nothing could have caught that, because nothing in the
+// repo held the canonical numbers to compare against.
+//
+// Now every number comes from `brand/smart-site-brand.ts`, which parses the
+// vendored canonical SVG. There are no geometry constants here to drift.
+// `brand/PROVENANCE.json` records the source commit and a sha256 per file;
+// `__tests__/brand-provenance.test.ts` fails if asset, inlined text or hash
+// ever disagree.
+//
+// No SVG rasterization pipeline exists in this repo (no sharp/resvg/canvas),
+// so the parsed primitives are replayed as pdf-lib draw calls. That is a
+// faithful replay of a parsed asset, not a redrawing.
+//
+// PAPER SUBSTITUTIONS — colour only, never geometry, and every one justified
+// by a measured contrast ratio against --ss-paper #FCFBF9:
+//   ring stroke + "SMART"  #ffffff -> PRINT.ink       (#ffffff is 1.034:1 — invisible)
+//   "SITE"                 #F5B95C -> PRINT.printGold (#F5B95C is 1.695:1 — fails even 3:1)
+//   centre dot             #E8963B -> UNCHANGED       (a filled mark, not text)
 // ─────────────────────────────────────────────────────────────────────────
-interface RingSpec {
-  strokeWidthAt96: number;
-  tickInnerAt96: number;
-  tickOuterAt96: number;
-  dotRadiusAt96: number;
-}
-const MARK_RING: RingSpec = { strokeWidthAt96: 3, tickInnerAt96: 14, tickOuterAt96: 0, dotRadiusAt96: 5 };
-const WORDMARK_RING: RingSpec = { strokeWidthAt96: 2, tickInnerAt96: 16, tickOuterAt96: 0, dotRadiusAt96: 4 };
 
-/** Draws the ring+ticks+dot at `origin` (bottom-left, PDF points), scaled
- * uniformly so the native 96-tall viewBox renders at `heightPt`. */
-function drawRing(page: PDFPage, origin: { x: number; y: number }, heightPt: number, spec: RingSpec): void {
-  const scale = heightPt / 96;
+/** Replays a parsed canonical mark at `origin` (bottom-left, PDF points),
+ * scaled uniformly so its native viewBox height renders at `heightPt`. */
+function drawRing(page: PDFPage, origin: { x: number; y: number }, heightPt: number, art: BrandMark): void {
+  const scale = heightPt / art.nativeHeight;
+  // SVG y is top-down; PDF y is bottom-up.
   const toPt = (nativeX: number, nativeY: number) => ({
     x: origin.x + nativeX * scale,
-    y: origin.y + (96 - nativeY) * scale, // SVG y is top-down; PDF y is bottom-up.
+    y: origin.y + (art.nativeHeight - nativeY) * scale,
   });
-  const center = toPt(48, 48);
-  const r = 30 * scale;
-  const strokeWidth = spec.strokeWidthAt96 * scale;
+  const center = toPt(art.centerX, art.centerY);
+  const strokeWidth = art.ringStrokeWidth * scale;
 
   // Ring — stroked, no fill.
-  page.drawCircle({ x: center.x, y: center.y, size: r, borderColor: PRINT.ink, borderWidth: strokeWidth, color: undefined });
+  page.drawCircle({
+    x: center.x,
+    y: center.y,
+    size: art.ringRadius * scale,
+    borderColor: PRINT.ink,
+    borderWidth: strokeWidth,
+    color: undefined,
+  });
 
-  // Four ticks (N/S/E/W), straddling the ring edge exactly as the source SVG draws them.
-  const inner = spec.tickInnerAt96;
-  const outer = 76 - inner; // the SVG's ticks are symmetric about the 48,48 center within [0,76].
-  const ticks: Array<[[number, number], [number, number]]> = [
-    [[48, spec.tickOuterAt96], [48, inner]],
-    [[48, 96 - spec.tickOuterAt96], [48, 96 - inner]],
-    [[spec.tickOuterAt96, 48], [inner, 48]],
-    [[96 - spec.tickOuterAt96, 48], [outer, 48]],
-  ];
-  for (const [a, b] of ticks) {
-    const pa = toPt(a[0], a[1]);
-    const pb = toPt(b[0], b[1]);
-    page.drawLine({ start: pa, end: pb, thickness: strokeWidth, color: PRINT.ink });
+  // The four crosshair ticks, exactly as the canonical SVG places them — they
+  // STRADDLE the ring edge, which is what makes the mark read as a crosshair.
+  for (const t of art.ticks) {
+    page.drawLine({ start: toPt(t.x1, t.y1), end: toPt(t.x2, t.y2), thickness: strokeWidth, color: PRINT.ink });
   }
 
-  // Center dot — filled, true gold. A mark, not text, so it keeps ss-gold
-  // even though everything else in the frame prints in ss-print-gold or ink.
-  const dotR = spec.dotRadiusAt96 * scale;
-  page.drawCircle({ x: center.x, y: center.y, size: dotR, color: PRINT.gold, borderWidth: 0 });
+  // Centre dot — filled, true --ss-gold. A mark, not text, so it keeps the
+  // canonical colour even though everything else in the frame prints in ink
+  // or ss-print-gold.
+  page.drawCircle({ x: center.x, y: center.y, size: art.dotRadius * scale, color: PRINT.gold, borderWidth: 0 });
 }
 
-/** logo-mark.svg — ring only, 20x20 in the running header. */
+/** smart-site-mark-crosshair.svg — ring only, in the running header. */
 export function drawRunningHeaderMark(page: PDFPage, x: number, y: number): void {
-  drawRing(page, { x, y }, RUNHEAD.markSize, MARK_RING);
+  drawRing(page, { x, y }, RUNHEAD.markSize, SMART_SITE_MARK);
 }
 
 /**
- * logo-wordmark-print.svg — ring + "SMART SITE" wordmark, 175x40 on the
- * masthead. The ring occupies the viewBox's first 96/420 of its width; the
- * wordmark text starts at native x=112. "SMART" prints in ink, "SITE" in
- * `--ss-print-gold` (the wordmark's own two-gold ruling — the ring dot alone
- * keeps true gold). Font: Barlow Condensed SemiBold, the existing display
- * face for every other heading in this system — the SVG's own font stack
- * (`Oxygen, system-ui, sans-serif`) already degrades to a system sans when
- * Oxygen is unavailable, which is this repo's situation exactly. Returns the
- * wordmark's rendered width in points.
+ * smart-site-lockup.svg — ring + "SMART SITE" wordmark on the masthead.
+ *
+ * Text position, size and tracking are the canonical SVG's own: the wordmark
+ * starts at native x=86 on a baseline at native y=48, set at 34 units with
+ * 0.5 units of letter-spacing, all scaled by the same factor as the ring.
+ * "SMART" prints in ink and "SITE" in --ss-print-gold (the wordmark's own
+ * two-tone ruling; the ring dot alone keeps true gold).
+ *
+ * FONT is the one substitution that is not colour. Barlow Condensed SemiBold
+ * stands in for Oxygen Bold — Oxygen is not embedded in this repo, and the
+ * canonical SVG's own stack (`Oxygen, sans-serif`) already degrades to a
+ * system sans wherever Oxygen is absent, which is this repo's situation. It
+ * is drawn as TEXT, not paths, so it stays selectable and searchable in the
+ * PDF; because `F.display` is fontkit-embedded it carries a ToUnicode CMap
+ * and decodes (a pdf-lib StandardFont would NOT — see the ChromeFonts note).
+ *
+ * Returns the lockup's rendered width in points.
  */
 export function drawMastheadWordmark(page: PDFPage, x: number, y: number, F: ChromeFonts): number {
-  const scale = MASTHEAD.logoHeight / 96;
-  drawRing(page, { x, y }, MASTHEAD.logoHeight, WORDMARK_RING);
+  const art = SMART_SITE_LOCKUP;
+  const scale = MASTHEAD.logoHeight / art.nativeHeight;
+  drawRing(page, { x, y }, MASTHEAD.logoHeight, art);
 
-  const textX = x + 112 * scale;
-  const textY = y + (96 - 60) * scale;
-  const size = 40 * scale;
-  const smart = "SMART";
-  page.drawText(smart, { x: textX, y: textY, size, font: F.display, color: PRINT.ink });
-  const smartW = F.display.widthOfTextAtSize(smart, size);
-  const spaceW = F.display.widthOfTextAtSize(" ", size);
-  const site = "SITE";
-  page.drawText(site, { x: textX + smartW + spaceW, y: textY, size, font: F.display, color: PRINT.printGold });
-  const siteW = F.display.widthOfTextAtSize(site, size);
-  return textX + smartW + spaceW + siteW - x;
+  const w = art.wordmark;
+  if (!w) {
+    // Fail closed: the lockup without its wordmark is not the lockup.
+    throw new Error("report-chrome: canonical lockup carries no wordmark. Refusing to draw a partial masthead.");
+  }
+
+  const size = w.fontSize * scale;
+  const trackingEm = w.letterSpacing / w.fontSize; // SVG letter-spacing is absolute; drawTrackedText wants em.
+  const textX = x + w.x * scale;
+  const textY = y + (art.nativeHeight - w.baselineY) * scale;
+
+  // The canonical lead run is "SMART " — its trailing space is part of the gap
+  // to "SITE", so it is drawn and measured as written, never re-synthesised.
+  // drawTrackedText returns the ABSOLUTE right edge, not a width.
+  const afterLead = drawTrackedText(page, w.leadText, {
+    x: textX,
+    y: textY,
+    size,
+    font: F.display,
+    color: PRINT.ink,
+    trackingEm,
+  });
+  const afterAccent = drawTrackedText(page, w.accentText, {
+    x: afterLead,
+    y: textY,
+    size,
+    font: F.display,
+    color: PRINT.printGold,
+    trackingEm,
+  });
+
+  return afterAccent - x;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
