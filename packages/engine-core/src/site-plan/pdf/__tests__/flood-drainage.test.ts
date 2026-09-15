@@ -204,11 +204,15 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     expect(result.gradientComposited).toBe(true);
 
     const decoded = decodeAllContentStreams(result.bytes);
-    // §2 kickers with sheet numbering.
-    expect(decoded).toContain("FLOOD & DRAINAGE · SHEET 1 OF 2");
-    expect(decoded).toContain("FLOOD & DRAINAGE SUMMARY · SHEET 2 OF 2");
-    // Header: address + meta; stat columns.
-    expect(decoded).toContain("141 OLD ANTIOCH RD");
+    // P-228: masthead report type + running-header sectionQualifier replace
+    // the old "FLOOD & DRAINAGE · SHEET N OF M" kicker; the sheet counter
+    // moves to its own zero-padded footer element.
+    expect(decoded).toContain("FLOOD & DRAINAGE");
+    expect(decoded).toContain("FLOOD & DRAINAGE · SUMMARY");
+    expect(decoded).toContain("SHEET 01 / 2");
+    expect(decoded).toContain("SHEET 02 / 2");
+    // Header: address (verbatim, never forced uppercase) + meta; stat columns.
+    expect(decoded).toContain("141 Old Antioch Rd");
     expect(decoded).toContain("Bastrop County");
     expect(decoded).toContain("CATCHMENT");
     expect(decoded).toContain("12.4 AC");
@@ -242,8 +246,11 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     expect(decoded).toContain("not a drainage study or engineering determination");
     expect(decoded).toContain(FLOOD_DRAINAGE_BACKDROP_LINE);
     expect(decoded).toContain(AERIAL_IMAGERY_ATTRIBUTION);
-    expect(decoded).toContain("Sheet 1 of 2");
-    expect(decoded).toContain("Sheet 2 of 2");
+    // P-228: the fine print no longer appends "Sheet N of Total" — the
+    // report-chrome footer draws it separately as its own zero-padded
+    // "SHEET NN / M" counter (already asserted above).
+    expect(decoded).toContain("SHEET 01 / 2");
+    expect(decoded).toContain("SHEET 02 / 2");
   });
 
   it("composes sheet 1 in the v2 order: imagery → water gradient → catchment boundary → flow line → property line → exit arrow", async () => {
@@ -320,9 +327,10 @@ describe("emitPdfFloodDrainage", { timeout: 60_000 }, () => {
     expect(decoded).toContain(FLOOD_DRAINAGE_EMPTY_TITLE);
     expect(decoded).toContain(HONEST_EMPTY_FLAT_TERRAIN);
     expect(decoded).toContain("UNAVAILABLE");
-    // No address → parcel-id title + NO ADDRESS chip (§2, never a placeholder).
+    // No address → parcel-id title (§2, never a placeholder). P-228: the
+    // masthead has no chip slot, so the honest fallback is the plain
+    // "PARCEL {id}" string rather than a separate "NO ADDRESS" chip.
     expect(decoded).toContain("PARCEL 48021:47595");
-    expect(decoded).toContain("NO ADDRESS");
     // No drainage geometry marks were drawn.
     const kinds = new Set(result.marks.map((m) => m.kind));
     expect(kinds.has("catchment-boundary")).toBe(false);

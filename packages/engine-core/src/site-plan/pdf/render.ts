@@ -58,6 +58,21 @@ import {
 } from "./line-box.js";
 import { buildProvenancePanelEntries, SITE_PLAN_HONESTY_LINE, type ProvenancePanelEntry } from "./provenance.js";
 import { PROPERTY_LINE_TAGS_HONESTY } from "../../geometry/gis-property-line-tags.js";
+import { MARGIN_BOTTOM, MARGIN_TOP, MARGIN_X, PAGE_HEIGHT, PAGE_WIDTH } from "./page-geometry.js";
+import {
+  chromeMonoFonts,
+  drawFooter,
+  drawMasthead,
+  drawRunningHeader,
+  footerBandHeight,
+  footerLegalLineCount,
+  mastheadAddressLines,
+  mastheadBottomY,
+  runningHeaderBottomY,
+  type ChromeFonts,
+  type MastheadContent,
+} from "./report-chrome.js";
+import { MASTHEAD, RUNHEAD } from "./report-chrome-tokens.js";
 import { LINE_HEIGHT, RASTER_OUTLINE_PT, SETBACK_DASH, SPACE, STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js";
 import { anyNotSpecified } from "../setback-display.js";
 
@@ -159,13 +174,12 @@ const LB = {
   finePrint: lineBox(METRICS.body, TYPE.finePrint, LINE_HEIGHT.finePrint),
 } as const;
 
-// US Letter, PDF points (72/in). Standard sheet is 816x1056 px @96dpi (§1).
-const PAGE_WIDTH = 612;
-const PAGE_HEIGHT = 792;
-// §1 page margins 48 / 46 / 36 px @96dpi -> points.
-const MARGIN_TOP = pt(48);
-const MARGIN_X = pt(46);
-const MARGIN_BOTTOM = pt(36);
+// US Letter, PDF points (72/in). Standard sheet is 816x1056 px @96dpi.
+// PAGE_WIDTH/PAGE_HEIGHT/MARGIN_TOP/MARGIN_X/MARGIN_BOTTOM now live in
+// page-geometry.ts (P-228: margins are the report-chrome frame's own
+// geometry, single-sourced from report-chrome-tokens.ts) and are imported
+// above; re-exported below unchanged so dossier.ts / feasibility.ts /
+// flood-drainage.ts need no import-path changes.
 
 // Token colour aliases (drawing roles, token map).
 const INK = TOKENS.text;
@@ -196,16 +210,14 @@ const LEADER_COLOR = TOKENS.neutral500;
 export const TOTAL_SHEETS = 3;
 
 /**
- * Smart Site brand kicker for site-plan sheet eyebrows (REBRAND_UI).
- * Mirrors dossier.ts DOSSIER_KICKER: one spelling, everywhere. Brand skin
- * only — does not change factual content or disclosures.
+ * P-228: the site-plan sheet's kicker/eyebrow header is retired in favor of
+ * the shared report-chrome masthead/running-header (report-chrome.ts) — the
+ * one frame FS-/SP-/FD- now all draw. `SITE_PLAN_BRAND_KICKER` and the old
+ * `SMART SITE · <ROLE> · SHEET N OF M` eyebrow string no longer exist; the
+ * wordmark carries the brand on the masthead, and the running header prints
+ * a bare `SITE PLAN` (or `SITE PLAN · <qualifier>`) instead. See
+ * `siteModelMastheadContent` / `sitePlanRunningHeaderContent` below.
  */
-export const SITE_PLAN_BRAND_KICKER = "SMART SITE";
-
-/** Sheet eyebrow: `SMART SITE · <ROLE> · SHEET N OF M`. */
-function sitePlanSheetEyebrow(role: string, sheetNo: number, total: number): string {
-  return `${SITE_PLAN_BRAND_KICKER} · ${role} · SHEET ${sheetNo} OF ${total}`;
-}
 
 /** Page-space axis-aligned extent of a drawn mark (PDF points). */
 export interface MarkBbox {
@@ -311,6 +323,21 @@ export interface EmitPdfSitePlanOptions {
    *                         second Esri fetch and then discard the sheet.
    */
   sheets?: "all" | "drawing-only" | "drawing-and-summary";
+  /**
+   * P-228 — report-chrome footer deep link. Printed verbatim (host-corrected
+   * off the confirmed-parked `smartsite.app` only) when supplied; when
+   * absent, the footer falls back to an absolute `https://smartsite.cloud/
+   * ?parcelNodeId=...` link built from the model's own parcelNodeId — see
+   * `resolveFooterDeepLink` in report-chrome.ts. The standalone site-plan
+   * export never wired a live-view link before this row (grep-confirmed
+   * zero references anywhere in this file pre-P-228); the fallback means
+   * the frame's own falsifier ("the deep-link host resolves to the real
+   * application") holds even for callers that never pass one.
+   */
+  liveViewUrl?: string;
+  /** Footer generation timestamp; defaults to `new Date().toISOString()`.
+   * Exposed so tests can assert an exact footer stamp deterministically. */
+  generatedAtIso?: string;
 }
 
 /** §14: keyed mark registry — a duplicate (page, kind, key) is never drawn twice. */
@@ -563,94 +590,76 @@ function buildableHeaderStat(s: SitePlanModel["summary"]): { value: string; none
   return { value: "NONE", none: true };
 }
 
-function drawSheetHeader(
-  page: PDFPage,
-  model: SitePlanModel,
-  F: Fonts,
-  eyebrow: string,
-  stats: HeaderStat[] | null,
-  rightMeta: string[] | null,
-): number {
+/** Masthead content for the site-plan's own sheets (report type "Site
+ * Plan") — drawn only when this sheet is the document's absolute first
+ * printed sheet; see `drawSitePlanChrome`. No NO-ADDRESS chip: the new
+ * masthead has no chip slot, so the honest fallback is the plain string
+ * `PARCEL {id}` — the same information, without the old chip styling. */
+function siteModelMastheadContent(model: SitePlanModel): MastheadContent {
   const s = model.summary;
-  const left = MARGIN_X;
-  const right = PAGE_WIDTH - MARGIN_X;
-  const top = PAGE_HEIGHT - MARGIN_TOP; // top of the kicker's line box
-
-  drawTrackedText(page, eyebrow, {
-    x: left,
-    y: top - LB.eyebrow.baselineFromBoxTop,
-    size: TYPE.eyebrow,
-    font: F.display,
-    color: ACCENT,
-    trackingEm: TRACKING.eyebrow,
-  });
-
-  // Address, or the parcel id plus a NO ADDRESS chip — never a placeholder (§2).
-  const titleBoxTop = top - LB.eyebrow.lineBoxHeight - pt(2);
   const street = streetOnly(s.address);
-  const big = (street ?? `PARCEL ${s.parcelNodeId}`).toUpperCase();
-  page.drawText(big, {
-    x: left,
-    y: titleBoxTop - LB.address.baselineFromBoxTop,
-    size: TYPE.address,
-    font: F.display,
-    color: INK,
-  });
-  if (!street) {
-    const bigW = F.display.widthOfTextAtSize(big, TYPE.address);
-    drawChipOnLineBox(page, CHIP_NO_ADDRESS, left + bigW + pt(10), titleBoxTop, LB.address, "solid", F);
-  }
-
-  // One meta line — only fields that exist (§2: omit absent fields). §11
-  // (v1.2): the county appears by NAME only; a FIPS-shaped countyName is
-  // omitted entirely — a raw code never prints in the meta line.
-  const metaBoxTop = titleBoxTop - LB.address.lineBoxHeight - pt(2);
-  const metaParts = [cityFromAddress(s.address), `Parcel ${s.parcelNodeId}`, countyDisplayName(s.countyName)].filter(
+  const metaParts = [cityFromAddress(s.address), `PARCEL ${s.parcelNodeId}`, countyDisplayName(s.countyName)].filter(
     (p): p is string => !!p,
   );
-  page.drawText(metaParts.join("  ·  "), {
-    x: left,
-    y: metaBoxTop - LB.subline.baselineFromBoxTop,
-    size: TYPE.subline,
-    font: F.body,
-    color: TOKENS.neutral700,
-  });
-
-  if (stats) {
-    drawHeaderStats(page, stats, right, top - pt(6), F);
-  }
-  if (rightMeta) {
-    const metaTop = top - pt(6);
-    rightMeta.forEach((line, i) => {
-      page.drawText(line, {
-        x: right - F.body.widthOfTextAtSize(line, TYPE.sheetMeta),
-        y: metaTop - i * LB.sheetMeta.lineBoxHeight - LB.sheetMeta.baselineFromBoxTop,
-        size: TYPE.sheetMeta,
-        font: F.body,
-        color: TOKENS.neutral600,
-      });
-    });
-  }
-
-  const ruleY = headerRuleY();
-  drawHairlineRule(page, left, ruleY, right - left);
-  return ruleY;
+  return {
+    reportType: "Site Plan",
+    address: street ?? `PARCEL ${s.parcelNodeId}`,
+    subjectMeta: metaParts.join(" · "),
+    docIdValue: `SP-${s.parcelNodeId.replace(/:/g, "-")}`,
+  };
 }
 
-/** The header's closing-rule y is deterministic (§21 line-box stack with
- * fixed 2px gaps and a space-4 pad to the rule), so the aerial page can size
- * its imagery rect BEFORE the header is drawn. */
-function headerRuleY(): number {
-  return (
-    PAGE_HEIGHT -
-    MARGIN_TOP -
-    LB.eyebrow.lineBoxHeight -
-    pt(2) -
-    LB.address.lineBoxHeight -
-    pt(2) -
-    LB.subline.lineBoxHeight -
-    pt(SPACE.s4)
-  );
+/** Running-header right meta — `ADDRESS · PARCEL`, or `PARCEL id` alone with
+ * no street. Never repeats the SP- doc id: report-chrome README says the
+ * document id is "recoverable from the deep link in the footer," not
+ * redrawn on every running header. */
+function siteModelRunningHeaderMeta(model: SitePlanModel): string {
+  const s = model.summary;
+  const street = streetOnly(s.address);
+  return street ? `${street} · ${s.parcelNodeId}` : `PARCEL ${s.parcelNodeId}`;
+}
+
+/**
+ * Draws this site-plan sheet's chrome — the masthead iff `isMasthead` (the
+ * document's printed sheet 1; only ever true for the drawing sheet in a
+ * standalone export), otherwise the slim running header every other sheet
+ * gets, including the drawing sheet itself when it is appended after a
+ * Feasibility cover. Same return contract the old `headerRuleY()` had: the
+ * chrome's bottom y, so callers can lay out body content beneath it.
+ */
+function drawSitePlanChrome(
+  page: PDFPage,
+  model: SitePlanModel,
+  F: ChromeFonts,
+  isMasthead: boolean,
+  sectionQualifier: string | undefined,
+): number {
+  return isMasthead
+    ? drawMasthead(page, siteModelMastheadContent(model), F)
+    : drawRunningHeader(page, { reportType: "Site Plan", sectionQualifier, rightMeta: siteModelRunningHeaderMeta(model) }, F);
+}
+
+/** Pure-geometry twin of `drawSitePlanChrome` — callers (the aerial rect,
+ * the drawing frame) need the chrome's bottom y BEFORE it is actually
+ * drawn. Dispatches to report-chrome.ts's own `mastheadBottomY` /
+ * `runningHeaderBottomY`, never re-deriving their arithmetic. */
+function sitePlanChromeBottomY(model: SitePlanModel, F: ChromeFonts, isMasthead: boolean): number {
+  return isMasthead ? mastheadBottomY(mastheadAddressLines(siteModelMastheadContent(model).address, F)) : runningHeaderBottomY();
+}
+
+/**
+ * LOT / BUILDABLE / ZONING (drawing sheet) and IMAGERY / REGISTER (aerial
+ * sheet) are body facts specific to THIS site-plan sheet, not part of the
+ * generic three-report-type frame — the new masthead/running header has no
+ * stats slot the way the old header did, so these draw as body furniture
+ * directly below the chrome instead. `drawHeaderStats` itself is untouched;
+ * only its anchor moved from inside the header to just below it.
+ */
+const BODY_STATS_ROW_RESERVE = pt(36);
+
+function drawBodyStatsRow(page: PDFPage, stats: HeaderStat[], chromeBottomY: number, bodyStartPad: number, F: Fonts): void {
+  const right = PAGE_WIDTH - MARGIN_X;
+  drawHeaderStats(page, stats, right, chromeBottomY - bodyStartPad, F);
 }
 
 function page1HeaderStats(model: SitePlanModel): HeaderStat[] {
@@ -1097,13 +1106,22 @@ function drawLegend(
   }
 }
 
-/** §21 footer geometry, page 1: worst-case legend depth (4 rows per column)
- * reserved above the fine-print band — the drawing box never overlaps the
- * legend even when the margin-leader row appears. */
+/**
+ * §21 footer geometry, page 1: worst-case legend depth (4 rows per column)
+ * reserved above the new report-chrome FOOTER band (report-chrome.ts's
+ * `footerBandHeight`) — the drawing box never overlaps the legend even when
+ * the margin-leader row appears. Sheet 1's fine print can run to several
+ * conditional sentences (moved tags / street honesty / synthetic DEM /
+ * zoning fixture), so this PRE-DRAW sizing pass reserves a generous fixed
+ * line count rather than measuring the real text (the real draw always
+ * re-measures for real — see `drawPage1Footer` — so a shorter real footer
+ * only leaves a little unused whitespace here, never an overlap).
+ */
+const PAGE1_FOOTER_RESERVED_LEGAL_LINES = 8;
+
 function page1FooterRuleY(): number {
-  const finePrintBandTop = MARGIN_BOTTOM + LB.finePrint.lineBoxHeight * 4;
   const legendBlock = pt(SPACE.s2) + 4 * LB.legend.lineBoxHeight + 3 * pt(SPACE.s2);
-  return finePrintBandTop + pt(SPACE.s3) + legendBlock;
+  return footerBandHeight(PAGE1_FOOTER_RESERVED_LEGAL_LINES) + pt(SPACE.s3) + legendBlock;
 }
 
 /**
@@ -1228,9 +1246,18 @@ function sheetLabel(localPage: 1 | 2 | 3, numbering?: SheetNumbering): { no: num
   return { no: n.startAt + localPage - 1, total: n.total };
 }
 
+/**
+ * P-228: no longer appends "· Sheet N of Total" — the report-chrome footer
+ * (report-chrome.ts's `drawFooter`) now draws the sheet pointer itself, as
+ * its own right-aligned counter, on every sheet uniformly across all three
+ * report types. Sentences composed here become the chrome footer's LEFT
+ * ("legal") slot verbatim; the report-chrome README's own allowance —
+ * "sheets carrying their own caveat override the first sentence... and keep
+ * the pointer" — is exactly this function's existing per-sheet honesty
+ * composition, just without re-deriving the pointer text itself.
+ */
 function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, ctx: FinePrintContext): string {
   const sentences: string[] = [];
-  const label = ctx.label ?? sheetLabel(page, ctx.numbering);
   if (page === 3) {
     const s1 = sheetLabel(1, ctx.numbering).no;
     sentences.push(SITE_PLAN_HONESTY_LINE);
@@ -1249,7 +1276,6 @@ function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, ctx: FinePrintCon
       );
     }
     sentences.push(AERIAL_IMAGERY_ATTRIBUTION);
-    sentences.push(`· Sheet ${label.no} of ${label.total}`);
     return sentences.join(" ");
   }
 
@@ -1280,7 +1306,6 @@ function buildFinePrint(model: SitePlanModel, page: 1 | 2 | 3, ctx: FinePrintCon
       "Buildable area is provisional pending front-edge resolution; treat it as a planning estimate, not a permit-ready boundary.",
     );
   }
-  sentences.push(`· Sheet ${label.no} of ${label.total}`);
   return sentences.join(" ");
 }
 
@@ -1301,11 +1326,12 @@ function drawPage1Footer(
   page: PDFPage,
   layout: SitePlanDrawingLayout,
   model: SitePlanModel,
-  F: Fonts,
+  F: ChromeFonts,
   marks: MarkRegistry,
   finePrint: string,
   rhythm: RhythmCapture,
   segmentTableSheetNo: number,
+  chromeFooter: { sheetNo: number; sheetTotal: number; generatedAtIso: string; liveViewUrl?: string },
 ): void {
   const ruleY = page1FooterRuleY();
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
@@ -1313,7 +1339,23 @@ function drawPage1Footer(
   drawLegend(page, layout, model, F, ruleY, marks, rhythm, segmentTableSheetNo);
   drawScaleBar(page, layout, model, F, ruleY - pt(8), marks);
 
-  drawFinePrint(page, 1, finePrint, F, marks);
+  // P-228: the report-chrome footer replaces drawFinePrint here — same
+  // draw-once mark kind ("fine-print"/"paragraph") preserved so existing
+  // §14 furniture-count assertions keep reading a footer as present.
+  if (marks.once(1, "fine-print", "paragraph")) {
+    drawFooter(
+      page,
+      {
+        legalText: finePrint,
+        generatedAtIso: chromeFooter.generatedAtIso,
+        liveViewUrl: chromeFooter.liveViewUrl,
+        parcelNodeId: model.parcelNodeId,
+        sheetNo: chromeFooter.sheetNo,
+        sheetTotal: chromeFooter.sheetTotal,
+      },
+      F,
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1897,7 +1939,7 @@ function tableRowHeight(lines = 1): number {
 function planSummaryFlow(
   model: SitePlanModel,
   layout: SitePlanDrawingLayout,
-  F: Fonts,
+  F: ChromeFonts,
   movedSegs: string[],
   hostNumbering: SheetNumbering | undefined,
 ): SummaryFlowPlan {
@@ -1906,7 +1948,10 @@ function planSummaryFlow(
   const headingH = sectionHeadingHeight();
   const headH = tableHeadHeight();
   const segRowH = tableRowHeight();
-  const frameTop = headerRuleY();
+  // Summary sheets are never the document's printed sheet 1 (the drawing
+  // sheet always occupies that slot when it exists) — always the running
+  // header, so its constant bottom y is always correct here.
+  const frameTop = runningHeaderBottomY();
 
   let m = 1;
   let plan: SummaryFlowPlan | null = null;
@@ -1921,9 +1966,9 @@ function planSummaryFlow(
         label: { no: numbering.startAt + k, total: numbering.total },
         segmentTableSheetNo: numbering.startAt + (plan?.segmentTableSheet ?? 1),
       });
-      fpLines = Math.max(fpLines, wrapTextToWidth(text, F.body, TYPE.finePrint, PAGE_WIDTH - MARGIN_X * 2).length);
+      fpLines = Math.max(fpLines, footerLegalLineCount(text, F));
     }
-    const frameBottom = MARGIN_BOTTOM + fpLines * LB.finePrint.lineBoxHeight + pt(SPACE.s4);
+    const frameBottom = footerBandHeight(fpLines) + pt(SPACE.s4);
 
     const sheets: Array<{ ops: SummaryFlowOp[] }> = [{ ops: [] }];
     let cursor = frameTop;
@@ -2375,12 +2420,13 @@ function drawAerialFooter(
   mercBbox: MercatorBbox,
   rect: PageRect,
   imagery: AerialImageryResult,
-  F: Fonts,
+  F: ChromeFonts,
   ruleY: number,
   marks: MarkRegistry,
   finePrint: string,
   rhythm: RhythmCapture,
-  numbering?: SheetNumbering,
+  numbering: SheetNumbering | undefined,
+  chromeFooter: { sheetNo: number; sheetTotal: number; generatedAtIso: string; liveViewUrl?: string },
 ): void {
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
 
@@ -2501,7 +2547,20 @@ function drawAerialFooter(
     });
   }
 
-  drawFinePrint(page, pageNo, finePrint, F, marks);
+  if (marks.once(pageNo, "fine-print", "paragraph")) {
+    drawFooter(
+      page,
+      {
+        legalText: finePrint,
+        generatedAtIso: chromeFooter.generatedAtIso,
+        liveViewUrl: chromeFooter.liveViewUrl,
+        parcelNodeId: model.parcelNodeId,
+        sheetNo: chromeFooter.sheetNo,
+        sheetTotal: chromeFooter.sheetTotal,
+      },
+      F,
+    );
+  }
 }
 
 function drawAerialPage(
@@ -2511,12 +2570,13 @@ function drawAerialPage(
   png: PDFImage | undefined,
   mercBbox: MercatorBbox,
   rect: PageRect,
-  F: Fonts,
+  F: ChromeFonts,
   marks: MarkRegistry,
   rhythm: RhythmCapture,
   numbering: SheetNumbering | undefined,
   pageNo: number,
   aerialLabel: { no: number; total: number },
+  chromeFooter: { generatedAtIso: string; liveViewUrl?: string },
 ): void {
   const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
@@ -2532,14 +2592,17 @@ function drawAerialPage(
   // REGISTER above, which computes a real value or honestly chips). ESRI
   // World Imagery does not expose a reliable per-tile capture date through
   // this integration, so the stat is dropped rather than fabricated.
-  drawSheetHeader(
+  // Aerial is never the document's printed sheet 1 (it always follows the
+  // drawing sheet, standalone or embedded), so it always draws the slim
+  // running header — same rule `drawSitePlanChrome` uses for the drawing
+  // sheet. IMAGERY/REGISTER move into the body as a stats row, same as the
+  // drawing sheet's LOT/BUILDABLE/ZONING — see `drawBodyStatsRow`.
+  const aerialChromeBottomY = drawRunningHeader(
     page,
-    model,
+    { reportType: "Site Plan", sectionQualifier: "Aerial", rightMeta: siteModelRunningHeaderMeta(model) },
     F,
-    sitePlanSheetEyebrow("AERIAL", aerialLabel.no, aerialLabel.total),
-    [{ label: "IMAGERY", value: "ESRI" }, registerStat],
-    null,
   );
+  drawBodyStatsRow(page, [{ label: "IMAGERY", value: "ESRI" }, registerStat], aerialChromeBottomY, RUNHEAD.bodyStart, F);
 
   if (imagery.ok && png) {
     if (marks.once(pageNo, "imagery", "raster")) {
@@ -2617,6 +2680,7 @@ function drawAerialPage(
     }),
     rhythm,
     numbering,
+    { sheetNo: aerialLabel.no, sheetTotal: aerialLabel.total, generatedAtIso: chromeFooter.generatedAtIso, liveViewUrl: chromeFooter.liveViewUrl },
   );
 }
 
@@ -2636,25 +2700,41 @@ export async function emitPdfSitePlan(
   // glyph), exploding into hundreds of tiny font objects and breaking
   // ToUnicode text extraction.
   doc.registerFontkit(fontkit);
-  const F: Fonts = {
-    body: await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false }),
-    bodyMedium: await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false }),
+  const body = await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false });
+  const bodyMedium = await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false });
+  const F: ChromeFonts = {
+    body,
+    bodyMedium,
     display: await doc.embedFont(loadFont("BarlowCondensed-SemiBold.ttf"), { subset: false }),
     displayMedium: await doc.embedFont(loadFont("BarlowCondensed-Medium.ttf"), { subset: false }),
+    ...chromeMonoFonts(body, bodyMedium),
   };
   const marks = new MarkRegistry();
   const rhythm = new RhythmCapture();
+  const generatedAtIso = options.generatedAtIso ?? new Date().toISOString();
+  const chromeFooterOptions = { generatedAtIso, liveViewUrl: options.liveViewUrl };
+
+  // The drawing sheet is the ONLY site-plan sheet that can ever be the
+  // document's printed sheet 1 (summary/aerial always follow it, standalone
+  // or embedded) — masthead iff standalone at the default numbering.
+  const drawingIsMasthead = (options.numbering?.startAt ?? 1) === 1;
 
   // ── Layout + overflow-pagination plan FIRST (pure geometry — nothing is
   // drawn yet) so every printed "SHEET k OF n" reflects the post-pagination
   // total before any header goes down. ─────────────────────────────────────
-  const page1RuleY = headerRuleY();
+  const page1RuleY = sitePlanChromeBottomY(model, F, drawingIsMasthead);
+  // Body content starts `bodyStart` below the chrome (report-chrome.css's
+  // own `.ss-sheet__body` / `.ss-sheet--running .ss-sheet__body` padding),
+  // then the LOT/BUILDABLE/ZONING stats row (body furniture, not part of
+  // the generic frame — see `drawBodyStatsRow`), THEN the drawing itself.
+  const page1BodyStartPad = drawingIsMasthead ? MASTHEAD.bodyStart : RUNHEAD.bodyStart;
+  const page1DrawingTopY = page1RuleY - page1BodyStartPad - BODY_STATS_ROW_RESERVE;
   const footerBandTop = page1FooterRuleY() + pt(6);
   const drawingBox: DrawingBox = {
     x: MARGIN_X,
     y: footerBandTop,
     width: PAGE_WIDTH - MARGIN_X * 2,
-    height: page1RuleY - pt(18) - footerBandTop,
+    height: page1DrawingTopY - footerBandTop,
   };
   // §3 (v1.2) drawing frame: the rect between the header rule and the
   // furniture band. The layout clips every context layer and confines every
@@ -2664,7 +2744,7 @@ export async function emitPdfSitePlan(
     minX: MARGIN_X,
     minY: footerBandTop,
     maxX: PAGE_WIDTH - MARGIN_X,
-    maxY: page1RuleY - pt(4),
+    maxY: page1DrawingTopY + pt(14),
   };
   const layout = buildSitePlanDrawingLayout(model, drawingBox, {
     measureText: (text, size) => F.body.widthOfTextAtSize(text, size),
@@ -2693,14 +2773,17 @@ export async function emitPdfSitePlan(
 
   // AERIAL (sheet 3) imagery fetch — started first so the bounded network
   // wait (default 8s cap) overlaps the vector rendering of sheets 1–2.
-  // §21 footer stack, bottom up: fine print (6 lines) → legend band (space-3
-  // gap + two small-legend line boxes with space-2 pads) → footer rule →
-  // strip → imagery rect.
+  // §21 footer stack, bottom up: report-chrome footer (6 reserved lines,
+  // same conservative reservation as page 1 — see PAGE1_FOOTER_RESERVED_LEGAL_LINES)
+  // → legend band (space-3 gap + two small-legend line boxes with space-2
+  // pads) → footer rule → strip → imagery rect. Aerial is always the running
+  // header (never document sheet 1), so its top also reserves the
+  // IMAGERY/REGISTER body stats row now living below the chrome.
   const aerialLegendBand =
     pt(SPACE.s3) + pt(SPACE.s2) * 2 + 2 * LB.legendSmall.lineBoxHeight + pt(8);
-  const aerialFooterBandTop =
-    MARGIN_BOTTOM + LB.finePrint.lineBoxHeight * 6 + aerialLegendBand + imageryStripHeight() + pt(6);
-  const aerialRect = aerialImageRect(headerRuleY(), aerialFooterBandTop);
+  const aerialFooterBandTop = footerBandHeight(6) + aerialLegendBand + imageryStripHeight() + pt(6);
+  const aerialTopY = runningHeaderBottomY() - RUNHEAD.bodyStart - BODY_STATS_ROW_RESERVE;
+  const aerialRect = aerialImageRect(aerialTopY, aerialFooterBandTop);
   const mercBbox = computeAerialMercatorBbox(model.ringLocal, model.bboxWgs84, aerialRect.width / aerialRect.height);
   const aerialUrl = buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox));
   const aerialPromise = !includeAerialSheet
@@ -2712,14 +2795,8 @@ export async function emitPdfSitePlan(
 
   // PAGE 1 — drawing.
   const page1 = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  drawSheetHeader(
-    page1,
-    model,
-    F,
-    sitePlanSheetEyebrow("SITE PLAN", drawingNo, total),
-    page1HeaderStats(model),
-    null,
-  );
+  const page1ChromeBottomY = drawSitePlanChrome(page1, model, F, drawingIsMasthead, undefined);
+  drawBodyStatsRow(page1, page1HeaderStats(model), page1ChromeBottomY, page1BodyStartPad, F);
   drawSitePlanDrawing(page1, layout, F, marks);
   drawPage1Footer(
     page1,
@@ -2730,6 +2807,7 @@ export async function emitPdfSitePlan(
     buildFinePrint(model, 1, { movedSegs, numbering, label: { no: drawingNo, total }, segmentTableSheetNo }),
     rhythm,
     segmentTableSheetNo,
+    { sheetNo: drawingNo, sheetTotal: total, ...chromeFooterOptions },
   );
 
   // PAGES 2..(1+m) — summary flow. Sheet 2 plus any inserted continuation
@@ -2742,20 +2820,26 @@ export async function emitPdfSitePlan(
       const localPage = 2 + j;
       const printedNo = numbering.startAt + 1 + j;
       const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-      let cursor = drawSheetHeader(page, model, F, sitePlanSheetEyebrow("SUMMARY", printedNo, total), null, [
-        `SP-${model.parcelNodeId.replace(/:/g, "-")}`,
-        model.parcelNodeId,
-      ]);
+      // Summary is never document sheet 1 — always the running header. Its
+      // rightMeta absorbs what the old header's two-line "SP-id / parcelId"
+      // block used to show; the doc id itself does not repeat off the
+      // masthead (report-chrome README: recoverable from the footer link).
+      let cursor = drawRunningHeader(
+        page,
+        { reportType: "Site Plan", sectionQualifier: "Summary", rightMeta: siteModelRunningHeaderMeta(model) },
+        F,
+      );
       for (const op of flowPlan.sheets[j]!.ops) {
         cursor = drawSummaryFlowOp(page, localPage, op, cursor, layout, F, marks, rhythm, numbering);
       }
-      drawFinePrint(
-        page,
-        localPage,
-        buildFinePrint(model, 2, { movedSegs, numbering, label: { no: printedNo, total }, segmentTableSheetNo }),
-        F,
-        marks,
-      );
+      const summaryFinePrint = buildFinePrint(model, 2, { movedSegs, numbering, label: { no: printedNo, total }, segmentTableSheetNo });
+      if (marks.once(localPage, "fine-print", "paragraph")) {
+        drawFooter(
+          page,
+          { legalText: summaryFinePrint, sheetNo: printedNo, sheetTotal: total, parcelNodeId: model.parcelNodeId, ...chromeFooterOptions },
+          F,
+        );
+      }
     }
   }
 
@@ -2779,10 +2863,21 @@ export async function emitPdfSitePlan(
         };
       }
     }
-    drawAerialPage(doc, model, imagery, aerialPng, mercBbox, aerialRect, F, marks, rhythm, numbering, aerialLocalPage, {
-      no: aerialNo,
-      total,
-    });
+    drawAerialPage(
+      doc,
+      model,
+      imagery,
+      aerialPng,
+      mercBbox,
+      aerialRect,
+      F,
+      marks,
+      rhythm,
+      numbering,
+      aerialLocalPage,
+      { no: aerialNo, total },
+      chromeFooterOptions,
+    );
   }
 
   const bytes = await doc.save({ useObjectStreams: false });
@@ -2819,25 +2914,31 @@ export async function emitPdfSitePlan(
 export async function countSitePlanSheets(model: SitePlanModel, numbering?: SheetNumbering): Promise<number> {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
-  const F: Fonts = {
-    body: await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false }),
-    bodyMedium: await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false }),
+  const body = await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false });
+  const bodyMedium = await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false });
+  const F: ChromeFonts = {
+    body,
+    bodyMedium,
     display: await doc.embedFont(loadFont("BarlowCondensed-SemiBold.ttf"), { subset: false }),
     displayMedium: await doc.embedFont(loadFont("BarlowCondensed-Medium.ttf"), { subset: false }),
+    ...chromeMonoFonts(body, bodyMedium),
   };
-  const page1RuleY = headerRuleY();
+  const drawingIsMasthead = (numbering?.startAt ?? 1) === 1;
+  const page1RuleY = sitePlanChromeBottomY(model, F, drawingIsMasthead);
+  const page1BodyStartPad = drawingIsMasthead ? MASTHEAD.bodyStart : RUNHEAD.bodyStart;
+  const page1DrawingTopY = page1RuleY - page1BodyStartPad - BODY_STATS_ROW_RESERVE;
   const footerBandTop = page1FooterRuleY() + pt(6);
   const drawingBox: DrawingBox = {
     x: MARGIN_X,
     y: footerBandTop,
     width: PAGE_WIDTH - MARGIN_X * 2,
-    height: page1RuleY - pt(18) - footerBandTop,
+    height: page1DrawingTopY - footerBandTop,
   };
   const page1Frame: MarkBbox = {
     minX: MARGIN_X,
     minY: footerBandTop,
     maxX: PAGE_WIDTH - MARGIN_X,
-    maxY: page1RuleY - pt(4),
+    maxY: page1DrawingTopY + pt(14),
   };
   const layout = buildSitePlanDrawingLayout(model, drawingBox, {
     measureText: (text, size) => F.body.widthOfTextAtSize(text, size),
@@ -2848,7 +2949,7 @@ export async function countSitePlanSheets(model: SitePlanModel, numbering?: Shee
 }
 
 /** @internal exported for checklist tests (fine-print composition). */
-export { buildFinePrint, headerRuleY };
+export { buildFinePrint };
 
 /**
  * @internal shared sheet primitives for sibling assemblers in this directory
@@ -2858,6 +2959,7 @@ export { buildFinePrint, headerRuleY };
  * language instead of re-inventing it. Not part of the public package API.
  */
 export {
+  BODY_STATS_ROW_RESERVE,
   LB,
   METRICS,
   MarkRegistry,
@@ -2866,6 +2968,7 @@ export {
   MARGIN_BOTTOM,
   MARGIN_TOP,
   MARGIN_X,
+  drawBodyStatsRow,
   drawChipOnLineBox,
   drawFinePrint,
   drawHairlineRule,

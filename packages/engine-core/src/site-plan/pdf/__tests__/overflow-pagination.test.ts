@@ -4,7 +4,6 @@ import { composeSitePlanModel, type SitePlanModel } from "../../site-model.js";
 import {
   countSitePlanSheets,
   emitPdfSitePlan,
-  SITE_PLAN_BRAND_KICKER,
   type EmitPdfSitePlanOptions,
   type PdfSitePlanResult,
 } from "../render.js";
@@ -185,37 +184,42 @@ describe("overflow-pagination gate (summary-sheet flow)", { timeout: 120_000 }, 
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  // P-228: the old "SMART SITE · ROLE · SHEET k OF n" eyebrow (with its own
+  // inline counter) and the fine-print's separate "· Sheet k of n" trailer
+  // are both retired. Sheet identity now reads from two independent places:
+  // the masthead/running-header's doctype ("SITE PLAN", "SITE PLAN ·
+  // SUMMARY", "SITE PLAN · AERIAL" — no inline counter), and the
+  // report-chrome footer's own right-aligned, zero-padded "SHEET NN / n"
+  // counter, drawn once per sheet regardless of what precedes it in the
+  // fine print.
   it("c) 'SHEET k OF n' is consistent everywhere: same n, k strictly increasing, n equals the page count", async () => {
     const { result, decoded } = await renderedP;
     const n = result.pageCount;
     expect(n).toBeGreaterThan(3); // the old hard-coded "OF 3" cannot be right here
 
-    // Eyebrows (tracked caps reconstruct contiguously in the tight join). One
-    // exact "SHEET k OF n" per sheet, k = 1..n: drawing, each summary sheet,
-    // aerial last.
     const tight = tightText(decoded);
-    expect(tight).toContain(`${SITE_PLAN_BRAND_KICKER} · SITE PLAN · SHEET 1 OF ${n}`);
+    expect(tight).toContain("SITE PLAN");
+    expect(tight).toContain("SITE PLAN · SUMMARY");
+    expect(tight).toContain("SITE PLAN · AERIAL");
     for (const sheet of result.summarySheets) {
       expect(sheet.printedNo).toBe(sheet.localPage); // standalone: startAt = 1
-      expect(tight).toContain(`${SITE_PLAN_BRAND_KICKER} · SUMMARY · SHEET ${sheet.printedNo} OF ${n}`);
-    }
-    expect(tight).toContain(`${SITE_PLAN_BRAND_KICKER} · AERIAL · SHEET ${n} OF ${n}`);
-    // No sheet still prints a stale total (e.g. the pre-pagination "OF 3").
-    for (let k = 1; k <= n; k++) {
-      expect(tight).not.toContain(`SHEET ${k} OF ${n - 1}`);
-      expect(tight).not.toContain(`SHEET ${k} OF ${n + 1}`);
     }
 
-    // Fine-print trailers ("· Sheet k of n") on every sheet, same n.
-    const spaced = spacedText(decoded);
-    const trailerKs = new Set<number>();
-    const trailerRe = /Sheet (\d+) of (\d+)/g;
+    // Footer counters: one "SHEET NN / n" per sheet, k = 1..n, same n. The
+    // counter is drawn tracked (one glyph per Tj, same as the old eyebrow),
+    // so it reconstructs in the TIGHT join, not the space-joined one.
+    const tightAll = tightText(decoded);
+    const counterKs = new Set<number>();
+    const counterRe = /SHEET (\d+) \/ (\d+)/g;
     let m: RegExpExecArray | null;
-    while ((m = trailerRe.exec(spaced))) {
-      trailerKs.add(Number(m[1]));
-      expect(Number(m[2]), `fine-print total in "${m[0]}"`).toBe(n);
+    while ((m = counterRe.exec(tightAll))) {
+      counterKs.add(Number(m[1]));
+      expect(Number(m[2]), `footer total in "${m[0]}"`).toBe(n);
     }
-    expect([...trailerKs].sort((a, b) => a - b)).toEqual(Array.from({ length: n }, (_, i) => i + 1));
+    expect([...counterKs].sort((a, b) => a - b)).toEqual(Array.from({ length: n }, (_, i) => i + 1));
+    // No sheet still prints a stale total (e.g. the pre-pagination "OF 3").
+    expect(tightAll).not.toMatch(new RegExp(`SHEET \\d+ / ${n - 1}\\D`));
+    expect(tightAll).not.toMatch(new RegExp(`SHEET \\d+ / ${n + 1}\\D`));
   });
 
   it("d) NO ORPHANED SECTION HEADER: every heading lands with at least 2 content rows on its sheet", async () => {

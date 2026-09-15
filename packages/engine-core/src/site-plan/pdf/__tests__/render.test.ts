@@ -8,7 +8,7 @@ import { composeSitePlanModel } from "../../site-model.js";
 import { boundaryEdgesForRing } from "../../__tests__/boundary-edge-fixture.js";
 import { AERIAL_UNAVAILABLE_NOTE } from "../aerial.js";
 import { REASON } from "../format.js";
-import { emitPdfSitePlan, SITE_PLAN_BRAND_KICKER, type EmitPdfSitePlanOptions } from "../render.js";
+import { emitPdfSitePlan, type EmitPdfSitePlanOptions } from "../render.js";
 import { SITE_PLAN_HONESTY_LINE } from "../provenance.js";
 import { decodeAllContentStreams } from "./decode-pdf-text.js";
 
@@ -139,21 +139,25 @@ describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
     expect(decoded).toContain("unavailable");
   });
 
-  // Template-match chrome (rebuilt 2026-07-27 to the Industry gold reference).
-  // The header eyebrow, right-aligned stat cluster, legend with an honest
-  // empty street layer, scale bar with a feet unit, and a scale-ratio /
-  // sheet-id / generated stamp line all read back from the sheet.
-  it("draws template sheet chrome: address, sub-line, legend w/ honest empty street, scale-ratio + sheet-id + stamp", async () => {
+  // P-228 report-chrome: masthead (wordmark + doctype + address + subject
+  // meta + doc id) replaces the old "SMART SITE · ROLE · SHEET N OF M"
+  // eyebrow; the sheet counter moves to its own zero-padded footer element.
+  // Legend with an honest empty street layer, scale bar with a feet unit,
+  // and a scale-ratio / sheet-id / generated stamp line still read back from
+  // the sheet unchanged (body furniture, not frame).
+  it("draws report-chrome masthead: report type, address, subject meta, doc id; legend w/ honest empty street; scale-ratio + sheet-id + stamp", async () => {
     const model = buildModel();
     const { bytes, fontNote } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
-    // Smart Site brand kicker on the sheet eyebrow (REBRAND_UI brand skin).
-    expect(decoded).toContain(SITE_PLAN_BRAND_KICKER);
-    expect(decoded).toContain(`${SITE_PLAN_BRAND_KICKER} · SITE PLAN · SHEET 1 OF 3`);
-    // Header: the address is the largest string on the sheet (uppercased).
+    // Masthead doctype (report-chrome uppercases "Site Plan" at draw time).
+    expect(decoded).toContain("SITE PLAN");
+    // Footer's own right-aligned, zero-padded sheet counter.
+    expect(decoded).toContain("SHEET 01 / 3");
+    // Masthead: the address is the largest string on the sheet, printed
+    // VERBATIM (never forced uppercase — the source is already caps here).
     expect(decoded).toContain("1127 N PINE ST");
-    // Sub-line carries city + parcel.
-    expect(decoded).toContain("Parcel 48029:105129");
+    // Subject meta carries the parcel id, ALL CAPS per report-chrome spec.
+    expect(decoded).toContain("PARCEL 48029:105129");
     // Legend rows (§5: every layer, fixed order) incl. the honest empty street.
     expect(decoded).toContain("Property line");
     expect(decoded).toContain("Buildable envelope");
@@ -360,8 +364,9 @@ describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
     });
     const { bytes } = await emitPdfSitePlan(model, aerialStubDown);
     const decoded = decodeAllContentStreams(bytes);
-    expect(decoded).toContain("Parcel 48021:47719");
-    // Never "Parcel 48021:47719 · 48021" — the raw code is omitted entirely.
+    // P-228: subject meta prints "PARCEL {id}" in caps per report-chrome spec.
+    expect(decoded).toContain("PARCEL 48021:47719");
+    // Never "PARCEL 48021:47719 · 48021" — the raw code is omitted entirely.
     expect(decoded).not.toMatch(/47719\s*·\s*48021(?!:)/);
     expect(decoded).toContain(REASON.noCountyName);
   });
@@ -390,9 +395,10 @@ describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
       expect(latin1).toContain("/Subtype /Image");
 
       const decoded = decodeAllContentStreams(result.bytes);
-      // Tracked eyebrow reconstructs contiguously in the tight join (§2).
+      // Tracked running-header doctype reconstructs contiguously (§2).
       expect(decoded).toContain("AERIAL");
-      expect(decoded).toContain("SHEET 3 OF 3");
+      // P-228: footer's own zero-padded counter, not the old eyebrow trailer.
+      expect(decoded).toContain("SHEET 03 / 3");
       // §19 imagery provenance strip — all four cells present.
       expect(decoded).toContain("SOURCE");
       expect(decoded).toContain("CAPTURE DATE");

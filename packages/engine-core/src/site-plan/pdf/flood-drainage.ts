@@ -51,24 +51,21 @@ import {
 } from "./line-box.js";
 import { SITE_PLAN_HONESTY_LINE } from "./provenance.js";
 import {
+  BODY_STATS_ROW_RESERVE,
   LB,
-  MARGIN_BOTTOM,
-  MARGIN_TOP,
   MARGIN_X,
   MarkRegistry,
   PAGE_HEIGHT,
   PAGE_WIDTH,
   cityFromAddress,
+  drawBodyStatsRow,
   drawChipOnLineBox,
-  drawFinePrint,
   drawHairlineRule,
-  drawHeaderStats,
   drawNorthArrow,
   drawPolyline,
   drawRing,
   drawSectionHeading,
   drawTrackedText,
-  headerRuleY,
   loadFont,
   streetOnly,
   trackedWidth,
@@ -78,6 +75,19 @@ import {
   type SheetMark,
   type MarkBbox,
 } from "./render.js";
+import {
+  chromeMonoFonts,
+  drawFooter,
+  drawMasthead,
+  drawRunningHeader,
+  footerBandHeight,
+  mastheadAddressLines,
+  mastheadBottomY,
+  runningHeaderBottomY,
+  type ChromeFonts,
+  type MastheadContent,
+} from "./report-chrome.js";
+import { MASTHEAD, RUNHEAD } from "./report-chrome-tokens.js";
 import { SETBACK_DASH, SPACE, STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js";
 
 /**
@@ -219,21 +229,43 @@ const EXIT_ARROW_STROKE = 2.2;
 // Frame + footer geometry (§21): legend runs 3 rows per column (2 columns),
 // scale bar right, fine print band below.
 // ─────────────────────────────────────────────────────────────────────────
-function finePrintBandTop(): number {
-  return MARGIN_BOTTOM + LB.finePrint.lineBoxHeight * 4;
-}
+/**
+ * §21 footer geometry, sheet 1 (P-228): worst-case legend depth (3 rows per
+ * column) reserved above the report-chrome FOOTER band (report-chrome.ts's
+ * `footerBandHeight`) — mirrors render.ts's `page1FooterRuleY` /
+ * `PAGE1_FOOTER_RESERVED_LEGAL_LINES`. `fdFinePrint`'s sheet-1 sentence set
+ * can stack the standing disclaimer + model-basis + honesty lines with the
+ * conditional backdrop/imagery-unavailable, default-rainfall and
+ * honest-empty-reason sentences all at once — comparable in count and length
+ * to render.ts's own sheet-1 disclosures — so this PRE-DRAW sizing pass
+ * reserves the SAME generous fixed line count render.ts uses rather than
+ * measuring the real text (the real draw always re-measures for real via
+ * report-chrome's `drawFooter`, so a shorter real footer only leaves unused
+ * whitespace here, never an overlap).
+ */
+const FD_FOOTER_RESERVED_LEGAL_LINES = 8;
 
 function page1FooterRuleYFd(): number {
   const legendBlock = pt(SPACE.s2) + 3 * LB.legend.lineBoxHeight + 2 * pt(SPACE.s2);
-  return finePrintBandTop() + pt(SPACE.s3) + legendBlock;
+  return footerBandHeight(FD_FOOTER_RESERVED_LEGAL_LINES) + pt(SPACE.s3) + legendBlock;
 }
 
-function drawingFrame(): MarkBbox {
+/**
+ * §3 sheet-1 drawing frame: the rect between the chrome's bottom and the
+ * furniture band. `chromeBottomY`/`bodyStartPad` come from the SAME
+ * masthead-or-running-header decision `drawFdChrome` draws with — see
+ * `emitPdfFloodDrainage`'s `drawingIsMasthead`. `maxY` also reserves the
+ * CATCHMENT/PONDING/FLOW EXITS body-stats row now living below the chrome
+ * (`BODY_STATS_ROW_RESERVE`, shared from render.ts) — the same two-term
+ * subtraction render.ts's own `page1DrawingTopY` uses for the site-plan
+ * drawing sheet.
+ */
+function drawingFrame(chromeBottomY: number, bodyStartPad: number): MarkBbox {
   return {
     minX: MARGIN_X,
     maxX: PAGE_WIDTH - MARGIN_X,
     minY: page1FooterRuleYFd() + pt(SPACE.s3),
-    maxY: headerRuleY() - pt(SPACE.s3),
+    maxY: chromeBottomY - bodyStartPad - BODY_STATS_ROW_RESERVE,
   };
 }
 
@@ -388,76 +420,78 @@ export function catchmentBoundaryRings(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Header (§2, dossier-style: request/study-carried descriptors only).
+// CHROME (P-228): shared masthead/running-header/footer frame
+// (report-chrome.ts) — same dispatch rule as render.ts's `drawSitePlanChrome`
+// / dossier.ts's `drawDossierChrome`: masthead iff this sheet is the
+// document's PRINTED sheet 1, running header otherwise.
 // ─────────────────────────────────────────────────────────────────────────
-function drawFdHeader(
+
+/** Masthead content for the flood-drainage sheets (report type "Flood &
+ * Drainage" — sentence case; report-chrome uppercases at draw time). No
+ * NO-ADDRESS chip: the new masthead has no chip slot, so the honest fallback
+ * is the plain string `PARCEL {id}` — same treatment as render.ts's
+ * `siteModelMastheadContent`. */
+function fdMastheadContent(study: FloodDrainageStudy, descriptor: FloodDrainageDescriptor): MastheadContent {
+  const street = streetOnly(descriptor.address);
+  const metaParts = [
+    cityFromAddress(descriptor.address),
+    `PARCEL ${study.parcelNodeId}`,
+    countyDisplayName(descriptor.countyName),
+  ].filter((p): p is string => !!p);
+  return {
+    reportType: "Flood & Drainage",
+    address: street ?? `PARCEL ${study.parcelNodeId}`,
+    subjectMeta: metaParts.join(" · "),
+    docIdValue: `FD-${study.parcelNodeId.replace(/:/g, "-")}`,
+  };
+}
+
+/** Running-header right meta — `ADDRESS · PARCEL`, or `PARCEL id` alone with
+ * no street. Never repeats the FD- doc id (report-chrome README: recoverable
+ * from the footer's deep link) — same pattern as render.ts's
+ * `siteModelRunningHeaderMeta`. */
+function fdRunningHeaderMeta(study: FloodDrainageStudy, descriptor: FloodDrainageDescriptor): string {
+  const street = streetOnly(descriptor.address);
+  return street ? `${street} · ${study.parcelNodeId}` : `PARCEL ${study.parcelNodeId}`;
+}
+
+/** Draws this flood-drainage sheet's chrome — the masthead iff `isMasthead`
+ * (the document's printed sheet 1; only ever true for sheet 1, and only in a
+ * standalone export), otherwise the running header every other sheet gets —
+ * including sheet 1 itself when appended after a Feasibility cover. Same
+ * return contract the old `headerRuleY()` had: the chrome's bottom y, so
+ * callers can lay out body content beneath it. */
+function drawFdChrome(
   page: PDFPage,
   study: FloodDrainageStudy,
   descriptor: FloodDrainageDescriptor,
-  F: Fonts,
-  eyebrow: string,
-  stats: HeaderStat[] | null,
-  rightMeta: string[] | null,
+  F: ChromeFonts,
+  isMasthead: boolean,
+  sectionQualifier: string | undefined,
 ): number {
-  const left = MARGIN_X;
-  const right = PAGE_WIDTH - MARGIN_X;
-  const top = PAGE_HEIGHT - MARGIN_TOP;
+  return isMasthead
+    ? drawMasthead(page, fdMastheadContent(study, descriptor), F)
+    : drawRunningHeader(
+        page,
+        { reportType: "Flood & Drainage", sectionQualifier, rightMeta: fdRunningHeaderMeta(study, descriptor) },
+        F,
+      );
+}
 
-  drawTrackedText(page, eyebrow, {
-    x: left,
-    y: top - LB.eyebrow.baselineFromBoxTop,
-    size: TYPE.eyebrow,
-    font: F.display,
-    color: TOKENS.accent,
-    trackingEm: TRACKING.eyebrow,
-  });
-
-  const titleBoxTop = top - LB.eyebrow.lineBoxHeight - pt(2);
-  const street = streetOnly(descriptor.address);
-  const big = (street ?? `PARCEL ${study.parcelNodeId}`).toUpperCase();
-  page.drawText(big, {
-    x: left,
-    y: titleBoxTop - LB.address.baselineFromBoxTop,
-    size: TYPE.address,
-    font: F.display,
-    color: INK,
-  });
-  if (!street) {
-    const bigW = F.display.widthOfTextAtSize(big, TYPE.address);
-    drawChipOnLineBox(page, "NO ADDRESS", left + bigW + pt(10), titleBoxTop, LB.address, "solid", F);
-  }
-
-  const metaBoxTop = titleBoxTop - LB.address.lineBoxHeight - pt(2);
-  const metaParts = [
-    cityFromAddress(descriptor.address),
-    `Parcel ${study.parcelNodeId}`,
-    countyDisplayName(descriptor.countyName),
-  ].filter((p): p is string => !!p);
-  page.drawText(metaParts.join("  ·  "), {
-    x: left,
-    y: metaBoxTop - LB.subline.baselineFromBoxTop,
-    size: TYPE.subline,
-    font: F.body,
-    color: TOKENS.neutral700,
-  });
-
-  if (stats) drawHeaderStats(page, stats, right, top - pt(6), F);
-  if (rightMeta) {
-    const metaTop = top - pt(6);
-    rightMeta.forEach((line, i) => {
-      page.drawText(line, {
-        x: right - F.body.widthOfTextAtSize(line, TYPE.sheetMeta),
-        y: metaTop - i * LB.sheetMeta.lineBoxHeight - LB.sheetMeta.baselineFromBoxTop,
-        size: TYPE.sheetMeta,
-        font: F.body,
-        color: TOKENS.neutral600,
-      });
-    });
-  }
-
-  const ruleY = headerRuleY();
-  drawHairlineRule(page, left, ruleY, right - left);
-  return ruleY;
+/** Pure-geometry twin of `drawFdChrome` — the sheet-1 drawing frame needs the
+ * chrome's bottom y BEFORE it is actually drawn. Dispatches to
+ * report-chrome.ts's own `mastheadBottomY`/`runningHeaderBottomY`, never
+ * re-deriving their arithmetic — same pattern as render.ts's
+ * `sitePlanChromeBottomY`. */
+function fdChromeBottomY(
+  study: FloodDrainageStudy,
+  descriptor: FloodDrainageDescriptor,
+  F: ChromeFonts,
+  isMasthead: boolean,
+): number {
+  return isMasthead
+    ? mastheadBottomY(mastheadAddressLines(fdMastheadContent(study, descriptor).address, F))
+    : runningHeaderBottomY();
 }
 
 function catchmentStatValue(study: FloodDrainageStudy): string {
@@ -907,7 +941,6 @@ function drawFdFooter(
   generatedAtIso: string,
   imagery: AerialImageryResult,
   gradientComposited: boolean,
-  liveViewUrl?: string,
 ): void {
   const ruleY = page1FooterRuleYFd();
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
@@ -997,17 +1030,10 @@ function drawFdFooter(
       font: F.body,
       color: TOKENS.neutral600,
     });
-    // Live-view deep link (P-90 item 5) — same baseline, left-aligned,
-    // printed only when the caller forwarded one.
-    if (liveViewUrl) {
-      page.drawText(liveViewUrl, {
-        x: MARGIN_X,
-        y: labelY - pt(13),
-        size: TYPE.scaleRatioLine,
-        font: F.body,
-        color: TOKENS.neutral600,
-      });
-    }
+    // P-228: the ad hoc, sheet-1-only, no-host-correction live-view link that
+    // used to draw here is retired — the report-chrome footer now draws a
+    // deep link (host-corrected, with the parcelNodeId fallback) on EVERY
+    // sheet uniformly, via `drawFooter` below (see `emitPdfFloodDrainage`).
   }
 }
 
@@ -1177,6 +1203,14 @@ function drawFdProvenanceTable(
 // ─────────────────────────────────────────────────────────────────────────
 // Fine print (§8 family).
 // ─────────────────────────────────────────────────────────────────────────
+/** P-228: no longer appends "· Sheet N of Total" — the report-chrome footer
+ * (report-chrome.ts's `drawFooter`) now draws the sheet pointer itself, as
+ * its own right-aligned counter, on every sheet uniformly across all three
+ * report types — see render.ts's `buildFinePrint` / dossier.ts's
+ * `dossierFinePrint` for the same change. `printed` stays on the signature
+ * (both call sites already pass it) even though nothing inside this function
+ * reads it any more; `sheetNo` stays load-bearing for the sheet-1 imagery
+ * branch below. */
 function fdFinePrint(
   study: FloodDrainageStudy,
   sheetNo: number,
@@ -1207,7 +1241,6 @@ function fdFinePrint(
   if (study.honestEmpty) {
     sentences.push(study.honestEmpty.reason);
   }
-  sentences.push(`· Sheet ${printed?.no ?? sheetNo} of ${printed?.total ?? FLOOD_DRAINAGE_TOTAL_SHEETS}`);
   return sentences.join(" ");
 }
 
@@ -1221,19 +1254,19 @@ export async function emitPdfFloodDrainage(
 ): Promise<PdfFloodDrainageResult> {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
-  const F: Fonts = {
-    body: await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false }),
-    bodyMedium: await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false }),
+  const body = await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false });
+  const bodyMedium = await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false });
+  const F: ChromeFonts = {
+    body,
+    bodyMedium,
     display: await doc.embedFont(loadFont("BarlowCondensed-SemiBold.ttf"), { subset: false }),
     displayMedium: await doc.embedFont(loadFont("BarlowCondensed-Medium.ttf"), { subset: false }),
+    ...chromeMonoFonts(body, bodyMedium),
   };
 
   const marks = new MarkRegistry();
   const rhythm = new RhythmCapture();
   const generatedAt = options.generatedAtIso ?? new Date().toISOString();
-  const frame = drawingFrame();
-  const rect = frameRect(frame);
-  const docId = `FD-${study.parcelNodeId.replace(/:/g, "-")}`;
 
   // Printed sheet numbers. Standalone this is 1..2 exactly as before; when
   // the Feasibility Study appends these sheets it supplies its own numbering
@@ -1242,10 +1275,22 @@ export async function emitPdfFloodDrainage(
   const sheetNoFor = (local: number): number =>
     options.numbering ? options.numbering.startAt + local - 1 : local;
 
+  // Sheet 1 is the ONLY flood-drainage sheet that can ever be the document's
+  // printed sheet 1 (sheet 2 always follows it, standalone or appended
+  // inside a Feasibility report) — masthead iff standalone at the default
+  // numbering, same rule render.ts's `drawingIsMasthead` uses for the
+  // site-plan drawing sheet.
+  const drawingIsMasthead = (options.numbering?.startAt ?? 1) === 1;
+  const page1RuleY = fdChromeBottomY(study, descriptor, F, drawingIsMasthead);
+  const page1BodyStartPad = drawingIsMasthead ? MASTHEAD.bodyStart : RUNHEAD.bodyStart;
+
   // Drawing layers. Omitted = all on, which is this report's own behaviour.
   const layerCatchment = options.layers?.catchment ?? true;
   const layerPonding = options.layers?.ponding ?? true;
   const layerFlowPaths = options.layers?.flowPaths ?? true;
+
+  const frame = drawingFrame(page1RuleY, page1BodyStartPad);
+  const rect = frameRect(frame);
 
   // Sheet-1 imagery fetch — started FIRST (aerial-page pattern) so the
   // bounded network wait overlaps the vector work; bounded and never
@@ -1292,15 +1337,8 @@ export async function emitPdfFloodDrainage(
   // ── SHEET 1 · DRAWING (imagery + water gradient) ───────────────────────
   {
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    drawFdHeader(
-      page,
-      study,
-      descriptor,
-      F,
-      `${FLOOD_DRAINAGE_KICKER} · SHEET ${sheetNoFor(1)} OF ${printedTotal}`,
-      headerStats(study),
-      null,
-    );
+    const page1ChromeBottomY = drawFdChrome(page, study, descriptor, F, drawingIsMasthead, undefined);
+    drawBodyStatsRow(page, headerStats(study), page1ChromeBottomY, page1BodyStartPad, F);
     marks.once(1, "fd-header", "drawing");
     drawStudyDrawing(page, study, F, frame, marks, toPage, {
       imagery,
@@ -1320,28 +1358,34 @@ export async function emitPdfFloodDrainage(
       generatedAt,
       imagery,
       gradientPng !== undefined,
-      descriptor.liveViewUrl,
     );
-    drawFinePrint(page, 1, fdFinePrint(study, 1, imagery, { no: sheetNoFor(1), total: printedTotal }), F, marks);
+    if (marks.once(1, "fine-print", "paragraph")) {
+      drawFooter(
+        page,
+        {
+          legalText: fdFinePrint(study, 1, imagery, { no: sheetNoFor(1), total: printedTotal }),
+          generatedAtIso: generatedAt,
+          liveViewUrl: descriptor.liveViewUrl,
+          parcelNodeId: study.parcelNodeId,
+          sheetNo: sheetNoFor(1),
+          sheetTotal: printedTotal,
+        },
+        F,
+      );
+    }
   }
 
   // ── SHEET 2 · SUMMARY ──────────────────────────────────────────────────
   {
     const pageNo = 2;
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    const ruleY = drawFdHeader(
-      page,
-      study,
-      descriptor,
-      F,
-      `${FLOOD_DRAINAGE_SUMMARY_KICKER} · SHEET ${sheetNoFor(2)} OF ${printedTotal}`,
-      null,
-      [docId, study.parcelNodeId],
-    );
+    // Summary is never document sheet 1 — always the running header, same
+    // rule render.ts's own summary sheets use.
+    const chromeBottomY = drawFdChrome(page, study, descriptor, F, false, "Summary");
     marks.once(pageNo, "fd-header", "summary");
 
     // MODELED RESULTS.
-    let cursor = drawSectionHeading(page, pageNo, "MODELED RESULTS", ruleY, F, rhythm);
+    let cursor = drawSectionHeading(page, pageNo, "MODELED RESULTS", chromeBottomY, F, rhythm);
     cursor = drawFdKvRow(
       page,
       pageNo,
@@ -1472,7 +1516,20 @@ export async function emitPdfFloodDrainage(
     cursor = drawSectionHeading(page, pageNo, "PROVENANCE", cursor, F, rhythm);
     drawFdProvenanceTable(page, pageNo, fdProvenanceRows(study), cursor, F, rhythm);
 
-    drawFinePrint(page, pageNo, fdFinePrint(study, 2, null, { no: sheetNoFor(2), total: printedTotal }), F, marks);
+    if (marks.once(pageNo, "fine-print", "paragraph")) {
+      drawFooter(
+        page,
+        {
+          legalText: fdFinePrint(study, 2, null, { no: sheetNoFor(2), total: printedTotal }),
+          generatedAtIso: generatedAt,
+          liveViewUrl: descriptor.liveViewUrl,
+          parcelNodeId: study.parcelNodeId,
+          sheetNo: sheetNoFor(2),
+          sheetTotal: printedTotal,
+        },
+        F,
+      );
+    }
   }
 
   const bytes = await doc.save({ useObjectStreams: false });

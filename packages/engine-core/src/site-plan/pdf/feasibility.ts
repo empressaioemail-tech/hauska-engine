@@ -42,9 +42,9 @@ import {
   DOSSIER_NOT_LEGAL_ADVICE,
   DOSSIER_VERDICT_ABSENT_REASON,
   DOSSIER_VERDICT_QUALIFIER,
-  contentFloorY,
+  dossierChromeBottomY,
   drawBriefFactRow,
-  drawDossierHeader,
+  drawDossierChrome,
   planBriefPages,
   planTextPages,
   sanitizeDossierContent,
@@ -60,10 +60,8 @@ import {
   PAGE_HEIGHT,
   PAGE_WIDTH,
   countSitePlanSheets,
-  drawFinePrint,
   drawSectionHeading,
   emitPdfSitePlan,
-  headerRuleY,
   loadFont,
   wrapTextToWidth,
   type Fonts,
@@ -71,6 +69,7 @@ import {
   type PdfSitePlanResult,
   type SheetMark,
 } from "./render.js";
+import { chromeMonoFonts, drawFooter, type ChromeFonts } from "./report-chrome.js";
 import { SPACE, STROKE, TOKENS, TYPE, pt } from "./template-tokens.js";
 
 /**
@@ -100,7 +99,11 @@ import { SPACE, STROKE, TOKENS, TYPE, pt } from "./template-tokens.js";
  * present — this assembler never calls an LLM itself.
  */
 
-const FEASIBILITY_KICKER = "SMART SITE FEASIBILITY STUDY";
+// P-228: FEASIBILITY_KICKER ("SMART SITE FEASIBILITY STUDY") and the sibling
+// AERIAL/HOW-TO-READ/WEB-FINDINGS kickers are retired — the report-chrome
+// masthead/running header now carries "Feasibility Study" as its reportType
+// (report-chrome.ts uppercases at draw time) plus a per-sheet
+// sectionQualifier, defined inline in `emitPdfFeasibility`'s `drawSheet`.
 const FEASIBILITY_VERDICT_HEADING = "WHAT CAN BE BUILT";
 
 /** The formal binding-constraint derivation — which single rule governs, and
@@ -890,9 +893,6 @@ export function feasibilityDocumentBaseName(model: ParcelReportModel): string {
   return slug.length > 0 ? `${slug}_${key}_feasibility_study` : `${key}_feasibility_study`;
 }
 
-export const FEASIBILITY_AERIAL_KICKER = "AERIAL CONTEXT";
-export const FEASIBILITY_HOW_TO_READ_KICKER = "HOW TO READ THIS";
-
 /**
  * Aerial caption, written from the footprint and envelope the model already
  * carries.
@@ -943,12 +943,13 @@ interface FeasibilityAerialContext {
 function prepareFeasibilityAerial(
   sitePlan: SitePlanModel,
   aerialOptions: EmitPdfSitePlanOptions["aerial"],
+  chromeBottomY: number,
 ): FeasibilityAerialContext {
   const rect: PageRect = {
     x: MARGIN_X,
     y: MARGIN_BOTTOM + pt(96),
     width: PAGE_WIDTH - MARGIN_X * 2,
-    height: headerRuleY() - (MARGIN_BOTTOM + pt(96)) - pt(56),
+    height: chromeBottomY - (MARGIN_BOTTOM + pt(96)) - pt(56),
   };
   const mercBbox = computeAerialMercatorBbox(sitePlan.ringLocal, sitePlan.bboxWgs84, rect.width / rect.height);
   const imagery = fetchAerialImagery(buildAerialExportUrl(mercBbox, aerialImagePixelSize(mercBbox)), {
@@ -1123,8 +1124,6 @@ export const HOW_TO_READ_ROWS: ReadonlyArray<{ label: string; body: string }> = 
   },
 ]);
 
-export const FEASIBILITY_WEB_FINDINGS_KICKER = "UNVERIFIED WEB FINDINGS";
-
 /**
  * Web findings, on their own sheet, under their own disclosure.
  *
@@ -1279,11 +1278,14 @@ export async function emitPdfFeasibility(
 
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
-  const F: Fonts = {
-    body: await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false }),
-    bodyMedium: await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false }),
+  const body = await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false });
+  const bodyMedium = await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false });
+  const F: ChromeFonts = {
+    body,
+    bodyMedium,
     display: await doc.embedFont(loadFont("BarlowCondensed-SemiBold.ttf"), { subset: false }),
     displayMedium: await doc.embedFont(loadFont("BarlowCondensed-Medium.ttf"), { subset: false }),
+    ...chromeMonoFonts(body, bodyMedium),
   };
 
   // ── Sheet plan ────────────────────────────────────────────────────────
@@ -1384,19 +1386,25 @@ export async function emitPdfFeasibility(
 
   const marks = new MarkRegistry();
   const rhythm = new RhythmCapture();
-  const generatedAt = options.generatedAtIso ?? new Date().toISOString();
-  const stamp = `generated ${generatedAt.slice(0, 16).replace("T", " ")}Z`;
+  const generatedAtIso = options.generatedAtIso ?? new Date().toISOString();
   const docId = `FS-${model.parcelNodeId.replace(/:/g, "-")}`;
-  const rightMeta = [docId, model.parcelNodeId];
 
   const briefPages = briefPlanned.length;
 
   // Aerial imagery for the Feasibility-owned page 2 — started here so the
   // bounded fetch overlaps the site-plan render, the same overlap the
-  // site-plan and flood sheets already use.
+  // site-plan and flood sheets already use. Aerial's own printed sheet
+  // number is deterministic from the fixed sheetPlan order (cover?, notes*,
+  // aerial?) regardless of manifest — computed here so its rect can be sized
+  // against the correct masthead-or-running-header chrome bottom.
+  const aerialPageNo = coverCount + notesPlanned.length + 1;
   const aerialContext =
     includeAerial && model.geometry.status === "present"
-      ? prepareFeasibilityAerial(model.geometry.model, options.sitePlan?.aerial)
+      ? prepareFeasibilityAerial(
+          model.geometry.model,
+          options.sitePlan?.aerial,
+          dossierChromeBottomY(aerialPageNo, content.address, F),
+        )
       : null;
 
   type FeasibilitySheet =
@@ -1431,52 +1439,62 @@ export async function emitPdfFeasibility(
   // site-plan render so the two bounded waits overlap rather than serialise.
   const aerialResolved = aerialContext ? await resolveFeasibilityAerial(doc, aerialContext) : null;
 
+  // P-228: one report-chrome footer draw, shared by every sheet kind below —
+  // the "· Sheet N of Total" trailer that used to end every fine-print
+  // string is gone (report-chrome's footer draws the pointer itself, as its
+  // own right-aligned "SHEET NN / M"), and the deep link now prints on EVERY
+  // sheet, not just the cover.
+  const drawFeasibilityFooter = (page: PDFPage, pageNo: number, legalText: string): void => {
+    if (!marks.once(pageNo, "fine-print", "paragraph")) return;
+    drawFooter(
+      page,
+      { legalText, generatedAtIso, liveViewUrl: content.liveViewUrl, parcelNodeId: model.parcelNodeId, sheetNo: pageNo, sheetTotal: total },
+      F,
+    );
+  };
+
+  const sectionQualifierByKind: Record<PlannedPage["kind"], string | undefined> = {
+    cover: undefined,
+    brief: "Feasibility Facts",
+    chat: "Narrative",
+    notes: "Narrative",
+  };
+
   const drawSheet = (sheet: FeasibilitySheet, pageNo: number): void => {
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    const eyebrowByKind: Record<PlannedPage["kind"], string> = {
-      cover: FEASIBILITY_KICKER,
-      brief: "FEASIBILITY FACTS",
-      chat: FEASIBILITY_NARRATIVE_HEADING,
-      notes: FEASIBILITY_NARRATIVE_HEADING,
-    };
-    const eyebrow =
+    const sectionQualifier =
       sheet.kind === "aerial"
-        ? FEASIBILITY_AERIAL_KICKER
+        ? "Aerial Context"
         : sheet.kind === "how-to-read"
-          ? FEASIBILITY_HOW_TO_READ_KICKER
+          ? "How To Read This"
           : sheet.kind === "web-findings"
-            ? FEASIBILITY_WEB_FINDINGS_KICKER
-            : eyebrowByKind[sheet.planned.kind];
-    const ruleY = drawDossierHeader(
-      page,
-      content,
-      F,
-      `${eyebrow} · SHEET ${pageNo} OF ${total}`,
-      rightMeta,
-    );
+            ? "Unverified Web Findings"
+            : sectionQualifierByKind[sheet.planned.kind];
+    const ruleY = drawDossierChrome(page, content, F, {
+      reportType: "Feasibility Study",
+      sectionQualifier,
+      docIdValue: docId,
+      pageNo,
+    });
     marks.once(pageNo, "feasibility-header", sheet.kind === "dossier" ? sheet.planned.kind : sheet.kind);
 
     if (sheet.kind === "aerial") {
       drawFeasibilityAerialPage(page, pageNo, model, aerialResolved, F, marks, rhythm, ruleY);
-      drawFinePrint(
-        page,
-        pageNo,
-        [AERIAL_IMAGERY_ATTRIBUTION, AERIAL_NOT_A_SURVEY_LINE, `· Sheet ${pageNo} of ${total}`].join(" "),
-        F,
-        marks,
-      );
+      drawFeasibilityFooter(page, pageNo, [AERIAL_IMAGERY_ATTRIBUTION, AERIAL_NOT_A_SURVEY_LINE].join(" "));
       return;
     }
 
     if (sheet.kind === "web-findings") {
       drawWebFindingsPage(page, pageNo, webFindings, F, marks, rhythm, ruleY);
-      drawFinePrint(page, pageNo, `${WEB_FINDINGS_DISCLOSURE} · Sheet ${pageNo} of ${total}`, F, marks);
+      drawFeasibilityFooter(page, pageNo, WEB_FINDINGS_DISCLOSURE);
       return;
     }
 
     if (sheet.kind === "how-to-read") {
       drawHowToReadPage(page, pageNo, F, marks, rhythm, ruleY);
-      drawFinePrint(page, pageNo, `· Sheet ${pageNo} of ${total}`, F, marks);
+      // The old fine print here was ONLY the sheet trailer — no standing
+      // disclosure — so the legal slot stays empty rather than inventing one.
+      drawFeasibilityFooter(page, pageNo, "");
       return;
     }
 
@@ -1608,20 +1626,10 @@ export async function emitPdfFeasibility(
       );
       page.drawLine({ start: { x: MARGIN_X, y: contentsRule }, end: { x: PAGE_WIDTH - MARGIN_X, y: contentsRule }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
 
-      const stampLine = `${docId} · ${stamp}`;
-      page.drawText(stampLine, {
-        x: PAGE_WIDTH - MARGIN_X - F.body.widthOfTextAtSize(stampLine, TYPE.scaleRatioLine),
-        y: contentFloorY() + pt(4),
-        size: TYPE.scaleRatioLine,
-        font: F.body,
-        color: TOKENS.neutral600,
-      });
-      marks.once(pageNo, "generated-stamp", "stamp");
-
-      if (content.liveViewUrl) {
-        page.drawText(content.liveViewUrl, { x: MARGIN_X, y: contentFloorY() + pt(4), size: TYPE.scaleRatioLine, font: F.body, color: TOKENS.neutral600 });
-        marks.once(pageNo, "live-view-url", "link");
-      }
+      // P-228: the cover-only generated-stamp + live-view-link block is
+      // retired — the report-chrome footer now draws the timestamp and the
+      // deep link on EVERY page (see `drawFeasibilityFooter` below), not
+      // just the cover.
     }
 
     if (planned.kind === "brief") {
@@ -1658,8 +1666,7 @@ export async function emitPdfFeasibility(
     if (planned.kind === "cover" && !options.sitePlan) {
       fineSentences.push(`Site-plan sheets are not appended: ${options.sitePlanUnavailableReason ?? "site-plan authoring was unavailable for this parcel"}.`);
     }
-    fineSentences.push(`· Sheet ${pageNo} of ${total}`);
-    drawFinePrint(page, pageNo, fineSentences.join(" "), F, marks);
+    drawFeasibilityFooter(page, pageNo, fineSentences.join(" "));
   };
 
   // ── Assemble, in the specified order ──────────────────────────────────
