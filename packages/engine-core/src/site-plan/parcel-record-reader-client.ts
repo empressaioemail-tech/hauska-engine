@@ -12,14 +12,22 @@
 // function reads env, returns `undefined` when unconfigured, and the report
 // NEVER fails or degrades for want of it — every composer that consumes this
 // client falls back to whatever it already read from the substrate atoms
-// store when the client is absent OR when a fetch fails. `RETRIEVAL_API_URL`/
+// store when the client is absent OR when a fetch fails.
+//
+// P-219 CORRECTION (2026-09-15). This block used to read: "`RETRIEVAL_API_URL`/
 // `RETRIEVAL_API_KEY` are NOT mounted on hauska-engine-api today (confirmed
-// live via `gcloud run services describe hauska-engine-api`, 2026-09-12) —
-// this client is dormant in production until that secret mount lands. See
-// this lane's close for the exact mount command; mounting a new secret onto
-// a production Cloud Run service is this program's own named STOP gate
-// (P152-READER close operatorApprovals, "Secret mount ... approved
-// explicitly before running it") — not done unreviewed by this lane.
+// live via `gcloud run services describe hauska-engine-api`, 2026-09-12) --
+// this client is dormant in production until that secret mount lands." That is
+// no longer true, and the stale note was load-bearing: it read as a standing
+// reason not to route anything else through this client, and P-219 nearly
+// treated a secret mount as its own operator STOP gate on the strength of it.
+// Verified at source 2026-09-15 with `gcloud run services describe
+// hauska-engine-api --project hauska-prod-497015 --region us-central1` on
+// serving revision hauska-engine-api-00224-joq: the service carries
+// RETRIEVAL_API_URL as a literal (https://hauska-retrieval-api-...) and
+// RETRIEVAL_API_KEY from the HAUSKA_ENGINE_API_KEY secret. The client is LIVE
+// in production and no secret mount is owed. Re-verify at source before
+// relying on this note in turn -- that is the lesson the old one taught.
 
 export interface ParcelRecordRail {
   cell: Record<string, unknown> | null;

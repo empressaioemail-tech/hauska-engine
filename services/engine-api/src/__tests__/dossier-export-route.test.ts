@@ -8,6 +8,13 @@ import { InMemoryStorage } from "@hauska-engine/storage";
 const FAKE_PDF = new TextEncoder().encode("%PDF-1.7 fake dossier bytes");
 
 vi.mock("@hauska-engine/engine-core/site-plan", () => ({
+  // P-219: the site-plan and dossier export routes now construct the one
+  // reader unconditionally, exactly as the feasibility route already did.
+  // RETRIEVAL_API_URL/KEY are unset in this test so the real
+  // `recordReaderFromEnv` would return undefined anyway — but the mock must
+  // still export the NAME or the module import fails before any assertion,
+  // which is the same failure mode this file's sibling already documents.
+  recordReaderFromEnv: vi.fn(() => undefined),
   // P-120 R-04: the route now passes the live fact resolvers through.
   // The mock must export it or the module import fails before any assertion.
   LIVE_PARCEL_REPORT_FACT_RESOLVERS: {},

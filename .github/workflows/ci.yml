@@ -60,6 +60,9 @@ jobs:
       - name: Detect placeholder setback-rule citations (F-11)
         run: node packages/engine-core/scripts/detect-placeholder-setback-citation.mjs
 
+      - name: Retire bastrop-per-parcel setback authorship (P-219)
+        run: node packages/engine-core/scripts/retire-bastrop-per-parcel-setback-authorship.mjs
+
       - name: Geometry lane LLM grep gate (OPS-3 I1)
         run: |
           if rg -i '\b(llm|anthropic|openai|xai)\b|@ai-sdk/|generateText' \

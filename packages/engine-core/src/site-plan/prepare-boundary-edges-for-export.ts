@@ -34,10 +34,8 @@ import type {
   BoundaryEdgeAtomInstance,
   BoundaryResolvedSetback,
   BoundarySetbackAbsence,
-  SetbackRuleAtomInstance,
 } from "@hauska-engine/atoms";
 import {
-  classifySetbackRuleAtom,
   classifyBoundaryEdgeSetback,
   isStaleBastropCitySetbackRule,
   requiresPerParcelSetbackRecord,
@@ -66,10 +64,36 @@ export interface PrepareBoundaryEdgesForExportInput {
   roads?: ReadonlyArray<WarmRoadSource>;
   /** Parcel situs address, for R30's situs-street-match front basis. */
   situsAddress?: string | null;
-  /** The parcel's setback-rule atom, when one exists — feeds the stale-value refresh. */
-  setback?: (SetbackRuleAtomInstance & { sourceCodeAtomRef?: { atomDid?: string } }) | null;
-  /** Silent-axis flags (front/side/rear) — never fabricate a value on an axis the code is silent on. */
+  /**
+   * P-219 — the RESOLVED setback authority for this parcel, not the raw
+   * persisted atom. The caller resolves it once (`resolveExportSetback`) so
+   * the per-edge values and the values the sheet prints cannot diverge, and so
+   * a retired provenance is declined in one place rather than at every
+   * consumer. Omitted/null means there is nothing to refresh from and the
+   * stored per-edge values stand.
+   */
+  setback?: ExportSetbackAuthority | null;
+  /** Silent-axis flags (front/side/rear/corner) — never fabricate a value on an axis the code is silent on. */
   notSpecified?: NotSpecifiedAxes | null;
+}
+
+/**
+ * The narrow shape this module needs from a resolved setback authority. Kept
+ * structural (rather than importing `ExportSetbackResolution`) so the refresh
+ * stays testable with a literal and does not pull the resolver's dependency
+ * graph into the geometry path.
+ */
+export interface ExportSetbackAuthority {
+  front: number;
+  side: number;
+  rear: number;
+  /** Corner-side yard, or null when the district publishes none. */
+  cornerFt: number | null;
+  /** What the per-edge `provenance` stamp reads, e.g. "parcel-record-rails". */
+  provenance: string;
+  /** The DID or table id the values rest on, stamped as each edge's citation. */
+  sourceCodeAtomDid?: string | null;
+  districtCode?: string | null;
 }
 
 export type PrepareBoundaryEdgesDeclineReason =
@@ -93,10 +117,12 @@ export interface PrepareBoundaryEdgesForExportResult {
   reason?: PrepareBoundaryEdgesDeclineReason;
 }
 
-function silentAxisReason(axis: "front" | "side" | "rear"): BoundarySetbackAbsence {
+function silentAxisReason(
+  axis: "front" | "side" | "rear" | "corner side",
+): BoundarySetbackAbsence {
   return {
     kind: "no-setback-row",
-    reason: `${axis} setback not specified by code (build-to-line governs) — refreshed from setback-rule atom`,
+    reason: `${axis} setback not specified by code (build-to-line governs) — refreshed from the resolved setback authority`,
   };
 }
 
@@ -109,37 +135,38 @@ function silentAxisReason(axis: "front" | "side" | "rear"): BoundarySetbackAbsen
  */
 function resolvedSetbackForRole(
   role: BoundaryEdgeAtomInstance["role"],
-  setback: SetbackRuleAtomInstance & { sourceCodeAtomRef?: { atomDid?: string } },
+  setback: ExportSetbackAuthority,
   notSpecified?: NotSpecifiedAxes | null,
 ): BoundaryResolvedSetback | BoundarySetbackAbsence {
+  const citation = setback.sourceCodeAtomDid ?? setback.districtCode ?? "";
+  const provenance = setback.provenance;
   if (role === "front") {
     if (notSpecified?.front) return silentAxisReason("front");
-    return {
-      feet: setback.front,
-      provenance: "setback-rule-atom-role-refresh",
-      atomCitation: setback.sourceCodeAtomRef?.atomDid ?? setback.districtCode,
-    };
+    return { feet: setback.front, provenance, atomCitation: citation };
   }
   if (role === "rear") {
     if (notSpecified?.rear) return silentAxisReason("rear");
-    return {
-      feet: setback.rear,
-      provenance: "setback-rule-atom-role-refresh",
-      atomCitation: setback.sourceCodeAtomRef?.atomDid ?? setback.districtCode,
-    };
+    return { feet: setback.rear, provenance, atomCitation: citation };
   }
-  // side + side_corner share the "side" not-specified axis (SetbackDisplay
-  // NotSpecifiedAxes carries no separate corner flag).
+  if (role === "side_corner") {
+    // P-219 — the corner-side axis is resolved and silenced on its OWN flag.
+    // It used to share the interior-side flag and fall back to the interior
+    // value whenever no corner number was on hand, which is how 48021:34049's
+    // corner line was drawn and labelled at 5 ft for months while the ruled
+    // table published 20. A district with no corner value is an ABSENCE here,
+    // never the side number wearing a corner label.
+    if (notSpecified?.sideCorner) return silentAxisReason("corner side");
+    if (setback.cornerFt == null) {
+      return {
+        kind: "no-setback-row",
+        reason:
+          "corner-side setback not published for this district — the interior-side value is not a corner-side value and is not substituted",
+      };
+    }
+    return { feet: setback.cornerFt, provenance, atomCitation: citation };
+  }
   if (notSpecified?.side) return silentAxisReason("side");
-  const feet =
-    role === "side_corner"
-      ? (setback.sideCornerFt ?? setback.side)
-      : (setback.sideInteriorFt ?? setback.side);
-  return {
-    feet,
-    provenance: "setback-rule-atom-role-refresh",
-    atomCitation: setback.sourceCodeAtomRef?.atomDid ?? setback.districtCode,
-  };
+  return { feet: setback.side, provenance, atomCitation: citation };
 }
 
 /**
@@ -254,11 +281,19 @@ export async function prepareBoundaryEdgesForExport(
   // F-11: a dimensional setback-rule may replace a retired edge stamp.
   // A placeholder rule must not. A road-class-only edge with no dimensional
   // rule refuses — never a road-class substitute.
+  //
+  // P-219 — what this refreshes FROM changed, and that is the whole fix. It
+  // used to take the persisted setback-rule atom verbatim, which on
+  // 48021:34049 meant overwriting correct stored edges (rear 30, side_corner
+  // 20, front 30, side 10, provenance "district-setback-table") with the
+  // atom's 25/5/25 minted off the city's unrefreshed numeric columns. The
+  // freshness gate built in 2026-08-05 to STOP a stale value was, by then, the
+  // component injecting one. It now refreshes from the caller's single
+  // resolved authority, which declines a retired provenance before it ever
+  // reaches this line. The F-11 placeholder check moved with it: the resolver
+  // classifies the atom, so a placeholder never becomes an authority.
   let setbackValuesRefreshed = false;
-  const ruleVerdict = input.setback
-    ? classifySetbackRuleAtom(input.setback)
-    : null;
-  if (input.setback && ruleVerdict?.disposition === "value") {
+  if (input.setback) {
     const stale = isStaleBastropCitySetbackRule({
       parcelNodeId: input.parcelNodeId,
       sourceAdapter: edges[0]!.sourceAdapter,
@@ -269,10 +304,10 @@ export async function prepareBoundaryEdgesForExport(
       return v.disposition === "refused" || v.disposition === "unknown";
     });
     if (stale || perParcelOnly || anyRetiredEdge) {
-      const setbackAtom = input.setback;
+      const authority = input.setback;
       edges = edges.map((edge) => ({
         ...edge,
-        setback: resolvedSetbackForRole(edge.role, setbackAtom, input.notSpecified),
+        setback: resolvedSetbackForRole(edge.role, authority, input.notSpecified),
       }));
       setbackValuesRefreshed = true;
     }

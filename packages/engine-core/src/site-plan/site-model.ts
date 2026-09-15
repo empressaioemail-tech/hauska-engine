@@ -31,10 +31,18 @@ export interface SetbackRuleInput {
   front: number;
   side: number;
   rear: number;
+  /**
+   * P-219 — the CORNER-side yard, or null when the district publishes none.
+   * A front/side/rear triple cannot express a corner lot: on 48021:34049 the
+   * corner-side line was drawn and labelled at the interior-side value (5 ft)
+   * for months while the ruled table published 20 ft, and that mislabel is
+   * the string P-214's customer saw. Never substituted from `side`.
+   */
+  cornerFt?: number | null;
   sourceCodeAtomRef: { atomDid: string; role: string; entityType?: string };
   atomDid?: string;
   /** Silent axes (code silent / build-to-line). Distinct from missing setback data. */
-  notSpecified?: { front?: boolean; side?: boolean; rear?: boolean };
+  notSpecified?: { front?: boolean; side?: boolean; rear?: boolean; sideCorner?: boolean };
   /**
    * True when NO setback-rule atom exists for this parcel at all — a distinct
    * honest state from `notSpecified` (where a rule exists but the code is
@@ -140,6 +148,17 @@ export type EnvelopeOutcomeInput =
        * field, never on `kind` alone.
        */
       atomDid?: string;
+      /**
+       * P-219 — set by the caller when the setback values THIS export followed
+       * differ from the ones the persisted setback-rule atom carries, i.e.
+       * when this envelope atom was derived from a source the sheet has
+       * stopped following and its figure no longer describes the envelope the
+       * sheet draws. Present means the figure is refused and this sentence is
+       * the refusal; absent means Ruling B's atom-backing gate stands
+       * unchanged. Never carries a number: the whole point is not to print
+       * one.
+       */
+      supersededReason?: string;
     }
   | { kind: "no-buildable-area"; reason: string }
   | { kind: "provisional-front-edge"; reason: string }
@@ -223,7 +242,14 @@ export interface SitePlanSetbackModel {
   front: number;
   side: number;
   rear: number;
-  notSpecified?: { front?: boolean; side?: boolean; rear?: boolean };
+  /**
+   * P-219 — the corner-side yard this district publishes, or null when it
+   * publishes none. Renderers that label a `side_corner` edge read THIS, never
+   * `side`: substituting the interior-side number under a corner label is the
+   * defect P-214's customer saw on 48021:34049.
+   */
+  cornerFt?: number | null;
+  notSpecified?: { front?: boolean; side?: boolean; rear?: boolean; sideCorner?: boolean };
   /** True when no setback-rule atom exists at all (whole layer honest-absent). */
   honestAbsence?: boolean;
   /**
@@ -508,7 +534,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
       "No setback-rule atom on file for this parcel; setbacks are not specified here and have not been verified."
     : undefined;
   const notSpecified = setbackHonestAbsence
-    ? { front: true, side: true, rear: true }
+    ? { front: true, side: true, rear: true, sideCorner: true }
     : inputs.setback.notSpecified;
   // Geometry selection (2026-07-28 architecture directive): the STORED
   // boundary primitive wins whenever it exists — the export consumes the same
@@ -553,6 +579,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     front: inputs.setback.front,
     side: inputs.setback.side,
     rear: inputs.setback.rear,
+    cornerFt: setbackHonestAbsence ? null : (inputs.setback.cornerFt ?? null),
     notSpecified,
     honestAbsence: setbackHonestAbsence,
     honestAbsenceReason: setbackHonestAbsenceReason,
@@ -562,6 +589,7 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           front: inputs.setback.front,
           side: inputs.setback.side,
           rear: inputs.setback.rear,
+          cornerFt: inputs.setback.cornerFt ?? null,
           notSpecified,
         }) +
         setbackSourceClause +
@@ -703,10 +731,64 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     inputs.envelopeOutcome.atomDid.length > 0
       ? inputs.envelopeOutcome.atomDid
       : null;
+
+  /**
+   * P-219 / D2 — an envelope atom baked from setbacks this sheet no longer
+   * follows may not print its figure.
+   *
+   * Ruling B (2026-09-11, reversed for the polygon only) permits the figure
+   * when a buildable-envelope atom backs it, and `atomRef` above is that gate.
+   * What it never checked is whether the atom and the sheet describe the SAME
+   * envelope. On 48021:34049 they did not: the atom said 19,052 sq ft, the area
+   * the repealed 25/5/25 setbacks produce (the PDF printed its own dimensions,
+   * "roughly 131 by 158 ft at its widest", and 181.06 - 25 - 25 = 131.06,
+   * 168.30 - 5 - 5 = 158.30), while the sheet drew the envelope the ruled
+   * 30/10/30 with a 20 ft corner side produces. Both sat on one page, the
+   * figure in the largest type on the cover.
+   *
+   * The test is PROVENANCE, not arithmetic: `envelopeOutcome.supersededReason`
+   * is set by the caller only when the setback values this export followed
+   * differ from the ones the persisted setback-rule atom carries — i.e. when
+   * the envelope atom was derived from a source this sheet has stopped
+   * following. A numeric-divergence test was tried first and rejected: P-159's
+   * own leak-detection control (`pdf/__tests__/feasibility.test.ts`)
+   * deliberately sets the atom figure far from the local derive so that a leak
+   * of the local number is unmistakable, so a tolerance check would have
+   * broken the instrument that proves one figure prints per document. Two
+   * figures differing is that control's method; two figures resting on
+   * different setback law is this one's defect.
+   *
+   * The polygon keeps being drawn either way, which is exactly what Ruling B
+   * reversed for the polygon only.
+   */
+  const envelopeSupersededReason =
+    atomRef == null
+      ? null
+      : setbackHonestAbsence
+        ? // Caught by P-219's own verification harness rather than in the
+          // field: with the setback layer honest-absent, the sheet draws NO
+          // setback lines and NO envelope, and every axis insets 0 — yet the
+          // envelope atom's figure still printed, so a cover could read
+          // "19,052 sq ft of buildable area" above a drawing with no buildable
+          // envelope on it at all. A figure describing an envelope this sheet
+          // did not draw is the same defect as one describing a different
+          // envelope; both refuse here.
+          "Buildable area withheld: no setback rule is on file for this parcel, so this study draws no buildable envelope for its figure to describe."
+        : inputs.envelopeOutcome?.kind === "buildable"
+          ? (inputs.envelopeOutcome.supersededReason ?? null)
+          : null;
+
   const printedBuildable: PrintedBuildable =
-    atomRef != null && warmAreaSqFt != null
+    atomRef != null && warmAreaSqFt != null && envelopeSupersededReason == null
       ? { kind: "atom", areaSqFt: warmAreaSqFt, atomRef }
-      : {
+      : envelopeSupersededReason != null
+        ? {
+            kind: "refused",
+            // No figure leaks into this reason — printing either number here
+            // is the exact thing the refusal exists to prevent.
+            reason: envelopeSupersededReason,
+          }
+        : {
           kind: "refused",
           // Kept to one short line deliberately (§21 vertical-rhythm gate: this
           // reason renders as a "kv-row" chip on the site-plan summary sheet,

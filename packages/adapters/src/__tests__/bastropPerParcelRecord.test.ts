@@ -20,6 +20,7 @@ import {
 import {
   getSetbackTableForZoning,
   isBdcPerParcelDistrictCode,
+  isRetiredSetbackProvenance,
 } from "../local/setbacks/index.js";
 
 const FIXTURE_PATH = join(
@@ -136,37 +137,54 @@ describe("bastrop per-parcel layer 23 (WDLL STEP 1)", () => {
     });
   });
 
-  it("getSetbackTableForZoning uses per-parcel numbers when record supplied", () => {
+  it("getSetbackTableForZoning follows the RULED chart, never the retired per-parcel scalars (P-219)", () => {
     const parsed = parseBastropPerParcelAttributes(FIXTURES["105054"]!);
     expect(parsed.kind).toBe("parsed");
     if (parsed.kind !== "parsed") return;
     const resolution = getSetbackTableForZoning("bastrop-city-tx", "SF-1", {
       bastropPerParcelRecord: parsed,
     });
-    // Wave 6: this fixture's row cites no resolvable ordinance (its
-    // `Ordinance_Link` is a URL), so the resolver cannot order the two
-    // sources — the served value stays the per-parcel record AND the
-    // disagreement is now a disclosed conflict row rather than a silent pick.
+    // P-219 CHANGED THIS CASE, and the change IS the retirement.
+    //
+    // This fixture's row cites no resolvable ordinance (its `Ordinance_Link`
+    // is a URL), so R-1 cannot order the two sources. Wave 6 resolved that by
+    // serving the per-parcel record and disclosing the disagreement. But the
+    // per-parcel record's scalars carry a `bastrop-per-parcel/*` provenance,
+    // which is retired as a value author: that is the path by which both PDF
+    // products printed 25/5/25 for 48021:34049 cited to an ordinance the City
+    // of Bastrop repealed on 2026-04-14. So the unordered arm now follows the
+    // ruled chart, and the retired source is NAMED as the second source with
+    // its own values rather than picked in silence.
     expect(resolution!.kind).toBe("conflict");
     const table = resolution!.table;
-    expect(table.jurisdictionKey).toBe("bastrop-per-parcel-record");
+    expect(table.jurisdictionKey).toBe("bastrop-development-code");
     const row = table.districts[0]!;
-    expect(row.front_ft).toBe(25);
-    expect(row.side_ft).toBe(5);
-    expect(row.side_corner_ft).toBe(15);
-    expect(row.rear_ft).toBe(25);
-    expect(row.citation_url).toContain("105054");
+    expect(row.front_ft).toBe(30);
+    expect(row.side_ft).toBe(10);
+    expect(row.side_corner_ft).toBe(20);
+    expect(row.rear_ft).toBe(30);
     if (resolution!.kind !== "conflict") return;
-    expect(resolution!.secondSource.id).toBe("bastrop-development-code");
-    // Wave 6 / A-148: the note payload is a discriminated union — this case is
-    // the TWO-INSTRUMENT arm (the codified chart is the second source here),
-    // whose values live in the camelCase input fields.
+
+    // The retirement, proven by what the SERVED row cites: no scalar on the
+    // followed table may rest on a retired provenance.
+    const provenance = row.provenance as
+      | Record<string, { atom_did?: string } | undefined>
+      | undefined;
+    for (const key of ["front_ft", "side_ft", "rear_ft", "side_corner_ft"]) {
+      expect(isRetiredSetbackProvenance(provenance?.[key]?.atom_did)).toBe(false);
+    }
+
+    // The retired source is still named, with its own numbers, so the
+    // disagreement the P-154 conflict row exists to disclose still prints.
+    expect(resolution!.secondSource.id).toBe("bastrop-per-parcel-record");
     if (resolution!.note.shape !== "second-source") throw new Error("expected the two-instrument shape");
-    expect(resolution!.note.front).toBe(30);
-    expect(resolution!.note.side).toBe(10);
-    expect(resolution!.note.rear).toBe(30);
-    expect(resolution!.note.corner).toBe(20);
-    // No repeal claim: our follower here is the per-parcel record, not an ordinance text.
+    expect(resolution!.note.front).toBe(25);
+    expect(resolution!.note.side).toBe(5);
+    expect(resolution!.note.rear).toBe(25);
+    expect(resolution!.note.corner).toBe(15);
+    expect(resolution!.reason).toContain("RETIRED");
+    // No repeal claim: neither side here carries an ordinance-effective date
+    // to support one (the record's own citation is a URL, not an ordinance).
     expect(resolution!.note.repealedByEffectiveDate).toBeNull();
   });
 

@@ -53,6 +53,7 @@ import {
   BASTROP_CURRENT_SETBACK_ORDINANCE_EFFECTIVE_DATE,
   BASTROP_STALE_COLUMNS_CONFIRMATION,
 } from "./bastrop-conflict-a148.js";
+import { isRetiredSetbackProvenance } from "./retired-setback-provenance.js";
 import {
   dateFromTableEffectiveDate,
   resolveMostCurrentSetback,
@@ -373,14 +374,33 @@ function resolveBastropEuclideanCandidate(
    * - The resolver ordered them (two readable dates): R-1 names the most
    *   current one, which is the whole point of the rule.
    * - The resolver could NOT order them (an unreadable or unattributable
-   *   date on a side that disagrees): wave 6 does not re-decide that case.
-   *   The served value stays what this function served before wave 6 — the
-   *   city's layer-23 per-parcel record, the AMENDMENT 2+3 number author —
-   *   and the codified table is the second source named on the row. R-1's
-   *   "never a silent pick" is satisfied by the disclosure; choosing which
-   *   of the two the CITY honours is the city's ruling, not this lane's.
+   *   date on a side that disagrees): wave 6 did not re-decide that case and
+   *   served the city's layer-23 per-parcel record, the AMENDMENT 2+3 number
+   *   author.
+   *
+   * P-219 amends BOTH arms in one direction only: `bastrop-per-parcel/*` is
+   * RETIRED as a value author (`./retired-setback-provenance.ts`), so it can
+   * no longer be the FOLLOWED row here — a ruled chart row exists by the time
+   * control reaches this line (the no-chart case returned above), so there is
+   * always something to take over. This is deliberately NOT a silent pick:
+   * the retired source stays named as the second source with its own values,
+   * date and citation, and `reason` below says the retirement is why. Without
+   * this, the unordered arm kept minting setback-rule atoms whose provenance
+   * was `bastrop-per-parcel/<propId>/front` and whose citation was an
+   * ordinance the city repealed on 2026-04-14, which is what both PDF
+   * products printed until P-219.
    */
-  const followed = resolution.status === "resolved" ? resolution.winner : perParcelCandidate;
+  const perParcelProvenance = perParcelDistrict.provenance as
+    | Record<string, { atom_did?: string } | undefined>
+    | undefined;
+  const perParcelIsRetiredAuthor = isRetiredSetbackProvenance(
+    perParcelProvenance?.front_ft?.atom_did,
+  );
+  const resolverFollowed =
+    resolution.status === "resolved" ? resolution.winner : perParcelCandidate;
+  const retirementForcedChart =
+    perParcelIsRetiredAuthor && resolverFollowed === perParcelCandidate;
+  const followed = retirementForcedChart ? chartCandidate : resolverFollowed;
   const secondSource =
     followed === chartCandidate ? perParcelCandidate : chartCandidate;
 
@@ -430,22 +450,40 @@ function resolveBastropEuclideanCandidate(
     };
     // The followed table is the layer's own table (its TEXT values), dated by
     // the current ordinance rather than by the stale citation field.
+    //
+    // P-219 — except that the per-parcel table's scalars carry a RETIRED
+    // provenance (`bastrop-per-parcel/*`). Control only reaches here with a
+    // ruled chart row in hand (the no-chart case returned above), and for the
+    // district this fires on the chart row and the layer's TEXT fields carry
+    // the same ordinance's numbers, so the followed SCALARS and their
+    // provenance come from the chart while the per-parcel row's non-value
+    // display meta (min lot size, resolved district, split-zone minors) is
+    // preserved. The A-148 conflict sentence is unchanged: it is what names
+    // the unrefreshed numeric columns the customer's own One Click card shows.
     const followedStaleTable: SetbackTable = {
-      ...perParcelTable,
-      districts: perParcelTable.districts.map((d) => ({
-        ...d,
-        display_meta: {
-          ...(d.display_meta ?? {}),
-          source_date: BASTROP_CURRENT_SETBACK_ORDINANCE_EFFECTIVE_DATE,
-          date_basis: "ordinance-effective-date",
-          date_precision: "day",
-          // The layer's own citation field is unrefreshed (it reads the earlier
-          // ordinance live); printing it beside the current values would state
-          // the wrong instrument, so the row cites the current ordinance the
-          // text fields reflect — the same one the sentence names.
-          citation_url: BASTROP_CURRENT_SETBACK_ORDINANCE,
+      ...chartTable,
+      districts: [
+        {
+          ...chartDistrict,
+          display_meta: {
+            // Non-value meta from the per-parcel row (min lot size, resolved
+            // district, split-zone minors, the R25 layer-83 note) is kept; the
+            // chart row's own meta wins on any key they share.
+            ...(perParcelDistrict.display_meta ?? {}),
+            ...(chartDistrict.display_meta ?? {}),
+            source_date: BASTROP_CURRENT_SETBACK_ORDINANCE_EFFECTIVE_DATE,
+            date_basis: "ordinance-effective-date",
+            date_precision: "day",
+          },
+          // The layer's own citation field is unrefreshed (it reads the
+          // earlier ordinance live); printing it beside the current values
+          // would state the wrong instrument. The chart row's own
+          // `citation_url` already points at Ordinance 2026-06 itself, which
+          // is a stronger citation than the bare ordinance number this used
+          // to stuff into display meta, so it is kept as-is.
+          citation_url: chartDistrict.citation_url,
         },
-      })),
+      ],
     };
     const numericReadsText = `${numeric.front}/${numeric.side}/${numeric.rear}`;
     const textReads = `${text.front}/${text.side}/${text.rear}${text.corner != null ? `/${text.corner}` : ""}`;
@@ -461,12 +499,16 @@ function resolveBastropEuclideanCandidate(
     };
     return {
       kind: "conflict",
-      // The SAME source is the conflict's second source here (the layer's
-      // numeric column versus its text fields), so both candidate slots carry
-      // the per-parcel candidate; the sentence, not a second candidate, is what
-      // names the disagreement.
+      // The disagreement this arm names is WITHIN one layer (its numeric
+      // columns versus its text fields), and the sentence, not a second
+      // candidate, is what names it — which is why the second-source slot
+      // carries the per-parcel candidate. P-219: the FOLLOWED slot is now the
+      // ruled chart candidate, matching the table above, because the
+      // per-parcel row is retired as a value author. The chart and the
+      // layer's text fields carry the same ordinance's numbers, so nothing
+      // about what the customer reads changes except the provenance it cites.
       table: withSecondSourceDisclosure(followedStaleTable, disclosure),
-      followed: perParcelCandidate,
+      followed: chartCandidate,
       secondSource: perParcelCandidate,
       reason,
       note,
@@ -479,8 +521,9 @@ function resolveBastropEuclideanCandidate(
     return { kind: "table", table: followedTable };
   }
 
-  const reason =
-    resolution.status === "resolved"
+  const reason = retirementForcedChart
+    ? `${resolution.status === "resolved" ? `R-1 ordered ${secondSource.sourceLabel} (${secondSource.sourceDate ?? "unreadable"}, ${secondSource.dateBasis}) first, but` : `${resolution.reason} In addition,`} that source is RETIRED as a setback value author (P-219): its scalars carry a \`bastrop-per-parcel/*\` provenance, the city's unrefreshed numeric shortcut columns. The row serves the ruled ${followed.sourceLabel} (${followed.sourceDate ?? "unreadable"}, ${followed.dateBasis}) and names the retired source with its own values, date and citation rather than picking in silence.`
+    : resolution.status === "resolved"
       ? `${followed.sourceLabel} (${followed.sourceDate ?? "unreadable"}, ${followed.dateBasis}) is the most current source under R-1 and disagrees with ${secondSource.sourceLabel} (${secondSource.sourceDate ?? "unreadable"}, ${secondSource.dateBasis}).`
       : `${resolution.reason} The row serves the city's per-parcel record (the AMENDMENT 2+3 number author, unchanged by wave 6) and names ${secondSource.sourceLabel} as the second source rather than picking in silence.`;
 
@@ -603,7 +646,25 @@ export function getSetbackTableForZoning(
       return legacy ? { kind: "table", table: legacy } : null;
     }
 
-    // R13 (AMENDMENT 8): city BDC districts require layer-23 per-parcel record.
+    /**
+     * R13 (AMENDMENT 8): city BDC districts require a layer-23 per-parcel
+     * record, so this returns null without one and the chart's SCALARS are
+     * never served alone. The chart stays reachable through
+     * {@link getSetbackTable} for edition and citation lookup, which is what
+     * this docstring has always said and what P-219's export path uses.
+     *
+     * P-219 considered amending this for the Euclidean districts and did NOT,
+     * deliberately. A-148 (2026-09-14) plus this lane's own live re-read
+     * (2026-09-15: all 175 `ZoneTypeClass = 3` rows on
+     * `Zone_Types/FeatureServer/25` read text 30/10/30 with a 20 ft corner
+     * side against numeric 25/5/25, and the BDC corpus row reads the same
+     * 30/10/30/20) is a strong argument that the chart alone is now safe to
+     * author scalars for SF-1/SF-2/SF-3/RR. But AMENDMENT 8 is a standing
+     * ruling that P-154 explicitly left alone ("deliberately unchanged by
+     * P-154"), and three controls assert it. Overturning it is an operator
+     * call, not a lane's. It is proposed in the P-219 close with this evidence
+     * attached; until then the rule stands as written.
+     */
     return null;
   }
 
@@ -638,6 +699,16 @@ export function getSetbackDistrict(
 export function listSetbackTables(): SetbackTable[] {
   return Object.values(SETBACK_TABLES);
 }
+
+/** P-219 — setback provenances retired as value authors, and their decline. */
+export {
+  RETIRED_SETBACK_DECLINE_REASON,
+  RETIRED_SETBACK_PROVENANCE_PREFIXES,
+  RETIRED_WHEN_RULED_TABLE_EXISTS,
+  isRetiredSetbackProvenance,
+  retiredSetbackDecline,
+  type RetiredSetbackDecline,
+} from "./retired-setback-provenance.js";
 
 export {
   BASTROP_PARCELS_ONE_CLICK_LAYER_23,

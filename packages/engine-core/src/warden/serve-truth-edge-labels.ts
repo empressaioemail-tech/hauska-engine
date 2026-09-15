@@ -10,6 +10,7 @@ import type { BoundaryEdgeAtomInstance, SetbackRuleAtomInstance } from "@hauska-
 import { labelEdgesFromRoads } from "../depth-warm/edgeLabeling.js";
 import type { Ring } from "../depth-warm/geometry.js";
 import type { WarmRoadSource } from "../depth-warm/types.js";
+import { exportSetbackAuthorityFromAtom } from "../site-plan/resolve-export-setback.js";
 import { prepareBoundaryEdgesForExport } from "../site-plan/prepare-boundary-edges-for-export.js";
 import type { WardenFindingEvent } from "./types.js";
 
@@ -87,7 +88,11 @@ export async function classifyServeTruthEdgeLabels(
       ringWgs84: parcel.parcelRing,
       roads: parcel.roads,
       situsAddress: parcel.situsAddress ?? null,
-      setback: parcel.setbackRule,
+      // P-219 — the refresh takes a resolved authority now, not a raw atom;
+      // this sweep compares edge ROLES only, so the narrowing is immaterial to
+      // its finding, and a retired provenance narrows to null rather than
+      // authoring a value on a path nobody was watching.
+      setback: exportSetbackAuthorityFromAtom(parcel.setbackRule),
     });
     if (!served.edges?.length) continue;
 
