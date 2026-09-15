@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { InMemoryStorage } from "@hauska-engine/storage";
 import type { SetbackRuleAtomInstance } from "@hauska-engine/atoms";
 
-import { authorParcelPropertyDossierExport } from "../dossier-author.js";
+import { authorParcelPropertyDossierExport, composeXrayBrief } from "../dossier-author.js";
+import { present, absent } from "../feasibility-model.js";
+import type { ParcelReportModel } from "../report-model.js";
 import type { ParcelGeometryResolver, TerrainArtifactStore } from "../../parcel-terrain/author.js";
 import { decodeAllContentStreams } from "../pdf/__tests__/decode-pdf-text.js";
 
@@ -95,22 +97,12 @@ const stubAerialFetch = async (): Promise<Uint8Array> => {
 const content = {
   address: "1127 N PINE ST, SAN ANTONIO, TX 78202",
   countyName: "Bexar County",
-  verdictLine: "BUILDABLE — 4,860 SF envelope under R-6 setbacks",
-  brief: {
-    sections: [
-      {
-        id: "zoning",
-        title: "Zoning & buildability",
-        facts: [{ label: "Zoning district", value: "R-6", source: "san_antonio_tx/udc", vintage: "2025" }],
-      },
-    ],
-  },
   chatSummary: { summary: "Buildable under R-6.", savedAt: "2026-07-25T14:03:00Z" },
   notes: "Client prefers a single-story plan.",
 };
 
 describe("authorParcelPropertyDossierExport", { timeout: 60_000 }, () => {
-  it("composes the site-plan model once, appends renumbered sheets, and records the pdf-dossier artifact on the terrain atom", async () => {
+  it("composes the site-plan model once via composeParcelReport, derives verdict/brief from it, appends renumbered sheets, and records the pdf-dossier artifact on the terrain atom", async () => {
     const storage = new InMemoryStorage();
     const artifactStore = fakeArtifactStore();
 
@@ -134,8 +126,15 @@ describe("authorParcelPropertyDossierExport", { timeout: 60_000 }, () => {
     // P-90 item 3: the dossier appends exactly ONE site-plan sheet (the
     // drawing), not the standalone export's full 3+ sheet set.
     expect(result.pageCount).toBe(result.dossierPageCount + 1);
+    // P-120/P-221: the verdict is now ALWAYS derived (composeVerdict never
+    // returns an empty string) — "no verdict" is no longer a reachable state
+    // once the engine resolves it in-process.
     expect(result.verdictIncluded).toBe(true);
-    expect(result.briefFactCount).toBe(1);
+    // Derived brief facts (composeXrayBrief): County + Lot area from
+    // jurisdiction/geometry — no flood/footprint/special-district/wells/
+    // utilities atoms are seeded in this fixture, so those sections
+    // contribute nothing (absent, not a placeholder).
+    expect(result.briefFactCount).toBe(2);
     expect(result.chatSummaryIncluded).toBe(true);
     expect(result.notesIncluded).toBe(true);
     expect(result.setbackHonestAbsence).toBe(false);
@@ -154,7 +153,11 @@ describe("authorParcelPropertyDossierExport", { timeout: 60_000 }, () => {
     expect(bytes).toBeDefined();
     const decoded = decodeAllContentStreams(bytes!);
     expect(decoded).toContain(`SITE PLAN · SHEET ${result.dossierPageCount + 1} OF ${result.pageCount}`);
-    expect(decoded).toContain("4,860 SF envelope under R-6 setbacks");
+    // No buildable-envelope atom is seeded in this fixture, so Ruling B
+    // refuses the figure — the derived verdict must say so (never a
+    // caller-supplied figure, since none is accepted anymore).
+    expect(decoded).toContain("Buildable area is refused");
+    expect(decoded).toContain("Bexar County");
 
     // Atom persisted.
     const atoms = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
@@ -181,11 +184,19 @@ describe("authorParcelPropertyDossierExport", { timeout: 60_000 }, () => {
     expect(result.sitePlanAppended).toBe(false);
     expect(result.sitePlanUnavailableReason).toContain("geometry");
     expect(result.pageCount).toBe(result.dossierPageCount);
+    // Falsifier 1 (P-221 dispatch), proven at the engine-core level: with
+    // geometry composition failing outright and no fact atoms/resolvers
+    // seeded at all, composeXrayBrief derives NOTHING — the hollow-report
+    // refusal this feeds (parcel-terrain.ts's dossier-export/download route)
+    // remains reachable for a parcel whose inputs are genuinely absent, even
+    // though verdict text itself is always present post-derivation.
+    expect(result.briefFactCount).toBe(0);
 
     const artifact = result.atom.artifacts["pdf-dossier"];
     expect(artifact).toBeDefined();
     expect(artifact!.sitePlanAppended).toBe(false);
     expect(artifact!.sitePlanUnavailableReason).toContain("geometry");
+    expect(artifact!.briefFactCount).toBe(0);
 
     // Honest degraded atom: zero coverage, explicitly labeled — never a
     // fabricated terrain claim.
@@ -195,6 +206,150 @@ describe("authorParcelPropertyDossierExport", { timeout: 60_000 }, () => {
     const bytes = artifactStore.data.get(artifact!.ref);
     const decoded = decodeAllContentStreams(bytes!);
     expect(decoded).toContain("Site-plan sheets are not appended");
-    expect(decoded).toContain("4,860 SF envelope under R-6 setbacks");
+    expect(decoded).toContain("Buildable area could not be determined for this parcel");
+  });
+});
+
+// P-119/P-221 Falsifier 2: diff X-ray against Feasibility for the SAME
+// parcel and confirm no Studio-only section appears in X-ray. Rather than
+// diff two rendered PDFs, this builds a `ParcelReportModel` where every
+// Studio-exclusive family is genuinely PRESENT with a marker value, and
+// asserts composeXrayBrief's derived output contains NONE of those markers
+// — the tier gate must hold even when the underlying data exists and is
+// resolved, since the leak risk is exactly "the data is there, so why not
+// show it," never "the data happens to be absent."
+describe("composeXrayBrief (Solo/Studio allow-list)", () => {
+  // Cast at the call site rather than annotating this const: several
+  // Studio-only fact families (floodplainAcreage/firmPanel/soil/
+  // electricProvider/dischargePoint) are typed against shapes owned by
+  // OTHER modules this test does not otherwise import, and this fixture only
+  // needs to be structurally close enough for composeXrayBrief to read the
+  // few fields it actually touches.
+  const fullyResolvedModel = {
+    parcelNodeId: "48029:105129",
+    geometry: {
+      status: "present",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      model: {
+        summary: {
+          countyName: "Bexar County",
+          zoningDistrict: "R-6",
+          lotAreaSqFt: 6000,
+          address: "1127 N Pine St",
+          floodZone: { honestUnavailable: true, reason: "test fixture" },
+          zoningHonestAbsenceReason: undefined,
+        },
+        setback: { degenerate: false, honestAbsence: false },
+        streets: { honestAbsence: true },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+    },
+    drainage: { status: "absent", reason: "not requested" },
+    facts: {
+      jurisdiction: {
+        countyFips: "48029",
+        countyName: "Bexar County",
+        cityLimitsStatus: "incorporated",
+        cityName: "San Antonio",
+        etjStatus: "unresolved",
+      },
+      // STUDIO-ONLY: owner/valuation. Must never leak into X-ray (A-104/A-108/A-109).
+      parcelOwnership: present({
+        ownerName: "STUDIO-ONLY-OWNER-NAME",
+        ownerMailingAddress: "STUDIO-ONLY-MAILING-ADDRESS",
+        marketValue: 999999,
+        assessedValue: 888888,
+        landValue: 777777,
+        improvementValue: 111111,
+        legalDescription: "STUDIO-ONLY-LEGAL-DESCRIPTION",
+      }),
+      flood: present({ inSpecialFloodHazardArea: true, floodZone: "AE" }, { sourceCitation: "FEMA NFHL" }),
+      specialDistricts: present({ districts: [{ districtName: "Lake Pointe MUD", districtType: "MUD" }] }),
+      wellsPipelines: present({ wells: [{ wellStatus: "active" }], nearPipeline: true }),
+      // STUDIO-ONLY (P-120's own named Feasibility exhibit): terrain.
+      terrain: present({
+        elevationRangeMeters: { min: 1, max: 2 },
+        contourIntervalMeters: 1,
+      }),
+      utilities: present({ holders: [{ serviceKind: "water", territoryName: "STUDIO-OR-NOT-UTILITY-TERRITORY" }], residual: "r" }),
+      hoa: { searchStatus: "not-searched" },
+      footprint: present({ footprints: [{ footprintId: "fp-1" }] }),
+      // STUDIO-ONLY (P-120's own named Feasibility exhibits):
+      dischargePoint: present({ point: { name: "STUDIO-ONLY-DISCHARGE-POINT" } }),
+      floodplainAcreage: present({ acreageInFloodplain: 1.2, sourceCitation: "STUDIO-ONLY-FIRM" }),
+      firmPanel: present({ panels: [{ panelNumber: "STUDIO-ONLY-PANEL" }] }),
+      soil: present({ soilType: "STUDIO-ONLY-SOIL-TYPE" }),
+      electricProvider: present({ providerName: "STUDIO-ONLY-ELECTRIC-PROVIDER" }),
+      gasProvider: absent("out-of-scope", "not requested"),
+    },
+    package: {
+      verdict: "1,234 sq ft of buildable area under the facts on file. 0 open items to resolve.",
+      narrativeSkeleton: "STUDIO-ONLY-NARRATIVE-SKELETON",
+      openItems: [],
+      dataQuality: { supersededNotes: [] },
+    },
+  };
+
+  it("never leaks parcelOwnership, terrain, or any of P-120's Feasibility-only exhibits into the derived brief", () => {
+    const { sections, verdictLine } = composeXrayBrief(fullyResolvedModel as unknown as ParcelReportModel);
+    const serialized = JSON.stringify(sections);
+
+    // The verdict is reused VERBATIM from the shared model (Falsifier 4: no
+    // cross-document disagreement is possible when it is the same string).
+    expect(verdictLine).toBe(fullyResolvedModel.package.verdict);
+
+    for (const forbidden of [
+      "STUDIO-ONLY-OWNER-NAME",
+      "STUDIO-ONLY-MAILING-ADDRESS",
+      "999999",
+      "888888",
+      "777777",
+      "111111",
+      "STUDIO-ONLY-LEGAL-DESCRIPTION",
+      "STUDIO-ONLY-DISCHARGE-POINT",
+      "STUDIO-ONLY-FIRM",
+      "STUDIO-ONLY-PANEL",
+      "STUDIO-ONLY-SOIL-TYPE",
+      "STUDIO-ONLY-ELECTRIC-PROVIDER",
+      "STUDIO-ONLY-NARRATIVE-SKELETON",
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    // terrain's own elevation-range fact never appears as a section either.
+    expect(sections.some((s) => s.id === "terrain")).toBe(false);
+    expect(sections.some((s) => s.id === "parcelOwnership")).toBe(false);
+    // hoa never becomes a brief fact (every parcel carries the identical
+    // constant — see composeXrayBrief's own doc for why).
+    expect(sections.some((s) => s.id === "hoa")).toBe(false);
+
+    // The Solo-safe facts this same model DOES carry are still present —
+    // this is a tier gate, not a blanket refusal.
+    expect(serialized).toContain("Bexar County");
+    expect(serialized).toContain("San Antonio");
+    expect(serialized).toContain("AE");
+    expect(serialized).toContain("Lake Pointe MUD");
+  });
+
+  it("derives nothing when every allow-listed family is genuinely absent (hollow-report refusal stays reachable)", () => {
+    const hollowModel = {
+      ...fullyResolvedModel,
+      geometry: { status: "absent" as const, reason: "test fixture: no geometry" },
+      facts: {
+        ...fullyResolvedModel.facts,
+        jurisdiction: {
+          countyFips: null,
+          countyName: undefined,
+          cityLimitsStatus: "unresolved" as const,
+          etjStatus: "unresolved" as const,
+        },
+        flood: absent("blocked-at-source", "no mapping"),
+        specialDistricts: absent("blocked-at-source", "not checked"),
+        wellsPipelines: absent("blocked-at-source", "not checked"),
+        utilities: absent("out-of-scope", "not requested"),
+        footprint: absent("blocked-at-source", "not checked"),
+      },
+    };
+    const { sections } = composeXrayBrief(hollowModel as unknown as ParcelReportModel);
+    expect(sections).toEqual([]);
   });
 });

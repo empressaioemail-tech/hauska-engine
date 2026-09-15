@@ -35,10 +35,16 @@ vi.mock("@hauska-engine/engine-core/site-plan", () => ({
         bytes: FAKE_PDF,
         contentType: "application/pdf",
       });
-      const verdictIncluded = !!(opts.content as { verdictLine?: string }).verdictLine;
-      const briefFactCount = (opts.content as { brief?: { sections: Array<{ facts: unknown[] }> } }).brief
-        ? 2
-        : 0;
+      // P-120/P-221: verdict/brief are no longer request-content-driven —
+      // they are derived in-process from the parcel's own feasibility model
+      // (dossier-author.ts's composeXrayBrief). This route-level mock
+      // therefore defaults to a POPULATED result regardless of request
+      // content; the one test that needs to exercise the hollow-download
+      // refuse overrides this via `mockImplementationOnce` instead of
+      // shaping the request body, matching the new reality that hollowness
+      // is a property of the parcel's data, never of what the caller sent.
+      const verdictIncluded = true;
+      const briefFactCount = 2;
       const atom = {
         entityType: "parcel-terrain-model",
         atomDid: `pterrain_dossier_${opts.parcelNodeId}`,
@@ -106,19 +112,6 @@ const nullResolver = { async resolve() { return null; } };
 const fullBody = {
   address: "1009 Chestnut St, Bastrop, TX",
   countyName: "Bastrop County",
-  verdictLine: "BUILDABLE — envelope on file",
-  brief: {
-    sections: [
-      {
-        id: "zoning",
-        title: "Zoning",
-        facts: [
-          { label: "District", value: "P-5", source: "bastrop_tx/b3", vintage: "2026" },
-          { label: "Max height" },
-        ],
-      },
-    ],
-  },
   chatSummary: { summary: "Looks buildable.", savedAt: "2026-07-25T00:00:00Z", disclaimer: "AI content" },
   notes: "call the county",
 };
@@ -128,7 +121,7 @@ describe("dossier-export routes", () => {
     vi.mocked(authorParcelPropertyDossierExport).mockClear();
   });
 
-  it("POST refresh: 201, passes the request content through VERBATIM (no fabrication, no rewriting)", async () => {
+  it("POST refresh: 201, passes caller-owned request content through VERBATIM (no fabrication, no rewriting)", async () => {
     const storage = new InMemoryStorage();
     const app = buildParcelTerrainRoutes(nullResolver, storage, memoryArtifactStore());
     const res = await app.request(`/${parcelNodeId}/dossier-export/refresh`, {
@@ -146,8 +139,13 @@ describe("dossier-export routes", () => {
 
     expect(authorParcelPropertyDossierExport).toHaveBeenCalledOnce();
     const call = vi.mocked(authorParcelPropertyDossierExport).mock.calls[0]![0]!;
-    expect(call.content.verdictLine).toBe(fullBody.verdictLine);
-    expect(call.content.brief).toEqual(fullBody.brief);
+    // P-120/P-221: verdictLine/brief are no longer part of the request
+    // contract at all — the route must not forward them (there is nothing to
+    // forward; the schema no longer parses them).
+    expect(call.content).not.toHaveProperty("verdictLine");
+    expect(call.content).not.toHaveProperty("brief");
+    expect(call.content.address).toBe(fullBody.address);
+    expect(call.content.countyName).toBe(fullBody.countyName);
     expect(call.content.chatSummary).toEqual(fullBody.chatSummary);
     expect(call.content.notes).toBe(fullBody.notes);
     // No setback atom seeded → author receives undefined, never a fabricated rule.
@@ -201,8 +199,53 @@ describe("dossier-export routes", () => {
     const artifactStore = memoryArtifactStore();
     const app = buildParcelTerrainRoutes(nullResolver, storage, artifactStore);
 
-    // Violate: refresh with no verdict and no brief facts, so the stored
-    // artifact record is present but honestly records itself as hollow.
+    // Violate: simulate a parcel whose underlying facts are genuinely
+    // unresolved, so composeXrayBrief (dossier-author.ts) derives nothing —
+    // P-120/P-221 means this is now a property of the PARCEL'S DATA, never
+    // of the request body, so this route-level test overrides the author
+    // directly rather than shaping the request (the real derivation is
+    // covered end-to-end in engine-core's dossier-author.test.ts).
+    vi.mocked(authorParcelPropertyDossierExport).mockImplementationOnce(async (opts) => {
+      const ref = await opts.artifactStore.put({
+        parcelNodeId: opts.parcelNodeId,
+        format: "pdf-dossier",
+        bytes: FAKE_PDF,
+        contentType: "application/pdf",
+      });
+      const atom = {
+        entityType: "parcel-terrain-model",
+        atomDid: `pterrain_dossier_${opts.parcelNodeId}`,
+        entityId: opts.parcelNodeId,
+        parcelNodeId: opts.parcelNodeId,
+        contentHash: "",
+        artifacts: {
+          "pdf-dossier": {
+            format: "pdf-dossier",
+            ref,
+            byteCount: FAKE_PDF.byteLength,
+            pageCount: 1,
+            dossierPageCount: 1,
+            sitePlanAppended: false,
+            verdictIncluded: false,
+            briefFactCount: 0,
+          },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+      await opts.storage.writePropertyAtom(atom);
+      return {
+        atom,
+        pageCount: 1,
+        dossierPageCount: 1,
+        sitePlanAppended: false,
+        verdictIncluded: false,
+        briefSectionCount: 0,
+        briefFactCount: 0,
+        chatSummaryIncluded: false,
+        notesIncluded: false,
+      };
+    });
+
     const refresh = await app.request(`/${parcelNodeId}/dossier-export/refresh`, {
       method: "POST",
       headers: { "content-type": "application/json" },
