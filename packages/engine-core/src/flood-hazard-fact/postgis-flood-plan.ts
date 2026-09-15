@@ -26,12 +26,13 @@ import type { Sql } from "postgres";
 import { pointInGeoJson, type BBox } from "./geo.js";
 import {
   assembleCountyFloodHazardPlan,
-  hasUsableCentroid,
+  isQueryableParcel,
   selectPlannableParcels,
   type CountyFloodHazardPlan,
   type FloodParcelInput,
   type ResolvedFloodZone,
 } from "./plan-county-flood-hazard.js";
+import type { ParcelRingStore } from "./containment.js";
 
 export const FLOOD_ZONE_TABLE = "tx_fema_nfhl_flood_zone";
 
@@ -47,11 +48,15 @@ function assertTableIdent(table: string): string {
 }
 
 /**
- * SFHA truthiness, expressed for SQL exactly as `isSfhaFlag` expresses it for
- * JS. Deliberately case-sensitive and deliberately not `lower(sfha_tf)`: a
- * looser SQL predicate would classify 'TRUE' as SFHA where JS does not.
+ * Recognised SFHA in SQL is the FEMA domain value T, matching parseSfhaTf.
+ * SQL cannot raise on an unrecognised encoding (Y, null, 1, t, true, TRUE);
+ * those order with non-SFHA. The fail-closed gate for the boolean is
+ * parseSfhaTf inside assembleCountyFloodHazardPlan. A remaining hole:
+ * if a recognised T overlaps an unrecognised flag, SQL prefers T and JS
+ * never sees the unrecognised sibling. findZoneAtPoint parses every
+ * overlapping flag; this SQL path does not.
  */
-const SFHA_SQL_PREDICATE = "z.sfha_tf IN ('T','t','true')";
+const SFHA_SQL_PREDICATE = "z.sfha_tf = 'T'";
 
 /** Zone ordering shared by both backends: SFHA first, then a stable id. */
 const ZONE_ORDER_SQL = `ORDER BY CASE WHEN ${SFHA_SQL_PREDICATE} THEN 0 ELSE 1 END, z.zone_row_id`;
@@ -305,7 +310,7 @@ export function zoneMajorContainsSql(table: string = FLOOD_ZONE_TABLE): string {
          ord, zone_row_id, fld_zone, zone_subty, sfha_tf, static_bfe, source_vintage
   FROM hits
   ORDER BY ord,
-           CASE WHEN sfha_tf IN ('T','t','true') THEN 0 ELSE 1 END,
+           CASE WHEN sfha_tf = 'T' THEN 0 ELSE 1 END,
            zone_row_id
 `;
 }
@@ -366,6 +371,8 @@ export interface PostgisPlanOptions {
     pointsTotal: number;
     batchMs: number;
   }) => void;
+  /** Required. Rings come from txgio_parcel, never from the atom. */
+  ringStore: ParcelRingStore;
 }
 
 export interface PostgisPlanResult {
@@ -389,12 +396,20 @@ export async function planCountyFloodHazardPostgis(
   opts: PostgisPlanOptions,
 ): Promise<PostgisPlanResult> {
   const backend = opts.backend ?? "postgis";
+  if (!opts?.ringStore || typeof opts.ringStore.getRing !== "function") {
+    throw new Error(
+      "planCountyFloodHazardPostgis requires ringStore; refusing to plan flood determinations without a parcel-store ring",
+    );
+  }
   const table = assertTableIdent(opts.table ?? FLOOD_ZONE_TABLE);
   const batchSize = Math.max(
     1,
     opts.batchSize ?? defaultPlanBatchSize(backend),
   );
-  const selection = selectPlannableParcels(parcels);
+  const selection = selectPlannableParcels(parcels, {
+    countyFips: opts.countyFips,
+    ringStore: opts.ringStore,
+  });
   const zonesIndexed =
     opts.zonesIndexed ?? (await countZonesInBBox(sql, opts.bbox, table));
   const zoneMajorText = zoneMajorContainsSql(table);
@@ -408,7 +423,7 @@ export async function planCountyFloodHazardPostgis(
   const queryable: number[] = [];
   if (zonesIndexed > 0) {
     for (let i = 0; i < selection.items.length; i++) {
-      if (hasUsableCentroid(selection.items[i]!)) queryable.push(i);
+      if (isQueryableParcel(selection.items[i]!)) queryable.push(i);
     }
   }
 
