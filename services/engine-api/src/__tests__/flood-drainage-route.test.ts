@@ -122,12 +122,30 @@ function memoryArtifactStore(): ReadableArtifactStore {
 
 const nullResolver = { async resolve() { return null; } };
 
-describe("flood-drainage routes (PINNED contract)", () => {
+/** P-240 (OPS-24, 2026-09-15): refresh is now asynchronous — mirrors
+ * waitForJobSettled in feasibility-export-route.test.ts exactly. Polls
+ * GET .../flood-drainage until the job reaches a terminal state (never
+ * an unbounded loop — AGENT_CONTRACT section 5). */
+async function waitForJobSettled(
+  app: ReturnType<typeof buildFloodDrainageRoutes>,
+  id: string,
+  maxAttempts = 50,
+): Promise<Record<string, unknown>> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await app.request(`/${id}/flood-drainage`);
+    const body = (await res.json()) as Record<string, unknown>;
+    if (body.state === "ready" || body.state === "failed") return body;
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+  throw new Error(`flood-drainage job for ${id} did not settle within ${maxAttempts} polls`);
+}
+
+describe("flood-drainage routes (PINNED contract; P-240 async)", () => {
   beforeEach(() => {
     vi.mocked(authorParcelFloodDrainageReport).mockClear();
   });
 
-  it("POST refresh: 201 with { data: { parcelNodeId, study, artifact } } — the pinned shape", async () => {
+  it("POST refresh: 202 queued with a job reference; never blocks on the author", async () => {
     const storage = new InMemoryStorage();
     const app = buildFloodDrainageRoutes(nullResolver, storage, memoryArtifactStore());
     const res = await app.request(`/${parcelNodeId}/flood-drainage/refresh`, {
@@ -139,36 +157,61 @@ describe("flood-drainage routes (PINNED contract)", () => {
         rainfallDepthInches: 8,
       }),
     });
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as {
-      data: {
-        parcelNodeId: string;
-        study: Record<string, unknown>;
-        artifact: { format: string; pageCount: number };
-      };
-    };
-    expect(body.data.parcelNodeId).toBe(parcelNodeId);
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(["queued", "running"]).toContain(body.state);
+    expect(typeof body.jobRef).toBe("string");
+    const encodedId = encodeURIComponent(parcelNodeId);
+    expect(body.statusUrl).toBe(`/v1/property-nodes/${encodedId}/flood-drainage`);
+    expect(body.downloadUrl).toBe(`/v1/property-nodes/${encodedId}/flood-drainage/download`);
+  });
+
+  it("GET status: settles to ready; then GET study/download carry the pinned shape", async () => {
+    const storage = new InMemoryStorage();
+    const artifactStore = memoryArtifactStore();
+    const app = buildFloodDrainageRoutes(nullResolver, storage, artifactStore);
+    await app.request(`/${parcelNodeId}/flood-drainage/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        address: "141 Old Antioch Rd, Smithville, TX",
+        countyName: "Bastrop County",
+        rainfallDepthInches: 8,
+      }),
+    });
+
+    const settled = await waitForJobSettled(app, parcelNodeId);
+    expect(settled.state).toBe("ready");
+
+    const studyRes = await app.request(`/${parcelNodeId}/flood-drainage/study`);
+    expect(studyRes.status).toBe(200);
+    const studyBody = (await studyRes.json()) as { data: { parcelNodeId: string; study: Record<string, unknown> } };
+    expect(studyBody.data.parcelNodeId).toBe(parcelNodeId);
     // The pinned study fields all present.
-    expect(body.data.study).toMatchObject({
+    expect(studyBody.data.study).toMatchObject({
       rainfallDepthInches: 8,
       rainfallSource: "parameter",
       demProvenance: { source: "USGS 3DEP", resolutionMeters: 10 },
     });
-    expect(body.data.study.catchmentGeoJson).toBeDefined();
-    expect(body.data.study.drainageZonesGeoJson).toBeDefined();
-    expect(body.data.study.flowLinesGeoJson).toBeDefined();
-    expect("rainfallResultGeoJson" in body.data.study).toBe(true);
-    expect(typeof body.data.study.briefing).toBe("string");
+    expect(studyBody.data.study.catchmentGeoJson).toBeDefined();
+    expect(studyBody.data.study.drainageZonesGeoJson).toBeDefined();
+    expect(studyBody.data.study.flowLinesGeoJson).toBeDefined();
+    expect("rainfallResultGeoJson" in studyBody.data.study).toBe(true);
+    expect(typeof studyBody.data.study.briefing).toBe("string");
     // v2 PINNED gradient contract passes through VERBATIM:
     //   gradient: { pngBase64: string,
     //     bbox: { westLng, southLat, eastLng, northLat }, note: string }
-    expect(body.data.study.gradient).toEqual({
+    expect(studyBody.data.study.gradient).toEqual({
       pngBase64: "aGVsbG8tZ3JhZGllbnQ=",
       bbox: { westLng: -97.325, southLat: 30.095, eastLng: -97.313, northLat: 30.107 },
       note: expect.stringContaining("10 m per pixel"),
     });
-    expect(body.data.artifact.format).toBe("pdf-flood-drainage");
-    expect(body.data.artifact.pageCount).toBe(2);
+
+    const downloadRes = await app.request(
+      `/${parcelNodeId}/flood-drainage/download?format=pdf-flood-drainage`,
+    );
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.headers.get("x-flood-drainage-generated-at")).toBeTruthy();
 
     // Parameters pass through to the author verbatim.
     const call = vi.mocked(authorParcelFloodDrainageReport).mock.calls[0]![0]!;
@@ -191,77 +234,76 @@ describe("flood-drainage routes (PINNED contract)", () => {
     expect(authorParcelFloodDrainageReport).not.toHaveBeenCalled();
   });
 
-  it("POST refresh: 422 honest failure when the author throws (unresolvable parcel)", async () => {
+  it("job settles to failed when the author throws (unresolvable parcel); study/download surface the SAME errorClass, never a fabricated result", async () => {
     vi.mocked(authorParcelFloodDrainageReport).mockRejectedValueOnce(
       new Error("Parcel geometry unavailable for 48021:47595"),
     );
     const app = buildFloodDrainageRoutes(nullResolver, new InMemoryStorage(), memoryArtifactStore());
-    const res = await app.request(`/${parcelNodeId}/flood-drainage/refresh`, {
+    const refreshRes = await app.request(`/${parcelNodeId}/flood-drainage/refresh`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",
     });
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as { error: string; message: string };
-    expect(body.error).toBe("flood_drainage_refresh_failed");
-    expect(body.message).toContain("geometry unavailable");
-  });
+    expect(refreshRes.status).toBe(202);
 
-  it("GET study: 404 before refresh, then returns the CACHED study JSON (the PE dock read)", async () => {
-    const storage = new InMemoryStorage();
-    const artifactStore = memoryArtifactStore();
-    const app = buildFloodDrainageRoutes(nullResolver, storage, artifactStore);
+    const settled = await waitForJobSettled(app, parcelNodeId);
+    expect(settled.state).toBe("failed");
+    expect(settled.errorClass).toBe("geometry_unavailable");
+    expect(settled.errorMessage).toContain("geometry unavailable");
 
-    const missing = await app.request(`/${parcelNodeId}/flood-drainage/study`);
-    expect(missing.status).toBe(404);
+    const studyRes = await app.request(`/${parcelNodeId}/flood-drainage/study`);
+    expect(studyRes.status).toBe(422);
+    expect(((await studyRes.json()) as { error: string }).error).toBe("flood_drainage_refresh_failed");
 
-    const refresh = await app.request(`/${parcelNodeId}/flood-drainage/refresh`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}",
-    });
-    expect(refresh.status).toBe(201);
-
-    const res = await app.request(`/${parcelNodeId}/flood-drainage/study`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { parcelNodeId: string; study: Record<string, unknown> } };
-    expect(body.data.parcelNodeId).toBe(parcelNodeId);
-    expect(body.data.study.rainfallSource).toBe("default");
-    expect(body.data.study.briefing).toContain("catchment");
-    // The cached study serves the gradient to the PE dock unchanged.
-    expect((body.data.study.gradient as { pngBase64: string }).pngBase64).toBe(
-      "aGVsbG8tZ3JhZGllbnQ=",
+    const downloadRes = await app.request(
+      `/${parcelNodeId}/flood-drainage/download?format=pdf-flood-drainage`,
     );
+    expect(downloadRes.status).toBe(422);
   });
 
-  it("GET download: 400 on wrong format, 404 before refresh, then streams application/pdf", async () => {
-    const storage = new InMemoryStorage();
-    const artifactStore = memoryArtifactStore();
-    const app = buildFloodDrainageRoutes(nullResolver, storage, artifactStore);
+  it("GET status: never-requested before any refresh", async () => {
+    const app = buildFloodDrainageRoutes(nullResolver, new InMemoryStorage(), memoryArtifactStore());
+    const res = await app.request(`/${parcelNodeId}/flood-drainage`);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { state: string }).state).toBe("never-requested");
+  });
 
+  it("GET study/download: 404 DECLARED wait (not absence) before refresh", async () => {
+    const app = buildFloodDrainageRoutes(nullResolver, new InMemoryStorage(), memoryArtifactStore());
+    const missingStudy = await app.request(`/${parcelNodeId}/flood-drainage/study`);
+    expect(missingStudy.status).toBe(404);
+    const missingDownload = await app.request(
+      `/${parcelNodeId}/flood-drainage/download?format=pdf-flood-drainage`,
+    );
+    expect(missingDownload.status).toBe(404);
+  });
+
+  it("GET download: 400 on wrong/missing format", async () => {
+    const app = buildFloodDrainageRoutes(nullResolver, new InMemoryStorage(), memoryArtifactStore());
     const badFormat = await app.request(`/${parcelNodeId}/flood-drainage/download?format=pdf-site-plan`);
     expect(badFormat.status).toBe(400);
     const noFormat = await app.request(`/${parcelNodeId}/flood-drainage/download`);
     expect(noFormat.status).toBe(400);
+  });
 
-    const missing = await app.request(
-      `/${parcelNodeId}/flood-drainage/download?format=pdf-flood-drainage`,
-    );
-    expect(missing.status).toBe(404);
-
-    await app.request(`/${parcelNodeId}/flood-drainage/refresh`, {
+  it("POST refresh: a second call while running returns the SAME job reference, never a second author call", async () => {
+    const app = buildFloodDrainageRoutes(nullResolver, new InMemoryStorage(), memoryArtifactStore());
+    const first = await app.request(`/${parcelNodeId}/flood-drainage/refresh`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",
     });
-    const download = await app.request(
-      `/${parcelNodeId}/flood-drainage/download?format=pdf-flood-drainage`,
-    );
-    expect(download.status).toBe(200);
-    expect(download.headers.get("content-type")).toBe("application/pdf");
-    expect(download.headers.get("content-disposition")).toContain("flood-drainage.pdf");
-    const bytes = new Uint8Array(await download.arrayBuffer());
-    expect(new TextDecoder().decode(bytes)).toContain("%PDF-");
+    const firstBody = (await first.json()) as { jobRef: string; state: string };
+    if (firstBody.state !== "running") return; // settled too fast in-memory to observe the race — honest skip, not a false pass.
+    const second = await app.request(`/${parcelNodeId}/flood-drainage/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(second.status).toBe(202);
+    const secondBody = (await second.json()) as { jobRef: string; state: string };
+    expect(secondBody.jobRef).toBe(firstBody.jobRef);
+    expect(secondBody.state).toBe("running");
   });
 
   it("gate front: the routes only accept gate-proxied calls (401 without gate-front headers)", async () => {

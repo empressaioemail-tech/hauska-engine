@@ -52,10 +52,14 @@ import type {
   AtomSearchResult,
   FeasibilityExportJob,
   FeasibilityExportJobState,
+  FloodDrainageRefreshJob,
+  FloodDrainageRefreshJobState,
   GraphNodeListQuery,
   GraphNodeListResult,
   GraphNodeListRow,
   JurisdictionStatusSnapshot,
+  SitePlanExportJob,
+  SitePlanExportJobState,
   StoragePort,
 } from "./port.js";
 import {
@@ -1297,6 +1301,143 @@ export class PgStorage implements StoragePort {
     if (!row) throw new Error("upsertFeasibilityExportJob: INSERT ... RETURNING produced no row");
     return rowToFeasibilityExportJob(row);
   }
+
+  /** P-240: packages/storage/migrations/016_flood_drainage_refresh_jobs.sql. */
+  async getFloodDrainageRefreshJob(parcelNodeId: string): Promise<FloodDrainageRefreshJob | null> {
+    const rows = await this.sql<FloodDrainageRefreshJobRow[]>`
+      SELECT * FROM flood_drainage_refresh_jobs WHERE parcel_node_id = ${parcelNodeId}
+    `;
+    return rows[0] ? rowToFloodDrainageRefreshJob(rows[0]) : null;
+  }
+
+  async upsertFloodDrainageRefreshJob(
+    parcelNodeId: string,
+    patch: Partial<Omit<FloodDrainageRefreshJob, "parcelNodeId" | "jobRef" | "state">> & {
+      jobRef: string;
+      state: FloodDrainageRefreshJobState;
+    },
+  ): Promise<FloodDrainageRefreshJob> {
+    const rows = await this.sql<FloodDrainageRefreshJobRow[]>`
+      INSERT INTO flood_drainage_refresh_jobs (
+        parcel_node_id,
+        job_ref,
+        state,
+        queued_at,
+        started_at,
+        completed_at,
+        failed_at,
+        error_class,
+        error_message,
+        updated_at
+      ) VALUES (
+        ${parcelNodeId},
+        ${patch.jobRef},
+        ${patch.state},
+        ${patch.queuedAt ?? new Date().toISOString()},
+        ${patch.startedAt ?? null},
+        ${patch.completedAt ?? null},
+        ${patch.failedAt ?? null},
+        ${patch.errorClass ?? null},
+        ${patch.errorMessage ?? null},
+        now()
+      )
+      ON CONFLICT (parcel_node_id) DO UPDATE SET
+        job_ref = EXCLUDED.job_ref,
+        state = EXCLUDED.state,
+        -- queued_at only advances on a genuinely NEW job -- see the
+        -- identical comment on upsertFeasibilityExportJob above.
+        queued_at = CASE WHEN ${patch.queuedAt ?? null}::timestamptz IS NOT NULL
+          THEN EXCLUDED.queued_at ELSE flood_drainage_refresh_jobs.queued_at END,
+        started_at = COALESCE(EXCLUDED.started_at, flood_drainage_refresh_jobs.started_at),
+        completed_at = COALESCE(EXCLUDED.completed_at, flood_drainage_refresh_jobs.completed_at),
+        failed_at = COALESCE(EXCLUDED.failed_at, flood_drainage_refresh_jobs.failed_at),
+        error_class = COALESCE(EXCLUDED.error_class, flood_drainage_refresh_jobs.error_class),
+        error_message = COALESCE(EXCLUDED.error_message, flood_drainage_refresh_jobs.error_message),
+        updated_at = now()
+      RETURNING *
+    `;
+    const row = rows[0];
+    if (!row) throw new Error("upsertFloodDrainageRefreshJob: INSERT ... RETURNING produced no row");
+    return rowToFloodDrainageRefreshJob(row);
+  }
+
+  /** P-240: packages/storage/migrations/017_site_plan_export_jobs.sql. */
+  async getSitePlanExportJob(parcelNodeId: string): Promise<SitePlanExportJob | null> {
+    const rows = await this.sql<SitePlanExportJobRow[]>`
+      SELECT * FROM site_plan_export_jobs WHERE parcel_node_id = ${parcelNodeId}
+    `;
+    return rows[0] ? rowToSitePlanExportJob(rows[0]) : null;
+  }
+
+  async upsertSitePlanExportJob(
+    parcelNodeId: string,
+    patch: Partial<Omit<SitePlanExportJob, "parcelNodeId" | "jobRef" | "state">> & {
+      jobRef: string;
+      state: SitePlanExportJobState;
+    },
+  ): Promise<SitePlanExportJob> {
+    const rows = await this.sql<SitePlanExportJobRow[]>`
+      INSERT INTO site_plan_export_jobs (
+        parcel_node_id,
+        job_ref,
+        state,
+        queued_at,
+        started_at,
+        completed_at,
+        failed_at,
+        error_class,
+        error_message,
+        result_setback_degenerate,
+        result_setback_degenerate_reason,
+        result_setback_honest_absence,
+        result_setback_honest_absence_reason,
+        result_street_honest_absence,
+        result_zoning_honest_absence,
+        result_flood_zone_honest_unavailable,
+        updated_at
+      ) VALUES (
+        ${parcelNodeId},
+        ${patch.jobRef},
+        ${patch.state},
+        ${patch.queuedAt ?? new Date().toISOString()},
+        ${patch.startedAt ?? null},
+        ${patch.completedAt ?? null},
+        ${patch.failedAt ?? null},
+        ${patch.errorClass ?? null},
+        ${patch.errorMessage ?? null},
+        ${patch.resultSummary?.setbackDegenerate ?? null},
+        ${patch.resultSummary?.setbackDegenerateReason ?? null},
+        ${patch.resultSummary?.setbackHonestAbsence ?? null},
+        ${patch.resultSummary?.setbackHonestAbsenceReason ?? null},
+        ${patch.resultSummary?.streetHonestAbsence ?? null},
+        ${patch.resultSummary?.zoningHonestAbsence ?? null},
+        ${patch.resultSummary?.floodZoneHonestUnavailable ?? null},
+        now()
+      )
+      ON CONFLICT (parcel_node_id) DO UPDATE SET
+        job_ref = EXCLUDED.job_ref,
+        state = EXCLUDED.state,
+        queued_at = CASE WHEN ${patch.queuedAt ?? null}::timestamptz IS NOT NULL
+          THEN EXCLUDED.queued_at ELSE site_plan_export_jobs.queued_at END,
+        started_at = COALESCE(EXCLUDED.started_at, site_plan_export_jobs.started_at),
+        completed_at = COALESCE(EXCLUDED.completed_at, site_plan_export_jobs.completed_at),
+        failed_at = COALESCE(EXCLUDED.failed_at, site_plan_export_jobs.failed_at),
+        error_class = COALESCE(EXCLUDED.error_class, site_plan_export_jobs.error_class),
+        error_message = COALESCE(EXCLUDED.error_message, site_plan_export_jobs.error_message),
+        result_setback_degenerate = COALESCE(EXCLUDED.result_setback_degenerate, site_plan_export_jobs.result_setback_degenerate),
+        result_setback_degenerate_reason = COALESCE(EXCLUDED.result_setback_degenerate_reason, site_plan_export_jobs.result_setback_degenerate_reason),
+        result_setback_honest_absence = COALESCE(EXCLUDED.result_setback_honest_absence, site_plan_export_jobs.result_setback_honest_absence),
+        result_setback_honest_absence_reason = COALESCE(EXCLUDED.result_setback_honest_absence_reason, site_plan_export_jobs.result_setback_honest_absence_reason),
+        result_street_honest_absence = COALESCE(EXCLUDED.result_street_honest_absence, site_plan_export_jobs.result_street_honest_absence),
+        result_zoning_honest_absence = COALESCE(EXCLUDED.result_zoning_honest_absence, site_plan_export_jobs.result_zoning_honest_absence),
+        result_flood_zone_honest_unavailable = COALESCE(EXCLUDED.result_flood_zone_honest_unavailable, site_plan_export_jobs.result_flood_zone_honest_unavailable),
+        updated_at = now()
+      RETURNING *
+    `;
+    const row = rows[0];
+    if (!row) throw new Error("upsertSitePlanExportJob: INSERT ... RETURNING produced no row");
+    return rowToSitePlanExportJob(row);
+  }
 }
 
 interface FeasibilityExportJobRow {
@@ -1355,6 +1496,88 @@ function rowToFeasibilityExportJob(row: FeasibilityExportJobRow): FeasibilityExp
           openItemCount: row.result_open_item_count ?? undefined,
           narrativeIsDeterministicSkeleton:
             row.result_narrative_is_deterministic_skeleton ?? undefined,
+        }
+      : null,
+    updatedAt: toIso(row.updated_at) as string,
+  };
+}
+
+interface FloodDrainageRefreshJobRow {
+  parcel_node_id: string;
+  job_ref: string;
+  state: FloodDrainageRefreshJobState;
+  queued_at: Date | string;
+  started_at: Date | string | null;
+  completed_at: Date | string | null;
+  failed_at: Date | string | null;
+  error_class: string | null;
+  error_message: string | null;
+  updated_at: Date | string;
+}
+
+function rowToFloodDrainageRefreshJob(row: FloodDrainageRefreshJobRow): FloodDrainageRefreshJob {
+  return {
+    parcelNodeId: row.parcel_node_id,
+    jobRef: row.job_ref,
+    state: row.state,
+    queuedAt: toIso(row.queued_at) as string,
+    startedAt: toIso(row.started_at),
+    completedAt: toIso(row.completed_at),
+    failedAt: toIso(row.failed_at),
+    errorClass: row.error_class,
+    errorMessage: row.error_message,
+    updatedAt: toIso(row.updated_at) as string,
+  };
+}
+
+interface SitePlanExportJobRow {
+  parcel_node_id: string;
+  job_ref: string;
+  state: SitePlanExportJobState;
+  queued_at: Date | string;
+  started_at: Date | string | null;
+  completed_at: Date | string | null;
+  failed_at: Date | string | null;
+  error_class: string | null;
+  error_message: string | null;
+  result_setback_degenerate: boolean | null;
+  result_setback_degenerate_reason: string | null;
+  result_setback_honest_absence: boolean | null;
+  result_setback_honest_absence_reason: string | null;
+  result_street_honest_absence: boolean | null;
+  result_zoning_honest_absence: boolean | null;
+  result_flood_zone_honest_unavailable: boolean | null;
+  updated_at: Date | string;
+}
+
+function rowToSitePlanExportJob(row: SitePlanExportJobRow): SitePlanExportJob {
+  const hasResult =
+    row.result_setback_degenerate !== null ||
+    row.result_setback_degenerate_reason !== null ||
+    row.result_setback_honest_absence !== null ||
+    row.result_setback_honest_absence_reason !== null ||
+    row.result_street_honest_absence !== null ||
+    row.result_zoning_honest_absence !== null ||
+    row.result_flood_zone_honest_unavailable !== null;
+  return {
+    parcelNodeId: row.parcel_node_id,
+    jobRef: row.job_ref,
+    state: row.state,
+    queuedAt: toIso(row.queued_at) as string,
+    startedAt: toIso(row.started_at),
+    completedAt: toIso(row.completed_at),
+    failedAt: toIso(row.failed_at),
+    errorClass: row.error_class,
+    errorMessage: row.error_message,
+    resultSummary: hasResult
+      ? {
+          setbackDegenerate: row.result_setback_degenerate ?? undefined,
+          setbackDegenerateReason: row.result_setback_degenerate_reason ?? undefined,
+          setbackHonestAbsence: row.result_setback_honest_absence ?? undefined,
+          setbackHonestAbsenceReason: row.result_setback_honest_absence_reason ?? undefined,
+          streetHonestAbsence: row.result_street_honest_absence ?? undefined,
+          zoningHonestAbsence: row.result_zoning_honest_absence ?? undefined,
+          floodZoneHonestUnavailable: row.result_flood_zone_honest_unavailable ?? undefined,
         }
       : null,
     updatedAt: toIso(row.updated_at) as string,

@@ -31,10 +31,14 @@ import type {
   AtomSearchResult,
   FeasibilityExportJob,
   FeasibilityExportJobState,
+  FloodDrainageRefreshJob,
+  FloodDrainageRefreshJobState,
   GraphNodeListQuery,
   GraphNodeListResult,
   GraphNodeListRow,
   JurisdictionStatusSnapshot,
+  SitePlanExportJob,
+  SitePlanExportJobState,
   StoragePort,
 } from "./port.js";
 import { CORPUS_SNAPSHOT_FORMAT, type CorpusSnapshot } from "./snapshot.js";
@@ -57,6 +61,8 @@ export class InMemoryStorage implements StoragePort {
   private readonly links: AtomLink[] = [];
   private readonly jurisdictionStatus = new Map<string, JurisdictionStatusSnapshot>();
   private readonly feasibilityExportJobs = new Map<string, FeasibilityExportJob>();
+  private readonly floodDrainageRefreshJobs = new Map<string, FloodDrainageRefreshJob>();
+  private readonly sitePlanExportJobs = new Map<string, SitePlanExportJob>();
   private readonly cache = new HotCache();
   private readonly ipfs = new InProcessIpfsPin();
 
@@ -637,6 +643,63 @@ export class InMemoryStorage implements StoragePort {
       updatedAt: now,
     };
     this.feasibilityExportJobs.set(parcelNodeId, row);
+    return row;
+  }
+
+  async getFloodDrainageRefreshJob(parcelNodeId: string): Promise<FloodDrainageRefreshJob | null> {
+    return this.floodDrainageRefreshJobs.get(parcelNodeId) ?? null;
+  }
+
+  async upsertFloodDrainageRefreshJob(
+    parcelNodeId: string,
+    patch: Partial<Omit<FloodDrainageRefreshJob, "parcelNodeId" | "jobRef" | "state">> & {
+      jobRef: string;
+      state: FloodDrainageRefreshJobState;
+    },
+  ): Promise<FloodDrainageRefreshJob> {
+    const existing = this.floodDrainageRefreshJobs.get(parcelNodeId);
+    const now = new Date().toISOString();
+    const row: FloodDrainageRefreshJob = {
+      parcelNodeId,
+      queuedAt: existing?.queuedAt ?? now,
+      startedAt: existing?.startedAt ?? null,
+      completedAt: existing?.completedAt ?? null,
+      failedAt: existing?.failedAt ?? null,
+      errorClass: existing?.errorClass ?? null,
+      errorMessage: existing?.errorMessage ?? null,
+      ...patch,
+      updatedAt: now,
+    };
+    this.floodDrainageRefreshJobs.set(parcelNodeId, row);
+    return row;
+  }
+
+  async getSitePlanExportJob(parcelNodeId: string): Promise<SitePlanExportJob | null> {
+    return this.sitePlanExportJobs.get(parcelNodeId) ?? null;
+  }
+
+  async upsertSitePlanExportJob(
+    parcelNodeId: string,
+    patch: Partial<Omit<SitePlanExportJob, "parcelNodeId" | "jobRef" | "state">> & {
+      jobRef: string;
+      state: SitePlanExportJobState;
+    },
+  ): Promise<SitePlanExportJob> {
+    const existing = this.sitePlanExportJobs.get(parcelNodeId);
+    const now = new Date().toISOString();
+    const row: SitePlanExportJob = {
+      parcelNodeId,
+      queuedAt: existing?.queuedAt ?? now,
+      startedAt: existing?.startedAt ?? null,
+      completedAt: existing?.completedAt ?? null,
+      failedAt: existing?.failedAt ?? null,
+      errorClass: existing?.errorClass ?? null,
+      errorMessage: existing?.errorMessage ?? null,
+      resultSummary: existing?.resultSummary ?? null,
+      ...patch,
+      updatedAt: now,
+    };
+    this.sitePlanExportJobs.set(parcelNodeId, row);
     return row;
   }
 }

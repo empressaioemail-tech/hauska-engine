@@ -9,6 +9,7 @@ import {
   InMemoryStorage,
   resolveSubstrateDatabaseUrl,
   type FeasibilityExportJob,
+  type SitePlanExportJob,
   type StoragePort,
 } from "@hauska-engine/storage";
 import {
@@ -376,31 +377,80 @@ export function buildParcelTerrainRoutes(
   // honest-absent ("setbacks not specified — no rule on file, not verified") —
   // NEVER a fabricated front/side/rear value (commitment #1). Axes marked
   // not_specified (code silent / build-to-line) remain a valid drawn state.
-  app.post("/:parcelNodeId/site-plan-export/refresh", async (c) => {
-    const parsed = sitePlanRefreshBody.safeParse(await c.req.json().catch(() => ({})));
-    if (!parsed.success) return c.json({ error: "invalid_request", details: parsed.error.flatten() }, 400);
-    const parcelNodeId = c.req.param("parcelNodeId");
-    const setbackCandidate = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
-      (candidate) => candidate.entityType === "setback-rule",
-    );
-    // Optional: absent setback is an honest-absent layer, not a refusal.
-    const setback =
-      setbackCandidate && setbackCandidate.entityType === "setback-rule"
-        ? setbackCandidate
-        : undefined;
+  // P-240 (OPS-24, 2026-09-15): REFRESH IS ASYNCHRONOUS, ported onto P-155's
+  // feasibility-export pattern below in this same file. F7/P-240 measured
+  // 56.8-115.9s on Travis, ALL 201 -- the engine never failed; the client's
+  // 55,000ms abort is what read as a failure. Job state lives in
+  // packages/storage/migrations/017_site_plan_export_jobs.sql. The seven
+  // honesty/degenerate flags that used to ride the synchronous refresh
+  // response move onto the job row's resultSummary -- `atom`/`artifacts`
+  // remain re-readable from the unchanged GET below.
+  const SITE_PLAN_EXPORT_POLL_AFTER_MS = 5_000;
+  // ~4x the observed 115.9s Travis max.
+  const SITE_PLAN_EXPORT_JOB_STALL_CEILING_MS = 8 * 60_000;
+
+  function sitePlanExportStatusUrl(parcelNodeId: string): string {
+    return `/v1/property-nodes/${encodeURIComponent(parcelNodeId)}/site-plan-export`;
+  }
+  function sitePlanExportDownloadUrl(parcelNodeId: string): string {
+    return `/v1/property-nodes/${encodeURIComponent(parcelNodeId)}/site-plan-export/download`;
+  }
+
+  function classifySitePlanExportJobError(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/geometry|boundary ring/i.test(message)) return "geometry_unavailable";
+    if (/ifc site-plan emission failed/i.test(message)) return "ifc_emission_failed";
+    if (/timed out|timeout/i.test(message)) return "compose_timeout";
+    return "compose_failed";
+  }
+
+  /** Mirrors describeFeasibilityJob below exactly. */
+  async function describeSitePlanExportJob(parcelNodeId: string): Promise<SitePlanExportJob | null> {
+    if (!storage.getSitePlanExportJob) return null;
+    const job = await storage.getSitePlanExportJob(parcelNodeId);
+    if (!job) return null;
+    if (job.state === "running" && job.startedAt) {
+      const ageMs = Date.now() - Date.parse(job.startedAt);
+      if (Number.isFinite(ageMs) && ageMs > SITE_PLAN_EXPORT_JOB_STALL_CEILING_MS) {
+        if (!storage.upsertSitePlanExportJob) return job;
+        return storage.upsertSitePlanExportJob(parcelNodeId, {
+          jobRef: job.jobRef,
+          state: "failed",
+          failedAt: new Date().toISOString(),
+          errorClass: "stalled",
+          errorMessage: `No completion observed within ${SITE_PLAN_EXPORT_JOB_STALL_CEILING_MS}ms of starting.`,
+        });
+      }
+    }
+    return job;
+  }
+
+  /** Runs the SAME composition the old synchronous route ran, then writes
+   * the job to ready/failed. Never throws to its caller. */
+  async function runSitePlanExportJob(
+    parcelNodeId: string,
+    jobRef: string,
+    body: z.infer<typeof sitePlanRefreshBody>,
+  ): Promise<void> {
+    if (!storage.upsertSitePlanExportJob) return;
     try {
+      const setbackCandidate = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId)).find(
+        (candidate) => candidate.entityType === "setback-rule",
+      );
+      const setback =
+        setbackCandidate && setbackCandidate.entityType === "setback-rule" ? setbackCandidate : undefined;
       const result = await authorParcelSitePlanExport({
         parcelNodeId,
-        bboxOverride: parsed.data.bboxOverride,
-        ringOverride: parsed.data.ringOverride,
-        resolutionMeters: parsed.data.resolutionMeters,
-        contourIntervalMeters: parsed.data.contourIntervalMeters,
-        frontEdgeIndex: parsed.data.frontEdgeIndex,
-        skirtDepthFeet: parsed.data.skirtDepthFeet,
-        streetAnchors: parsed.data.streetAnchors,
+        bboxOverride: body.bboxOverride,
+        ringOverride: body.ringOverride,
+        resolutionMeters: body.resolutionMeters,
+        contourIntervalMeters: body.contourIntervalMeters,
+        frontEdgeIndex: body.frontEdgeIndex,
+        skirtDepthFeet: body.skirtDepthFeet,
+        streetAnchors: body.streetAnchors,
         descriptor:
-          parsed.data.address || parsed.data.countyName
-            ? { address: parsed.data.address, countyName: parsed.data.countyName }
+          body.address || body.countyName
+            ? { address: body.address, countyName: body.countyName }
             : undefined,
         resolver,
         setback,
@@ -411,39 +461,130 @@ export function buildParcelTerrainRoutes(
         storage,
         artifactStore,
       });
-      return c.json({
-        atom: result.atom,
-        artifacts: {
-          "dxf-site-plan": result.atom.artifacts["dxf-site-plan"],
-          "ifc-site-plan": result.atom.artifacts["ifc-site-plan"],
-          "pdf-site-plan": result.atom.artifacts["pdf-site-plan"],
+      await storage.upsertSitePlanExportJob(parcelNodeId, {
+        jobRef,
+        state: "ready",
+        completedAt: new Date().toISOString(),
+        resultSummary: {
+          setbackDegenerate: result.setbackDegenerate,
+          setbackDegenerateReason: result.setbackDegenerateReason,
+          setbackHonestAbsence: result.setbackHonestAbsence,
+          setbackHonestAbsenceReason: result.setbackHonestAbsenceReason,
+          streetHonestAbsence: result.streetHonestAbsence,
+          zoningHonestAbsence: result.zoningHonestAbsence,
+          floodZoneHonestUnavailable: result.floodZoneHonestUnavailable,
         },
-        setbackDegenerate: result.setbackDegenerate,
-        setbackDegenerateReason: result.setbackDegenerateReason,
-        setbackHonestAbsence: result.setbackHonestAbsence,
-        setbackHonestAbsenceReason: result.setbackHonestAbsenceReason,
-        streetHonestAbsence: result.streetHonestAbsence,
-        zoningHonestAbsence: result.zoningHonestAbsence,
-        floodZoneHonestUnavailable: result.floodZoneHonestUnavailable,
-      }, 201);
+      });
     } catch (error) {
+      console.log(JSON.stringify({
+        level: "error",
+        service: "engine-api",
+        event: "site_plan_export.job_failed",
+        parcelNodeId,
+        jobRef,
+        message: error instanceof Error ? error.message : String(error),
+        ts: new Date().toISOString(),
+      }));
+      await storage.upsertSitePlanExportJob(parcelNodeId, {
+        jobRef,
+        state: "failed",
+        failedAt: new Date().toISOString(),
+        errorClass: classifySitePlanExportJobError(error),
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  app.post("/:parcelNodeId/site-plan-export/refresh", async (c) => {
+    const parsed = sitePlanRefreshBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: "invalid_request", details: parsed.error.flatten() }, 400);
+    const parcelNodeId = c.req.param("parcelNodeId");
+
+    if (!storage.getSitePlanExportJob || !storage.upsertSitePlanExportJob) {
       return c.json({
         error: "site_plan_export_failed",
-        message: error instanceof Error ? error.message : String(error),
-      }, 422);
+        message: "Storage backend does not support async site-plan-export job state (P-240).",
+      }, 500);
     }
+
+    const existingJob = await describeSitePlanExportJob(parcelNodeId);
+    if (existingJob && existingJob.state === "running") {
+      return c.json({
+        state: "running",
+        jobRef: existingJob.jobRef,
+        pollAfterMs: SITE_PLAN_EXPORT_POLL_AFTER_MS,
+        statusUrl: sitePlanExportStatusUrl(parcelNodeId),
+        downloadUrl: sitePlanExportDownloadUrl(parcelNodeId),
+      }, 202);
+    }
+
+    const jobRef = randomUUID();
+    await storage.upsertSitePlanExportJob(parcelNodeId, {
+      jobRef,
+      state: "queued",
+      queuedAt: new Date().toISOString(),
+    });
+    // Marked `running` BEFORE responding — same reasoning as
+    // runFeasibilityJob's CP1 note below.
+    await storage.upsertSitePlanExportJob(parcelNodeId, {
+      jobRef,
+      state: "running",
+      startedAt: new Date().toISOString(),
+    });
+
+    // Deliberately not awaited.
+    void runSitePlanExportJob(parcelNodeId, jobRef, parsed.data);
+
+    return c.json({
+      state: "queued",
+      jobRef,
+      pollAfterMs: SITE_PLAN_EXPORT_POLL_AFTER_MS,
+      statusUrl: sitePlanExportStatusUrl(parcelNodeId),
+      downloadUrl: sitePlanExportDownloadUrl(parcelNodeId),
+    }, 202);
   });
   app.get("/:parcelNodeId/site-plan-export", async (c) => {
-    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+    const parcelNodeId = c.req.param("parcelNodeId");
+    const job = await describeSitePlanExportJob(parcelNodeId);
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId))
       .find((candidate) => candidate.entityType === "parcel-terrain-model");
-    if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
+    if (!job) {
+      // `never-requested` is its own answer, never `deferred`. A pre-P-240
+      // atom with artifacts already on file still reports honestly below.
+      if (!atom || atom.entityType !== "parcel-terrain-model" || !atom.artifacts["pdf-site-plan"]) {
+        return c.json({ state: "never-requested" }, 200);
+      }
+      return c.json({
+        state: atom.artifacts["pdf-site-plan"]?.deferred ? "failed" : "ready",
+        atom,
+        artifacts: {
+          "dxf-site-plan": atom.artifacts["dxf-site-plan"],
+          "ifc-site-plan": atom.artifacts["ifc-site-plan"],
+          "pdf-site-plan": atom.artifacts["pdf-site-plan"],
+        },
+      });
+    }
     return c.json({
-      atom,
-      artifacts: {
-        "dxf-site-plan": atom.artifacts["dxf-site-plan"],
-        "ifc-site-plan": atom.artifacts["ifc-site-plan"],
-        "pdf-site-plan": atom.artifacts["pdf-site-plan"],
-      },
+      state: job.state,
+      jobRef: job.jobRef,
+      queuedAt: job.queuedAt,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      failedAt: job.failedAt,
+      errorClass: job.errorClass,
+      errorMessage: job.errorMessage,
+      pollAfterMs: (job.state === "queued" || job.state === "running") ? SITE_PLAN_EXPORT_POLL_AFTER_MS : undefined,
+      ...(job.state === "ready" ? { result: job.resultSummary ?? {} } : {}),
+      ...(atom && atom.entityType === "parcel-terrain-model"
+        ? {
+            atom,
+            artifacts: {
+              "dxf-site-plan": atom.artifacts["dxf-site-plan"],
+              "ifc-site-plan": atom.artifacts["ifc-site-plan"],
+              "pdf-site-plan": atom.artifacts["pdf-site-plan"],
+            },
+          }
+        : {}),
     });
   });
   app.get("/:parcelNodeId/site-plan-export/download", async (c) => {
@@ -454,7 +595,26 @@ export function buildParcelTerrainRoutes(
         message: `format must be one of ${SITE_PLAN_DOWNLOADABLE_FORMATS.join(", ")}`,
       }, 400);
     }
-    const atom = (await storage.listPropertyAtomsByParcelNodeId(c.req.param("parcelNodeId")))
+    const parcelNodeId = c.req.param("parcelNodeId");
+    const job = await describeSitePlanExportJob(parcelNodeId);
+    if (job && (job.state === "queued" || job.state === "running")) {
+      // A DECLARED wait, never a 404-as-absence.
+      return c.json({
+        error: "export_in_progress",
+        state: job.state,
+        jobRef: job.jobRef,
+        pollAfterMs: SITE_PLAN_EXPORT_POLL_AFTER_MS,
+        message: "Site Plan Export is still being generated for this parcel.",
+      }, 404);
+    }
+    if (job && job.state === "failed") {
+      return c.json({
+        error: "site_plan_export_failed",
+        errorClass: job.errorClass ?? "compose_failed",
+        message: job.errorMessage ?? "Site plan export could not be produced for this parcel.",
+      }, 422);
+    }
+    const atom = (await storage.listPropertyAtomsByParcelNodeId(parcelNodeId))
       .find((candidate) => candidate.entityType === "parcel-terrain-model");
     if (!atom || atom.entityType !== "parcel-terrain-model") return c.json({ error: "not_found" }, 404);
     const artifact = atom.artifacts[format];
@@ -471,12 +631,15 @@ export function buildParcelTerrainRoutes(
         message: "Artifact bytes are no longer on this instance; call site-plan-export/refresh again",
       }, 410);
     }
-    const safeNodeId = c.req.param("parcelNodeId").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const safeNodeId = parcelNodeId.replace(/[^a-zA-Z0-9._-]/g, "_");
     c.header("Content-Type", SITE_PLAN_CONTENT_TYPES[format]);
     c.header(
       "Content-Disposition",
       `attachment; filename="${safeNodeId}.${format}.${SITE_PLAN_EXTENSIONS[format]}"`,
     );
+    if (job?.completedAt) {
+      c.header("X-Site-Plan-Generated-At", job.completedAt);
+    }
     return c.body(Buffer.from(bytes));
   });
 
