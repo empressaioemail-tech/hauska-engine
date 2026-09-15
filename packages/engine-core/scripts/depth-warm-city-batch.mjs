@@ -688,6 +688,11 @@ const stats = {
       "parcel-node-retired": 0,
       "parcel-node-geometry-incomplete": 0,
       "parcel-node-pointer-mismatch": 0,
+      // P-212: a "parcel-node-retired" decline the live BCAD cross-check
+      // contradicts. Never promoted (S3 unchanged) -- surfaced separately so a
+      // false retirement is a visible finding instead of indistinguishable
+      // from a genuine one. See the guard-relocation comment below.
+      "parcel-node-retired-currency-live": 0,
       other: 0,
   },
   parcelNodePreflight: {
@@ -747,7 +752,38 @@ for (const row of parcelRows) {
   // zoning-fact alone ends up promoting a parcel with no established geometry.
   if (!warmEligibleIds.has(parcelNodeId)) {
     const refusal = warmGate.declined.find((d) => d.parcelNodeId === parcelNodeId);
-    recordEarlyDecline(refusal?.declineCode ?? "no-parcel-node-anchor", parcelNodeId, [
+    const declineCode = refusal?.declineCode ?? "no-parcel-node-anchor";
+
+    // GUARD RELOCATION (P-212). parcelCurrencyFromBcadMap previously sat
+    // entirely AFTER this gate (below, near setback resolution), so for a
+    // parcel-node-retired decline it never ran: `continue` above always fired
+    // first. That is precisely how P-212's 57,704 false Bastrop retirements
+    // stayed invisible to this loop -- the one live cross-check that could
+    // have contradicted a bad retirement never got a chance to run. This does
+    // NOT promote on a live check alone (invariant S3 is unchanged: no parcel
+    // is warmed without an active parcel-node anchor); it only upgrades a
+    // silent "parcel-node-retired" decline into a separately-counted, visible
+    // finding an operator can route to the reconcile-repair review
+    // (reviewRetiredParcelNodes / decideRetiredParcelNodeReactivations) rather
+    // than a decline that reads identically to a genuine retirement.
+    if (declineCode === "parcel-node-retired" && warmRunner.bulkBcad) {
+      const propIdForCurrency = parcelNodeId.split(":")[1];
+      const currency = propIdForCurrency
+        ? parcelCurrencyFromBcadMap(propIdForCurrency, bcadByPropId)
+        : { ok: false };
+      if (currency.ok) {
+        recordEarlyDecline("parcel-node-retired-currency-live", parcelNodeId, [
+          `anchor status is retired but the live BCAD cadastral endpoint still returns a ring for ` +
+            `prop_id ${propIdForCurrency}; the retirement is suspect and needs the reconcile-repair ` +
+            "review (reviewRetiredParcelNodes), not a re-warm",
+        ]);
+        stats.processed++;
+        stats.wallMsPerParcel.push(Math.round(performance.now() - parcelT0));
+        continue;
+      }
+    }
+
+    recordEarlyDecline(declineCode, parcelNodeId, [
       refusal?.reason ?? "parcel-node preflight refused this parcel",
     ]);
     stats.processed++;
