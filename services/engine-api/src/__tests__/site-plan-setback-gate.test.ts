@@ -3,6 +3,13 @@ import { InMemoryStorage } from "@hauska-engine/storage";
 import type { SetbackRuleAtomInstance } from "@hauska-engine/atoms";
 
 vi.mock("@hauska-engine/engine-core/site-plan", () => ({
+  // P-219: the site-plan and dossier export routes now construct the one
+  // reader unconditionally, exactly as the feasibility route already did.
+  // RETRIEVAL_API_URL/KEY are unset in this test so the real
+  // `recordReaderFromEnv` would return undefined anyway — but the mock must
+  // still export the NAME or the module import fails before any assertion,
+  // which is the same failure mode this file's sibling already documents.
+  recordReaderFromEnv: vi.fn(() => undefined),
   // parcel-terrain.ts also imports the dossier author; the mock must define
   // it or Vitest refuses the import (unused in these tests).
   authorParcelPropertyDossierExport: vi.fn(),
