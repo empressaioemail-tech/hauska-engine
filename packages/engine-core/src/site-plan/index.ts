@@ -325,7 +325,6 @@ export {
 export {
   countSitePlanSheets,
   emitPdfSitePlan,
-  SITE_PLAN_BRAND_KICKER,
   TOTAL_SHEETS,
   type EmitPdfSitePlanOptions,
   type PdfSitePlanResult,

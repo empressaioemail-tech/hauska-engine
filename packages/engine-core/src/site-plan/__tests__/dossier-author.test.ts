@@ -152,7 +152,10 @@ describe("authorParcelPropertyDossierExport", { timeout: 60_000 }, () => {
     const bytes = artifactStore.data.get(artifact!.ref);
     expect(bytes).toBeDefined();
     const decoded = decodeAllContentStreams(bytes!);
-    expect(decoded).toContain(`SITE PLAN · SHEET ${result.dossierPageCount + 1} OF ${result.pageCount}`);
+    // P-228: running-header report type + report-chrome's own zero-padded
+    // footer counter replace the old inline "SITE PLAN · SHEET N OF M".
+    expect(decoded).toContain("SITE PLAN");
+    expect(decoded).toContain(`SHEET ${String(result.dossierPageCount + 1).padStart(2, "0")} / ${result.pageCount}`);
     // No buildable-envelope atom is seeded in this fixture, so Ruling B
     // refuses the figure — the derived verdict must say so (never a
     // caller-supplied figure, since none is accepted anymore).

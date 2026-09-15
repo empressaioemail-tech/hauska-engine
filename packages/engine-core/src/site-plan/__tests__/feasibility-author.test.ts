@@ -167,7 +167,9 @@ describe("authorParcelFeasibilityExport", { timeout: 60_000 }, () => {
     expect(bytes).not.toBeNull();
     const decoded = decodeAllContentStreams(bytes!);
     expect(decoded).toContain("LOT 4 BLK 2 SAMPLE SUB");
-    expect(decoded).toContain("SMART SITE FEASIBILITY STUDY");
+    // P-228: the masthead's report type replaces the old "SMART SITE
+    // FEASIBILITY STUDY" eyebrow — the wordmark carries the brand now.
+    expect(decoded).toContain("FEASIBILITY STUDY");
   });
 
   // R2 (2026-09-07): this used to fail closed with a thrown error the caller

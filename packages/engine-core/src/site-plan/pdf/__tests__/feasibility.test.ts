@@ -86,7 +86,10 @@ describe("emitPdfFeasibility", () => {
     expect(result.sitePlanAppended).toBe(false);
 
     const decoded = decodeAllContentStreams(result.bytes);
-    expect(decoded).toContain("SMART SITE FEASIBILITY STUDY");
+    // P-228: the masthead's report type ("FEASIBILITY STUDY", uppercased
+    // from report-chrome) replaces the old "SMART SITE FEASIBILITY STUDY"
+    // eyebrow — the wordmark now carries the brand graphically.
+    expect(decoded).toContain("FEASIBILITY STUDY");
     expect(decoded).toContain("1127 N PINE ST");
     expect(decoded).toContain("UNAVAILABLE");
     // Never a fabricated flood zone when the fact atom is absent.

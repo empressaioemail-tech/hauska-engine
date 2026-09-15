@@ -153,8 +153,12 @@ describe("authorParcelFloodDrainageReport", { timeout: 60_000 }, () => {
     const pdfBytes = artifactStore.data.get(pdfArtifact!.ref);
     expect(pdfBytes).toBeDefined();
     const decoded = decodeAllContentStreams(pdfBytes!);
-    expect(decoded).toContain("FLOOD & DRAINAGE · SHEET 1 OF 2");
-    expect(decoded).toContain("141 OLD ANTIOCH RD");
+    // P-228: masthead/running-header report type + report-chrome's own
+    // zero-padded footer counter replace the old inline eyebrow string; the
+    // address prints verbatim (never forced uppercase).
+    expect(decoded).toContain("FLOOD & DRAINAGE");
+    expect(decoded).toContain("SHEET 01 / 2");
+    expect(decoded).toContain("141 Old Antioch Rd");
 
     // Atom persisted with real DEM coverage.
     const atoms = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);

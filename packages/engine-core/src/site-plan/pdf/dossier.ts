@@ -12,19 +12,16 @@ import { SITE_PLAN_HONESTY_LINE } from "./provenance.js";
 import {
   LB,
   MARGIN_BOTTOM,
-  MARGIN_TOP,
   MARGIN_X,
   MarkRegistry,
   PAGE_HEIGHT,
   PAGE_WIDTH,
   cityFromAddress,
   drawChipOnLineBox,
-  drawFinePrint,
   drawHairlineRule,
   drawSectionHeading,
   drawTrackedText,
   emitPdfSitePlan,
-  headerRuleY,
   loadFont,
   streetOnly,
   trackedWidth,
@@ -33,6 +30,17 @@ import {
   type PdfSitePlanResult,
   type SheetMark,
 } from "./render.js";
+import {
+  chromeMonoFonts,
+  drawFooter,
+  drawMasthead,
+  drawRunningHeader,
+  footerBandHeight,
+  mastheadAddressLines,
+  mastheadBottomY,
+  runningHeaderBottomY,
+  type ChromeFonts,
+} from "./report-chrome.js";
 import { SPACE, STROKE, TOKENS, TRACKING, TYPE, pt } from "./template-tokens.js";
 
 /**
@@ -288,11 +296,12 @@ export type PlannedPage =
   | { kind: "notes"; lines: string[]; first: boolean };
 
 const LABEL_COL = pt(200);
-/** Fine-print reserve: 9 wrapped lines + a space-4 gap. Dossier fine print
- * can carry a user disclaimer (≤600 chars) on top of the standing lines, so
- * the reserve is deeper than the site plan's 6-line band. */
+/** Report-chrome footer band, reserving 9 lines: dossier fine print can
+ * carry a user disclaimer (≤600 chars) on top of the standing lines, so the
+ * reserve is deeper than the site plan's 6-8 line bands (render.ts). Same
+ * "reserve generously, measure for real at draw time" pattern — see CP1. */
 export function contentFloorY(): number {
-  return MARGIN_BOTTOM + LB.finePrint.lineBoxHeight * 9 + pt(SPACE.s4);
+  return footerBandHeight(9) + pt(SPACE.s4);
 }
 
 export function sectionHeadingCost(): number {
@@ -345,14 +354,14 @@ export function planBriefPages(
   const floor = contentFloorY();
   let groups: PlannedGroup[] = [];
   let current: PlannedGroup | null = null;
-  let cursor = headerRuleY();
+  let cursor = runningHeaderBottomY();
 
   const flushPage = () => {
     if (current && current.rows.length > 0) groups.push(current);
     if (groups.length > 0) pages.push({ kind: "brief", groups });
     groups = [];
     current = null;
-    cursor = headerRuleY();
+    cursor = runningHeaderBottomY();
   };
 
   for (const section of content.sections) {
@@ -370,7 +379,7 @@ export function planBriefPages(
         groups = [];
         heading = `${section.title.toUpperCase()} · CONTINUED`;
         current = { heading, rows: [] };
-        cursor = headerRuleY() - sectionHeadingCost();
+        cursor = runningHeaderBottomY() - sectionHeadingCost();
       }
       current.rows.push(row);
       cursor -= rowCost(lines);
@@ -402,7 +411,7 @@ export function planTextPages(kind: "chat" | "notes", lines: string[]): PlannedP
   const floor = contentFloorY();
   // Heading + (for chat) AI label + muted rule sit above the text block.
   const chromeCost = sectionHeadingCost() + (kind === "chat" ? LB.subline.lineBoxHeight + pt(SPACE.s3) : 0);
-  const firstCapacity = Math.floor((headerRuleY() - chromeCost - pt(SPACE.s2) - floor) / LB.kvRow.lineBoxHeight);
+  const firstCapacity = Math.floor((runningHeaderBottomY() - chromeCost - pt(SPACE.s2) - floor) / LB.kvRow.lineBoxHeight);
   const contCapacity = firstCapacity;
   const pages: PlannedPage[] = [];
   let rest = lines;
@@ -423,71 +432,52 @@ export function planTextPages(kind: "chat" | "notes", lines: string[]): PlannedP
 // honest §2 treatment, never a placeholder).
 // ─────────────────────────────────────────────────────────────────────────
 const INK = TOKENS.text;
-const ACCENT = TOKENS.accent;
 
-export function drawDossierHeader(
+/**
+ * P-228 — the shared masthead/running-header primitive `emitPdfDossier`
+ * (this file's own "Property X-Ray" pages) AND `feasibility.ts` both call,
+ * so the two document types never draw two different chrome styles again.
+ * Masthead iff `pageNo === 1` (always true for a standalone cover, always
+ * false for every other page in both documents — neither ever embeds inside
+ * a larger host the way the site-plan sheets can). Replaces the old
+ * `drawDossierHeader`'s per-caller "eyebrow" string with the frame's own
+ * reportType + optional sectionQualifier (report-chrome's own pattern:
+ * "FEASIBILITY STUDY · NARRATIVE").
+ */
+export function drawDossierChrome(
   page: PDFPage,
-  content: DossierContent,
-  F: Fonts,
-  eyebrow: string,
-  rightMeta: string[],
+  content: { parcelNodeId: string; address?: string; countyName?: string },
+  F: ChromeFonts,
+  opts: { reportType: string; sectionQualifier?: string; docIdValue: string; pageNo: number },
 ): number {
-  const left = MARGIN_X;
-  const right = PAGE_WIDTH - MARGIN_X;
-  const top = PAGE_HEIGHT - MARGIN_TOP;
-
-  drawTrackedText(page, eyebrow, {
-    x: left,
-    y: top - LB.eyebrow.baselineFromBoxTop,
-    size: TYPE.eyebrow,
-    font: F.display,
-    color: ACCENT,
-    trackingEm: TRACKING.eyebrow,
-  });
-
-  const titleBoxTop = top - LB.eyebrow.lineBoxHeight - pt(2);
   const street = streetOnly(content.address);
-  const big = (street ?? `PARCEL ${content.parcelNodeId}`).toUpperCase();
-  page.drawText(big, {
-    x: left,
-    y: titleBoxTop - LB.address.baselineFromBoxTop,
-    size: TYPE.address,
-    font: F.display,
-    color: INK,
-  });
-  if (!street) {
-    const bigW = F.display.widthOfTextAtSize(big, TYPE.address);
-    drawChipOnLineBox(page, "NO ADDRESS", left + bigW + pt(10), titleBoxTop, LB.address, "solid", F);
+  if (opts.pageNo === 1) {
+    const metaParts = [cityFromAddress(content.address), `PARCEL ${content.parcelNodeId}`, countyDisplayName(content.countyName)].filter(
+      (p): p is string => !!p,
+    );
+    return drawMasthead(
+      page,
+      {
+        reportType: opts.reportType,
+        address: street ?? `PARCEL ${content.parcelNodeId}`,
+        subjectMeta: metaParts.join(" · "),
+        docIdValue: opts.docIdValue,
+      },
+      F,
+    );
   }
+  const rightMeta = street ? `${street} · ${content.parcelNodeId}` : `PARCEL ${content.parcelNodeId}`;
+  return drawRunningHeader(page, { reportType: opts.reportType, sectionQualifier: opts.sectionQualifier, rightMeta }, F);
+}
 
-  const metaBoxTop = titleBoxTop - LB.address.lineBoxHeight - pt(2);
-  const metaParts = [
-    cityFromAddress(content.address),
-    `Parcel ${content.parcelNodeId}`,
-    countyDisplayName(content.countyName),
-  ].filter((p): p is string => !!p);
-  page.drawText(metaParts.join("  ·  "), {
-    x: left,
-    y: metaBoxTop - LB.subline.baselineFromBoxTop,
-    size: TYPE.subline,
-    font: F.body,
-    color: TOKENS.neutral700,
-  });
-
-  const metaTop = top - pt(6);
-  rightMeta.forEach((line, i) => {
-    page.drawText(line, {
-      x: right - F.body.widthOfTextAtSize(line, TYPE.sheetMeta),
-      y: metaTop - i * LB.sheetMeta.lineBoxHeight - LB.sheetMeta.baselineFromBoxTop,
-      size: TYPE.sheetMeta,
-      font: F.body,
-      color: TOKENS.neutral600,
-    });
-  });
-
-  const ruleY = headerRuleY();
-  drawHairlineRule(page, left, ruleY, right - left);
-  return ruleY;
+/** Pure-geometry twin of `drawDossierChrome` — pagination planning
+ * (`planBriefPages`/`planTextPages`) never runs for page 1 (the cover
+ * always precedes brief/chat/notes pages in both documents), so it is
+ * always the running header's constant bottom y; kept here for callers that
+ * need the masthead case too (none currently do, since cover has no planned
+ * flowing content of its own). */
+export function dossierChromeBottomY(pageNo: number, address: string | undefined, F: ChromeFonts): number {
+  return pageNo === 1 ? mastheadBottomY(mastheadAddressLines(streetOnly(address) ?? "PARCEL", F)) : runningHeaderBottomY();
 }
 
 function drawKvRow(
@@ -590,13 +580,11 @@ interface DossierFlags {
   sitePlanUnavailableReason?: string;
 }
 
-function dossierFinePrint(
-  pageKind: PlannedPage["kind"],
-  sheetNo: number,
-  total: number,
-  flags: DossierFlags,
-  chatDisclaimer?: string,
-): string {
+/** P-228: no longer appends "· Sheet N of Total" — the report-chrome footer
+ * draws the sheet pointer itself now (see render.ts's buildFinePrint for the
+ * same change and rationale). `sheetNo`/`total` params dropped since nothing
+ * inside this function reads them any more. */
+function dossierFinePrint(pageKind: PlannedPage["kind"], flags: DossierFlags, chatDisclaimer?: string): string {
   const sentences: string[] = [DOSSIER_COMPILATION_LINE, SITE_PLAN_HONESTY_LINE, DOSSIER_NOT_LEGAL_ADVICE];
   // The verdict qualifier is already drawn once, directly under the VERDICT
   // headline (item 14: it was also being appended here, duplicating the
@@ -612,7 +600,6 @@ function dossierFinePrint(
       `${DOSSIER_SITE_PLAN_ABSENT_NOTE}: ${flags.sitePlanUnavailableReason ?? "site-plan authoring was unavailable for this parcel"}.`,
     );
   }
-  sentences.push(`· Sheet ${sheetNo} of ${total}`);
   return sentences.join(" ");
 }
 
@@ -627,11 +614,14 @@ export async function emitPdfDossier(
 
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
-  const F: Fonts = {
-    body: await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false }),
-    bodyMedium: await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false }),
+  const body = await doc.embedFont(loadFont("Barlow-Regular.ttf"), { subset: false });
+  const bodyMedium = await doc.embedFont(loadFont("Barlow-Medium.ttf"), { subset: false });
+  const F: ChromeFonts = {
+    body,
+    bodyMedium,
     display: await doc.embedFont(loadFont("BarlowCondensed-SemiBold.ttf"), { subset: false }),
     displayMedium: await doc.embedFont(loadFont("BarlowCondensed-Medium.ttf"), { subset: false }),
+    ...chromeMonoFonts(body, bodyMedium),
   };
 
   const factCount = content.sections.reduce((n, s) => n + s.facts.length, 0);
@@ -674,35 +664,39 @@ export async function emitPdfDossier(
 
   const marks = new MarkRegistry();
   const rhythm = new RhythmCapture();
-  const generatedAt = options.generatedAtIso ?? new Date().toISOString();
-  const stamp = `generated ${generatedAt.slice(0, 16).replace("T", " ")}Z`;
+  const generatedAtIso = options.generatedAtIso ?? new Date().toISOString();
   // "XR-" maps to the customer-facing product name, "Smart Site X-Ray" — the
   // same way FS-/FD- map to Feasibility Study/Flood & Drainage (item 14: the
   // old "PD-" prefix was this file's internal name, dossier, leaking through).
   const docId = `XR-${content.parcelNodeId.replace(/:/g, "-")}`;
-  const rightMeta = [docId, content.parcelNodeId];
 
   const chatPages = plannedPages.filter((p) => p.kind === "chat").length;
   const notesPages = plannedPages.filter((p) => p.kind === "notes").length;
   const briefPages = plannedPages.filter((p) => p.kind === "brief").length;
 
+  // P-228: report-chrome sectionQualifier per page kind, replacing the old
+  // per-kind eyebrow string. "Property X-Ray" carries the brand the wordmark
+  // used to repeat in prose (DOSSIER_KICKER "SMART SITE X-RAY") — the
+  // masthead's wordmark now carries SMART SITE graphically, so the doctype
+  // text only needs to say what KIND of document this is.
+  const DOSSIER_REPORT_TYPE = "Property X-Ray";
+  const sectionQualifierByKind: Record<PlannedPage["kind"], string | undefined> = {
+    cover: undefined,
+    brief: "Brief Facts",
+    chat: "AI Research Summary",
+    notes: "Owner Notes",
+  };
+
   plannedPages.forEach((planned, i) => {
     const pageNo = i + 1;
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
-    const eyebrowByKind: Record<PlannedPage["kind"], string> = {
-      cover: DOSSIER_KICKER,
-      brief: "BRIEF FACTS",
-      chat: "AI RESEARCH SUMMARY",
-      notes: DOSSIER_NOTES_HEADING,
-    };
-    const ruleY = drawDossierHeader(
-      page,
-      content,
-      F,
-      `${eyebrowByKind[planned.kind]} · SHEET ${pageNo} OF ${total}`,
-      rightMeta,
-    );
+    const ruleY = drawDossierChrome(page, content, F, {
+      reportType: DOSSIER_REPORT_TYPE,
+      sectionQualifier: sectionQualifierByKind[planned.kind],
+      docIdValue: docId,
+      pageNo,
+    });
     marks.once(pageNo, "dossier-header", planned.kind);
 
     if (planned.kind === "cover") {
@@ -815,30 +809,12 @@ export async function emitPdfDossier(
       );
       page.drawLine({ start: { x: MARGIN_X, y: contentsRule }, end: { x: PAGE_WIDTH - MARGIN_X, y: contentsRule }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
 
-      // Generated stamp above the fine print, right-aligned (§9 voice).
-      const stampLine = `${docId} · ${stamp}`;
-      page.drawText(stampLine, {
-        x: PAGE_WIDTH - MARGIN_X - F.body.widthOfTextAtSize(stampLine, TYPE.scaleRatioLine),
-        y: contentFloorY() + pt(4),
-        size: TYPE.scaleRatioLine,
-        font: F.body,
-        color: TOKENS.neutral600,
-      });
-      marks.once(pageNo, "generated-stamp", "stamp");
-
-      // Live-view deep link (P-90 item 5) — same fixed baseline as the
-      // generated stamp, left-aligned, printed only when the caller forwarded
-      // one. No chip on absence: an enhancement link, not a core fact class.
-      if (content.liveViewUrl) {
-        page.drawText(content.liveViewUrl, {
-          x: MARGIN_X,
-          y: contentFloorY() + pt(4),
-          size: TYPE.scaleRatioLine,
-          font: F.body,
-          color: TOKENS.neutral600,
-        });
-        marks.once(pageNo, "live-view-url", "link");
-      }
+      // P-228: the standalone generated-stamp + live-view-link block that
+      // used to sit only above the cover's fine print is retired — the
+      // report-chrome footer now draws the generation timestamp and the
+      // deep link (verbatim when the caller supplied one; a
+      // `?parcelNodeId=` fallback otherwise) on EVERY page, not just the
+      // cover, via the fine-print draw call below.
     }
 
     if (planned.kind === "brief") {
@@ -896,13 +872,20 @@ export async function emitPdfDossier(
       });
     }
 
-    drawFinePrint(
-      page,
-      pageNo,
-      dossierFinePrint(planned.kind, pageNo, total, flags, planned.kind === "chat" ? content.chatSummary?.disclaimer : undefined),
-      F,
-      marks,
-    );
+    if (marks.once(pageNo, "fine-print", "paragraph")) {
+      drawFooter(
+        page,
+        {
+          legalText: dossierFinePrint(planned.kind, flags, planned.kind === "chat" ? content.chatSummary?.disclaimer : undefined),
+          generatedAtIso,
+          liveViewUrl: content.liveViewUrl,
+          parcelNodeId: content.parcelNodeId,
+          sheetNo: pageNo,
+          sheetTotal: total,
+        },
+        F,
+      );
+    }
   });
 
   // Append the site-plan sheets (renumbered by the render-side seam).

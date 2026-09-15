@@ -378,9 +378,11 @@ describe("SHEET STANDARD v1.0 acceptance checklist", () => {
       expect(r.text).not.toContain("(fixture");
       expect(r.text).not.toContain("fixture)");
     }
-    // Dense has no address: §2 chip, never a placeholder.
-    expect(dense.text).toContain("NO ADDRESS");
-    expect(dense.text).toContain("PARCEL QA2:DENSE-SMALL");
+    // Dense has no address: §2, never a placeholder. P-228: the masthead has
+    // no chip slot, so the honest fallback is the plain "PARCEL {id}" string,
+    // and the masthead never forces case (spec: address prints verbatim) —
+    // the parcelNodeId portion keeps this fixture's own lowercase spelling.
+    expect(dense.text).toContain("PARCEL qa2:dense-small");
     // Every canned §6 reason is itself a clean one-sentence ≤12-word reason.
     for (const sentence of Object.values(REASON)) {
       expect(isCleanReasonSentence(sentence), sentence).toBe(true);
@@ -534,9 +536,10 @@ describe("SHEET STANDARD v1.2 — §3 frame clip, §11 street naming, §11 count
 
   it("§11: a FIPS-shaped county is OMITTED from the header meta line and the County row takes the honest chip — never a raw code", async () => {
     const wide = await wideP;
-    // Live defect shape: "Parcel 48021:47719 · 48021" must not recur.
+    // Live defect shape: "PARCEL 48021:47719 · 48021" must not recur.
     expect(wide.decoded).not.toMatch(/47719\s*·\s*48021(?!:)/);
-    expect(wide.text).toContain("Parcel 48021:47719");
+    // P-228: subject meta prints "PARCEL {id}" in caps per report-chrome spec.
+    expect(wide.text).toContain("PARCEL 48021:47719");
     expect(wide.text).toContain(REASON.noCountyName);
     // A real county name still prints (gold: Bastrop County).
     const gold = await goldP;

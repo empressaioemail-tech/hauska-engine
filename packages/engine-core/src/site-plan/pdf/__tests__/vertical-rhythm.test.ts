@@ -7,6 +7,7 @@ import { PARCEL_1009_CHESTNUT_34785_LIVE_TXGIO } from "../../../depth-warm/fixtu
 import { composeSitePlanModel, type SitePlanModel } from "../../site-model.js";
 import { emitPdfSitePlan, type EmitPdfSitePlanOptions, type PdfSitePlanResult } from "../render.js";
 import { fontVerticalMetrics, lineBox, placeRowBelowRule, type RhythmRow } from "../line-box.js";
+import { footerBandHeight } from "../report-chrome.js";
 import { LINE_HEIGHT, SPACE, TYPE, pt } from "../template-tokens.js";
 
 /**
@@ -305,10 +306,18 @@ describe("§21 vertical rhythm gate (Sheet Standard v1.1)", () => {
     }
   });
 
-  it("page 2 never runs into the fine-print band (§13: restructure, never spill)", async () => {
+  // P-228: the report-chrome footer's band is far shorter than the old
+  // fine-print reservation (hairline + one legal/meta row, not a 4-line
+  // paragraph), so the floor is now `footerBandHeight(1)` (the shortest the
+  // band can ever be, single-line legal text) rather than a hardcoded pixel
+  // guess — computed from the actual geometry so this assertion tracks the
+  // real invariant (rows never spill into the footer band) instead of a
+  // magic number tuned to the OLD band shape.
+  it("page 2 never runs into the footer band (§13: restructure, never spill)", async () => {
+    const floor = footerBandHeight(1);
     for (const result of [await goldP, await denseP]) {
       for (const row of result.rhythm.filter((r) => r.page === 2)) {
-        expect(row.bottomY).toBeGreaterThan(72); // fine-print band top ≈ 65–75pt
+        expect(row.bottomY).toBeGreaterThan(floor);
       }
     }
   });
