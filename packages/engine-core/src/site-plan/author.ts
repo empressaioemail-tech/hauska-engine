@@ -32,6 +32,8 @@ import { resolveAttachingRoadNodes } from "./resolve-attaching-roads.js";
 import { resolveTerrainWindowBbox } from "./terrain-window.js";
 import { prepareBoundaryEdgesForExport } from "./prepare-boundary-edges-for-export.js";
 import { resolveSitusAddressForExport } from "./resolve-situs-for-export.js";
+import { resolveExportSetback } from "./resolve-export-setback.js";
+import type { ParcelRecordResponse, RecordReaderClient } from "./parcel-record-reader-client.js";
 import {
   composeSitePlanModel,
   type EnvelopeOutcomeInput,
@@ -203,6 +205,22 @@ export interface AuthorParcelSitePlanExportOptions {
    * This never fabricates a setback — absent is honestly labeled absent.
    */
   setback?: SetbackRuleAtomInstance;
+  /**
+   * P-219 — the one reader (`recordReaderFromEnv`). OPTIONAL and never a
+   * failure path: when absent or failing, `resolveExportSetback` falls to the
+   * ruled corpus row the rails were themselves composed from. Pass it so the
+   * sheet reads the SAME parcel_record rails `setbackRulesFact` renders.
+   * `RETRIEVAL_API_URL` / `RETRIEVAL_API_KEY` are mounted on hauska-engine-api
+   * (verified live 2026-09-15 by `gcloud run services describe`), so in
+   * production this is the path that actually runs.
+   */
+  recordReader?: RecordReaderClient;
+  /**
+   * Jurisdiction key for the ruled setback table lookup (e.g.
+   * "bastrop-development-code"). Optional: the resolver also tries the
+   * Bastrop city routing key, matching `notSpecifiedAxesFromSetbackTable`.
+   */
+  setbackJurisdictionKey?: string | null;
   storage: StoragePort;
   artifactStore: TerrainArtifactStore;
   resolutionMeters?: number;
@@ -353,7 +371,7 @@ export async function composeSitePlanModelForParcel(
     options.zoningOverride ?? (await resolveZoningSummary(options.parcelNodeId, options.storage));
   const centroid = centroidOfRing(ringWgs84);
   const floodZone: FloodZoneSummaryInput = options.floodZoneOverride ?? (await resolveFloodZoneSummary(centroid, options.fetchFloodZone));
-  const envelopeOutcome: EnvelopeOutcomeInput | undefined =
+  const envelopeOutcomeRaw: EnvelopeOutcomeInput | undefined =
     options.envelopeOutcomeOverride ?? (await resolveEnvelopeOutcome(options.parcelNodeId, options.storage));
 
   // Honest-absent path: NO setback-rule atom for this parcel. The export
@@ -365,7 +383,14 @@ export async function composeSitePlanModelForParcel(
   const setbackRuleVerdict = options.setback
     ? classifySetbackRuleAtom(options.setback)
     : null;
-  const setbackHonestAbsence =
+  /**
+   * Whether the persisted ATOM alone is usable. P-219 keeps this as the
+   * atom-level verdict (F-11: a placeholder or road-class rule is present but
+   * is not a value) and no longer lets it decide the whole layer: a parcel
+   * with no atom, or with an unusable one, can still have a ruled table, and
+   * `resolveExportSetback` below is what decides honest absence now.
+   */
+  const setbackAtomUnusable =
     !options.setback || setbackRuleVerdict?.disposition !== "value";
   const setbackAtom = (
     setbackRuleVerdict?.disposition === "value" ? options.setback : undefined
@@ -382,7 +407,59 @@ export async function composeSitePlanModelForParcel(
   const districtCode =
     setbackAtom?.districtCode ??
     ("district" in zoning ? zoning.district : undefined);
-  const tableAxes = setbackHonestAbsence
+
+  // P-219 — ONE setback authority for this export, resolved once, used by both
+  // the per-edge geometry and the line the sheet prints. See
+  // `resolve-export-setback.ts` for the precedence and for why the persisted
+  // atom is no longer the first thing asked. `zoningOverride`/absence cases
+  // fall through to this resolver's own honest-absence arm, so the export
+  // still succeeds and still fabricates nothing.
+  //
+  // The record is read ONCE here and handed to every consumer below (the
+  // setback authority and the R30 situs), so one export is one reader call
+  // and the two can never read different snapshots of the same parcel.
+  // A reader that is absent or fails yields null and every consumer degrades
+  // on its own terms; a report never fails for want of it.
+  let parcelRecord: ParcelRecordResponse | null = null;
+  if (options.recordReader) {
+    try {
+      const read = await options.recordReader.fetchRecord(options.parcelNodeId);
+      parcelRecord = read.ok ? read.record : null;
+    } catch {
+      parcelRecord = null;
+    }
+  }
+
+  const exportSetback = await resolveExportSetback({
+    parcelNodeId: options.parcelNodeId,
+    districtCode: districtCode ?? null,
+    jurisdictionKey: options.setbackJurisdictionKey ?? null,
+    atom: setbackAtomUnusable ? null : (setbackAtom ?? null),
+    record: parcelRecord,
+  });
+
+  /**
+   * P-219 / D2 — mark the buildable-envelope atom stale when this export
+   * followed setbacks the persisted setback-rule atom does not carry. The
+   * envelope atom was derived from that atom, so its area figure describes an
+   * envelope this sheet is no longer drawing; printing it beside the drawing
+   * is the contradiction that put "19,052 sq ft of buildable area, 64% of the
+   * 29,989 sq ft lot" in the largest type on a cover whose own site plan was
+   * drawn to different setbacks. The POLYGON still draws (Ruling B, reversed
+   * for the polygon only); only the figure is refused, and the sentence says
+   * why rather than leaving a blank.
+   */
+  const envelopeOutcome: EnvelopeOutcomeInput | undefined =
+    envelopeOutcomeRaw?.kind === "buildable" && exportSetback.supersededAtom
+      ? {
+          ...envelopeOutcomeRaw,
+          supersededReason:
+            "Buildable area withheld: the buildable-envelope atom on file was derived from setback values this study no longer follows " +
+            `(${exportSetback.supersededAtom.axes.join(", ")}). Pending a re-baked envelope.`,
+        }
+      : envelopeOutcomeRaw;
+
+  const tableAxes = exportSetback.honestAbsence
     ? undefined
     : notSpecifiedAxesFromSetbackTable(undefined, districtCode);
   const fieldProvenance = setbackAtom?.fieldProvenance as
@@ -392,12 +469,13 @@ export async function composeSitePlanModelForParcel(
         rear?: { notSpecified?: boolean };
       }
     | undefined;
-  const notSpecified = setbackHonestAbsence
+  const notSpecified = exportSetback.honestAbsence
     ? undefined
-    : resolveNotSpecifiedAxes({
+    : (exportSetback.notSpecified ??
+      resolveNotSpecifiedAxes({
         fieldProvenance,
         tableAxes,
-      });
+      }));
 
   // Architecture directive (2026-07-28): the export CONSUMES the stored
   // boundary primitive when the parcel has one — same per-edge truth
@@ -459,7 +537,17 @@ export async function composeSitePlanModelForParcel(
       ringWgs84,
       roads: warmRoads,
       situsAddress,
-      setback: setbackHonestAbsence ? null : (setbackAtom ?? null),
+      setback: exportSetback.honestAbsence
+        ? null
+        : {
+            front: exportSetback.front,
+            side: exportSetback.side,
+            rear: exportSetback.rear,
+            cornerFt: exportSetback.cornerFt,
+            provenance: exportSetback.provenanceKind,
+            sourceCodeAtomDid: exportSetback.sourceCodeAtomDid,
+            districtCode: exportSetback.districtCode,
+          },
       notSpecified,
     });
     refreshedBoundaryEdgeAtoms = prepared.edges ?? [];
@@ -477,13 +565,18 @@ export async function composeSitePlanModelForParcel(
     ringWgs84,
     dem,
     contourIntervalMeters,
-    setback: setbackHonestAbsence
+    // P-219 — the sheet's line and the per-edge geometry above now read the
+    // SAME resolved authority, so the two can no longer disagree (they did:
+    // the edges were correct in the ledger and the sheet printed the atom).
+    setback: exportSetback.honestAbsence
       ? {
-          // No rule atom: zero inset on every axis (offset ring == property
-          // line, nothing fabricated), flagged honest-absent for the legend.
+          // Nothing resolvable: zero inset on every axis (offset ring ==
+          // property line, nothing fabricated), flagged honest-absent for the
+          // legend.
           front: 0,
           side: 0,
           rear: 0,
+          cornerFt: null,
           sourceCodeAtomRef: {
             atomDid: "no-setback-rule-atom",
             role: "honest-absence",
@@ -491,28 +584,32 @@ export async function composeSitePlanModelForParcel(
           },
           honestAbsence: true,
           honestAbsenceReason:
-            setbackRuleVerdict && setbackRuleVerdict.disposition !== "value"
+            exportSetback.honestAbsenceReason ??
+            (setbackRuleVerdict && setbackRuleVerdict.disposition !== "value"
               ? setbackRuleVerdict.basis
-              : undefined,
+              : undefined),
         }
       : {
-          front: options.setback!.front,
-          side: options.setback!.side,
-          rear: options.setback!.rear,
-          sourceCodeAtomRef: options.setback!.sourceCodeAtomRef,
+          front: exportSetback.front,
+          side: exportSetback.side,
+          rear: exportSetback.rear,
+          cornerFt: exportSetback.cornerFt,
+          sourceCodeAtomRef: {
+            atomDid: exportSetback.sourceCodeAtomDid,
+            role: "rule",
+            entityType: "code-section",
+          },
           notSpecified,
           // P-154 wave 6 (R-1) — what the sheet's setback line cites, and the
-          // conflict row when two dated sources disagree. The atom carried no
-          // source date before wave 6, so a pre-wave-6 atom contributes
-          // nothing here and its sheet is byte-identical to before.
-          sourceLabel: options.setback!.sourceCitation ?? null,
-          sourceCitation:
-            options.setback!.displayMeta?.citationUrl ??
-            options.setback!.sourceUrl ??
-            null,
-          sourceDate: options.setback!.displayMeta?.sourceDate ?? null,
-          dateBasis: options.setback!.displayMeta?.dateBasis ?? null,
-          conflict: options.setback!.displayMeta?.secondSource?.conflict ?? null,
+          // conflict row when two dated sources disagree. These now travel
+          // with the resolved authority rather than off the persisted atom, so
+          // a sheet cannot print one source's numbers under another source's
+          // citation.
+          sourceLabel: exportSetback.sourceLabel,
+          sourceCitation: exportSetback.sourceCitation,
+          sourceDate: exportSetback.sourceDate,
+          dateBasis: exportSetback.dateBasis,
+          conflict: exportSetback.conflict ?? null,
         },
     boundaryEdges,
     frontEdgeIndex: options.frontEdgeIndex,
@@ -537,7 +634,7 @@ export async function composeSitePlanModelForParcel(
     demFetch,
     resolvedSourceRef: resolved.sourceRef,
     contourSource,
-    setbackHonestAbsence,
+    setbackHonestAbsence: exportSetback.honestAbsence,
     zoning,
     floodZone,
     resolutionMetersRequested,

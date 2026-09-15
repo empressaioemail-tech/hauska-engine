@@ -422,6 +422,10 @@ export function buildParcelTerrainRoutes(
             : undefined,
         resolver,
         setback,
+        // P-219 — the one reader, so this export's setbacks and its R30 situs
+        // come from the same parcel_record rails `setbackRulesFact` renders.
+        // Honest no-op when RETRIEVAL_API_URL/KEY are unset.
+        recordReader: recordReaderFromEnv(),
         storage,
         artifactStore,
       });
@@ -531,6 +535,10 @@ export function buildParcelTerrainRoutes(
         },
         resolver,
         setback,
+        // P-219 — the one reader, so this export's setbacks and its R30 situs
+        // come from the same parcel_record rails `setbackRulesFact` renders.
+        // Honest no-op when RETRIEVAL_API_URL/KEY are unset.
+        recordReader: recordReaderFromEnv(),
         storage,
         artifactStore,
       });
@@ -729,9 +737,13 @@ export function buildParcelTerrainRoutes(
         factResolvers: LIVE_PARCEL_REPORT_FACT_RESOLVERS,
         // P152-RAILS: recordReaderFromEnv() returns undefined (honest no-op,
         // same contract as narrativeSectionFromEnv above) unless
-        // RETRIEVAL_API_URL/RETRIEVAL_API_KEY are mounted -- NOT true on
-        // hauska-engine-api in production as of this lane's close. See the
-        // close's leave_behind for the exact mount command.
+        // RETRIEVAL_API_URL/RETRIEVAL_API_KEY are mounted. P-219 corrects the
+        // note that used to sit here: they ARE mounted on hauska-engine-api,
+        // verified live 2026-09-15 with `gcloud run services describe
+        // hauska-engine-api --project hauska-prod-497015 --region us-central1`
+        // (RETRIEVAL_API_URL literal, RETRIEVAL_API_KEY from the
+        // HAUSKA_ENGINE_API_KEY secret). The reader is live in production;
+        // no secret mount is owed.
         recordReader: recordReaderFromEnv(),
         // P152-ENTITLEMENT (OPS-23 wave 4): gates ONLY the parcelOwnership
         // section (dollar rails + owner info) inside composeParcelReportFacts.

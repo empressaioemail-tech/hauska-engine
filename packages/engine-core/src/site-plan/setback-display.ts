@@ -17,10 +17,20 @@ export type NotSpecifiedAxes = {
   front?: boolean;
   side?: boolean;
   rear?: boolean;
+  /**
+   * P-219 — the CORNER-side yard, silent independently of the interior side.
+   * Before this existed, `side` was the only side flag, so a corner axis with
+   * no published value degraded to the interior-side number instead of
+   * declaring itself silent: on a corner lot that is a drawn setback line at a
+   * dimension the code never states. A district that publishes no corner value
+   * keeps this unset AND carries a null corner — silence and absence are
+   * different states and neither fabricates a number.
+   */
+  sideCorner?: boolean;
 };
 
 export function anyNotSpecified(ns: NotSpecifiedAxes | null | undefined): boolean {
-  return !!(ns?.front || ns?.side || ns?.rear);
+  return !!(ns?.front || ns?.side || ns?.rear || ns?.sideCorner);
 }
 
 /** Feet used for inward offset — silent axes inset 0 (no fabricated dimension). */
@@ -38,17 +48,33 @@ export function formatSetbackSummaryLine(input: {
   front: number;
   side: number;
   rear: number;
+  /**
+   * P-219 — corner-side yard. `null`/omitted means the district publishes
+   * none, and the line reads as the front/side/rear triple it always did. A
+   * number means this district HAS a corner-side standard and the line says
+   * so, because a front/side/rear triple cannot express a corner lot and the
+   * one that mattered got drawn at the interior-side value for months.
+   */
+  cornerFt?: number | null;
   notSpecified?: NotSpecifiedAxes | null;
 }): string {
   const ns = input.notSpecified ?? {};
+  const hasCorner = typeof input.cornerFt === "number" && !ns.sideCorner;
   if (!anyNotSpecified(ns)) {
-    return `${input.front} / ${input.side} / ${input.rear} ft`;
+    return hasCorner
+      ? `${input.front} / ${input.side} / ${input.rear} ft, corner side ${input.cornerFt} ft`
+      : `${input.front} / ${input.side} / ${input.rear} ft`;
   }
   const axis = (label: string, ft: number, silent?: boolean) =>
     silent ? `${label} not specified` : `${label} ${ft}'`;
+  const cornerTerm = ns.sideCorner
+    ? " · corner side not specified"
+    : hasCorner
+      ? ` · corner side ${input.cornerFt}'`
+      : "";
   return (
     `${axis("F", input.front, ns.front)} · ${axis("S", input.side, ns.side)} · ` +
-    `${axis("R", input.rear, ns.rear)} — build-to-line governs`
+    `${axis("R", input.rear, ns.rear)}${cornerTerm} — build-to-line governs`
   );
 }
 
@@ -282,6 +308,9 @@ export function notSpecifiedAxesFromSetbackTable(
     if (p.front_ft?.not_specified === true) tableAxes.front = true;
     if (p.side_ft?.not_specified === true) tableAxes.side = true;
     if (p.rear_ft?.not_specified === true) tableAxes.rear = true;
+    // P-219 — the corner-side axis is read separately; before this it shared
+    // the interior-side flag and a silent corner drew at the side value.
+    if (p.side_corner_ft?.not_specified === true) tableAxes.sideCorner = true;
     const axes = resolveNotSpecifiedAxes({ tableAxes });
     if (axes) return axes;
   }
