@@ -105,10 +105,15 @@ const sitePlanRefreshBody = z.object({
 
 /**
  * Property-dossier request contract (2026-07-29, pinned with the PE BFF/MCP
- * leg). Everything is optional and caller-supplied; the engine renders
- * exactly what the request carries (verbatim, labeled) and honest-degrades
- * on anything absent — never fabricates. Server-side caps mirror
- * `DOSSIER_CAPS`; the assembler sanitizes again (control chars, glyphs).
+ * leg; re-cut 2026-09-15, P-120/P-221). `verdictLine`/`brief` are NO LONGER
+ * accepted here: the engine derives both, in-process, from the SAME
+ * `composeParcelReport` model Feasibility reads (see `dossier-author.ts`'s
+ * `composeXrayBrief`) — accepting them again would silently reopen the
+ * caller-supplied-content gap P-221 exists to close. `address`/`countyName`/
+ * `chatSummary`/`notes`/`liveViewUrl` remain caller-supplied: the engine
+ * cannot derive a user's AI chat summary or owner notes from atoms. Server-
+ * side caps mirror `DOSSIER_CAPS`; the assembler sanitizes again (control
+ * chars, glyphs).
  */
 const dossierRefreshBody = z.object({
   // Site-plan geometry seams (same as site-plan-export/refresh).
@@ -130,29 +135,6 @@ const dossierRefreshBody = z.object({
   // Dossier content — caller-supplied only.
   address: z.string().max(200).optional(),
   countyName: z.string().max(120).optional(),
-  verdictLine: z.string().max(400).optional(),
-  brief: z
-    .object({
-      sections: z
-        .array(
-          z.object({
-            id: z.string().max(64),
-            title: z.string().max(160),
-            facts: z
-              .array(
-                z.object({
-                  label: z.string().max(160),
-                  value: z.string().max(400).optional(),
-                  source: z.string().max(240).optional(),
-                  vintage: z.string().max(80).optional(),
-                }),
-              )
-              .max(60),
-          }),
-        )
-        .max(16),
-    })
-    .optional(),
   chatSummary: z
     .object({
       summary: z.string().max(12000),
@@ -527,8 +509,6 @@ export function buildParcelTerrainRoutes(
         content: {
           address: parsed.data.address,
           countyName: parsed.data.countyName,
-          verdictLine: parsed.data.verdictLine,
-          brief: parsed.data.brief,
           chatSummary: parsed.data.chatSummary,
           notes: parsed.data.notes,
           liveViewUrl: parsed.data.liveViewUrl,
@@ -587,12 +567,20 @@ export function buildParcelTerrainRoutes(
     // P-90 item 7: a stored artifact CAN be present and still hollow (no
     // verdict, no cited brief facts) — refuse the download instead of
     // streaming a hollow PDF, the same fail-closed shape MCP's
-    // isStoredDossierArtifactHollow enforces on its own leg.
+    // isStoredDossierArtifactHollow enforces on its own leg. Since P-120/
+    // P-221, verdict and brief facts are derived in-process from this
+    // parcel's own feasibility model (dossier-author.ts's composeXrayBrief)
+    // rather than caller-supplied, so this can now fire ONLY when that
+    // parcel's underlying facts (zoning, flood, structures, etc.) are
+    // genuinely unresolved — never because a caller forgot to send content.
+    // The remedy names a retry, an action identical on every surface that
+    // calls this route (web app or MCP connector), not a web-app-only
+    // concept ("open the brief") no connector caller can act on.
     if (artifact.verdictIncluded === false || (artifact.briefFactCount ?? 0) === 0) {
       return c.json({
         error: "pipeline_output_absent",
         message:
-          "Stored X-ray artifact is hollow (missing verdict or brief facts) and cannot be downloaded. Refresh with a resolved brief first.",
+          "This parcel's underlying facts (zoning, flood, structures, etc.) are not yet resolved, so no brief facts could be derived. Call dossier-export/refresh again once the parcel's facts are available.",
       }, 422);
     }
     const bytes = await artifactStore.get(artifact.ref);
