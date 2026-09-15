@@ -24,7 +24,9 @@ import {
 } from "../plan-county-parcel-nodes.js";
 import {
   assertNoActiveOrphans,
+  decideRetiredParcelNodeReactivations,
   reconcileCountyParcelNodes,
+  reviewRetiredParcelNodes,
   type StoredParcelNodeRow,
 } from "../reconcile-county-parcel-nodes.js";
 import {
@@ -319,6 +321,170 @@ describe("S2 — re-acquisition retires what the source no longer publishes", ()
       `${COUNTY}:${syntheticParcelKey(13, V2)}`,
     ];
     expect(assertNoActiveOrphans(rec, stillActive)).toEqual({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P-212 — retired-row review: a bad plan's retirements outlive the bad plan
+// ---------------------------------------------------------------------------
+
+describe("P-212: reconcileCountyParcelNodes cannot recover a false retirement on re-run", () => {
+  // The real shape found in production (48021/Bastrop, 2026-09-15): a SAME-VINTAGE
+  // reconcile ran once against an under-resolved plan (only account 100 resolved)
+  // and retired every other real, still-live account under that identical vintage.
+  const fullRows = [
+    feature(10, "100", V1),
+    feature(11, "101", V1),
+    feature(12, "102", V1),
+    feature(13, "103", V1), // stands in for the negative control (`77293`): genuinely gone at the live source
+  ];
+  const badPlanRows = [feature(10, "100", V1)]; // the historical run only resolved one account
+
+  it("THE DEFECT: reconcile-and-retire against an under-resolved same-vintage plan retires real, still-current accounts", () => {
+    const priorFromFullLoad = storedFromPlan(fullRows); // what was actually written when the county first loaded, all active
+    const badPlan = planCountyParcelNodes(badPlanRows, POLICY);
+    const rec = reconcileCountyParcelNodes(priorFromFullLoad, badPlan, V1);
+
+    // 101, 102, 103 all vanish from a plan that never actually stopped observing them.
+    expect(rec.orphans.map((o) => o.parcelNodeId).sort()).toEqual([
+      `${COUNTY}:101`,
+      `${COUNTY}:102`,
+      `${COUNTY}:103`,
+    ]);
+    // And the reason text is indistinguishable from a genuine disappearance —
+    // this is exactly why the stored Bastrop rows all carry the same templated
+    // reason naming the SAME vintage on both sides.
+    for (const o of rec.orphans) {
+      expect(o.reason).toContain(`previously observed under vintage ${V1}`);
+      expect(o.reason).toContain(`absent from the ${V1} plan`);
+    }
+  });
+
+  it("THE GAP: re-running reconcileCountyParcelNodes against the CORRECT plan does nothing for rows already retired", () => {
+    // Simulate: after the bad run above, the store now holds 100 active and
+    // 101/102/103 retired. A later, CORRECT, fully-resolved plan for the same
+    // vintage runs (the equivalent of simply re-invoking write-parcel-node-county
+    // once txgio_parcel is complete) ...
+    const afterBadRun: StoredParcelNodeRow[] = [
+      { parcelNodeId: `${COUNTY}:100`, status: "active", sourceVintage: V1 },
+      {
+        parcelNodeId: `${COUNTY}:101`,
+        status: "retired",
+        sourceVintage: V1,
+        retiredAt: "2026-08-11T12:14:06.746Z",
+        retiredReason: `parcel is absent from the ${V1} plan for county ${COUNTY} (previously observed under vintage ${V1}); the source no longer publishes this account and no successor evidence exists`,
+      },
+      {
+        parcelNodeId: `${COUNTY}:102`,
+        status: "retired",
+        sourceVintage: V1,
+        retiredAt: "2026-08-11T12:14:06.746Z",
+        retiredReason: `parcel is absent from the ${V1} plan for county ${COUNTY} (previously observed under vintage ${V1}); the source no longer publishes this account and no successor evidence exists`,
+      },
+      {
+        parcelNodeId: `${COUNTY}:103`,
+        status: "retired",
+        sourceVintage: V1,
+        retiredAt: "2026-08-11T12:14:06.746Z",
+        retiredReason: `parcel is absent from the ${V1} plan for county ${COUNTY} (previously observed under vintage ${V1}); the source no longer publishes this account and no successor evidence exists`,
+      },
+    ];
+    const correctPlan = planCountyParcelNodes(fullRows, POLICY);
+    const rec = reconcileCountyParcelNodes(afterBadRun, correctPlan, V1);
+
+    // reconcileCountyParcelNodes only ever examines rows CURRENTLY active
+    // (`active = priorRows.filter(r => r.status === "active")`). It reports zero
+    // new orphans (correct) but it ALSO does nothing to recover 101/102/103 — a
+    // wrongly retired row is invisible to this function forever, however
+    // complete a later plan is. THIS is the gap `reviewRetiredParcelNodes` fixes.
+    expect(rec.counts.orphans).toBe(0);
+    expect(rec.priorActive).toBe(1); // only sees the one row that was never retired
+  });
+
+  it("THE FIX: reviewRetiredParcelNodes surfaces exactly the rows the correct plan predicts again", () => {
+    const afterBadRun: StoredParcelNodeRow[] = [
+      { parcelNodeId: `${COUNTY}:100`, status: "active", sourceVintage: V1 },
+      {
+        parcelNodeId: `${COUNTY}:101`,
+        status: "retired",
+        sourceVintage: V1,
+        retiredAt: "2026-08-11T12:14:06.746Z",
+        retiredReason: "orphan-by-bad-plan",
+      },
+      {
+        parcelNodeId: `${COUNTY}:102`,
+        status: "retired",
+        sourceVintage: V1,
+        retiredAt: "2026-08-11T12:14:06.746Z",
+        retiredReason: "orphan-by-bad-plan",
+      },
+      {
+        parcelNodeId: `${COUNTY}:103`,
+        status: "retired",
+        sourceVintage: V1,
+        retiredAt: "2026-08-11T12:14:06.746Z",
+        retiredReason: "orphan-by-bad-plan",
+      },
+      // A GENUINE orphan: retired before, and still absent from the correct plan too.
+      { parcelNodeId: `${COUNTY}:999`, status: "retired", sourceVintage: V1, retiredReason: "actually gone" },
+    ];
+    const correctPlan = planCountyParcelNodes(fullRows, POLICY);
+    const review = reviewRetiredParcelNodes(afterBadRun, correctPlan);
+
+    expect(review.priorRetired).toBe(4);
+    expect(review.candidates.map((c) => c.parcelNodeId).sort()).toEqual([
+      `${COUNTY}:101`,
+      `${COUNTY}:102`,
+      `${COUNTY}:103`,
+    ]);
+    // The genuine orphan is never surfaced as a candidate.
+    expect(review.stillAbsent).toBe(1);
+  });
+
+  it("THE GUARD (`77293`): a candidate the plan re-predicts is NOT reactivated without live corroboration", () => {
+    const afterBadRun: StoredParcelNodeRow[] = [
+      { parcelNodeId: `${COUNTY}:100`, status: "active", sourceVintage: V1 },
+      { parcelNodeId: `${COUNTY}:101`, status: "retired", sourceVintage: V1, retiredAt: "t", retiredReason: "r" },
+      { parcelNodeId: `${COUNTY}:102`, status: "retired", sourceVintage: V1, retiredAt: "t", retiredReason: "r" },
+      // `103` mirrors `77293`: present in the internal plan, but the live
+      // county source does not confirm it. It must stay retired.
+      { parcelNodeId: `${COUNTY}:103`, status: "retired", sourceVintage: V1, retiredAt: "t", retiredReason: "r" },
+    ];
+    const correctPlan = planCountyParcelNodes(fullRows, POLICY);
+    const review = reviewRetiredParcelNodes(afterBadRun, correctPlan);
+
+    const liveCurrency = new Map([
+      [`${COUNTY}:101`, true],
+      [`${COUNTY}:102`, true],
+      [`${COUNTY}:103`, false], // the county's own live source says: not found
+    ]);
+    const verdict = decideRetiredParcelNodeReactivations(review, liveCurrency);
+
+    expect(verdict.reactivate.map((r) => r.parcelNodeId).sort()).toEqual([
+      `${COUNTY}:101`,
+      `${COUNTY}:102`,
+    ]);
+    expect(verdict.stillRetired.map((r) => r.parcelNodeId)).toEqual([`${COUNTY}:103`]);
+
+    // FALSIFIER: a fix that reactivates every candidate regardless of live
+    // corroboration is "admitting everything rather than fixing the comparison."
+    expect(verdict.reactivate.some((r) => r.parcelNodeId === `${COUNTY}:103`)).toBe(false);
+  });
+
+  it("FALSIFIER: an empty live-currency map (no corroboration attempted) reactivates nothing", () => {
+    const afterBadRun: StoredParcelNodeRow[] = [
+      { parcelNodeId: `${COUNTY}:101`, status: "retired", sourceVintage: V1, retiredAt: "t", retiredReason: "r" },
+    ];
+    const correctPlan = planCountyParcelNodes([feature(11, "101", V1)], POLICY);
+    const review = reviewRetiredParcelNodes(afterBadRun, correctPlan);
+    const verdict = decideRetiredParcelNodeReactivations(review, new Map());
+    expect(verdict.reactivate).toEqual([]);
+    expect(verdict.stillRetired).toEqual([
+      {
+        parcelNodeId: `${COUNTY}:101`,
+        reason: expect.stringContaining("NOT confirmed live"),
+      },
+    ]);
   });
 });
 

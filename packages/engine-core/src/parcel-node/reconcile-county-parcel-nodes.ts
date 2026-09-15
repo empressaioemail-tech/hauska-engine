@@ -70,6 +70,10 @@ export interface StoredParcelNodeRow {
   status: "active" | "retired";
   /** Vintage recorded on the stored atom, when it carried one. */
   sourceVintage?: string | null;
+  /** Retire reason recorded on the stored atom, when it carried one. */
+  retiredReason?: string | null;
+  /** Retire timestamp recorded on the stored atom, when it carried one. */
+  retiredAt?: string | null;
 }
 
 /** An active stored atom the new plan does not predict. */
@@ -218,4 +222,138 @@ export function assertNoActiveOrphans(
       "pointing at geometry the store no longer holds",
     stillActive: stillActive.slice(0, 20),
   };
+}
+
+/**
+ * RETIRED-ROW REVIEW (P-212) — the companion direction {@link reconcileCountyParcelNodes}
+ * does not cover.
+ *
+ * P-212: 57,704 of Bastrop's 62,394 `parcel-node` atoms carry `status: "retired"`, all
+ * stamped with the SAME `retiredAt` (2026-08-11T12:14:06.746Z) and the SAME templated
+ * reason, naming the SAME `sourceVintage` on both sides of "previously observed under
+ * vintage X, absent from the X plan" — i.e. one historical run compared the county's
+ * active set against a `plan` that resolved far fewer parcels than the county actually
+ * has, and everything outside that undersized plan was retired in one pass. Direct
+ * verification against the live Bastrop cadastral FeatureServer confirms 19 of a 20-id
+ * sample are still real, present accounts today — the comparator's KEY CONSTRUCTION was
+ * never the defect (`normalizeParcelKeyToken` and the stored `parcelNodeId`s agree
+ * exactly, digit-for-digit, for every sampled id); the defect is that {@link
+ * reconcileCountyParcelNodes} retires on ONE run's plan with no way to reconsider a
+ * retirement once made, because it only ever examines rows CURRENTLY `active`
+ * (see `active = priorRows.filter(r => r.status === "active")` above) — a bad plan's
+ * retirements are permanent even after a later, complete plan would show the parcel
+ * again.
+ *
+ * This is intentionally NOT a symmetric mirror of `reconcileCountyParcelNodes` that
+ * auto-reactivates. A retired row whose key the current plan predicts again is only a
+ * CANDIDATE: `77293` is retired AND present in the current TxGIO plan AND absent when
+ * queried live at the county today, so "present in the plan" cannot be the sole
+ * reactivation test or every retirement decision would be reduced to trusting the same
+ * kind of snapshot that caused this. The caller must corroborate each candidate against
+ * a live, per-parcel source before writing any reactivation — this function only narrows
+ * "62,394 retired rows" down to "these are worth asking a live source about."
+ */
+export interface RetiredParcelNodeReviewCandidate {
+  parcelNodeId: string;
+  priorRetiredAt: string | null;
+  priorRetiredReason: string | null;
+}
+
+export interface RetiredParcelNodeReview {
+  countyFips: string;
+  /** Retired rows read from the store before this review. */
+  priorRetired: number;
+  /** Retired rows whose key the CURRENT plan predicts again — reactivation candidates. */
+  candidates: ReadonlyArray<RetiredParcelNodeReviewCandidate>;
+  /** Retired rows the current plan still does not predict — left untouched, not a finding. */
+  stillAbsent: number;
+}
+
+/**
+ * Pure: no database access, no live-source access. Computes only the set-membership
+ * question the plan can answer honestly. Never write a retired row back to active on
+ * this function's output alone — see the module doc above.
+ */
+export function reviewRetiredParcelNodes(
+  storedRows: ReadonlyArray<StoredParcelNodeRow>,
+  plan: CountyParcelNodePlan,
+): RetiredParcelNodeReview {
+  const plannedIds = new Set(
+    plan.planned.map((p) => `${plan.countyFips}:${p.parcelKey}`),
+  );
+  const retired = storedRows.filter((r) => r.status === "retired");
+  const candidates: RetiredParcelNodeReviewCandidate[] = [];
+  let stillAbsent = 0;
+  for (const row of retired) {
+    if (plannedIds.has(row.parcelNodeId)) {
+      candidates.push({
+        parcelNodeId: row.parcelNodeId,
+        priorRetiredAt: row.retiredAt ?? null,
+        priorRetiredReason: row.retiredReason ?? null,
+      });
+    } else {
+      stillAbsent += 1;
+    }
+  }
+  return {
+    countyFips: plan.countyFips,
+    priorRetired: retired.length,
+    candidates,
+    stillAbsent,
+  };
+}
+
+export interface RetiredParcelNodeReactivation {
+  parcelNodeId: string;
+  reactivatedReason: string;
+}
+
+export interface RetiredParcelNodeStillRetired {
+  parcelNodeId: string;
+  reason: string;
+}
+
+export interface RetiredParcelNodeReviewVerdict {
+  countyFips: string;
+  /** Candidates a live source corroborated. The only rows a caller may reactivate. */
+  reactivate: ReadonlyArray<RetiredParcelNodeReactivation>;
+  /** Candidates the plan predicted again but a live source did NOT corroborate — stay retired. */
+  stillRetired: ReadonlyArray<RetiredParcelNodeStillRetired>;
+}
+
+/**
+ * Apply live corroboration to {@link reviewRetiredParcelNodes}'s candidates.
+ *
+ * Pure and synchronous on purpose: the live fetch (BCAD, or whatever per-county source
+ * exists) happens once in the caller and is handed in as a plain confirmed/not-confirmed
+ * map, so THIS decision — which candidates actually get reactivated — is unit-testable
+ * against fixtures instead of against a live endpoint. This is the `77293` guard: a
+ * candidate absent from `liveCurrency` or mapped `false` stays retired, however
+ * confidently the internal plan re-predicted it.
+ */
+export function decideRetiredParcelNodeReactivations(
+  review: RetiredParcelNodeReview,
+  liveCurrency: ReadonlyMap<string, boolean>,
+): RetiredParcelNodeReviewVerdict {
+  const reactivate: RetiredParcelNodeReactivation[] = [];
+  const stillRetired: RetiredParcelNodeStillRetired[] = [];
+  for (const candidate of review.candidates) {
+    if (liveCurrency.get(candidate.parcelNodeId) === true) {
+      reactivate.push({
+        parcelNodeId: candidate.parcelNodeId,
+        reactivatedReason:
+          `P-212 repair: parcel is present in the current plan for county ${review.countyFips} and ` +
+          "confirmed live at the county's own cadastral source; the prior retirement " +
+          `(${candidate.priorRetiredAt ?? "unknown time"}, reason: ${candidate.priorRetiredReason ?? "unknown"}) is reversed`,
+      });
+    } else {
+      stillRetired.push({
+        parcelNodeId: candidate.parcelNodeId,
+        reason:
+          `P-212 review: present in the current plan for county ${review.countyFips} but NOT ` +
+          "confirmed live at the county's own cadastral source; retirement stands pending stronger evidence",
+      });
+    }
+  }
+  return { countyFips: review.countyFips, reactivate, stillRetired };
 }

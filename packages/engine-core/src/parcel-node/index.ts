@@ -27,11 +27,18 @@ export {
 
 export {
   assertNoActiveOrphans,
+  decideRetiredParcelNodeReactivations,
   reconcileCountyParcelNodes,
+  reviewRetiredParcelNodes,
   type CountyReconcilePlan,
   type OrphanRetirementVerdict,
   type ParcelNodeOrphan,
   type ParcelNodeSurvivor,
+  type RetiredParcelNodeReactivation,
+  type RetiredParcelNodeReview,
+  type RetiredParcelNodeReviewCandidate,
+  type RetiredParcelNodeReviewVerdict,
+  type RetiredParcelNodeStillRetired,
   type StoredParcelNodeRow,
 } from "./reconcile-county-parcel-nodes.js";
 

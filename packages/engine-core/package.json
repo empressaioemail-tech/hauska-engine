@@ -110,6 +110,7 @@
     "preflight-and-report": "tsx scripts/preflight-and-report.mjs",
     "cert-grade-and-report": "tsx scripts/cert-grade-and-report.mjs",
     "write-parcel-node-county": "tsx scripts/write-parcel-node-county.mjs",
+    "review-retired-parcel-nodes": "tsx scripts/review-retired-parcel-nodes.mjs",
     "write-cad-parcel-roll-county": "tsx scripts/write-cad-parcel-roll-county.mjs",
     "atoms-writer-job": "tsx scripts/atoms-writer-job.mjs",
     "write-land-use-fact-county": "tsx scripts/write-land-use-fact-county.mjs",
