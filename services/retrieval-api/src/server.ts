@@ -505,6 +505,13 @@ export function buildApp(options: ServerOptions = {}): Hono {
    * decide serve state before committing to any one parcel's `/record`
    * fetch. A dedicated lookup, reusing the exact same `loadGateVerdict`
    * this service's own `/record` route already uses per rail.
+   *
+   * The verdict string is returned VERBATIM, including the factory's
+   * `excluded-*` kinds (P-293 remainder): this route is the hop LDT's
+   * `parcelGateVerdictRead.ts` reads, and collapsing a recognised string
+   * here made LDT's own widening unnecessary-looking. `null` means no
+   * usable verdict — a missing row, an unreadable store, or a string
+   * outside the pinned vocabulary (which is logged before it is dropped).
    */
   app.get("/parcel-record-gate-verdict/:countyFips/:railKey", async (c) => {
     const countyFips = c.req.param("countyFips");
