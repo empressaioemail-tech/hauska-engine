@@ -341,7 +341,18 @@ describe("emitPdfFeasibility", () => {
         zoning: { district: "R-6" },
         floodZone: { honestUnavailable: true, reason: "sandbox has no network egress" },
         geometrySourceRef: "txgio-parcel:48029:105129:stratmap25-landparcels_48029_2025",
-        envelopeOutcome: { kind: "buildable", areaSqFt: atomAreaSqFt, atomDid: atomRef },
+        envelopeOutcome: {
+          kind: "buildable",
+          areaSqFt: atomAreaSqFt,
+          atomDid: atomRef,
+          // P-261 / A-180: atom-backing alone no longer permits the figure —
+          // the atom must be VERIFIED. This test's subject is P-159's
+          // one-figure-per-document rule, so its fixture supplies the
+          // verification the production path reads off the atom
+          // (`resolveEnvelopeOutcome`); the refusal case for an atom WITHOUT
+          // the marker is `p261-verified-figure-decode-probe.test.ts`.
+          depthWarmPromoted: true,
+        },
       });
       expect(sitePlan.summary.printedBuildable).toEqual({ kind: "atom", areaSqFt: atomAreaSqFt, atomRef });
 

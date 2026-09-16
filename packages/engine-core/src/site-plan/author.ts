@@ -43,6 +43,7 @@ import {
   type ZoningSummaryInput,
 } from "./site-model.js";
 import { footprintsInputFromAtoms, type SitePlanFootprintsInput } from "./footprint-layer.js";
+import { isDepthWarmPromotedAtom } from "./envelope-promotion.js";
 import {
   notSpecifiedAxesFromSetbackTable,
   resolveNotSpecifiedAxes,
@@ -175,8 +176,18 @@ async function resolveEnvelopeOutcome(
   // returning it bare would leave the composer unable to tell "this outcome came
   // from a real persisted atom" from "this outcome was synthesized". Thread the
   // atom's own DID through on the one branch that can print a figure (Ruling B).
+  //
+  // P-261 / A-180: the atom's VERIFICATION state is read here, at the one place
+  // the atom is loaded, and travels beside the DID. `.outcome` is the atom's own
+  // bare `kind`/`areaSqFt` union and carries no provenance, so a composer that
+  // only saw `.outcome` could not tell a depth-warm-promoted envelope from a cold
+  // derive — which is exactly how a cold-derived figure reached the cover.
   return envelope.outcome.kind === "buildable"
-    ? { ...envelope.outcome, atomDid: envelope.atomDid }
+    ? {
+        ...envelope.outcome,
+        atomDid: envelope.atomDid,
+        depthWarmPromoted: isDepthWarmPromotedAtom(envelope),
+      }
     : envelope.outcome;
 }
 

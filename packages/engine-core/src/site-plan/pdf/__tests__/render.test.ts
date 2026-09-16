@@ -224,6 +224,12 @@ describe("emitPdfSitePlan", { timeout: 60_000 }, () => {
         kind: "buildable",
         areaSqFt: 4200,
         atomDid: "did:hauska:buildable-envelope:48029:105129:1",
+        // P-261 / A-180: the figure prints only from a VERIFIED atom. This
+        // test's subject is the rendered callout, so the fixture carries the
+        // promotion the production path reads off the stored atom; the
+        // unpromoted refusal is
+        // `p261-verified-figure-decode-probe.test.ts`.
+        depthWarmPromoted: true,
       },
     });
     expect(model.summary.printedBuildable).toEqual({
