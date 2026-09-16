@@ -148,3 +148,55 @@ describe("site-plan setback gate", () => {
     expect(sideProv?.notSpecified).toBe(true);
   });
 });
+
+describe("site-plan export job error classification (P-244a)", () => {
+  beforeEach(() => {
+    vi.mocked(authorParcelSitePlanExport).mockClear();
+  });
+
+  it("classifies a DXF-worker timeout as dxf_emission_failed, not compose_timeout", async () => {
+    // Reproduces the live 2026-09-16 failure on 48021:34049: the standalone
+    // route's post-compose DXF emission step timed out (Cloud Run's default
+    // CPU throttling on detached/background work after P-240 -- see the
+    // P-244a close). The shared composeSitePlanModelForParcel step this
+    // author call wraps never ran long here; the classifier must not say it
+    // did.
+    vi.mocked(authorParcelSitePlanExport).mockRejectedValueOnce(
+      new Error("DXF site-plan emission failed: dxf worker timed out"),
+    );
+    const storage = new InMemoryStorage();
+    const app = buildParcelTerrainRoutes(
+      { async resolve() { return null; } },
+      storage,
+    );
+    const parcelId = "48021:34049";
+    const refreshRes = await app.request(
+      `/${parcelId}/site-plan-export/refresh`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+    );
+    expect(refreshRes.status).toBe(202);
+    const settled = await waitForJobSettled(app, parcelId);
+    expect(settled.state).toBe("failed");
+    expect(settled.errorClass).toBe("dxf_emission_failed");
+  });
+
+  it("still classifies an IFC-worker timeout as ifc_emission_failed (unchanged)", async () => {
+    vi.mocked(authorParcelSitePlanExport).mockRejectedValueOnce(
+      new Error("IFC site-plan emission failed: ifc worker timed out"),
+    );
+    const storage = new InMemoryStorage();
+    const app = buildParcelTerrainRoutes(
+      { async resolve() { return null; } },
+      storage,
+    );
+    const parcelId = "48021:34050";
+    const refreshRes = await app.request(
+      `/${parcelId}/site-plan-export/refresh`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+    );
+    expect(refreshRes.status).toBe(202);
+    const settled = await waitForJobSettled(app, parcelId);
+    expect(settled.state).toBe("failed");
+    expect(settled.errorClass).toBe("ifc_emission_failed");
+  });
+});

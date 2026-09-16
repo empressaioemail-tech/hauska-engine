@@ -400,6 +400,14 @@ export function buildParcelTerrainRoutes(
     const message = error instanceof Error ? error.message : String(error);
     if (/geometry|boundary ring/i.test(message)) return "geometry_unavailable";
     if (/ifc site-plan emission failed/i.test(message)) return "ifc_emission_failed";
+    // P-244a: this used to fall through to the generic /timed out/ check below
+    // and land on "compose_timeout" — which reads as the shared, composed-path
+    // -symmetric `composeSitePlanModelForParcel` step being slow/broken. It
+    // isn't: DXF emission (`emitDxfSitePlan`/`runDxfWorker`) runs only after
+    // compose finishes, and only on this standalone route -- the composed
+    // feasibility path never calls it. Naming it separately, mirroring
+    // ifc_emission_failed, stops that misattribution.
+    if (/dxf site-plan emission failed/i.test(message)) return "dxf_emission_failed";
     if (/timed out|timeout/i.test(message)) return "compose_timeout";
     return "compose_failed";
   }
