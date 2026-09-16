@@ -23,7 +23,20 @@ import type { DischargePointResolver, NamedDischargePoint } from "./discharge-po
  * while staying a real discriminated union (not a generic Maybe<T>). */
 export type FeasibilityFactState<T> =
   | ({ status: "present"; sourceCitation?: string; asOfIso?: string; consequence?: string } & T)
-  | { status: "absent"; kind: AbsenceKind; reason: string; consequence?: string };
+  | {
+      status: "absent";
+      kind: AbsenceKind;
+      reason: string;
+      consequence?: string;
+      /** D5 (P-222): a `clear` (verified-absence) finding is a checked source's
+       * own claim and carries the SAME provenance a present fact would — its
+       * vintage and citation are what makes "checked and clear" a stronger
+       * statement than "we didn't look". Optional because most absence kinds
+       * (blocked-at-source, out-of-scope, failed-this-run) have no source that
+       * ran to cite. */
+      sourceCitation?: string;
+      asOfIso?: string;
+    };
 
 /**
  * WHICH KIND OF NOTHING was found (P-120 content revision, R-04).
@@ -92,8 +105,16 @@ export function absent<T extends object>(
   kind: AbsenceKind,
   reason: string,
   consequence?: string,
+  provenance?: { sourceCitation?: string; asOfIso?: string },
 ): FeasibilityFactState<T> {
-  return { status: "absent", kind, reason, ...(consequence ? { consequence } : {}) };
+  return {
+    status: "absent",
+    kind,
+    reason,
+    ...(consequence ? { consequence } : {}),
+    ...(provenance?.sourceCitation ? { sourceCitation: provenance.sourceCitation } : {}),
+    ...(provenance?.asOfIso ? { asOfIso: provenance.asOfIso } : {}),
+  };
 }
 
 /**
@@ -249,10 +270,41 @@ export interface UtilityWhoServesFacts {
   holders: ReadonlyArray<{
     serviceKind: "water" | "sewer" | "electric" | "water-district";
     territoryName: string | null;
+    /** Texas PUC Certificate of Convenience and Necessity number, when the
+     * Hauska retrieval reader's `utilityService` rail names one (P-222 D7).
+     * Absent for a HIFLD-only electric read, which has no CCN of its own. */
+    ccnNo?: string;
+    /** The CCN's own status text (e.g. "Commission Approved", "NOT
+     * AVAILABLE") — carried verbatim, never interpreted into a boolean. */
+    ccnStatus?: string;
   }>;
   /** Always carried when measured — a territory holder is never a tap,
    * capacity, or extension commitment. */
   residual: string;
+}
+
+// ── overlay districts (P-222 D8) ────────────────────────────────────────
+export interface OverlayDistrictsFacts {
+  districts: ReadonlyArray<{
+    name: string;
+    cityName?: string;
+    description?: string;
+    developmentPattern?: string;
+  }>;
+}
+
+// ── reader parcel area, second lot-area figure (P-222 D11) ─────────────
+// A SECOND lot-area figure, from the Hauska retrieval reader's own
+// PostGIS `ST_Area(geography)` computation over the county's parcel
+// fragments — independent of this report's own ring-shoelace `lotAreaSqFt`
+// (`site-model.ts`). Never used in place of `lotAreaSqFt` for this report's
+// own coverage/buildable-percentage math (which must keep using the SAME
+// ring the buildable envelope was offset from); carried only so the two can
+// be reconciled on the page when they disagree, per the dispatch's own
+// "if they must differ, the document must say so" rule.
+export interface ReaderParcelAreaFacts {
+  sqFt: number;
+  method: string;
 }
 
 /** Injected resolver for the who-serves read — mirrors this codebase's

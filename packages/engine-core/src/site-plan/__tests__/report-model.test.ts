@@ -501,12 +501,13 @@ describe("composeParcelReportFacts: behavior preserved from composeFeasibilityMo
       geometry: { status: "present", model: sitePlan },
       drainage: NO_DRAINAGE,
     });
-    // absent: parcelOwnership, flood, specialDistricts, wellsPipelines, utilities, footprint, drainage = 7
+    // absent: parcelOwnership, flood, specialDistricts, wellsPipelines, utilities, overlayDistricts, footprint, drainage = 8
     // always: jurisdiction, hoa = 2
-    expect(model.package.openItems.length).toBe(9);
+    expect(model.package.openItems.length).toBe(10);
     expect(model.package.openItems.map((i) => i.section)).toContain("hoa");
     expect(model.package.openItems.map((i) => i.section)).toContain("jurisdiction");
     expect(model.package.openItems.map((i) => i.section)).toContain("drainage");
+    expect(model.package.openItems.map((i) => i.section)).toContain("overlayDistricts");
     // terrain is derived entirely from geometry and never gets its own item.
     expect(model.package.openItems.map((i) => i.section)).not.toContain("terrain");
   });
@@ -1019,5 +1020,127 @@ describe("R-06: utilities' missing-input case is out-of-scope, never failed-this
     if (model.facts.utilities.status === "absent") {
       expect(model.facts.utilities.kind).toBe("blocked-at-source");
     }
+  });
+});
+
+describe("P-222 D11: lot-area reconciliation", () => {
+  it("names BOTH figures and the gap when the reader's parcelAreaSqFt disagrees with this report's own ring-derived lotAreaSqFt", async () => {
+    const sitePlan = buildSitePlanModel();
+    const printedLotAreaSqFt = sitePlan.summary.lotAreaSqFt;
+    const readerSqFt = printedLotAreaSqFt - 1000; // well past the 25 sq ft tolerance
+    const fakeReader = {
+      fetchRecord: async () => ({
+        ok: true as const,
+        record: {
+          parcelNodeId,
+          placeKey: parcelNodeId,
+          countyFips: "48029",
+          railRegistrySha: "sha",
+          readAt: "2026-09-15T00:00:00.000Z",
+          rails: {
+            parcelAreaSqFt: {
+              cell: { kind: "value", value: readerSqFt },
+              gate: { verdict: null, evaluatedAt: null },
+              serve: "record" as const,
+              atom: null,
+              atomBacked: false,
+              rendering: null,
+              companions: [],
+            },
+          },
+          refused: null,
+        },
+      }),
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: { status: "present", model: sitePlan },
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader,
+    });
+    expect(model.facts.readerParcelArea).toMatchObject({ status: "present", sqFt: readerSqFt });
+
+    const note = model.package.dataQuality.supersededNotes.find((n) => n.startsWith("Lot area:"));
+    expect(note).toBeDefined();
+    expect(note).toContain(Math.round(printedLotAreaSqFt).toLocaleString("en-US"));
+    expect(note).toContain(readerSqFt.toLocaleString("en-US", { maximumFractionDigits: 2 }));
+    // Coverage math on THIS document must keep using the report's own figure —
+    // the reconciliation note discloses the gap, it never silently swaps the
+    // basis coverage/buildable-percentage math already depends on.
+    expect(model.geometry.status === "present" && model.geometry.model.summary.lotAreaSqFt).toBe(printedLotAreaSqFt);
+  });
+
+  it("adds no note when the two figures agree within tolerance", async () => {
+    const sitePlan = buildSitePlanModel();
+    const fakeReader = {
+      fetchRecord: async () => ({
+        ok: true as const,
+        record: {
+          parcelNodeId,
+          placeKey: parcelNodeId,
+          countyFips: "48029",
+          railRegistrySha: "sha",
+          readAt: "2026-09-15T00:00:00.000Z",
+          rails: {
+            parcelAreaSqFt: {
+              cell: { kind: "value", value: sitePlan.summary.lotAreaSqFt },
+              gate: { verdict: null, evaluatedAt: null },
+              serve: "record" as const,
+              atom: null,
+              atomBacked: false,
+              rendering: null,
+              companions: [],
+            },
+          },
+          refused: null,
+        },
+      }),
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: { status: "present", model: sitePlan },
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader,
+    });
+    expect(model.package.dataQuality.supersededNotes.find((n) => n.startsWith("Lot area:"))).toBeUndefined();
+  });
+});
+
+describe("P-222 D11: pipelineFact — a present wells/pipelines finding gets a 'what this means' row", () => {
+  it("attaches a consequence when a well or pipeline is genuinely on file, not only when absent", async () => {
+    const wellAtom = {
+      entityType: "well-fact" as const,
+      atomDid: "well_1",
+      parcelNodeId,
+      wellStatus: "active",
+      wellType: "public water supply",
+      reasoningChain: { reasoningKind: "observed" as const },
+      sourceTier: "tceq" as const,
+      accessPolicy: "public-free" as const,
+      sourceCitation: "TCEQ",
+      extractedAt: "2026-08-01T00:00:00Z",
+      verificationStatus: "machine" as const,
+      sourceAdapter: "test",
+      evaluatedAt: "2026-08-01T00:00:00Z",
+      atomTier: "data" as const,
+      entityId: parcelNodeId,
+      jurisdictionTenant: "property-spine",
+      fetchedAt: "2026-08-01T00:00:00Z",
+      sourceUrl: "",
+      contentHash: "",
+      status: "active" as const,
+    } as unknown as PropertyAtomInstance;
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([wellAtom]),
+      geometry: { status: "absent", reason: "not needed for this fixture" },
+      drainage: NO_DRAINAGE,
+    });
+    expect(model.facts.wellsPipelines.status).toBe("present");
+    if (model.facts.wellsPipelines.status !== "present") throw new Error("unreachable");
+    expect(model.facts.wellsPipelines.consequence).toBeTruthy();
+    expect(model.facts.wellsPipelines.consequence).toContain("well record");
   });
 });

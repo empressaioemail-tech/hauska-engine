@@ -35,6 +35,8 @@ import {
   type WellsPipelinesFacts,
   type TerrainFacts,
   type UtilityWhoServesFacts,
+  type OverlayDistrictsFacts,
+  type ReaderParcelAreaFacts,
   type WhoServesResolver,
   type HoaFacts,
   type FootprintFacts,
@@ -60,6 +62,9 @@ import {
   recordCityLimitsDisposition,
   recordScalarNumber,
   recordSpecialDistrictNames,
+  recordUtilityService,
+  recordOverlayDistricts,
+  recordParcelAreaSqFt,
   type ParcelRecordResponse,
   type RecordReaderClient,
 } from "./parcel-record-reader-client.js";
@@ -179,6 +184,8 @@ export interface ParcelReportFacts {
   wellsPipelines: FeasibilityFactState<WellsPipelinesFacts>;
   terrain: FeasibilityFactState<TerrainFacts>;
   utilities: FeasibilityFactState<UtilityWhoServesFacts>;
+  overlayDistricts: FeasibilityFactState<OverlayDistrictsFacts>;
+  readerParcelArea: FeasibilityFactState<ReaderParcelAreaFacts>;
   hoa: HoaFacts;
   footprint: FeasibilityFactState<FootprintFacts>;
   dischargePoint: FeasibilityFactState<DischargePointFacts>;
@@ -265,6 +272,7 @@ const FIXED_ACTION_SENTENCES: Record<string, string> = {
   specialDistricts: "Confirm special-district membership with the county tax office.",
   wellsPipelines: "Confirm well and pipeline proximity with a site survey.",
   utilities: "Request a service-availability letter from the listed utility before assuming capacity.",
+  overlayDistricts: "Confirm overlay-district membership and its standards with the city before design.",
   footprint: "Confirm existing structures and conformance with a site survey.",
   drainage: "Order a parcel-scoped drainage study before relying on flow or ponding conclusions for this parcel.",
 };
@@ -427,6 +435,7 @@ function composePackageLayer(model: Omit<ParcelReportModel, "package">): Package
     ["specialDistricts", model.facts.specialDistricts],
     ["wellsPipelines", model.facts.wellsPipelines],
     ["utilities", model.facts.utilities],
+    ["overlayDistricts", model.facts.overlayDistricts],
     ["footprint", model.facts.footprint],
     ["drainage", model.drainage],
   ];
@@ -449,6 +458,33 @@ function composePackageLayer(model: Omit<ParcelReportModel, "package">): Package
         )}. Both are shown; neither is discarded (P152-RAILS item 7 — not resolved here).`
       : null;
 
+  // D11 (P-222): "Lot area has two canonical values" -- this report's own
+  // ring-derived figure (used for every coverage/buildable-percentage
+  // calculation on this document, unchanged) and the retrieval reader's
+  // independently-derived ST_Area figure. Never silently pick one when they
+  // disagree beyond ring/precision noise: name both and the gap, per the
+  // dispatch's own "if they must differ, the document must say so" rule.
+  const LOT_AREA_RECONCILE_TOLERANCE_SQFT = 25;
+  const readerParcelAreaDisagreement =
+    model.geometry.status === "present" && model.facts.readerParcelArea.status === "present"
+      ? (() => {
+          const printed = model.geometry.model.summary.lotAreaSqFt;
+          const reader = model.facts.readerParcelArea.sqFt;
+          const gap = Math.abs(printed - reader);
+          if (gap <= LOT_AREA_RECONCILE_TOLERANCE_SQFT) return null;
+          // Matches this file's established Math.round(x).toLocaleString("en-US")
+          // idiom (composeVerdict, improvementEvidence) for the two whole-sq-ft
+          // figures; the reader's own figure keeps its 2-decimal PostGIS
+          // precision deliberately, since that precision is the point of citing
+          // ST_Area separately at all.
+          return (
+            `Lot area: this report's own boundary-ring measurement reads ${Math.round(printed).toLocaleString("en-US")} sq ft ` +
+            `(used for every coverage and buildable-area percentage on this document); the Hauska retrieval reader's ${model.facts.readerParcelArea.method} ` +
+            `reads ${reader.toLocaleString("en-US", { maximumFractionDigits: 2 })} sq ft. The ${Math.round(gap).toLocaleString("en-US")} sq ft gap is shown rather than rounded off; verify against a survey before relying on either figure for a coverage calculation near a limit.`
+          );
+        })()
+      : null;
+
   const dataQuality: DataQualityNote = {
     supersededNotes: [
       ...(model.facts.flood.status === "present" && model.drainage.status === "present"
@@ -457,6 +493,7 @@ function composePackageLayer(model: Omit<ParcelReportModel, "package">): Package
           ]
         : []),
       ...(specialDistrictsDisagreement ? [specialDistrictsDisagreement] : []),
+      ...(readerParcelAreaDisagreement ? [readerParcelAreaDisagreement] : []),
     ],
   };
 
@@ -685,12 +722,20 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
       // An absence-carrying row means the source RAN and found nothing. No row
       // at all means nothing ever looked. Same empty list, opposite meanings,
       // and collapsing them is the absent/zero/unmeasured error directly.
-      const checked = atoms.some((a) => a.entityType === "special-district-fact" && a.absence);
-      return checked
+      // D5 (P-222): capture the actual absence ATOM, not merely its existence
+      // — its own sourceCitation/extractedAt is the vintage a "checked and
+      // clear" finding needs to read as a finding rather than a gap. Losing
+      // it here (the old `.some(...)`) is exactly the "facet has the data and
+      // the report does not ask" defect class, one section over from D7/D8.
+      const checkedAtom = atoms.find(
+        (a): a is SpecialDistrictFactAtomInstance => a.entityType === "special-district-fact" && Boolean(a.absence),
+      );
+      return checkedAtom
         ? absent(
             "clear",
             "Checked against every mapped special-district boundary; this parcel falls outside all of them.",
             "No MUD, PID or special-assessment district applies, so no district levy attaches to this parcel.",
+            { sourceCitation: checkedAtom.sourceCitation, asOfIso: checkedAtom.extractedAt },
           )
         : absent(
             "blocked-at-source",
@@ -708,14 +753,18 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
     const wells = atoms.filter((a): a is WellFactAtomInstance => a.entityType === "well-fact" && !a.absence);
     const pipeline = atoms.find((a): a is RrcPipelineFactAtomInstance => a.entityType === "rrc-pipeline-fact" && !a.absence);
     if (wells.length === 0 && !pipeline) {
-      const checked = atoms.some(
+      // D5 (P-222): .find(), not .some() -- the same fix specialDistricts
+      // got, so a checked-and-clear finding here can carry its own atom's
+      // vintage too, not just specialDistricts'.
+      const checkedAtom = atoms.find(
         (a) => (a.entityType === "well-fact" || a.entityType === "rrc-pipeline-fact") && a.absence,
       );
-      return checked
+      return checkedAtom
         ? absent(
             "clear",
             "Checked against the state well and pipeline records; none intersect this parcel.",
             "No plugging, offset or pipeline-easement constraint applies from these records.",
+            { sourceCitation: checkedAtom.sourceCitation, asOfIso: checkedAtom.extractedAt },
           )
         : absent(
             "blocked-at-source",
@@ -723,24 +772,45 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
             "Confirm well and pipeline proximity with a site survey.",
           );
     }
-    return present<WellsPipelinesFacts>({
-      wells: wells.map((w) => ({ wellStatus: w.wellStatus, wellType: w.wellType, orphaned: w.orphaned })),
-      nearPipeline: pipeline?.nearPipeline,
-      nearestPipelineDistanceMeters: pipeline?.nearestPipelineDistanceMeters,
-      pipelineOperatorName: pipeline?.operatorName,
-    });
+    // D11 (P-222): the absent branch above always attaches a `consequence`;
+    // this present branch used to attach none at all, so a parcel where a
+    // well or pipeline record genuinely exists silently lost its own
+    // "what this means" row while an absent finding always got one —
+    // the same fact family surfacing through two paths that disagreed.
+    const consequenceParts: string[] = [];
+    if (wells.length > 0) {
+      consequenceParts.push(
+        `${wells.length} well record${wells.length === 1 ? "" : "s"} on file; confirm plugging status and any setback with the state or a site survey before design.`,
+      );
+    }
+    if (pipeline?.nearPipeline) {
+      consequenceParts.push(
+        "A pipeline is on file near this parcel; confirm the easement and any offset requirement with the operator before design.",
+      );
+    }
+    return present<WellsPipelinesFacts>(
+      {
+        wells: wells.map((w) => ({ wellStatus: w.wellStatus, wellType: w.wellType, orphaned: w.orphaned })),
+        nearPipeline: pipeline?.nearPipeline,
+        nearestPipelineDistanceMeters: pipeline?.nearestPipelineDistanceMeters,
+        pipelineOperatorName: pipeline?.operatorName,
+      },
+      { consequence: consequenceParts.join(" ") || undefined },
+    );
   });
 
   const footprint = safeSection<FootprintFacts>("footprint", () => {
     if (atomsFetchFailureReason) return absent("failed-this-run", atomsFetchFailureReason);
     const footprints = atoms.filter((a): a is BuildingFootprintAtomInstance => a.entityType === "building-footprint" && !a.absence);
     if (footprints.length === 0) {
-      const checked = atoms.some((a) => a.entityType === "building-footprint" && a.absence);
-      return checked
+      // D5 (P-222): .find(), not .some() -- see wellsPipelines' identical fix above.
+      const checkedAtom = atoms.find((a) => a.entityType === "building-footprint" && a.absence);
+      return checkedAtom
         ? absent(
             "clear",
             "Checked against the building-footprint source; no structure is mapped on this parcel.",
             "The site reads as unimproved, so redevelopment is unlikely to require demolition.",
+            { sourceCitation: checkedAtom.sourceCitation, asOfIso: checkedAtom.extractedAt },
           )
         : absent(
             "blocked-at-source",
@@ -768,7 +838,74 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   });
 
   const utilities = await safeSectionAsync<UtilityWhoServesFacts>("utilities", async () => {
-    if (!options.whoServes || !options.centroid) {
+    // D7 (P-222): the Hauska retrieval reader's `utilityService` rail names a
+    // real CCN holder (Certificate of Convenience and Necessity) for water,
+    // sewer and electric independently -- a more specific answer than the
+    // HIFLD electric-only read below, and the one the substrate had all
+    // along without this composer ever asking for it. Reader wins per
+    // service type (the same precedent P152-RAILS already set for
+    // specialDistricts/cityLimits); HIFLD supplies electric only when the
+    // reader itself has no electric holder on file.
+    const readerUtility = recordUtilityService(record?.rails.utilityService);
+
+    // Called lazily, and its own failure never sinks an already-resolved
+    // reader answer: HIFLD is only consulted when the reader has no electric
+    // holder of its own to offer, so an unrelated HIFLD outage cannot turn a
+    // fully-answered utilities section into failed-this-run.
+    let hifldResult: Awaited<ReturnType<NonNullable<typeof options.whoServes>["resolve"]>> | undefined;
+    const resolveHifld = async () => {
+      if (hifldResult !== undefined) return hifldResult;
+      if (options.whoServes && options.centroid) {
+        hifldResult = await options.whoServes.resolve(options.centroid);
+      }
+      return hifldResult;
+    };
+
+    if (readerUtility) {
+      const holders: Array<UtilityWhoServesFacts["holders"][number]> = [];
+      const uncovered: string[] = [];
+      const addReaderHolder = (serviceKind: "water" | "sewer" | "electric") => {
+        const holder = readerUtility[serviceKind];
+        if (holder) {
+          holders.push({
+            serviceKind,
+            territoryName: holder.utility,
+            ccnNo: holder.ccnNo,
+            ...(holder.status ? { ccnStatus: holder.status } : {}),
+          });
+        } else {
+          uncovered.push(serviceKind);
+        }
+      };
+      addReaderHolder("water");
+      addReaderHolder("sewer");
+      if (readerUtility.electric) {
+        addReaderHolder("electric");
+      } else {
+        const hifld = await resolveHifld();
+        const hifldElectric = hifld?.status === "measured" ? hifld.holders.find((h) => h.serviceKind === "electric") : undefined;
+        if (hifldElectric) holders.push(hifldElectric);
+        else uncovered.push("electric");
+      }
+      const residual =
+        uncovered.length > 0
+          ? `No CCN or territory holder is on file for ${uncovered.join(" or ")} service at this parcel. Confirm directly with the county or utility before assuming capacity.`
+          : "A CCN or territory holder is never a tap, capacity, or extension commitment. Confirm capacity directly with the utility before assuming service.";
+      return present<UtilityWhoServesFacts>(
+        { holders, residual },
+        {
+          sourceCitation: "parcel_record (Hauska retrieval reader, utility CCN territory)",
+          // Without this, dossier-author.ts's X-ray rendering (which reads
+          // utilities.asOfIso as its own row's vintage) would silently print
+          // no date for every reader-sourced holder, a regression from the
+          // HIFLD-only path's asOf date.
+          asOfIso: record?.readAt,
+        },
+      );
+    }
+
+    const hifld = await resolveHifld();
+    if (!hifld) {
       // Not "failed-this-run": nothing was reached and nothing failed. A
       // missing whoServes resolver is a caller decision, the same shape as
       // an omitted factResolvers entry (notRequested() below) -- previously
@@ -780,19 +917,65 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
         "This family can be produced on request; nothing about this parcel prevented it.",
       );
     }
-    const result = await options.whoServes.resolve(options.centroid);
-    return result.status === "measured"
-      ? present<UtilityWhoServesFacts>({ holders: result.holders, residual: result.residual }, { asOfIso: result.asOf ?? undefined })
+    return hifld.status === "measured"
+      ? present<UtilityWhoServesFacts>({ holders: hifld.holders, residual: hifld.residual }, { asOfIso: hifld.asOf ?? undefined })
       : absent(
           // A resolver that threw/timed out failed THIS run, ours; a
           // resolver that ran cleanly and found no coverage is an honest
           // declared absence. Collapsing both into blocked-at-source (the
           // previous unconditional behavior) would misreport a live outage
           // as a permanent finding about the parcel.
-          result.kind ?? "blocked-at-source",
-          result.basis,
+          hifld.kind ?? "blocked-at-source",
+          hifld.basis,
           "Territory holders could not be resolved. Request a service-availability letter before assuming capacity.",
         );
+  });
+
+  // D8 (P-222): the Hauska retrieval reader's `overlayDistricts` rail names a
+  // real overlay (e.g. a historic/character district) with its own ordinance
+  // text -- a new fact family this composer never asked for before this
+  // lane, distinct from the base zoning district already read into
+  // `model.geometry.model.summary.zoningDistrict`.
+  const overlayDistricts = safeSection<OverlayDistrictsFacts>("overlayDistricts", () => {
+    const result = recordOverlayDistricts(record?.rails.overlayDistricts);
+    if (!result) {
+      // Never checked -- distinct from "checked, genuinely zero" below (the
+      // same clear-vs-blocked-at-source distinction D5 fixed for
+      // specialDistricts; collapsing them here would reintroduce it).
+      return absent(
+        "blocked-at-source",
+        "No overlay-district source is wired for this parcel's jurisdiction yet.",
+        "An overlay district, if one applies, would be an additional constraint beyond the base zoning district above. Confirm with the city before design.",
+      );
+    }
+    if (result.districts.length === 0) {
+      return absent(
+        "clear",
+        "Checked against every mapped overlay district; none applies to this parcel.",
+        "No overlay district adds a constraint beyond the base zoning district above.",
+      );
+    }
+    return present<OverlayDistrictsFacts>(
+      { districts: result.districts },
+      { sourceCitation: "parcel_record (Hauska retrieval reader, overlay-districts rail)" },
+    );
+  });
+
+  // D11 (P-222): a SECOND, independently-derived lot-area figure from the
+  // reader's own ST_Area(geography) computation -- carried purely for
+  // reconciliation against this report's own ring-derived `lotAreaSqFt`
+  // (see composePackageLayer's readerParcelAreaDisagreement note). Never
+  // substituted for `lotAreaSqFt` in this report's own coverage math, which
+  // must keep using the same ring the buildable envelope was offset from.
+  const readerParcelArea = safeSection<ReaderParcelAreaFacts>("readerParcelArea", () => {
+    const sqFt = recordParcelAreaSqFt(record?.rails.parcelAreaSqFt);
+    if (sqFt === undefined) {
+      return absent("out-of-scope", "No independent parcel-area figure is on file from the retrieval reader for this parcel.");
+    }
+    return present<ReaderParcelAreaFacts>(
+      { sqFt, method: "ST_Area(geography) over the county parcel fragments (Hauska retrieval reader)" },
+      { sourceCitation: "parcel_record (Hauska retrieval reader, parcelAreaSqFt rail)" },
+    );
   });
 
   const dischargePoint = await safeSectionAsync<DischargePointFacts>("dischargePoint", async () => {
@@ -980,6 +1163,8 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
       wellsPipelines,
       terrain,
       utilities,
+      overlayDistricts,
+      readerParcelArea,
       floodplainAcreage,
       firmPanel,
       soil,

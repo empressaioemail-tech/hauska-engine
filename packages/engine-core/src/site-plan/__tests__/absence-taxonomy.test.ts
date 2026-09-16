@@ -92,6 +92,19 @@ describe("absence taxonomy: which kind of nothing", () => {
     expect(sd.consequence).toMatch(/No MUD, PID or special-assessment district applies/);
   });
 
+  it("D5 (P-222): a `clear` finding carries the CHECKING atom's own vintage/citation, not just its existence", async () => {
+    // Before this fix, report-model.ts's specialDistricts resolver used
+    // `atoms.some(...)` to detect a checked-and-clear absence row, which
+    // confirms EXISTENCE but discards the atom object itself -- so its real
+    // sourceCitation/extractedAt could never reach the report even though
+    // `absent()` now supports carrying them. `.find()` fixes that.
+    const facts = await factsWith([absenceRow("special-district-fact")]);
+    const sd = facts.facts.specialDistricts as { kind?: string; sourceCitation?: string; asOfIso?: string };
+    expect(sd.kind).toBe("clear");
+    expect(sd.sourceCitation).toBe("test fixture");
+    expect(sd.asOfIso).toBeTruthy();
+  });
+
   it("NOTHING-LOOKED is `blocked-at-source`, never `clear`", async () => {
     // Same empty lists, no absence rows at all. This is the violation case:
     // if these came back `clear`, we would be reporting an unchecked parcel as
