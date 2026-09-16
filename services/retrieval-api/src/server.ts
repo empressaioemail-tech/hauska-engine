@@ -29,6 +29,7 @@ import {
 } from "./spine-health/run-pack.js";
 import type { ParcelFactoryStore } from "./parcel-record-db.js";
 import { readParcelRecord } from "./parcel-record-reader.js";
+import type { CoverageCheckStore } from "./coverage-check.js";
 
 function isPublicHealthPath(path: string): boolean {
   return (
@@ -139,6 +140,14 @@ export interface ServerOptions {
    * calibrationOverlay.
    */
   factoryStore?: ParcelFactoryStore | null;
+  /**
+   * P-210 coverage-check backing store (locality -> county -> serving-path
+   * presence). `null` (the default) means not configured — the coverage
+   * endpoint declares a refusal rather than guessing `covered`. Resolved
+   * from OVERLAY_DATABASE_URL / CORTEX_DATABASE_URL outside buildApp, same
+   * convention as calibrationOverlay / factoryStore.
+   */
+  coverageStore?: CoverageCheckStore | null;
 }
 
 export function buildApp(options: ServerOptions = {}): Hono {
@@ -150,6 +159,7 @@ export function buildApp(options: ServerOptions = {}): Hono {
   const substrateDatabaseUrl = options.substrateDatabaseUrl;
   const overlayDatabaseUrl = options.overlayDatabaseUrl;
   const factoryStore = options.factoryStore ?? null;
+  const coverageStore = options.coverageStore ?? null;
   const startedAt = new Date().toISOString();
 
   const app = new Hono();
@@ -424,6 +434,64 @@ export function buildApp(options: ServerOptions = {}): Hono {
           errorClass: "read-failed",
           parcelNodeId,
           message: err instanceof Error ? err.message : String(err),
+        },
+        503,
+      );
+    }
+  });
+
+  /**
+   * P-210 (OPS-24) — "is this locality served by the serving path" check for
+   * the LDT-side fail-closed `find_parcel` coverage refusal (P-205). MUST be
+   * registered BEFORE `/parcel-record-gate-verdict/:countyFips/:railKey`
+   * below: that route's `countyFips`/`railKey` params are only regex-checked
+   * INSIDE its handler (400, not a routing-level constraint), so a literal
+   * `coverage/check` path has the same segment shape and would otherwise be
+   * captured by it — same convention this file already uses for `/nodes`
+   * ahead of `/nodes/:nodeId` and `/road-nodes/near-bbox` ahead of
+   * `/road-nodes/:roadNodeId/atom-chain`. Verified live (both directions) in
+   * this lane's CP2.
+   *
+   * Response is unconditionally one of three shapes (CONTRACT,
+   * `_inbox/2026-09-14_p205-coverage-refusal_CONTRACT.md`): `{status:
+   * "covered"}`, `{status: "not-covered", countyFips, countyName, state}`,
+   * or `{status: "indeterminate", reason}`. No code path here reaches
+   * covered/not-covered without a real, well-formed positive answer from
+   * `coverageStore` — every failure (DB error, timeout, connection refused,
+   * ambiguous locality, out-of-Texas, no locality signal) is indeterminate.
+   * `coverageStore.checkCoverage` itself never throws for any of those —
+   * they are all normal, well-formed `indeterminate` return values (verified
+   * live: an unreachable database, a query cancelled by
+   * `GEO_RESOLUTION_STATEMENT_TIMEOUT_MS`, and a genuinely ambiguous zip all
+   * come back 200 with a real `reason` string, which the LDT caller only
+   * reads on a 2xx). 503 is reserved for the two cases where the check
+   * itself could not even attempt to run: this service has no coverage
+   * store configured at all, or `checkCoverage` throws unexpectedly (a
+   * defect in that implementation, not an ordinary DB failure) — the
+   * `catch` below exists so even that still returns a well-formed
+   * indeterminate body instead of a bare 500.
+   */
+  app.get("/parcel-record-gate-verdict/coverage/check", async (c) => {
+    const city = c.req.query("city")?.trim() || null;
+    const state = c.req.query("state")?.trim() || null;
+    const zip = c.req.query("zip")?.trim() || null;
+    if (!coverageStore) {
+      return c.json(
+        {
+          status: "indeterminate",
+          reason: "coverage check store not configured on this service",
+        },
+        503,
+      );
+    }
+    try {
+      const verdict = await coverageStore.checkCoverage({ city, state, zip });
+      return c.json(verdict);
+    } catch (err) {
+      return c.json(
+        {
+          status: "indeterminate",
+          reason: `coverage check failed: ${err instanceof Error ? err.message : String(err)}`,
         },
         503,
       );
