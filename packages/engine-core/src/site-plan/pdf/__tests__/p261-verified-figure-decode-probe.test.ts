@@ -361,6 +361,30 @@ describe("P-261 — only a VERIFIED envelope atom prints a buildable figure", { 
     capture("p261_store_unpromoted_site_plan", bytes, decoded, excerpts(decoded, ["Buildable area"]));
   });
 
+  it("precedence: a superseded atom refuses by its own sentence, gate or no gate", () => {
+    const superseded =
+      "Buildable area withheld: the buildable-envelope atom on file was derived from setback values this study no longer follows (side, rear). Pending a re-baked envelope.";
+    const unpromoted = modelWith({
+      kind: "buildable",
+      areaSqFt: ATOM_AREA_SQ_FT,
+      atomDid: ATOM_REF,
+      supersededReason: superseded,
+    });
+    // P-219 before P-261: the more specific sentence survives, so this change
+    // cannot silently replace one refusal wording with another.
+    expect(unpromoted.summary.printedBuildable).toEqual({ kind: "refused", reason: superseded });
+    // And supersession refuses a PROMOTED atom too — the two gates are not
+    // each other's fallback.
+    const promoted = modelWith({
+      kind: "buildable",
+      areaSqFt: ATOM_AREA_SQ_FT,
+      atomDid: ATOM_REF,
+      depthWarmPromoted: true,
+      supersededReason: superseded,
+    });
+    expect(promoted.summary.printedBuildable).toEqual({ kind: "refused", reason: superseded });
+  });
+
   it("falsifier 3, narrative leg: the prose guard refuses the figure the sheets refused", () => {
     const unpromoted = modelWith({ kind: "buildable", areaSqFt: ATOM_AREA_SQ_FT, atomDid: ATOM_REF });
     const promoted = modelWith({

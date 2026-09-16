@@ -832,20 +832,29 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     envelopeSupersededReason == null &&
     !envelopeUnverified
       ? { kind: "atom", areaSqFt: warmAreaSqFt, atomRef }
-      : envelopeUnverified
+      : envelopeSupersededReason != null
         ? {
             kind: "refused",
-            // P-261 / A-180. Short and number-free — the reason renders as a
-            // chip on the summary sheet and must not carry the figure it exists
-            // to withhold.
-            reason: unverifiedReason,
+            // No figure leaks into this reason — printing either number here
+            // is the exact thing the refusal exists to prevent.
+            //
+            // P-219 BEFORE P-261 when both hold: an atom that was derived from
+            // setback law this sheet no longer follows is refused by its own,
+            // more specific sentence ("… was derived from setback values this
+            // study no longer follows … Pending a re-baked envelope"), which
+            // says everything the promotion sentence says and names the cause.
+            // Ordering it second would silently replace a P-219 sentence with a
+            // P-261 one on the same page, which is a change no falsifier asked
+            // for. Both refuse; only the sentence differs.
+            reason: envelopeSupersededReason,
           }
-        : envelopeSupersededReason != null
+        : envelopeUnverified
           ? {
               kind: "refused",
-              // No figure leaks into this reason — printing either number here
-              // is the exact thing the refusal exists to prevent.
-              reason: envelopeSupersededReason,
+              // P-261 / A-180. Short and number-free — the reason renders as a
+              // chip on the summary sheet and must not carry the figure it exists
+              // to withhold.
+              reason: unverifiedReason,
             }
           : {
               kind: "refused",
