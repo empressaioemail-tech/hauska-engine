@@ -19,6 +19,11 @@ import {
 } from "./ring-geometry.js";
 import { anyNotSpecified, conflictNote, formatSetbackSourceClause, formatSetbackSummaryLine } from "./setback-display.js";
 import {
+  composeFootprintsModel,
+  type SitePlanFootprintsInput,
+  type SitePlanFootprintsModel,
+} from "./footprint-layer.js";
+import {
   envelopeHuman,
   mapBuildableDisplay,
   type BuildableDisplayKind,
@@ -222,6 +227,13 @@ export interface ComposeSitePlanModelInputs {
    * ring shape whose own offset-basis heuristic happened to resolve). */
   envelopeOutcome?: EnvelopeOutcomeInput;
   /**
+   * P-248 — the parcel's mapped building footprints, or the footprint layer's
+   * own honest state (`footprint-layer.ts`). Optional exactly like
+   * `envelopeOutcome`: a caller that never looked supplies nothing and the sheet
+   * says the layer was not checked rather than drawing silence as vacancy.
+   */
+  footprints?: SitePlanFootprintsInput;
+  /**
    * Pre-resolved contour polylines in the local-ENU metre frame (qa/topo-
    * fidelity-1ft). When supplied, the composer draws these instead of deriving
    * contours from the DEM grid — used to serve the authoritative Bastrop 1-ft
@@ -366,6 +378,12 @@ export interface SitePlanModel {
   bboxWgs84: BboxWgs84;
   ringLocal: LocalPoint[];
   propertySegments: Array<RingSegment & { lengthFeet: number }>;
+  /**
+   * P-248 — the parcel's mapped building footprints in the SAME local-ENU frame
+   * as `ringLocal`, or the layer's honest empty state. Every sheet that draws
+   * the parcel draws these; none of them re-derives the geometry.
+   */
+  footprints: SitePlanFootprintsModel;
   setback: SitePlanSetbackModel;
   contours: ContourPolyline2d[];
   /** Contour interval used for this export (legend row text, §5). */
@@ -789,26 +807,26 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
             reason: envelopeSupersededReason,
           }
         : {
-          kind: "refused",
-          // Kept to one short line deliberately (§21 vertical-rhythm gate: this
-          // reason renders as a "kv-row" chip on the site-plan summary sheet,
-          // sized the same as every other REASON constant there).
-          //
-          // P-167 wave 5 (OPS-23 R-2/R-4). buildable-with-area / provisional's
-          // OWN buildableVocab.pdfLabel is a raw local or warm figure — it must
-          // never leak into a "refused" reason (that is the exact number this
-          // field exists to withhold). This used to be a hardcoded literal;
-          // it now reads the SAME vocabulary function the MCP's overlay
-          // reasonDisplayText already calls for the identical disposition
-          // (setbacks/geometry present, buildable-envelope atom not yet
-          // minted) — `envelopeHuman("atom_path_pending")` — so the PDF and
-          // the MCP say the identical sentence instead of two hand-typed
-          // wordings for the same honest refusal, with no figure leak.
-          reason:
-            buildableVocab.kind === "buildable-with-area" || buildableVocab.kind === "provisional"
-              ? (envelopeHuman("atom_path_pending") ?? "Withheld, setbacks unruled")
-              : buildableVocab.pdfLabel,
-        };
+            kind: "refused",
+            // Kept to one short line deliberately (§21 vertical-rhythm gate: this
+            // reason renders as a "kv-row" chip on the site-plan summary sheet,
+            // sized the same as every other REASON constant there).
+            //
+            // P-167 wave 5 (OPS-23 R-2/R-4). buildable-with-area / provisional's
+            // OWN buildableVocab.pdfLabel is a raw local or warm figure — it must
+            // never leak into a "refused" reason (that is the exact number this
+            // field exists to withhold). This used to be a hardcoded literal;
+            // it now reads the SAME vocabulary function the MCP's overlay
+            // reasonDisplayText already calls for the identical disposition
+            // (setbacks/geometry present, buildable-envelope atom not yet
+            // minted) — `envelopeHuman("atom_path_pending")` — so the PDF and
+            // the MCP say the identical sentence instead of two hand-typed
+            // wordings for the same honest refusal, with no figure leak.
+            reason:
+              buildableVocab.kind === "buildable-with-area" || buildableVocab.kind === "provisional"
+                ? (envelopeHuman("atom_path_pending") ?? "Withheld, setbacks unruled")
+                : buildableVocab.pdfLabel,
+          };
 
   const summary: SitePlanSummaryModel = {
     parcelNodeId: inputs.parcelNodeId,
@@ -835,6 +853,9 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
     bboxWgs84: inputs.bbox,
     ringLocal,
     propertySegments,
+    footprints: composeFootprintsModel(inputs.footprints, (lng, lat) =>
+      projectWgs84ToLocalEnu(lng, lat, inputs.bbox),
+    ),
     setback,
     contours,
     contourIntervalMeters: inputs.contourIntervalMeters,

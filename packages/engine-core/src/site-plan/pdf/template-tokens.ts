@@ -155,6 +155,9 @@ export const STROKE = {
   marginLeader: 0.5, // §16 · 0.13-unit neutral-500 margin leader (page pts)
   hairlineRule: 1, // full-ink header/footer rule
   rowRule: 0.6,
+  /** P-248 · mapped building footprint outline — heavier than a contour, lighter
+   * than the property line, so the parcel edge still reads first (§3). */
+  footprint: 1.1,
 } as const;
 
 /** Setback dash pattern (accent-500, dash 2.5 / 2 in template units). */

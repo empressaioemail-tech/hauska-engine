@@ -819,7 +819,12 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
           );
     }
     return present<FootprintFacts>({
-      footprints: footprints.map((f) => ({ footprintId: f.footprintId, structureRole: f.structureRole, sourceTier: f.sourceTier })),
+      footprints: footprints.map((f) => ({
+        footprintId: f.footprintId,
+        structureRole: f.structureRole,
+        sourceTier: f.sourceTier,
+        verificationStatus: f.verificationStatus,
+      })),
     });
   });
 

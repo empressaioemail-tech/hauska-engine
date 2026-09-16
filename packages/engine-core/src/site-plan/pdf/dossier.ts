@@ -281,7 +281,16 @@ export interface EmitPdfDossierOptions {
    * the whole document renumbers (P-90 item 3) — no aerial fetch, so there
    * is no aerial option here; see EmitPdfSitePlanOptions for the standalone
    * export's own aerial seam. */
-  sitePlan?: { model: SitePlanModel };
+  sitePlan?: {
+    model: SitePlanModel;
+    /**
+     * P-248 — the appended drawing's footprint legend points at the P-159
+     * contradiction treatment when the dossier's own report model says it
+     * applies. Computed by `dossier-author.ts` (which owns that model), never
+     * re-derived inside the renderer.
+     */
+    footprintAppraisalConflict?: boolean;
+  };
   /** Honest reason the site plan could not be authored (rendered on the
    * cover fine print). Ignored when `sitePlan` is present. */
   sitePlanUnavailableReason?: string;
@@ -705,6 +714,9 @@ export async function emitPdfDossier(
     ? emitPdfSitePlan(options.sitePlan.model, {
         numbering: { startAt: dossierPageCount + 1, total },
         sheets: "drawing-only",
+        ...(options.sitePlan.footprintAppraisalConflict
+          ? { footprintAppraisalConflict: true }
+          : {}),
       })
     : null;
 

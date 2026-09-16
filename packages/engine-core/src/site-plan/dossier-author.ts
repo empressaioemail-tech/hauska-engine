@@ -10,9 +10,11 @@ import {
 } from "./pdf/dossier.js";
 import {
   composeParcelReport,
+  footprintContradictsAppraisal,
   type ParcelReportModel,
   type ReadableTerrainArtifactStore,
 } from "./report-model.js";
+import { footprintVerificationLabel } from "./footprint-layer.js";
 
 /**
  * PROPERTY DOSSIER export authoring (2026-07-29; re-cut onto
@@ -166,13 +168,24 @@ export function composeXrayBrief(
 
   const footprint = model.facts.footprint;
   if (footprint.status === "present") {
+    // P-248 — the count now carries what the count alone hid: the row is a
+    // mapped polygon, not a measurement, and an ML-derived footprint has not
+    // been surveyed. The value stays the count (the sheet is an X-ray summary)
+    // and the verification word rides in the source cell beside the tier.
+    const statuses = [...new Set(footprint.footprints.map((f) => f.verificationStatus))];
+    const verification =
+      statuses.length === 1 && statuses[0]
+        ? footprintVerificationLabel(statuses[0])
+        : statuses.filter((s): s is string => !!s).length > 0
+          ? "verification status varies by structure"
+          : undefined;
     sections.push({
       id: "structures",
       title: "Structures on file",
       facts: [
         {
           label: "Mapped footprints",
-          value: String(footprint.footprints.length),
+          value: verification ? `${footprint.footprints.length} · ${verification}` : String(footprint.footprints.length),
           source: footprint.sourceCitation,
           vintage: footprint.asOfIso,
         },
@@ -281,7 +294,14 @@ export async function authorParcelPropertyDossierExport(
       liveViewUrl: options.content.liveViewUrl,
     },
     model.geometry.status === "present"
-      ? { sitePlan: { model: model.geometry.model } }
+      ? {
+          sitePlan: {
+            model: model.geometry.model,
+            // P-248 — the X-ray appends the site plan's drawing sheet, whose
+            // legend carries this; the rule stays where it already lives.
+            footprintAppraisalConflict: footprintContradictsAppraisal(model),
+          },
+        }
       : { sitePlanUnavailableReason: model.geometry.reason },
   );
 

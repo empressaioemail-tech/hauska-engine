@@ -5,6 +5,7 @@ import type { DischargePointResolver } from "./discharge-point.js";
 import type { WhoServesResolver } from "./feasibility-model.js";
 import {
   composeParcelReport,
+  footprintContradictsAppraisal,
   type ParcelReportFactResolvers,
   type ComposeParcelReportOptions,
   type ReadableTerrainArtifactStore,
@@ -226,7 +227,16 @@ export async function authorParcelFeasibilityExport(
 
   // 3) Assemble the PDF from the manifest over the composed model.
   const pdf: PdfFeasibilityResult = await emitPdfFeasibility(model, {
-    sitePlan: model.geometry.status === "present" ? { model: model.geometry.model } : undefined,
+    sitePlan:
+      model.geometry.status === "present"
+        ? {
+            model: model.geometry.model,
+            // P-248 — the one place the P-159 contradiction is known for this
+            // document, computed once by the composition layer's own predicate
+            // and handed to the drawing so the legend cannot re-derive it.
+            footprintAppraisalConflict: footprintContradictsAppraisal(model),
+          }
+        : undefined,
     sitePlanUnavailableReason: model.geometry.status === "absent" ? model.geometry.reason : undefined,
     liveViewUrl: options.liveViewUrl,
     narrativeOverride,
