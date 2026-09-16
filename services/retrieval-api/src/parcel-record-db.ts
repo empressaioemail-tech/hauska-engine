@@ -23,9 +23,25 @@
  * program county. Every query here is a point lookup on an exact
  * `place_key`, or a small bounded `= ANY(...)` over a handful of literal
  * candidate keys (see `resolvePlaceKey`), never a scan.
+ *
+ * VERDICT VOCABULARY (P-293 remainder). The set of strings
+ * `parcel_gate_verdict.verdict` may hold belongs to hauska-factory, not to
+ * this repo, so it is carried as a PINNED list in
+ * `./parcel-gate-verdict-vocabulary.ts` and every stored string is judged in
+ * exactly one place here, `resolveStoredGateVerdictKind` — shared by the SQL
+ * store and the test fixture store, so a test cannot assert behaviour
+ * production does not have. An accepted string is returned unchanged; an
+ * unrecognised one is logged loudly, once per (county, rail, string) per
+ * process, then fails closed to `null` exactly as before.
  */
 
 import postgres from "postgres";
+
+import {
+  PARCEL_GATE_VERDICT_VOCABULARY_PIN,
+  classifyParcelGateVerdictKind,
+  type ParcelGateVerdictKind,
+} from "./parcel-gate-verdict-vocabulary.js";
 
 export interface ParcelRecordCell {
   /** The decoded cell_state JSONB object, verbatim, including 'kind'. */
@@ -39,7 +55,12 @@ export interface ParcelRecordCompanionRow {
   vintage: string;
 }
 
-export type ParcelGateVerdictKind = "pass" | "refuse" | "excluded";
+/**
+ * The six-string vocabulary the factory's CHECK constraint admits (P-293
+ * remainder). Re-exported from `parcel-gate-verdict-vocabulary.ts`, which is
+ * the one copy of the list this repo consumes, rather than restated here.
+ */
+export type { ParcelGateVerdictKind };
 
 export interface ParcelGateVerdict {
   verdict: ParcelGateVerdictKind;
@@ -92,6 +113,53 @@ function zeroPaddedCandidates(countyFips: string, normalizedPropId: string): str
     out.push(`${countyFips}:${"0".repeat(pad)}${normalizedPropId}`);
   }
   return out;
+}
+
+/**
+ * Emission guard for the unrecognised-verdict warning below. A public read
+ * path must not repeat an identical line per request; the FIRST occurrence
+ * per (county, rail, raw string) per process is the finding. A new process
+ * (a redeploy, a restart) has not seen it and logs once again by design.
+ */
+const loggedUnrecognisedVerdicts = new Set<string>();
+
+/**
+ * The ONE place a stored `parcel_gate_verdict.verdict` string is judged, for
+ * both the SQL store and the test fixture store.
+ *
+ * Accepted (the pinned factory vocabulary, `ParcelGateVerdictKind`) -> the
+ * string comes back UNCHANGED, so an `excluded-*` kind reaches the caller
+ * and the `/parcel-record-gate-verdict` route instead of being collapsed.
+ * Unrecognised -> logged LOUDLY, once per (county, rail, string) per
+ * process, naming the county, the rail, the raw string and the pin, then
+ * `null` — the same fail-closed `null` a missing row and a caught read
+ * failure produce, unchanged from before this function existed. What is new
+ * is the log: the check this replaces
+ * (`row.verdict !== "pass" && row.verdict !== "refuse" && row.verdict !== "excluded"`,
+ * P-293's finding) collapsed a factory widening into silence, and the
+ * difference between "checked and refused" and "never evaluated" is exactly
+ * what the customer-facing answer turns on.
+ */
+export function resolveStoredGateVerdictKind(
+  countyFips: string,
+  railKey: string,
+  raw: string,
+): ParcelGateVerdictKind | null {
+  const classified = classifyParcelGateVerdictKind(raw);
+  if (classified.state === "accepted") return classified.kind;
+  const key = `${countyFips}:${railKey}:${classified.raw}`;
+  if (!loggedUnrecognisedVerdicts.has(key)) {
+    loggedUnrecognisedVerdicts.add(key);
+    console.warn(
+      `[parcel-gate-verdict] unrecognised verdict ${JSON.stringify(classified.raw)} for ` +
+        `county ${countyFips} rail ${railKey}: not in the pinned hauska-factory vocabulary ` +
+        `(${PARCEL_GATE_VERDICT_VOCABULARY_PIN.factoryRepo} ` +
+        `${PARCEL_GATE_VERDICT_VOCABULARY_PIN.factoryShaShort}, ` +
+        `${PARCEL_GATE_VERDICT_VOCABULARY_PIN.factoryPaths.join(" + ")}). ` +
+        `Returning null (fail closed, unchanged); this is a contract widening nobody read.`,
+    );
+  }
+  return null;
 }
 
 export function createFactoryRoStore(options: {
@@ -157,10 +225,13 @@ export function createFactoryRoStore(options: {
         `;
         const row = rows[0];
         if (!row) return null;
-        if (row.verdict !== "pass" && row.verdict !== "refuse" && row.verdict !== "excluded") {
-          return null;
-        }
-        return { verdict: row.verdict, evaluatedAt: row.evaluated_at };
+        // The factory's vocabulary, judged in ONE place (P-293 remainder):
+        // every accepted string comes back unchanged — an excluded-* kind is
+        // NOT collapsed to null — and an unrecognised one is logged loudly
+        // before failing closed.
+        const kind = resolveStoredGateVerdictKind(countyFips, railKey, row.verdict);
+        if (kind === null) return null;
+        return { verdict: kind, evaluatedAt: row.evaluated_at };
       } catch {
         // Table not yet visible to this role/connection, or any other read
         // failure: "no usable verdict", matching cortex's own
@@ -195,7 +266,7 @@ export function createFactoryRoStore(options: {
   };
 }
 
-/** In-memory store for tests. Refuses any shape it does not recognize. */
+/** In-memory store for tests. Applies the same verdict judgement as the SQL store. */
 export function memoryFactoryStore(fixture: {
   cells?: ReadonlyArray<{ placeKey: string; railKey: string; cellState: Record<string, unknown> }>;
   companionRows?: ReadonlyArray<{
@@ -206,7 +277,13 @@ export function memoryFactoryStore(fixture: {
     source: string;
     vintage: string;
   }>;
-  verdicts?: ReadonlyArray<{ countyFips: string; railKey: string; verdict: ParcelGateVerdictKind; evaluatedAt: string }>;
+  /**
+   * `verdict` is intentionally a plain `string` (not the accepted union):
+   * a test must be able to hand the store a value the type system would
+   * otherwise forbid arriving from a database column, or the unrecognised
+   * branch cannot be driven at all (P-293 remainder, mission item 4).
+   */
+  verdicts?: ReadonlyArray<{ countyFips: string; railKey: string; verdict: string; evaluatedAt: string }>;
   /** Raw parcel_record place_key rows, for resolvePlaceKey. */
   places?: ReadonlyArray<string>;
   /** Force loadCell/loadCompanionRows/loadGateVerdict to reject, to test the unreadable-store path. */
@@ -233,7 +310,13 @@ export function memoryFactoryStore(fixture: {
     async loadGateVerdict(countyFips, railKey) {
       if (fixture.failReads) return null;
       const match = verdicts.find((v) => v.countyFips === countyFips && v.railKey === railKey);
-      return match ? { verdict: match.verdict, evaluatedAt: match.evaluatedAt } : null;
+      if (!match) return null;
+      // The SAME judgement the SQL store applies, deliberately: this fixture
+      // used to hand back whatever the fixture held, so the narrowing that
+      // production performs did not exist on the path tests drive, and the
+      // unrecognised branch was unreachable from a test.
+      const kind = resolveStoredGateVerdictKind(countyFips, railKey, match.verdict);
+      return kind === null ? null : { verdict: kind, evaluatedAt: match.evaluatedAt };
     },
     async resolvePlaceKey(countyFips, normalizedPropId) {
       if (fixture.failReads) throw new Error("simulated factory store read failure");
