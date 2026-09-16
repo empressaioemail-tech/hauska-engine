@@ -69,6 +69,14 @@
  * `_feature-<vintage>-<index>` so a shapefile reshuffle cannot upsert one
  * vintage's land onto another's; the prior vintage's synthetic rows drop out of
  * the plan and are retired like any other orphan.
+ *
+ * BLAST-RADIUS REFUSAL (P-213, see writer-blast-radius-guard.mjs). The reconcile above computes
+ * WHICH ids are orphans; it does not, on its own, know whether that set is a normal amount of
+ * churn or a repeat of the incident that motivated this row (P-212: 92.5 percent of Bastrop
+ * retired from one undersized plan, every row-level check passing). Before this CLI builds or
+ * writes a single retire-body, it measures the orphan share against `MAX_ORPHAN_SHARE` and
+ * refuses — writing nothing, in dry-run or --apply — above it, unless `BLAST_RADIUS_OVERRIDE`
+ * names this exact county and these exact counts.
  */
 
 import { writeFileSync } from "node:fs";
@@ -94,9 +102,25 @@ import {
   railLeaseArgs,
   refuseApplyWithoutRunId,
 } from "./writer-apply-lease.mjs";
+import { evaluateBlastRadius, OVERRIDE_ENV_VAR as BLAST_RADIUS_OVERRIDE_ENV_VAR } from "./writer-blast-radius-guard.mjs";
 
 const SOURCE_ADAPTER = "txgio-stratmap-bulk-v1";
 const SOURCE_URL = "https://data.geographic.texas.gov/";
+
+/**
+ * P-213: the declared threshold for THIS writer's destructive transition (orphan retirement).
+ *
+ * Basis: mirrors the 5-point slack `publish-coverage-floor.mjs` (P-236, hauska-factory) declared
+ * for the analogous "healthy run measures ~1.0, five points of slack covers genuine movement"
+ * reasoning — a re-acquisition that changes nothing should retire close to 0 percent, and the
+ * two real reference points bracket this by more than an order of magnitude each: a real,
+ * legitimate re-run on Kenedy County (48261, `_inbox/2026-08-08_L2_WAVE3_retirement_dry_full.json`)
+ * retired 1 of 528 prior-active rows (0.19 percent); the Bastrop incident this row exists because
+ * of retired 57,704 of 62,394 (92.5 percent). 5 percent sits roughly 25x above the one measured
+ * legitimate case and roughly 18x below the incident, so it is not doing fine discrimination
+ * between "normal churn" and "collapse" and does not need to.
+ */
+const MAX_ORPHAN_SHARE = 0.05;
 
 function parseArgs(argv) {
   const out = {
@@ -392,6 +416,22 @@ try {
           summary.storeTruth.vintage,
         );
 
+        // ---- BLAST-RADIUS REFUSAL (P-213), BEFORE any body is fetched or written, in BOTH
+        // dry-run and --apply. This is what P-212 needed and did not have: the orphan share is
+        // checked against a declared threshold before a single retire-body is built, so a run
+        // that would refuse writes nothing at all — not even the harmless upserts below, since
+        // this throws before the apply branch (which takes the lease and writes atoms) is ever
+        // reached. A dry run also refuses here, which is intentional: "dry run predicts the
+        // apply" (this file's own header) should predict a refusal too, not only a write count.
+        summary.blastRadius = evaluateBlastRadius({
+          writer: "parcel-node-county-reconcile",
+          scopeKey: args.county,
+          affected: reconcile.orphans.length,
+          population: reconcile.priorActive,
+          maxShare: MAX_ORPHAN_SHARE,
+          override: process.env[BLAST_RADIUS_OVERRIDE_ENV_VAR] ?? null,
+        });
+
         // Retirement is a STATUS TRANSITION on the row, re-persisted through
         // the same writer seam so the retired body is contract-valid and
         // write-then-verifiable like any other. Bodies are rebuilt from the
@@ -597,6 +637,9 @@ try {
 } catch (err) {
   summary.errors += 1;
   summary.error = String(err?.stack || err);
+  // P-213: a blast-radius refusal carries its own measured record (share, affected,
+  // population) — surface it on the summary so a refusal is as legible as a pass.
+  if (err?.record) summary.blastRadius = err.record;
   console.error(JSON.stringify(summary, null, 2));
   process.exitCode = 1;
 } finally {
