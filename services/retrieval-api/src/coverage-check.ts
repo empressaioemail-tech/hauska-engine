@@ -48,6 +48,87 @@
  * request) but does not fix a cold lookup's own cost. See the close's
  * leave_behind for the recommended follow-on (an index owned by
  * legacy-design-tools, out of this lane's scope).
+ *
+ * RE-MEASURED 2026-09-16 (P-205b, read-only, under a P-281 heavy-scan lease, psql
+ * `\timing`): the cold `78654` GROUP BY took 67.8s in the lease window 22:39:03Z-22:43:34Z,
+ * and a later paired run in the lease window 23:06:21Z-23:11:18Z measured the COMBINED
+ * one-scan statement against the ZIP-only statement it replaces, same session, same store:
+ *
+ *   combined (this PR's statement), cold     72_226 ms
+ *   ZIP-only (the deployed statement)        19_536 ms   (already partly warm)
+ *   combined, warm repeat                     3_213 ms
+ *   ZIP-only, warm repeat                     3_011 ms
+ *
+ * So the claim "at most as expensive as ZIP-only" is not free and is stated precisely
+ * rather than rounded away: warm, the combined statement costs about 7 percent more
+ * (3.21s vs 3.01s), and that is the whole price of the narrowing. The number that matters
+ * is the ONE: 72.2s for the combined scan replaces 72.2s + 19.5s for the two scans the
+ * literal reading of the ruling would have needed, and two scans of this table are what
+ * would have exceeded the platform budget on a cold ZIP.
+ *
+ * The 2-3 minute figure above is NOT overwritten by these: it is what the 150s timeout was
+ * sized against and remains the declared worst case, while 67.8s and 72.2s are what two
+ * separate cold runs actually cost on this date. An unindexed scan on a shared instance
+ * varies; a timeout sized to the best observed run would be the defect.
+ *
+ * P-205b (OPS-24) -- NARROW BEFORE GIVING UP, AND A UNANIMOUS ANSWER NEEDS NO WINNER.
+ * Ruling (integration seat, 2026-09-16), because a ZIP-only grouping made the Phase 1
+ * county unreachable: `78654` is Marble Falls, and Marble Falls is Burnet (48053, 11391
+ * rows) plus a Travis tail (48453, 1850) plus five stowaways, so the ZIP alone sits at
+ * 85.3 percent -- below DOMINANCE_SHARE -- and `find_parcel` refused with
+ * `coverage_check_unavailable` for EVERY Burnet address in a split ZIP. Measured live
+ * against this service's own deployed revision, 2026-09-16T23:0xZ, revision
+ * `hauska-retrieval-api-00094-wed` (the current ready revision, i.e. this defect is still
+ * live at head-of-deploy and not only in the revision the dispatch named):
+ *
+ *   GET .../parcel-record-gate-verdict/coverage/check?city=Marble+Falls&state=TX&zip=78654
+ *   -> HTTP 200 {"status":"indeterminate","reason":"locality resolves to multiple candidate
+ *      counties with no dominant match: 48053 (11391), 48453 (1850), 48031 (61),
+ *      48319 (46), 48015 (2), 48501 (2), 48299 (1)"}
+ *
+ * and the same revision with the city REMOVED, or with a city that is not in the ZIP at
+ * all (`Nowhereville`), returns that identical body -- the live proof that the deployed
+ * revision ignores the city entirely. Two live controls on the same revision, so the
+ * defect is bounded rather than assumed: `zip=76541&state=TX` answers `{"status":"covered"}`
+ * (Bell, no city needed), and an out-of-state locality answers the `outside Texas`
+ * indeterminate.
+ *
+ * Two rules were added, and nothing else changed:
+ *
+ *   1. When the ZIP ALONE is ambiguous and a city is also given, the search is narrowed to
+ *      that ZIP AND that city and the SAME 90 percent rule is applied. When only one of the
+ *      two is given, behaviour is unchanged, and the 90 percent rule itself is unchanged.
+ *   2. When the locality is STILL ambiguous, every candidate county's serving status is
+ *      read. All covered -> `covered`. None covered -> `not-covered` naming the plurality
+ *      county, carrying the candidate list. They disagree -> `indeterminate`, carrying the
+ *      list with each candidate's own status. A unanimous answer does not need a winner
+ *      picked out of a vote that was not close.
+ *
+ * ONE SCAN, TWO SPLITS. The narrowing does NOT cost a second scan of `txgio_parcel`. That
+ * table is unindexed on `situs_zip`/`situs_city`, a cold GROUP BY over it measured 67.8s and
+ * 72.2s in two separate runs (2026-09-16), and two of them would make the narrowed answer
+ * unreachable for precisely the cold ZIP this rule exists for. Instead, when a ZIP and a
+ * city are both given, ONE statement is issued whose WHERE is the ZIP predicate and whose
+ * second GROUP BY key is "does this row's situs_city equal the given city". Summing across
+ * that key reproduces the ZIP-only split from the same rows (same WHERE), and selecting only
+ * the matching rows is the ZIP-and-city split. The ZIP-only split is judged first, so a ZIP
+ * that resolves on its own behaves exactly as it did before, and the narrowed split is
+ * consulted only when the first is ambiguous. Verified live (23:11:10.231873+00, piped to
+ * psql, read-only): the ZIP-only fold of that one statement returned 48053 (11391) / 48453
+ * (1850) / 48031 (61) / 48319 (46) / 48015 (2) / 48501 (2) / 48299 (1) -- identical to a
+ * separate ZIP-only GROUP BY issued in the same session and to the candidate list the
+ * deployed revision itself had already printed -- and the matching-row fold returned 48053
+ * (6873) / 48031 (61) / 48319 (45) / 48453 (6), which is 98.4 percent Burnet. Those two
+ * folds are the whole cost argument: one scan, judged twice, and the 1839 rows whose
+ * `situs_city` is NULL are the reason the second judgement flips the answer.
+ *
+ * AN EMPTY NARROWING IS NOT AN ABSENCE (DEV-PROCESS 4.3). If the given city matches no row
+ * in that ZIP, the module keeps the ZIP-only resolution and lets rule 2 decide it, rather
+ * than reporting the locality as not found. `situs_city` is a CAD situs city, not the postal
+ * city, so a whole ZIP whose CAD spelling differs would otherwise be declared non-existent --
+ * a false absence, and fail-closed is not a licence to be wrong. A narrowing that returns
+ * rows and STILL fails 90 percent is a positive determination of continued ambiguity, and
+ * that one is reported with the narrowed candidate list.
  */
 
 import postgres from "postgres";
@@ -65,10 +146,40 @@ export const FAST_LOOKUP_STATEMENT_TIMEOUT_MS = 5_000;
 /** A locality resolves to exactly one county when one candidate holds this share of matching rows. */
 export const DOMINANCE_SHARE = 0.9;
 
+/**
+ * A candidate county for an ambiguous locality, with its OWN serving-path status
+ * (P-205b). Carried on the `not-covered` and `indeterminate` bodies so a caller can
+ * see which counties the locality spans and which of them the serving path holds,
+ * instead of being handed a bare refusal string. `covered` stays a plain
+ * `{ status: "covered" }` -- rule 2 enumerates what travels with the two
+ * candidate-bearing answers and not with the unanimous-covered one, and leaving the
+ * hot in-coverage path's body byte-identical to P-210's is the safer shape.
+ */
+export interface CountyCandidateCoverage {
+  countyFips: string;
+  n: number;
+  covered: boolean;
+}
+
 export type CoverageVerdict =
   | { status: "covered" }
-  | { status: "not-covered"; countyFips: string; countyName: string; state: string }
-  | { status: "indeterminate"; reason: string };
+  | {
+      status: "not-covered";
+      countyFips: string;
+      countyName: string;
+      state: string;
+      /** Present when the county was chosen from an ambiguous locality by rule 2. */
+      candidates?: readonly CountyCandidateCoverage[];
+    }
+  | {
+      status: "indeterminate";
+      reason: string;
+      /**
+       * Present only when every candidate was positively read and they disagreed;
+       * never on a failure to read them (see readCandidateCoverage).
+       */
+      candidates?: readonly CountyCandidateCoverage[];
+    };
 
 export interface CoverageCheckInput {
   city: string | null;
@@ -104,6 +215,88 @@ export function chooseDominantCounty(
     return { kind: "resolved", countyFips: top.countyFips };
   }
   return { kind: "ambiguous", candidates: sorted };
+}
+
+/**
+ * The narrowing rule (P-205b rule 1), as ONE pure decision.
+ *
+ * Judged in this order, and for these reasons: the ZIP-only split first, so a ZIP that
+ * resolves on its own is answered exactly as it was before this change; the ZIP-and-city
+ * split only when the ZIP alone was ambiguous; and, when the narrowing returned NO rows,
+ * the ZIP-only ambiguity stands rather than becoming `not-found`, because an empty result
+ * is not an absence (DEV-PROCESS 4.3) -- `situs_city` is a CAD situs city, so a city
+ * spelling that matches nothing is evidence about the string, not about whether the
+ * locality exists.
+ *
+ * A pure function with two callers on purpose (the real store and the fixture store).
+ * DEV-PROCESS 2.4 is explicit that two implementations of one rule drift and that the
+ * divergence test is then the only control; the cheaper fix is to have one implementation.
+ */
+export function narrowByCity(
+  zipOnly: CountyResolution,
+  cityMatched: readonly CountyMatchCount[],
+): CountyResolution {
+  if (zipOnly.kind !== "ambiguous") return zipOnly;
+  if (cityMatched.length === 0) return zipOnly;
+  return chooseDominantCounty(cityMatched);
+}
+
+/**
+ * Rule 2 (P-205b): a unanimous answer needs no winner. Pure, and shared by the real
+ * store and the fixture store for the same reason as narrowByCity.
+ *
+ * Returns `covered` when the serving path holds every candidate, `not-covered` (with the
+ * PLURALITY county named) when it holds none, and `mixed` when the candidates disagree.
+ * `candidates` is already sorted by count descending (`chooseDominantCounty`), so index 0
+ * is the plurality; ties keep the order the split produced, which is the database's or the
+ * fixture's, and are never broken by a second sort here.
+ *
+ * This function deliberately does NOT look up the plurality's name: that read is
+ * store-specific (a table in one, a fixture map in the other), and the caller must be able
+ * to fail closed on its own if the name is missing.
+ */
+export type AmbiguousLocalityDecision =
+  | { kind: "covered" }
+  | { kind: "not-covered"; countyFips: string; candidates: readonly CountyCandidateCoverage[] }
+  | { kind: "mixed"; candidates: readonly CountyCandidateCoverage[] };
+
+export function decideAmbiguousLocality(
+  candidates: readonly CountyCandidateCoverage[],
+): AmbiguousLocalityDecision {
+  const coveredCount = candidates.filter((c) => c.covered).length;
+  if (coveredCount === candidates.length) return { kind: "covered" };
+  if (coveredCount === 0) {
+    return { kind: "not-covered", countyFips: candidates[0]!.countyFips, candidates };
+  }
+  return { kind: "mixed", candidates };
+}
+
+/**
+ * Folds the one-scan ZIP+city result into the two splits it carries: the ZIP-only totals
+ * (every row, matching or not) and the ZIP-AND-city totals (matching rows only). Pure and
+ * exported so the fold can be tested against a real statement's rows rather than only
+ * through the store.
+ *
+ * `city_match` is a boolean to postgres.js; the text spellings are tolerated so that a
+ * driver or type-parser change cannot silently stop the narrowing from firing. A NULL
+ * `situs_city` is not a match.
+ */
+export function splitCityMatch(
+  rows: readonly { county_fips: string; city_match: boolean | string | null; n: number }[],
+): { zipRows: CountyMatchCount[]; cityMatchedRows: CountyMatchCount[] } {
+  const zipTotals = new Map<string, number>();
+  const matchedTotals = new Map<string, number>();
+  for (const row of rows) {
+    const n = Number(row.n);
+    zipTotals.set(row.county_fips, (zipTotals.get(row.county_fips) ?? 0) + n);
+    if (row.city_match === true || row.city_match === "t" || row.city_match === "true") {
+      matchedTotals.set(row.county_fips, (matchedTotals.get(row.county_fips) ?? 0) + n);
+    }
+  }
+  return {
+    zipRows: [...zipTotals.entries()].map(([countyFips, n]) => ({ countyFips, n })),
+    cityMatchedRows: [...matchedTotals.entries()].map(([countyFips, n]) => ({ countyFips, n })),
+  };
 }
 
 const NON_TEXAS_HINT_RE = /^(?!tx$|texas$).+$/i;
@@ -208,28 +401,55 @@ export function createCoverageCheckStore(
     const city = normalizeCity(input.city);
     if (!zip && !city) return { kind: "not-found" };
 
-    const localityKey = zip ? `zip:${zip}` : `city:${(city ?? "").toUpperCase()}`;
+    // The narrowed lookup gets its OWN cache entry (P-205b): a cached ZIP-only ambiguity
+    // must never be served as a narrowed answer, nor a narrowed answer as a ZIP-only one.
+    const localityKey =
+      zip && city
+        ? `zip:${zip}|city:${city.toUpperCase()}`
+        : zip
+          ? `zip:${zip}`
+          : `city:${(city as string).toUpperCase()}`;
     const cached = localityCache.get(localityKey);
     if (cached && cached.expiresAt > Date.now()) return cached.resolution;
 
     const sql = await openSql(options.databaseUrl, GEO_RESOLUTION_STATEMENT_TIMEOUT_MS);
     try {
-      const rows = zip
-        ? await sql<Array<{ county_fips: string; n: number }>>`
+      let resolution: CountyResolution;
+      if (zip && city) {
+        // ONE statement, TWO splits (see the module header). The WHERE is the ZIP
+        // predicate and the second GROUP BY key is the city predicate, so this scan is
+        // the same scan the ZIP-only branch performs -- the narrowing costs nothing and
+        // never a second full scan per request.
+        const rows = await sql<
+          Array<{ county_fips: string; city_match: boolean | null; n: number }>
+        >`
+            SELECT county_fips, city_match, count(*)::int AS n
+            FROM (
+              SELECT county_fips, (upper(situs_city) = upper(${city})) AS city_match
+              FROM txgio_parcel
+              WHERE situs_zip = ${zip}
+            ) t
+            GROUP BY county_fips, city_match
+          `;
+        const { zipRows, cityMatchedRows } = splitCityMatch(rows);
+        resolution = narrowByCity(chooseDominantCounty(zipRows), cityMatchedRows);
+      } else if (zip) {
+        const rows = await sql<Array<{ county_fips: string; n: number }>>`
             SELECT county_fips, count(*)::int AS n
             FROM txgio_parcel
             WHERE situs_zip = ${zip}
             GROUP BY county_fips
-          `
-        : await sql<Array<{ county_fips: string; n: number }>>`
+          `;
+        resolution = chooseDominantCounty(rows.map((r) => ({ countyFips: r.county_fips, n: Number(r.n) })));
+      } else {
+        const rows = await sql<Array<{ county_fips: string; n: number }>>`
             SELECT county_fips, count(*)::int AS n
             FROM txgio_parcel
             WHERE upper(situs_city) = upper(${city as string})
             GROUP BY county_fips
           `;
-      const resolution = chooseDominantCounty(
-        rows.map((r) => ({ countyFips: r.county_fips, n: Number(r.n) })),
-      );
+        resolution = chooseDominantCounty(rows.map((r) => ({ countyFips: r.county_fips, n: Number(r.n) })));
+      }
       localityCache.set(localityKey, {
         resolution,
         expiresAt: Date.now() + LOCALITY_RESOLUTION_TTL_MS,
@@ -266,6 +486,27 @@ export function createCoverageCheckStore(
     } finally {
       await sql.end({ timeout: 5 }).catch(() => {});
     }
+  }
+
+  /**
+   * Rule 2's only store-specific read: the serving-path status of every candidate. A
+   * candidate whose status cannot be READ throws rather than defaulting to `false` -- the
+   * caller turns that into a refusal that carries no candidate list, because a
+   * `covered: false` standing for "we could not tell" is the presence-shaped check this
+   * program hunts. Cost: one indexed EXISTS per candidate (typically two), never a scan.
+   */
+  async function readCandidateCoverage(
+    candidates: readonly CountyMatchCount[],
+  ): Promise<CountyCandidateCoverage[]> {
+    const out: CountyCandidateCoverage[] = [];
+    for (const candidate of candidates) {
+      out.push({
+        countyFips: candidate.countyFips,
+        n: candidate.n,
+        covered: await countyServesAtLeastOneParcel(candidate.countyFips),
+      });
+    }
+    return out;
   }
 
   return {
@@ -318,11 +559,72 @@ export function createCoverageCheckStore(
         );
       }
       if (resolution.kind === "ambiguous") {
-        const candidates = resolution.candidates.map((c) => `${c.countyFips} (${c.n})`).join(", ");
+        // Rule 2 (P-205b): a unanimous answer needs no winner.
+        let withCoverage: CountyCandidateCoverage[];
+        try {
+          withCoverage = await readCandidateCoverage(resolution.candidates);
+        } catch (err) {
+          // A candidate whose status could not be read is NOT an uncovered candidate, and a
+          // partial list would have to carry "unknown" in a boolean. Refuse the whole
+          // determination -- no candidates list -- rather than ship a half-read one.
+          return put(
+            {
+              status: "indeterminate",
+              reason: `coverage read failed while resolving a locality that spans multiple counties: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            },
+            INDETERMINATE_TTL_MS,
+          );
+        }
+
+        const decision = decideAmbiguousLocality(withCoverage);
+        if (decision.kind === "covered") {
+          // Every candidate is served, so the locality is served whatever the winner would
+          // have been. No list: rule 2 asks for one on the two candidate-bearing answers.
+          return put({ status: "covered" }, COUNTY_VERDICT_TTL_MS);
+        }
+        if (decision.kind === "not-covered") {
+          let pluralityName: string | null;
+          try {
+            pluralityName = await countyName(decision.countyFips);
+          } catch {
+            pluralityName = null;
+          }
+          if (!pluralityName) {
+            // Same rule as the resolved-county path above: not-covered MUST carry all three
+            // fields, so a plurality county with no name on record is a refusal, not a guess.
+            return put(
+              {
+                status: "indeterminate",
+                reason: `county ${decision.countyFips} is the plurality of an ambiguous locality but has no name on record to report a not-covered verdict`,
+                candidates: decision.candidates,
+              },
+              INDETERMINATE_TTL_MS,
+            );
+          }
+          return put(
+            {
+              status: "not-covered",
+              countyFips: decision.countyFips,
+              countyName: pluralityName,
+              state: "TX",
+              candidates: decision.candidates,
+            },
+            COUNTY_VERDICT_TTL_MS,
+          );
+        }
+        // Mixed: the candidates disagree, so no answer is unanimous and the refusal has to
+        // carry WHICH counties are served and which are not -- that disagreement is the
+        // finding, and a bare "no dominant match" would hide it.
+        const detail = decision.candidates
+          .map((c) => `${c.countyFips} (${c.n}${c.covered ? ", covered" : ", not covered"})`)
+          .join(", ");
         return put(
           {
             status: "indeterminate",
-            reason: `locality resolves to multiple candidate counties with no dominant match: ${candidates}`,
+            reason: `locality resolves to multiple candidate counties with no dominant match, and the serving path does not hold all of them: ${detail}`,
+            candidates: decision.candidates,
           },
           INDETERMINATE_TTL_MS,
         );
@@ -388,6 +690,13 @@ export function resolveCoverageDatabaseUrl(explicit?: string): string | undefine
 export function memoryCoverageCheckStore(fixture: {
   /** county_fips -> match rows a zip lookup would return, e.g. { "76541": [{countyFips:"48027",n:6897},{countyFips:"48319",n:3}] }. */
   zipRows?: Readonly<Record<string, readonly CountyMatchCount[]>>;
+  /**
+   * The ZIP-AND-city split (P-205b), keyed `${zip}|${CITY-UPPERCASED}` -- the same two
+   * splits the real store gets from its one scan. A key that is absent, or mapped to an
+   * empty array, means the narrowing returned no rows, which is treated as no new
+   * information rather than as an absence, exactly like the real query.
+   */
+  zipCityRows?: Readonly<Record<string, readonly CountyMatchCount[]>>;
   cityRows?: Readonly<Record<string, readonly CountyMatchCount[]>>;
   tier1Counties?: ReadonlySet<string>;
   countyNames?: Readonly<Record<string, string>>;
@@ -395,6 +704,7 @@ export function memoryCoverageCheckStore(fixture: {
   failReads?: boolean;
 }): CoverageCheckStore {
   const zipRows = fixture.zipRows ?? {};
+  const zipCityRows = fixture.zipCityRows ?? {};
   const cityRows = fixture.cityRows ?? {};
   const tier1 = fixture.tier1Counties ?? new Set<string>();
   const names = fixture.countyNames ?? {};
@@ -414,16 +724,55 @@ export function memoryCoverageCheckStore(fixture: {
     if (fixture.failReads) {
       return { status: "indeterminate", reason: "coverage read failed: simulated database failure" };
     }
-    const rows = zip ? (zipRows[zip] ?? []) : (cityRows[(city as string).toUpperCase()] ?? []);
-    const resolution = chooseDominantCounty(rows);
+    let resolution: CountyResolution;
+    if (zip && city) {
+      // Same ORDER as the real store, through the same two pure decisions: judge the
+      // ZIP-only split first, narrow only if it was ambiguous, and keep the ZIP-only
+      // ambiguity when the narrowing returned nothing.
+      const zipOnly = chooseDominantCounty(zipRows[zip] ?? []);
+      const narrowed = zipCityRows[`${zip}|${city.toUpperCase()}`] ?? [];
+      resolution = narrowByCity(zipOnly, narrowed);
+    } else if (zip) {
+      resolution = chooseDominantCounty(zipRows[zip] ?? []);
+    } else {
+      resolution = chooseDominantCounty(cityRows[(city as string).toUpperCase()] ?? []);
+    }
     if (resolution.kind === "not-found") {
       return { status: "indeterminate", reason: "locality not found in the statewide parcel index" };
     }
     if (resolution.kind === "ambiguous") {
-      const candidates = resolution.candidates.map((c) => `${c.countyFips} (${c.n})`).join(", ");
+      // Rule 2, through the SAME pure decision the real store uses -- one implementation,
+      // so the fixture and the database cannot answer differently.
+      const withCoverage: CountyCandidateCoverage[] = resolution.candidates.map((c) => ({
+        ...c,
+        covered: tier1.has(c.countyFips),
+      }));
+      const decision = decideAmbiguousLocality(withCoverage);
+      if (decision.kind === "covered") return { status: "covered" };
+      const pluralityName = names[decision.candidates[0]!.countyFips];
+      if (decision.kind === "not-covered") {
+        if (!pluralityName) {
+          return {
+            status: "indeterminate",
+            reason: `county ${decision.countyFips} is the plurality of an ambiguous locality but has no name on record to report a not-covered verdict`,
+            candidates: decision.candidates,
+          };
+        }
+        return {
+          status: "not-covered",
+          countyFips: decision.countyFips,
+          countyName: pluralityName,
+          state: "TX",
+          candidates: decision.candidates,
+        };
+      }
+      const detail = decision.candidates
+        .map((c) => `${c.countyFips} (${c.n}${c.covered ? ", covered" : ", not covered"})`)
+        .join(", ");
       return {
         status: "indeterminate",
-        reason: `locality resolves to multiple candidate counties with no dominant match: ${candidates}`,
+        reason: `locality resolves to multiple candidate counties with no dominant match, and the serving path does not hold all of them: ${detail}`,
+        candidates: decision.candidates,
       };
     }
     const countyFips = resolution.countyFips;
