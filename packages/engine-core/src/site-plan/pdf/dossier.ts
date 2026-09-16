@@ -2,7 +2,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFPage } from "pdf-lib";
 
 import type { SitePlanModel } from "../site-model.js";
-import { CHIP_NOT_REQUESTED, CHIP_UNAVAILABLE, countyDisplayName } from "./format.js";
+import { CHIP_NOT_REQUESTED, CHIP_UNAVAILABLE, CHIP_VERIFIED_CLEAR, countyDisplayName } from "./format.js";
 import {
   RhythmCapture,
   placeRowBelowRule,
@@ -79,6 +79,17 @@ export interface DossierBriefFactInput {
   value?: string;
   source?: string;
   vintage?: string;
+  /**
+   * D5 (P-222): true when an absent (`value` undefined) row is a VERIFIED,
+   * checked-and-clear finding (`FeasibilityFactState`'s `kind: "clear"`) —
+   * good news a source actually confirmed — rather than a genuine gap
+   * (not yet checked, blocked at source, or this run's own failure). A
+   * verified-clear row draws a distinct, non-alarming chip and skips the
+   * generic "no matching record" prefix, which is actively wrong for a
+   * source that DID run and DID find something (an absence). Omit or false
+   * for every other absence kind — the existing UNAVAILABLE treatment.
+   */
+  verifiedClear?: boolean;
 }
 
 export interface DossierBriefSectionInput {
@@ -119,7 +130,19 @@ export const DOSSIER_CAPS = {
   chatDisclaimer: 600,
   notes: 4000,
   liveViewUrl: 500,
-  maxSections: 16,
+  // P-222: this cap silently DROPS trailing sections past it (`.slice(0,
+  // maxSections)`, no error, no warning) — a caller-abuse guard, not meant to
+  // bound this file's own fixed section list. It was 16, exactly the count
+  // `feasibilityModelToBriefSections` could reach with a data-quality section
+  // present, with zero headroom: adding ONE more always-on section
+  // (overlay-districts, P-222 D8) silently truncated the trailing
+  // data-quality section off the document in a real test fixture,
+  // discovered only because that section's own content stopped decoding out
+  // of the rendered PDF. Raised well past the current maximum (17: 16 pushed
+  // in feasibilityModelToBriefSections + at most one more injected for
+  // narrativeWithheldNote) so the next legitimate section added does not
+  // repeat this silently.
+  maxSections: 32,
   maxFactsPerSection: 60,
 } as const;
 
@@ -189,7 +212,21 @@ export interface DossierContent {
 
 export function sanitizeDossierContent(input: DossierContentInput): DossierContent {
   const C = DOSSIER_CAPS;
-  const sections = (input.brief?.sections ?? [])
+  const rawSections = input.brief?.sections ?? [];
+  // P-222: this cap silently dropped a real, always-on section once before
+  // (see DOSSIER_CAPS's own comment) with no signal anywhere. A cap doing
+  // its job (bounding genuine caller abuse) is fine; a cap firing against
+  // this file's own fixed, code-controlled section list is a bug that
+  // needs to be LOUD, not a defect for the next person to rediscover by
+  // noticing missing PDF content.
+  if (rawSections.length > C.maxSections) {
+    console.warn(
+      `sanitizeDossierContent: ${rawSections.length} sections exceeds maxSections (${C.maxSections}); ` +
+        `dropping the trailing ${rawSections.length - C.maxSections}. If this is a fixed, code-controlled ` +
+        `section list (Feasibility/X-Ray), raise the cap rather than silently losing content.`,
+    );
+  }
+  const sections = rawSections
     .slice(0, C.maxSections)
     .map((section, si) => ({
       id: sanitizeDossierText(section.id, C.sectionId) ?? `section-${si + 1}`,
@@ -201,6 +238,12 @@ export function sanitizeDossierContent(input: DossierContentInput): DossierConte
           value: sanitizeDossierText(fact.value, C.factValue),
           source: sanitizeDossierText(fact.source, C.factSource),
           vintage: sanitizeDossierText(fact.vintage, C.factVintage),
+          // D5 (P-222): this reconstruction is an explicit field allowlist —
+          // a boolean flag added to DossierBriefFactInput without a matching
+          // line here is silently dropped, the same class of defect as
+          // maxSections above. verifiedClear is not free text, so it is
+          // copied verbatim rather than run through sanitizeDossierText.
+          ...(fact.verifiedClear ? { verifiedClear: true } : {}),
         })),
     }))
     .filter((section) => section.facts.length > 0);
@@ -282,6 +325,9 @@ export interface PlannedFactRow {
   valueLines: string[];
   greyLines: string[];
   chip: boolean;
+  /** D5 (P-222): overrides the drawn chip word (default `CHIP_UNAVAILABLE`)
+   * — set to `CHIP_VERIFIED_CLEAR` for a checked-and-clear finding. */
+  chipLabel?: string;
 }
 
 export interface PlannedGroup {
@@ -321,20 +367,27 @@ export function planFactRow(
   const valueX = MARGIN_X + LABEL_COL;
   const greyText = [fact.source, fact.vintage].filter((p): p is string => !!p).join(" · ");
   if (!fact.value) {
-    const chipW =
-      trackedWidth(F.displayMedium, CHIP_UNAVAILABLE, TYPE.chip, TRACKING.chip) + pt(14) + pt(8);
+    const chipLabel = fact.verifiedClear ? CHIP_VERIFIED_CLEAR : CHIP_UNAVAILABLE;
+    const chipW = trackedWidth(F.displayMedium, chipLabel, TYPE.chip, TRACKING.chip) + pt(14) + pt(8);
     // item 14: the generic line is caller-swappable (see genericAbsentReason)
     // so this phrase never collides with an engine-derived atom absence,
     // which is a different meaning wearing the same chip (feasibility.ts
     // supplies its own generic line via planBriefPages' third argument).
-    const reason = greyText
-      ? `${genericAbsentReason} ${greyText}`
-      : genericAbsentReason;
+    // D5 (P-222): a verified-clear finding skips the generic "no matching
+    // record" prefix — a source DID run and DID confirm the absence, so
+    // that prefix would misstate what happened; the reason text (`source`)
+    // already reads as the finding on its own.
+    const reason = fact.verifiedClear
+      ? greyText || genericAbsentReason
+      : greyText
+        ? `${genericAbsentReason} ${greyText}`
+        : genericAbsentReason;
     return {
       label: fact.label,
       valueLines: [],
       greyLines: wrapTextToWidth(reason, F.body, pt(12), Math.max(right - valueX - chipW, pt(120))),
       chip: true,
+      ...(fact.verifiedClear ? { chipLabel } : {}),
     };
   }
   const valueLines = wrapTextToWidth(fact.value, F.body, TYPE.rowValue, right - valueX);
@@ -542,7 +595,7 @@ export function drawBriefFactRow(
   page.drawLine({ start: { x: left, y: ruleY }, end: { x: right, y: ruleY }, thickness: STROKE.rowRule, color: TOKENS.neutral200 });
   page.drawText(row.label, { x: left, y: placed.baselines[0]!, size: TYPE.rowLabel, font: F.body, color: TOKENS.neutral600 });
   if (row.chip) {
-    const chipEnd = drawChipOnLineBox(page, CHIP_UNAVAILABLE, valueX, placed.boxTopY, LB.kvRow, "solid", F) + pt(8);
+    const chipEnd = drawChipOnLineBox(page, row.chipLabel ?? CHIP_UNAVAILABLE, valueX, placed.boxTopY, LB.kvRow, "solid", F) + pt(8);
     row.greyLines.forEach((line, li) => {
       page.drawText(line, {
         x: li === 0 ? chipEnd : valueX,

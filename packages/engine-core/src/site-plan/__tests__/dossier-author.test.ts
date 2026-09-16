@@ -275,6 +275,8 @@ describe("composeXrayBrief (Solo/Studio allow-list)", () => {
         contourIntervalMeters: 1,
       }),
       utilities: present({ holders: [{ serviceKind: "water", territoryName: "STUDIO-OR-NOT-UTILITY-TERRITORY" }], residual: "r" }),
+      overlayDistricts: absent("blocked-at-source", "not requested"),
+      readerParcelArea: absent("out-of-scope", "not requested"),
       hoa: { searchStatus: "not-searched" },
       footprint: present({ footprints: [{ footprintId: "fp-1" }] }),
       // STUDIO-ONLY (P-120's own named Feasibility exhibits):

@@ -79,6 +79,11 @@ export const CHIP_UNAVAILABLE = "UNAVAILABLE";
 export const CHIP_NOT_REQUESTED = "NOT REQUESTED";
 export const CHIP_FIXTURE_LABEL = "FIXTURE LABEL";
 export const CHIP_NO_ADDRESS = "NO ADDRESS";
+/** D5 (P-222): a source ran and confirmed an absence — good news, not a
+ * gap. Distinct from `CHIP_UNAVAILABLE` (nothing was found because nothing
+ * looked, or the source cannot say) for the identical reason `CHIP_NOT_REQUESTED`
+ * is distinct from it: one visual badge otherwise does three epistemic jobs. */
+export const CHIP_VERIFIED_CLEAR = "CLEAR";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Confidence enum (§13): asserted · rule · sample · centerline accurate ·

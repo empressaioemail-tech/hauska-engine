@@ -408,3 +408,308 @@ describe("P152-RAILS item 7: two special-district stores are reconciled, not sil
     }
   });
 });
+
+// P-222 D7: live-verified against the deployed Smart Site product for parcel
+// 48021:31622 (1306 FAYETTE ST, Bastrop) — the reader's `utilityService` rail
+// genuinely serves sewer CCN 20466 (City of Bastrop) and electric CCN 1324,
+// while this composer's `utilities` section only ever asked the HIFLD
+// electric-only resolver. These tests are the regression guard for that fix.
+describe("P-222 D7: composeParcelReportFacts composes utilities from the reader's utilityService rail", () => {
+  it("uses the reader's CCN holders for water/sewer/electric when the rail serves 'record'", async () => {
+    const record: ParcelRecordResponse = {
+      parcelNodeId,
+      placeKey: parcelNodeId,
+      countyFips: "48021",
+      railRegistrySha: "sha",
+      readAt: "2026-09-15T00:00:00.000Z",
+      rails: {
+        utilityService: rail("record", {
+          kind: "value",
+          value: {
+            water: null,
+            sewer: { ccnNo: "20466", utility: "CITY OF BASTROP", status: "Commission Approved", ccnType: "Bounded Service Area" },
+            electric: { ccnNo: "1324", utility: "CITY OF BASTROP - (TX)", status: "NOT AVAILABLE", ccnType: "MUNICIPAL" },
+          },
+        }),
+      },
+      refused: null,
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader(record),
+    });
+
+    expect(model.facts.utilities.status).toBe("present");
+    if (model.facts.utilities.status !== "present") throw new Error("unreachable");
+    const sewer = model.facts.utilities.holders.find((h) => h.serviceKind === "sewer");
+    const electric = model.facts.utilities.holders.find((h) => h.serviceKind === "electric");
+    expect(sewer).toMatchObject({ territoryName: "CITY OF BASTROP", ccnNo: "20466", ccnStatus: "Commission Approved" });
+    expect(electric).toMatchObject({ territoryName: "CITY OF BASTROP - (TX)", ccnNo: "1324", ccnStatus: "NOT AVAILABLE" });
+    // water is genuinely null on the reader's own answer -- named, not silently omitted.
+    expect(model.facts.utilities.residual).toContain("water");
+  });
+
+  it("falls back to the HIFLD electric-only resolver only for the electric slot when the reader's own electric holder is null", async () => {
+    const record: ParcelRecordResponse = {
+      parcelNodeId,
+      placeKey: parcelNodeId,
+      countyFips: "48021",
+      railRegistrySha: "sha",
+      readAt: "2026-09-15T00:00:00.000Z",
+      rails: {
+        utilityService: rail("record", {
+          kind: "value",
+          value: {
+            water: null,
+            sewer: { ccnNo: "20466", utility: "CITY OF BASTROP" },
+            electric: null,
+          },
+        }),
+      },
+      refused: null,
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader(record),
+      centroid: { latitude: 30.11, longitude: -97.31 },
+      whoServes: {
+        resolve: async () => ({
+          status: "measured",
+          holders: [{ serviceKind: "electric", territoryName: "Bluebonnet Electric Coop" }],
+          residual: "HIFLD residual text",
+          asOf: "2026-09-15T00:00:00.000Z",
+        }),
+      },
+    });
+
+    expect(model.facts.utilities.status).toBe("present");
+    if (model.facts.utilities.status !== "present") throw new Error("unreachable");
+    expect(model.facts.utilities.holders.find((h) => h.serviceKind === "electric")).toMatchObject({
+      territoryName: "Bluebonnet Electric Coop",
+    });
+    expect(model.facts.utilities.holders.find((h) => h.serviceKind === "sewer")).toMatchObject({ ccnNo: "20466" });
+  });
+
+  it("stays on the pre-existing HIFLD-only behavior, byte-for-byte, when the reader has no utilityService rail at all", async () => {
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      centroid: { latitude: 30.11, longitude: -97.31 },
+      whoServes: {
+        resolve: async () => ({
+          status: "measured",
+          holders: [{ serviceKind: "electric", territoryName: "Bluebonnet Electric Coop" }],
+          residual: "HIFLD residual text",
+          asOf: "2026-09-15T00:00:00.000Z",
+        }),
+      },
+    });
+    expect(model.facts.utilities).toMatchObject({
+      status: "present",
+      residual: "HIFLD residual text",
+      holders: [{ serviceKind: "electric", territoryName: "Bluebonnet Electric Coop" }],
+    });
+  });
+
+  it("never calls the HIFLD resolver at all when the reader's own electric holder already answers -- a HIFLD outage cannot sink an already-resolved section", async () => {
+    const record: ParcelRecordResponse = {
+      parcelNodeId,
+      placeKey: parcelNodeId,
+      countyFips: "48021",
+      railRegistrySha: "sha",
+      readAt: "2026-09-15T00:00:00.000Z",
+      rails: {
+        utilityService: rail("record", {
+          kind: "value",
+          value: {
+            water: null,
+            sewer: { ccnNo: "20466", utility: "CITY OF BASTROP" },
+            electric: { ccnNo: "1324", utility: "CITY OF BASTROP - (TX)" },
+          },
+        }),
+      },
+      refused: null,
+    };
+    let hifldCalled = false;
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader(record),
+      centroid: { latitude: 30.11, longitude: -97.31 },
+      whoServes: {
+        resolve: async () => {
+          hifldCalled = true;
+          throw new Error("HIFLD outage -- must never be reached when the reader fully answers");
+        },
+      },
+    });
+    expect(hifldCalled).toBe(false);
+    expect(model.facts.utilities.status).toBe("present");
+  });
+
+  it("a malformed sewer holder is treated as uncovered for sewer only, never discarding valid water/electric siblings", async () => {
+    const record: ParcelRecordResponse = {
+      parcelNodeId,
+      placeKey: parcelNodeId,
+      countyFips: "48021",
+      railRegistrySha: "sha",
+      readAt: "2026-09-15T00:00:00.000Z",
+      rails: {
+        utilityService: rail("record", {
+          kind: "value",
+          value: {
+            water: { ccnNo: "111", utility: "CITY OF BASTROP WATER" },
+            sewer: { ccnNo: "222" }, // malformed: missing required `utility`
+            electric: { ccnNo: "1324", utility: "CITY OF BASTROP - (TX)" },
+          },
+        }),
+      },
+      refused: null,
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader(record),
+    });
+    expect(model.facts.utilities.status).toBe("present");
+    if (model.facts.utilities.status !== "present") throw new Error("unreachable");
+    expect(model.facts.utilities.holders.find((h) => h.serviceKind === "water")).toMatchObject({ ccnNo: "111" });
+    expect(model.facts.utilities.holders.find((h) => h.serviceKind === "electric")).toMatchObject({ ccnNo: "1324" });
+    expect(model.facts.utilities.holders.find((h) => h.serviceKind === "sewer")).toBeUndefined();
+    expect(model.facts.utilities.residual).toContain("sewer");
+  });
+});
+
+// P-222 D8: live-verified against the deployed Smart Site product for the
+// same parcel — the reader's `overlayDistricts` rail genuinely serves a
+// Cultural Arts / TND overlay district with full ordinance text, while this
+// composer had no field for it at all before this lane.
+describe("P-222 D8: composeParcelReportFacts composes overlayDistricts from the reader", () => {
+  it("reads a real overlay district (name, city, description, development pattern) from the companion payload", async () => {
+    const record: ParcelRecordResponse = {
+      parcelNodeId,
+      placeKey: parcelNodeId,
+      countyFips: "48021",
+      railRegistrySha: "sha",
+      readAt: "2026-09-15T00:00:00.000Z",
+      rails: {
+        overlayDistricts: rail("record", { kind: "value" }, [
+          {
+            payload: {
+              city: "Bastrop",
+              attributes: {
+                CD_Name: "Cultural Arts",
+                CD_Desc: "Arts and culture are the centerpiece of this district.",
+                CD_DevelopmentPatterns: "TND",
+              },
+            },
+          },
+        ]),
+      },
+      refused: null,
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader(record),
+    });
+
+    expect(model.facts.overlayDistricts.status).toBe("present");
+    if (model.facts.overlayDistricts.status !== "present") throw new Error("unreachable");
+    expect(model.facts.overlayDistricts.districts).toEqual([
+      {
+        name: "Cultural Arts",
+        cityName: "Bastrop",
+        description: "Arts and culture are the centerpiece of this district.",
+        developmentPattern: "TND",
+      },
+    ]);
+  });
+
+  it("is absent (blocked-at-source), never a crash, when the reader has no overlayDistricts rail", async () => {
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+    });
+    expect(model.facts.overlayDistricts).toMatchObject({ status: "absent", kind: "blocked-at-source" });
+  });
+
+  it("D5-consistency: a rail that RAN and confirmed zero districts is `clear`, never the same `blocked-at-source` as a rail that never ran", async () => {
+    const record: ParcelRecordResponse = {
+      parcelNodeId,
+      placeKey: parcelNodeId,
+      countyFips: "48021",
+      railRegistrySha: "sha",
+      readAt: "2026-09-15T00:00:00.000Z",
+      rails: {
+        overlayDistricts: rail("record", { kind: "absent-verified" }, []),
+      },
+      refused: null,
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader(record),
+    });
+    expect(model.facts.overlayDistricts).toMatchObject({ status: "absent", kind: "clear" });
+  });
+});
+
+// P-222 D11: live-verified against the same parcel — the reader's own
+// ST_Area(geography) parcel-area figure (25,001.79 sq ft) genuinely disagrees
+// with this report's own ring-shoelace figure (25,085.758 sq ft printed).
+// composeParcelReportFacts carries the reader's figure as a SEPARATE fact
+// (readerParcelArea); the reconciliation note itself is composePackageLayer's
+// job (composeParcelReport, not composeParcelReportFacts) and is covered in
+// report-model.test.ts.
+describe("P-222 D11: composeParcelReportFacts composes readerParcelArea from the reader's parcelAreaSqFt rail", () => {
+  it("reads the reader's ST_Area-derived figure as a scalar", async () => {
+    const record: ParcelRecordResponse = {
+      parcelNodeId,
+      placeKey: parcelNodeId,
+      countyFips: "48021",
+      railRegistrySha: "sha",
+      readAt: "2026-09-15T00:00:00.000Z",
+      rails: {
+        parcelAreaSqFt: rail("record", { kind: "value", value: 25001.79 }),
+      },
+      refused: null,
+    };
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+      recordReader: fakeReader(record),
+    });
+    expect(model.facts.readerParcelArea).toMatchObject({ status: "present", sqFt: 25001.79 });
+  });
+
+  it("is absent (out-of-scope), never a crash, when the reader has no parcelAreaSqFt rail", async () => {
+    const model = await composeParcelReportFacts({
+      parcelNodeId,
+      storage: fakeStorage([]),
+      geometry: ABSENT_GEOMETRY,
+      drainage: NO_DRAINAGE,
+    });
+    expect(model.facts.readerParcelArea).toMatchObject({ status: "absent", kind: "out-of-scope" });
+  });
+});

@@ -109,6 +109,44 @@ describe("emitPdfFeasibility", () => {
     expect(decoded).toContain("NARRATIVE");
   });
 
+  it("D5 (P-222): a checked-and-clear absence draws CLEAR, never the same UNAVAILABLE chip as a genuine gap", async () => {
+    // No atoms on file at all -> every absence in this document is a genuine
+    // gap (blocked-at-source / not-searched) and should draw UNAVAILABLE.
+    const genuineGapModel = await buildModel([]);
+    const genuineGapDecoded = decodeAllContentStreams((await emitPdfFeasibility(genuineGapModel)).bytes);
+    expect(genuineGapDecoded).toContain("UNAVAILABLE");
+    expect(genuineGapDecoded).not.toContain("CLEAR");
+
+    // A real "checked, none found" special-district-fact absence row -- the
+    // SAME shape absence-taxonomy.test.ts's `absenceRow` fixture uses.
+    const checkedClearAtom = {
+      entityType: "special-district-fact" as const,
+      atomDid: "test/special-district-fact/48029:105129/1",
+      entityId: "48029:105129:special-district-fact:1",
+      parcelNodeId: "48029:105129",
+      jurisdictionTenant: "property-spine",
+      fetchedAt: "2026-09-02T14:46:32.344Z",
+      extractedAt: "2026-09-02T14:46:32.344Z",
+      sourceAdapter: "test",
+      sourceUrl: "https://example.test",
+      sourceCitation: "TCEQ tx_special_district (test fixture)",
+      accessPolicy: "public-free" as const,
+      atomTier: "data" as const,
+      status: "active" as const,
+      versionStamp: "48029:105129:special-district-fact:1",
+      absence: { kind: "checked-none-found" },
+    } as unknown as PropertyAtomInstance;
+    const clearModel = await buildModel([checkedClearAtom]);
+    const clearDecoded = decodeAllContentStreams((await emitPdfFeasibility(clearModel)).bytes);
+    // The verified-clear special-districts row draws CLEAR...
+    expect(clearDecoded).toContain("CLEAR");
+    // ...while OTHER, genuinely-unchecked sections on the SAME document
+    // (parcel ownership, HOA, etc. -- no atoms seeded for those) still draw
+    // UNAVAILABLE. Both states are on the SAME page, visually distinguishable.
+    expect(clearDecoded).toContain("UNAVAILABLE");
+    expect(clearDecoded).toContain("Checked against every mapped special-district boundary");
+  });
+
   it("item 6 — the open items table lists every absent section with a real action sentence", async () => {
     const model = await buildModel([]);
     const result = await emitPdfFeasibility(model);
