@@ -17,9 +17,20 @@
  * per-edge insets (validated in measure-inset.test.ts).
  *
  * Pure geometry over a projected metre frame. No I/O, no road/geocode signals.
+ *
+ * P-262 (2026-09-16) adds one category to the measurement: a lot edge that is a
+ * COLLINEAR FRAGMENT of a logical lot line (a county ring digitises one straight
+ * line as several chords) is spanned by no envelope edge when the corner it sits
+ * in is owned by a DEEPER neighbouring setback, so it reports its LINE's
+ * measurement flagged `collinearFragmentOfLogicalLine` rather than a bare 0 ft.
+   * The grouping comes from depth-warm/ring-logical-edges.ts — the same primitive
+   * the labeller now labels with — and ground truth still compares the reported
+   * value against the fragment's OWN role, so a mixed-role line cannot pass on it.
+   * Measured, before and after, in __tests__/p262-fixture-gate.test.ts.
  */
 
 import { metersToFeet, projectRing, type ProjectedRing, type Ring } from "./geometry.js";
+import { groupRingChordsIntoLogicalEdges } from "./ring-logical-edges.js";
 
 interface XY {
   x: number;
@@ -73,6 +84,29 @@ export interface MeasuredEdgeInset {
    * absorbed-edge non-comparable result, never a mismatch.
    */
   satisfiedByMoreRestrictiveNeighbor?: boolean;
+  /**
+   * P-262: true when this lot edge is a COLLINEAR FRAGMENT of a logical lot
+   * line — the county digitised one straight lot line as several chords — and no
+   * envelope edge spans this fragment because the fragment sits in the corner
+   * region, where a deeper NEIGHBOURING setback (not this fragment's own set
+   * back) owns the boundary. `insetFeet` is then the measurement of the
+   * fragment's own logical line, not of this fragment, so a caller must not
+   * read it as this edge's own dedicated offset — the same "read the flag
+   * before you read the number" contract as satisfiedByMoreRestrictiveNeighbor
+   * above, though ground truth still COMPARES this row (see envelope-ground-truth.ts).
+   *
+   * WHY THIS IS NOT A LOOSENED GATE. A fragment carries its line's setback by
+   * law after P-262 (edgeLabeling.ts labels logical lines, then expands the
+   * line's role onto its chords), so the fragment has no independent setback to
+   * violate: comparing the LINE's measurement against the FRAGMENT's role is
+   * the strongest statement the raw chord frame can make about it. A candidate
+   * whose fragment and line disagree (a pre-P-262 mixed-role line, e.g. 20 ft on
+   * one chord of a rear line and 5 ft on its fragment) still FAILS ground truth:
+   * the fragment reports the line's measurement and its own role's expected
+   * value, and the two differ. Measured before and after in
+   * __tests__/p262-fixture-gate.test.ts.
+   */
+  collinearFragmentOfLogicalLine?: boolean;
 }
 
 export interface MeasureInsetOptions {
@@ -314,6 +348,7 @@ export function measurePerEdgeInsetIndexMatched(
   }
 
   const out: MeasuredEdgeInset[] = [];
+  const noCandidate: number[] = [];
   for (let i = 0; i < nLot; i++) {
     const candidates = candidatesByLotEdge[i]!;
     if (candidates.length === 0) {
@@ -323,8 +358,10 @@ export function measurePerEdgeInsetIndexMatched(
         out.push({ edgeIndex: i, insetFeet: null, matched: false });
       } else {
         // No parallel inward-offset envelope edge -> this lot edge carried
-        // no setback (inset 0) OR is a non-facing/notch edge.
+        // no setback (inset 0) OR is a non-facing/notch edge. A P-262
+        // collinear FRAGMENT resolves below.
         out.push({ edgeIndex: i, insetFeet: 0, matched: false });
+        noCandidate.push(i);
       }
       continue;
     }
@@ -361,6 +398,56 @@ export function measurePerEdgeInsetIndexMatched(
       matched: false,
       satisfiedByMoreRestrictiveNeighbor: smallestUnowned !== null,
     });
+  }
+
+  // P-262 pass 3: collinear fragments of a logical lot line.
+  //
+  // A county ring digitises ONE straight lot line as several chords. At a corner
+  // where the neighbouring setback is deeper than the line's own, the envelope's
+  // edge for that line starts at the corner MITER — displaced from the shared
+  // vertex by the deeper setback — so a short fragment of the line near that
+  // corner is spanned by NO envelope edge at all, and pass 1 reports no
+  // candidate: insetFeet 0, matched false, which ground truth reads as "this
+  // edge's 5 ft setback became 0 ft". Measured on 48209:97658: its two long side
+  // lines are three chords each (2.10+41.98+3.53 m and 3.44+42.11+2.14 m); the
+  // 2.10/3.53/3.44/2.14 m fragments each sit ~6.1 m inside the corner miter of
+  // the rear line's 20 ft offset, find no candidate (the envelope's side edge
+  // spans 33.9 m of the 47.6 m line), and produced four of these rows — three
+  // more than ground truth's one-per-parcel miter allowance, so P2 failed on a
+  // served envelope that is geometrically correct.
+  //
+  // The fragment inherits its LINE's measurement, and is marked so no caller
+  // reads that number as this edge's own dedicated offset. Its line grouping
+  // comes from the SAME primitive the labeller uses
+  // (ring-logical-edges.groupRingChordsIntoLogicalEdges), never a second
+  // derivation of the same fact.
+  if (noCandidate.length > 0) {
+    const groups = groupRingChordsIntoLogicalEdges(parcelFrame);
+    const groupOfChord = new Map<number, number[]>();
+    for (const group of groups) {
+      if (group.chordIndices.length < 2) continue;
+      for (const chord of group.chordIndices) groupOfChord.set(chord, group.chordIndices);
+    }
+    for (const fragmentIndex of noCandidate) {
+      const siblings = groupOfChord.get(fragmentIndex);
+      if (!siblings) continue;
+      // The line's measurement: any SIBLING chord that pass 1/2 actually
+      // matched. Never the fragment's own zero.
+      let lineInsetFeet: number | null = null;
+      for (const sibling of siblings) {
+        if (sibling === fragmentIndex) continue;
+        const measured = out.find((m) => m.edgeIndex === sibling);
+        if (measured && measured.matched && measured.insetFeet != null) {
+          lineInsetFeet = measured.insetFeet;
+          break;
+        }
+      }
+      if (lineInsetFeet == null) continue;
+      const row = out.find((m) => m.edgeIndex === fragmentIndex);
+      if (!row) continue;
+      row.insetFeet = lineInsetFeet;
+      row.collinearFragmentOfLogicalLine = true;
+    }
   }
 
   return out;
