@@ -4,8 +4,10 @@
  * Walks the closed 65-rail parcel_record registry for one parcel, decides
  * per-rail `serve` state exactly as legacy-design-tools'
  * `parcelRecordAllowlist.ts` decides it today (record when slated + gate
- * pass; refused when slated + gate refuse/excluded; legacy-transitional
- * for anything unslated), and dereferences an atom when a cell names one.
+ * pass; refused when slated + any other recognised gate verdict — the bare
+ * 'excluded' and, since P-201 / A-153, the three 'excluded-*' kinds alike;
+ * legacy-transitional for anything unslated), and dereferences an atom when
+ * a cell names one.
  * See OPS-23 P-152 dispatch (`_dispatches/2026-09-11_p152-reader_dispatch.md`)
  * for the full contract this implements.
  */
@@ -102,6 +104,11 @@ async function buildRailResponse(
     const verdict = await store.loadGateVerdict(countyFips, railKey);
     if (verdict) {
       gate = { verdict: verdict.verdict, evaluatedAt: verdict.evaluatedAt };
+      // Every RECOGNISED non-pass verdict serves 'refused' — the factory's
+      // 'excluded-*' kinds (P-201 / A-153) exactly as the bare 'excluded'
+      // has always served. No serve state changes here (P-293 remainder);
+      // an unrecognised string never arrives: the store logs it and fails
+      // closed to null, which takes the no-verdict path below.
       serve = verdict.verdict === "pass" ? "record" : "refused";
     }
     // slated + no usable verdict: fail closed to legacy-transitional, same
