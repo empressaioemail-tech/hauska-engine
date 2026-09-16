@@ -50,13 +50,26 @@
  * legacy-design-tools, out of this lane's scope).
  *
  * RE-MEASURED 2026-09-16 (P-205b, read-only, under a P-281 heavy-scan lease, psql
- * `\timing`): the first, cold `78654` GROUP BY took 67.8s and the warm repeats took
- * 15.4s and 3.3s. That is LOWER than the 2-3 minute figure above, not higher, and both
- * numbers are kept rather than one being overwritten by the other: the 2-3 minute figure
- * is what the 150s timeout was sized against and remains the worst case this module is
- * willing to declare, while 67.8s is what one cold run actually cost on this date. A
- * timeout sized to a measured worst case that is not always reached is doing its job; a
- * timeout sized to the best observed run would not be.
+ * `\timing`): the cold `78654` GROUP BY took 67.8s in the lease window 22:39:03Z-22:43:34Z,
+ * and a later paired run in the lease window 23:06:21Z-23:11:18Z measured the COMBINED
+ * one-scan statement against the ZIP-only statement it replaces, same session, same store:
+ *
+ *   combined (this PR's statement), cold     72_226 ms
+ *   ZIP-only (the deployed statement)        19_536 ms   (already partly warm)
+ *   combined, warm repeat                     3_213 ms
+ *   ZIP-only, warm repeat                     3_011 ms
+ *
+ * So the claim "at most as expensive as ZIP-only" is not free and is stated precisely
+ * rather than rounded away: warm, the combined statement costs about 7 percent more
+ * (3.21s vs 3.01s), and that is the whole price of the narrowing. The number that matters
+ * is the ONE: 72.2s for the combined scan replaces 72.2s + 19.5s for the two scans the
+ * literal reading of the ruling would have needed, and two scans of this table are what
+ * would have exceeded the platform budget on a cold ZIP.
+ *
+ * The 2-3 minute figure above is NOT overwritten by these: it is what the 150s timeout was
+ * sized against and remains the declared worst case, while 67.8s and 72.2s are what two
+ * separate cold runs actually cost on this date. An unindexed scan on a shared instance
+ * varies; a timeout sized to the best observed run would be the defect.
  *
  * P-205b (OPS-24) -- NARROW BEFORE GIVING UP, AND A UNANIMOUS ANSWER NEEDS NO WINNER.
  * Ruling (integration seat, 2026-09-16), because a ZIP-only grouping made the Phase 1
@@ -64,10 +77,21 @@
  * rows) plus a Travis tail (48453, 1850) plus five stowaways, so the ZIP alone sits at
  * 85.3 percent -- below DOMINANCE_SHARE -- and `find_parcel` refused with
  * `coverage_check_unavailable` for EVERY Burnet address in a split ZIP. Measured live
- * against this service's own deployed revision before the change, 2026-09-16:
- * `?city=Marble+Falls&state=TX&zip=78654` answered exactly
- * `"locality resolves to multiple candidate counties with no dominant match: 48053 (11391),
- * 48453 (1850), 48031 (61), 48319 (46), 48015 (2), 48501 (2), 48299 (1)"`.
+ * against this service's own deployed revision, 2026-09-16T23:0xZ, revision
+ * `hauska-retrieval-api-00094-wed` (the current ready revision, i.e. this defect is still
+ * live at head-of-deploy and not only in the revision the dispatch named):
+ *
+ *   GET .../parcel-record-gate-verdict/coverage/check?city=Marble+Falls&state=TX&zip=78654
+ *   -> HTTP 200 {"status":"indeterminate","reason":"locality resolves to multiple candidate
+ *      counties with no dominant match: 48053 (11391), 48453 (1850), 48031 (61),
+ *      48319 (46), 48015 (2), 48501 (2), 48299 (1)"}
+ *
+ * and the same revision with the city REMOVED, or with a city that is not in the ZIP at
+ * all (`Nowhereville`), returns that identical body -- the live proof that the deployed
+ * revision ignores the city entirely. Two live controls on the same revision, so the
+ * defect is bounded rather than assumed: `zip=76541&state=TX` answers `{"status":"covered"}`
+ * (Bell, no city needed), and an out-of-state locality answers the `outside Texas`
+ * indeterminate.
  *
  * Two rules were added, and nothing else changed:
  *
@@ -81,18 +105,22 @@
  *      picked out of a vote that was not close.
  *
  * ONE SCAN, TWO SPLITS. The narrowing does NOT cost a second scan of `txgio_parcel`. That
- * table is unindexed on `situs_zip`/`situs_city` and a cold GROUP BY over it measured 67.8s
- * live (2026-09-16); two of them would exceed this service's 300s Cloud Run request timeout
- * and would make the narrowed answer unreachable for precisely the cold ZIP this rule exists
- * for. Instead, when a ZIP and a city are both given, ONE statement is issued whose WHERE is
- * the ZIP predicate and whose second GROUP BY key is "does this row's situs_city equal the
- * given city". Summing across that key reproduces the ZIP-only split from the same rows
- * (same WHERE), and selecting only the matching rows is the ZIP-and-city split. The ZIP-only
- * split is judged first, so a ZIP that resolves on its own behaves exactly as it did before,
- * and the narrowed split is consulted only when the first is ambiguous. Verified live: the
- * ZIP-only fold of that one statement returned 48053 (11391) / 48453 (1850) / 48031 (61) /
- * 48319 (46) / 48015 (2) / 48501 (2) / 48299 (1), identical to a separate ZIP-only GROUP BY
- * and to the candidate list the deployed revision itself had already printed.
+ * table is unindexed on `situs_zip`/`situs_city`, a cold GROUP BY over it measured 67.8s and
+ * 72.2s in two separate runs (2026-09-16), and two of them would make the narrowed answer
+ * unreachable for precisely the cold ZIP this rule exists for. Instead, when a ZIP and a
+ * city are both given, ONE statement is issued whose WHERE is the ZIP predicate and whose
+ * second GROUP BY key is "does this row's situs_city equal the given city". Summing across
+ * that key reproduces the ZIP-only split from the same rows (same WHERE), and selecting only
+ * the matching rows is the ZIP-and-city split. The ZIP-only split is judged first, so a ZIP
+ * that resolves on its own behaves exactly as it did before, and the narrowed split is
+ * consulted only when the first is ambiguous. Verified live (23:11:10.231873+00, piped to
+ * psql, read-only): the ZIP-only fold of that one statement returned 48053 (11391) / 48453
+ * (1850) / 48031 (61) / 48319 (46) / 48015 (2) / 48501 (2) / 48299 (1) -- identical to a
+ * separate ZIP-only GROUP BY issued in the same session and to the candidate list the
+ * deployed revision itself had already printed -- and the matching-row fold returned 48053
+ * (6873) / 48031 (61) / 48319 (45) / 48453 (6), which is 98.4 percent Burnet. Those two
+ * folds are the whole cost argument: one scan, judged twice, and the 1839 rows whose
+ * `situs_city` is NULL are the reason the second judgement flips the answer.
  *
  * AN EMPTY NARROWING IS NOT AN ABSENCE (DEV-PROCESS 4.3). If the given city matches no row
  * in that ZIP, the module keeps the ZIP-only resolution and lets rule 2 decide it, rather
