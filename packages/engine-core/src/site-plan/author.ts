@@ -42,6 +42,7 @@ import {
   type StreetAnchorInput,
   type ZoningSummaryInput,
 } from "./site-model.js";
+import { footprintsInputFromAtoms, type SitePlanFootprintsInput } from "./footprint-layer.js";
 import {
   notSpecifiedAxesFromSetbackTable,
   resolveNotSpecifiedAxes,
@@ -179,6 +180,32 @@ async function resolveEnvelopeOutcome(
     : envelope.outcome;
 }
 
+/**
+ * P-248 — the parcel's mapped footprints as the composer's input.
+ *
+ * Reads the SAME parcel atoms every other resolver here reads (the storage port
+ * has no per-entity footprint read keyed by parcel; `listBuildingFootprintsNearBbox`
+ * is a map layer that would drag a neighbouring parcel's building into this
+ * sheet's drawing, so it is deliberately not used). Filtering and the three
+ * honest layer states live in `footprint-layer.ts`, so the composer, the sheet
+ * legends and this resolver cannot disagree about what "no footprint" means.
+ *
+ * Never throws: a store that fails here means the layer was not checked, which
+ * the sheet states in words — it must not take a whole export down, and it must
+ * not be drawn as a parcel with no building on it.
+ */
+async function resolveFootprintLayer(
+  parcelNodeId: string,
+  storage: StoragePort,
+): Promise<SitePlanFootprintsInput> {
+  try {
+    const atoms = await storage.listPropertyAtomsByParcelNodeId(parcelNodeId);
+    return footprintsInputFromAtoms(atoms);
+  } catch {
+    return { kind: "unchecked", reason: "not checked · the footprint source could not be read for this parcel" };
+  }
+}
+
 function centroidOfRing(ringWgs84: Array<[number, number]>): { latitude: number; longitude: number } {
   const n = ringWgs84.length;
   let sumLng = 0;
@@ -257,6 +284,11 @@ export interface AuthorParcelSitePlanExportOptions {
    * path looks up the parcel's buildable-envelope atom from storage when
    * omitted (absence is not an error — see `resolveEnvelopeOutcome`). */
   envelopeOutcomeOverride?: EnvelopeOutcomeInput;
+  /** P-248 test seam for the mapped footprint layer. Production path reads the
+   * parcel's `building-footprint` atoms via `resolveFootprintLayer`; without
+   * this seam a test (or the local verification harness) would need a store to
+   * exercise the sheet's footprint drawing at all. */
+  footprintsOverride?: SitePlanFootprintsInput;
   /** Test seam for the PDF sheet-3 aerial imagery fetch; production path
    * uses the bounded Esri World Imagery fetcher. Tests MUST stub this so
    * they never hit the network — any failure degrades to the honest
@@ -373,6 +405,9 @@ export async function composeSitePlanModelForParcel(
   const floodZone: FloodZoneSummaryInput = options.floodZoneOverride ?? (await resolveFloodZoneSummary(centroid, options.fetchFloodZone));
   const envelopeOutcomeRaw: EnvelopeOutcomeInput | undefined =
     options.envelopeOutcomeOverride ?? (await resolveEnvelopeOutcome(options.parcelNodeId, options.storage));
+  // P-248 — the mapped footprint layer, read once beside the envelope outcome.
+  const footprints: SitePlanFootprintsInput =
+    options.footprintsOverride ?? (await resolveFootprintLayer(options.parcelNodeId, options.storage));
 
   // Honest-absent path: NO setback-rule atom for this parcel. The export
   // still succeeds — the setback layer is drawn honest-absent (no F/S/R
@@ -625,6 +660,7 @@ export async function composeSitePlanModelForParcel(
     zoning,
     floodZone,
     envelopeOutcome,
+    footprints,
   });
 
   return {

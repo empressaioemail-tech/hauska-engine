@@ -23,6 +23,7 @@ import {
   type PageRect,
 } from "./aerial.js";
 import { clipPolylineToAabb, feetFromMeters, type PlacedLabel } from "./annotation-placement.js";
+import { footprintLayerLegendLabel } from "../footprint-layer.js";
 import {
   CHIP_FIXTURE_LABEL,
   CHIP_NO_ADDRESS,
@@ -196,6 +197,12 @@ const SUPPRESSED = TOKENS.neutral500;
 const ACCENT = TOKENS.accent;
 const ACCENT_TYPE = TOKENS.accent700;
 const LEADER_COLOR = TOKENS.neutral500;
+// P-248 — the existing structure. Deliberately NOT the accent hue: the sheet
+// standard reserves that ONE hue for the modelled buildable envelope, and a
+// mapped building is a different kind of fact (measured, not modelled). Solid
+// neutral reads as "on the ground today" against the accent's "could be built".
+const FOOTPRINT_FILL = TOKENS.neutral200;
+const FOOTPRINT_COLOR = TOKENS.neutral800;
 
 /**
  * MINIMUM sheet set: drawing, summary, aerial context (§1). Since the
@@ -338,6 +345,17 @@ export interface EmitPdfSitePlanOptions {
   /** Footer generation timestamp; defaults to `new Date().toISOString()`.
    * Exposed so tests can assert an exact footer stamp deterministically. */
   generatedAtIso?: string;
+  /**
+   * P-248 — P-159's contradiction treatment, as a flag the DRAWING's legend can
+   * report. Set by a document assembler that owns the composed report model and
+   * can therefore call `footprintContradictsAppraisal` (feasibility-author.ts,
+   * dossier-author.ts); the standalone site-plan export leaves it unset, because
+   * that path never reads the ownership fact and inferring it here would be a
+   * second implementation of the rule. When true and the footprint layer is
+   * checked-and-clear, the legend row points at the existing treatment rather
+   * than letting a miss read as a vacant lot.
+   */
+  footprintAppraisalConflict?: boolean;
 }
 
 /** §14: keyed mark registry — a duplicate (page, kind, key) is never drawn twice. */
@@ -829,6 +847,26 @@ function drawSitePlanDrawing(
     }
   }
 
+  // 5b) MAPPED BUILDING FOOTPRINTS (P-248) — drawn above the envelope fill (a
+  // building is on the ground; the envelope is a model) and BELOW the property
+  // line, which stays the heaviest stroke on the sheet. Every ring is stroked;
+  // the fill is applied only to a single-ring polygon, because filling a
+  // footprint that carries an interior ring would paint over its own courtyard
+  // and claim floor area the atom never asserted.
+  for (const footprint of layout.footprints) {
+    const footprintBbox = unionBbox(...footprint.rings.map((ring) => bboxOfPoints(ring)));
+    if (!marks.once(1, "footprint", footprint.footprintId, footprintBbox)) continue;
+    if (footprint.rings.length === 1) {
+      drawFilledRing(page, footprint.rings[0]!, FOOTPRINT_FILL);
+    }
+    for (const ring of footprint.rings) {
+      drawRing(page, ring, FOOTPRINT_COLOR, STROKE.footprint);
+    }
+    if (footprint.label) {
+      drawPlacedLabel(page, footprint.label, F.body, FOOTPRINT_COLOR);
+    }
+  }
+
   // 6) PROPERTY LINE — heaviest stroke on the sheet (§3).
   if (marks.once(1, "property-line", "ring", bboxOfPoints(layout.propertyLine))) {
     drawRing(page, layout.propertyLine, PROPERTY_COLOR, STROKE.property);
@@ -949,13 +987,29 @@ function drawSitePlanDrawing(
 // ─────────────────────────────────────────────────────────────────────────
 interface LegendRow {
   label: string;
-  swatch: "line-heavy" | "envelope" | "line-dashed" | "line-thin" | "line-dotted" | "leader";
+  swatch: "line-heavy" | "envelope" | "line-dashed" | "line-thin" | "line-dotted" | "leader" | "footprint";
   color: RGB;
   empty?: boolean;
 }
 
-function legendRows(layout: SitePlanDrawingLayout, model: SitePlanModel, sheet2No: number): LegendRow[] {
+function legendRows(
+  layout: SitePlanDrawingLayout,
+  model: SitePlanModel,
+  sheet2No: number,
+  footprintAppraisalConflict: boolean,
+): LegendRow[] {
   const rows: LegendRow[] = [{ label: "Property line", swatch: "line-heavy", color: PROPERTY_COLOR }];
+
+  // P-248 — the layer's state, in its own row, present or not (§5: every layer,
+  // populated or not). One wording for both sheets of a document:
+  // `footprintLayerLegendLabel` owns it.
+  const footprintRow = footprintLayerLegendLabel(model.footprints, footprintAppraisalConflict);
+  rows.push({
+    label: footprintRow.label,
+    swatch: "footprint",
+    color: footprintRow.empty ? SUPPRESSED : FOOTPRINT_COLOR,
+    ...(footprintRow.empty ? { empty: true } : {}),
+  });
 
   if (layout.setback.drawEnvelope) {
     rows.push({ label: "Buildable envelope", swatch: "envelope", color: ACCENT });
@@ -1027,6 +1081,21 @@ function legendRows(layout: SitePlanDrawingLayout, model: SitePlanModel, sheet2N
 
 function drawLegendSwatch(page: PDFPage, row: LegendRow, x: number, y: number): void {
   const w = pt(24);
+  if (row.swatch === "footprint") {
+    // The same fill + outline the sheet draws a footprint with, so the row
+    // cannot describe a mark the drawing does not make.
+    page.drawRectangle({
+      x,
+      y: y - pt(3),
+      width: w,
+      height: pt(9),
+      color: row.empty ? SUPPRESSED : FOOTPRINT_FILL,
+      borderColor: row.color,
+      borderWidth: row.empty ? 0.5 : 0.9,
+      borderDashArray: row.empty ? [1.6, 1.6] : undefined,
+    });
+    return;
+  }
   if (row.swatch === "envelope") {
     page.drawRectangle({ x, y: y - pt(3), width: w, height: pt(9), color: ENVELOPE_FILL, borderWidth: 0 });
     page.drawRectangle({
@@ -1067,10 +1136,11 @@ function drawLegend(
   marks: MarkRegistry,
   rhythm: RhythmCapture,
   segmentTableSheetNo: number,
+  footprintAppraisalConflict: boolean,
 ): void {
   if (!marks.once(1, "legend", "legend")) return;
   const left = MARGIN_X;
-  const rows = legendRows(layout, model, segmentTableSheetNo);
+  const rows = legendRows(layout, model, segmentTableSheetNo, footprintAppraisalConflict);
   const size = TYPE.legend;
   // §21: rows hang from the footer rule — space-2 pad, then line boxes on a
   // uniform pitch (line box + space-2 row gap).
@@ -1332,11 +1402,12 @@ function drawPage1Footer(
   rhythm: RhythmCapture,
   segmentTableSheetNo: number,
   chromeFooter: { sheetNo: number; sheetTotal: number; generatedAtIso: string; liveViewUrl?: string },
+  footprintAppraisalConflict: boolean,
 ): void {
   const ruleY = page1FooterRuleY();
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
 
-  drawLegend(page, layout, model, F, ruleY, marks, rhythm, segmentTableSheetNo);
+  drawLegend(page, layout, model, F, ruleY, marks, rhythm, segmentTableSheetNo, footprintAppraisalConflict);
   drawScaleBar(page, layout, model, F, ruleY - pt(8), marks);
 
   // P-228: the report-chrome footer replaces drawFinePrint here — same
@@ -2119,6 +2190,26 @@ function drawHaloedPolyline(page: PDFPage, points: PageXY[], color: RGB, thickne
   drawPolyline(page, points, color, thickness);
 }
 
+/**
+ * P-248 — one mapped footprint's rings over raster imagery, page-space, with
+ * the §20 paper underdraw so the outline reads over any tone. Shared by the
+ * site plan's own aerial sheet and the feasibility study's aerial page: two
+ * documents, two transforms, ONE stroke and one colour, so neither can describe
+ * the built form differently from the other.
+ *
+ * No fill here on purpose — see the aerial overlay's own note.
+ */
+export function drawFootprintOverRaster(
+  page: PDFPage,
+  rings: PageXY[][],
+  color: RGB = FOOTPRINT_COLOR,
+): void {
+  for (const ring of rings) {
+    if (ring.length < 3) continue;
+    drawHaloedRing(page, ring, color, STROKE.footprint + 0.5);
+  }
+}
+
 /** §20: paint-order emulation — paper-coloured underdraw in 8 directions, then ink. */
 function drawHaloedText(
   page: PDFPage,
@@ -2223,6 +2314,22 @@ function drawAerialOverlay(
   if (model.setback.offsetRingLocal && !model.setback.honestAbsence && !model.setback.degenerate) {
     if (marks.once(pageNo, "setback-dash", "envelope")) {
       drawHaloedRing(page, model.setback.offsetRingLocal.map(toPage), SETBACK_DASH_COLOR, STROKE.setbackDash + 0.3, SETBACK_DASH);
+    }
+  }
+
+  // P-248 — MAPPED BUILDING FOOTPRINTS, over the imagery and UNDER the property
+  // line, so the heaviest curve on this sheet stays the parcel edge (§3). No
+  // fill: on this sheet the imagery IS the evidence for what the footprint
+  // claims, and a tint would cover the very pixels a reader is being asked to
+  // reconcile against. Drawn from the model's own local-ENU rings through this
+  // sheet's transform — never a second projection.
+  if (model.footprints.kind === "present") {
+    for (const footprint of model.footprints.polygons) {
+      if (!marks.once(pageNo, "footprint", footprint.footprintId)) continue;
+      drawFootprintOverRaster(page, [
+        footprint.ringLocal.map(toPage),
+        ...footprint.innerRingsLocal.map((ring) => ring.map(toPage)),
+      ]);
     }
   }
 
@@ -2408,7 +2515,7 @@ function drawImageryStrip(
 
 interface AerialLegendRow {
   label: string;
-  swatch: "line-heavy" | "line-dashed" | "imagery" | "line-dotted";
+  swatch: "line-heavy" | "line-dashed" | "imagery" | "line-dotted" | "footprint";
   color: RGB;
   empty?: boolean;
 }
@@ -2427,6 +2534,7 @@ function drawAerialFooter(
   rhythm: RhythmCapture,
   numbering: SheetNumbering | undefined,
   chromeFooter: { sheetNo: number; sheetTotal: number; generatedAtIso: string; liveViewUrl?: string },
+  footprintAppraisalConflict: boolean,
 ): void {
   drawHairlineRule(page, MARGIN_X, ruleY, PAGE_WIDTH - MARGIN_X * 2, TOKENS.neutral300, 0.7);
 
@@ -2434,8 +2542,19 @@ function drawAerialFooter(
   // Legend (§5 applied to this sheet): fixed rows, empty states inline.
   const drawsEnvelope =
     !!model.setback.offsetRingLocal && !model.setback.honestAbsence && !model.setback.degenerate;
+  // P-248 — the same layer statement sheet 1 prints, from the same function
+  // (`footprintLayerLegendLabel`), so one document cannot describe one layer two
+  // ways. The swatch differs (filled outline here, filled swatch there) because
+  // this sheet draws the footprint as an outline over imagery.
+  const footprintRow = footprintLayerLegendLabel(model.footprints, footprintAppraisalConflict);
   const rows: AerialLegendRow[] = [
     { label: `Property line — same geometry as sheet ${s1}`, swatch: "line-heavy", color: PROPERTY_COLOR },
+    {
+      label: footprintRow.label,
+      swatch: "footprint",
+      color: footprintRow.empty ? SUPPRESSED : FOOTPRINT_COLOR,
+      ...(footprintRow.empty ? { empty: true } : {}),
+    },
     drawsEnvelope
       ? { label: "Buildable envelope", swatch: "line-dashed", color: SETBACK_DASH_COLOR }
       : {
@@ -2474,6 +2593,20 @@ function drawAerialFooter(
       const mid = y + pt(1);
       if (row.swatch === "imagery") {
         page.drawRectangle({ x, y: y - pt(3), width: w, height: pt(9), color: TOKENS.accent200, borderColor: TOKENS.neutral300, borderWidth: 0.5 });
+      } else if (row.swatch === "footprint") {
+        // P-248 — hollow on this sheet: the footprint is an OUTLINE over the
+        // imagery here, so its legend row must not show a filled box the
+        // drawing never makes.
+        page.drawRectangle({
+          x,
+          y: y - pt(3),
+          width: w,
+          height: pt(9),
+          borderColor: row.color,
+          borderWidth: row.empty ? 0.5 : 0.9,
+          borderDashArray: row.empty ? [1.6, 1.6] : undefined,
+          color: undefined,
+        });
       } else {
         const thickness = row.swatch === "line-heavy" ? 1.4 : 0.8;
         const dash = row.swatch === "line-dashed" ? [2.2, 1.6] : row.swatch === "line-dotted" ? [0.6, 2] : undefined;
@@ -2577,6 +2710,7 @@ function drawAerialPage(
   pageNo: number,
   aerialLabel: { no: number; total: number },
   chromeFooter: { generatedAtIso: string; liveViewUrl?: string },
+  footprintAppraisalConflict: boolean,
 ): void {
   const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
@@ -2681,6 +2815,7 @@ function drawAerialPage(
     rhythm,
     numbering,
     { sheetNo: aerialLabel.no, sheetTotal: aerialLabel.total, generatedAtIso: chromeFooter.generatedAtIso, liveViewUrl: chromeFooter.liveViewUrl },
+    footprintAppraisalConflict,
   );
 }
 
@@ -2713,6 +2848,10 @@ export async function emitPdfSitePlan(
   const rhythm = new RhythmCapture();
   const generatedAtIso = options.generatedAtIso ?? new Date().toISOString();
   const chromeFooterOptions = { generatedAtIso, liveViewUrl: options.liveViewUrl };
+  // P-248 — the drawing's own footprint legend states the layer's state; the
+  // P-159 contradiction pointer is added only when the assembling document says
+  // it applies (see the option's doc).
+  const footprintAppraisalConflict = options.footprintAppraisalConflict === true;
 
   // The drawing sheet is the ONLY site-plan sheet that can ever be the
   // document's printed sheet 1 (summary/aerial always follow it, standalone
@@ -2775,12 +2914,17 @@ export async function emitPdfSitePlan(
   // wait (default 8s cap) overlaps the vector rendering of sheets 1–2.
   // §21 footer stack, bottom up: report-chrome footer (6 reserved lines,
   // same conservative reservation as page 1 — see PAGE1_FOOTER_RESERVED_LEGAL_LINES)
-  // → legend band (space-3 gap + two small-legend line boxes with space-2
+  // → legend band (space-3 gap + small-legend line boxes with space-2
   // pads) → footer rule → strip → imagery rect. Aerial is always the running
   // header (never document sheet 1), so its top also reserves the
   // IMAGERY/REGISTER body stats row now living below the chrome.
+  //
+  // P-248 raised the band from TWO line boxes to THREE: the footprint row takes
+  // the small legend from 4 rows to 5, which the column-major fill lays out as
+  // three rows in each of the two columns. Reserved, not measured — this band is
+  // fixed before the first draw (the imagery rect depends on it).
   const aerialLegendBand =
-    pt(SPACE.s3) + pt(SPACE.s2) * 2 + 2 * LB.legendSmall.lineBoxHeight + pt(8);
+    pt(SPACE.s3) + pt(SPACE.s2) * 2 + 3 * LB.legendSmall.lineBoxHeight + pt(8);
   const aerialFooterBandTop = footerBandHeight(6) + aerialLegendBand + imageryStripHeight() + pt(6);
   const aerialTopY = runningHeaderBottomY() - RUNHEAD.bodyStart - BODY_STATS_ROW_RESERVE;
   const aerialRect = aerialImageRect(aerialTopY, aerialFooterBandTop);
@@ -2808,6 +2952,7 @@ export async function emitPdfSitePlan(
     rhythm,
     segmentTableSheetNo,
     { sheetNo: drawingNo, sheetTotal: total, ...chromeFooterOptions },
+    footprintAppraisalConflict,
   );
 
   // PAGES 2..(1+m) — summary flow. Sheet 2 plus any inserted continuation
@@ -2877,6 +3022,7 @@ export async function emitPdfSitePlan(
       aerialLocalPage,
       { no: aerialNo, total },
       chromeFooterOptions,
+      footprintAppraisalConflict,
     );
   }
 

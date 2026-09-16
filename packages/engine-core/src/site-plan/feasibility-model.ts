@@ -341,7 +341,15 @@ export interface HoaFacts {
 
 // ── Section 12: existing structures / footprint ─────────────────────────
 export interface FootprintFacts {
-  footprints: ReadonlyArray<{ footprintId: string; structureRole?: string; sourceTier?: string }>;
+  footprints: ReadonlyArray<{
+    footprintId: string;
+    structureRole?: string;
+    sourceTier?: string;
+    /** P-248 — `machine` / `human` / `unsurveyed`, off the atom. The row prints
+     * it because "a structure is mapped here" and "somebody measured it" are
+     * different claims, and an ML-derived polygon is the first, not the second. */
+    verificationStatus?: string;
+  }>;
 }
 
 // ── Section 13/14: data quality + open items (generated, not read) ──────

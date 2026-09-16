@@ -35,6 +35,11 @@ import {
 } from "./flood-drainage.js";
 import { WEB_FINDINGS_DISCLOSURE } from "../narrative-generator.js";
 import { REASON, countyDisplayName, formatSqFt } from "./format.js";
+import {
+  footprintRoleLabel,
+  footprintTierLabel,
+  footprintVerificationLabel,
+} from "../footprint-layer.js";
 import { RhythmCapture, placeRowBelowRule, type RhythmRow } from "./line-box.js";
 import { SITE_PLAN_HONESTY_LINE } from "./provenance.js";
 import {
@@ -60,6 +65,7 @@ import {
   PAGE_HEIGHT,
   PAGE_WIDTH,
   countSitePlanSheets,
+  drawFootprintOverRaster,
   drawSectionHeading,
   emitPdfSitePlan,
   loadFont,
@@ -564,7 +570,16 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
     title: "Existing structures",
     facts:
       fp.status === "present"
-        ? fp.footprints.map((f, i) => factOrChip(`Structure ${i + 1}`, f.structureRole ?? f.footprintId, { source: f.sourceTier }))
+        ? fp.footprints.map((f, i) =>
+            factOrChip(
+              `Structure ${i + 1}`,
+              // P-248: the row says WHAT is mapped (role) and WHETHER anyone
+              // measured it (verification status). `unsurveyed` is the honest
+              // word for an ML-derived polygon and it prints as itself.
+              `${footprintRoleLabel(f.structureRole)} · ${footprintVerificationLabel(f.verificationStatus)}`,
+              { source: footprintTierLabel(f.sourceTier) },
+            ),
+          )
         : contradiction
           ? [
               // NOT an absence chip. A gray UNAVAILABLE here reads as
@@ -675,7 +690,15 @@ function attachConsequences(
 // ─────────────────────────────────────────────────────────────────────────
 
 export interface EmitPdfFeasibilityOptions {
-  sitePlan?: { model: SitePlanModel; aerial?: EmitPdfSitePlanOptions["aerial"] };
+  sitePlan?: {
+    model: SitePlanModel;
+    aerial?: EmitPdfSitePlanOptions["aerial"];
+    /** P-248 — P-159's contradiction treatment applies to this document's
+     * footprint layer (the assembler owns the report model and its ownership
+     * fact). Travels with the site plan because the drawing's legend is what
+     * prints it. */
+    footprintAppraisalConflict?: boolean;
+  };
   sitePlanUnavailableReason?: string;
   liveViewUrl?: string;
   /** Header fallback when `model.geometry` is absent (R2) — the site-plan
@@ -1119,7 +1142,20 @@ function drawFeasibilityAerialPage(
   // The parcel ring over the imagery, so the reader can see which land is
   // theirs. Drawn from the same `ringLocal` the site-plan drawing uses.
   if (aerial && model.geometry.status === "present") {
-    const ring = model.geometry.model.ringLocal;
+    const sitePlan = model.geometry.model;
+    const ring = sitePlan.ringLocal;
+    // P-248 — the mapped footprints, BEFORE the parcel ring so the heaviest
+    // curve on the sheet stays on top. Same model rings, this page's transform,
+    // and the same stroke helper the site plan's own aerial sheet uses.
+    if (sitePlan.footprints.kind === "present") {
+      for (const footprint of sitePlan.footprints.polygons) {
+        if (!marks.once(pageNo, "footprint", footprint.footprintId)) continue;
+        drawFootprintOverRaster(page, [
+          footprint.ringLocal.map((p) => aerial.toPage(p)),
+          ...footprint.innerRingsLocal.map((inner) => inner.map((p) => aerial.toPage(p))),
+        ]);
+      }
+    }
     if (ring.length >= 3) {
       const pts = ring.map((p) => aerial.toPage(p));
       for (let i = 0; i < pts.length; i += 1) {
@@ -1418,6 +1454,9 @@ export async function emitPdfFeasibility(
           numbering: { startAt: sitePlanStartAt, total },
           sheets: "drawing-and-summary",
           aerial: options.sitePlan.aerial,
+          ...(options.sitePlan.footprintAppraisalConflict
+            ? { footprintAppraisalConflict: true }
+            : {}),
         })
       : null;
 

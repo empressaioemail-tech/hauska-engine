@@ -149,6 +149,13 @@ export interface SitePlanDrawingLayout {
   degenerateCallout: { anchor: PageXY; title: string; sentence: string; titleSize: number; sentenceSize: number } | null;
   /** Contours clipped to parcel vicinity for PDF readability (same model source). */
   contours: Array<{ elevation: number; points: PageXY[] }>;
+  /**
+   * P-248 — the mapped building footprints, projected to page space (exterior
+   * plus any interior rings), with the collision-placed label for each. Empty
+   * when the model carries none: the DRAWING never states the layer's state —
+   * the legend row does, from `model.footprints`.
+   */
+  footprints: Array<{ footprintId: string; rings: PageXY[][]; label: PlacedLabel | null }>;
   /** Contour elevation labels — one per contour, in the left margin (§4). */
   elevationLabels: PlacedLabel[];
   streets: {
@@ -748,6 +755,49 @@ export function buildSitePlanDrawingLayout(
     }
   }
 
+  // ── P-248 building footprints ───────────────────────────────────────────
+  // Placed BEFORE the context layers (contours, streets, margin elevations) so
+  // the parcel's own content wins the collision set, and AFTER the setback
+  // labels so a setback callout is never displaced by a structure label. The
+  // label text comes off the model verbatim — tier + verification status are
+  // already in words there (§11), never re-worded here.
+  const footprintFont = TYPE.drawingSetback;
+  const footprints: SitePlanDrawingLayout["footprints"] = [];
+  if (model.footprints.kind === "present") {
+    for (const footprint of model.footprints.polygons) {
+      const rings = [footprint.ringLocal, ...footprint.innerRingsLocal]
+        .filter((ring) => ring.length >= 3)
+        .map((ring) => projectRing(transform, ring));
+      if (rings.length === 0) continue;
+      // Label at the exterior ring's centroid: the anchor a reader expects for
+      // "this building", computed from the drawn ring rather than the bbox.
+      const centroid = ringCentroidLocalPts(footprint.ringLocal);
+      const placed = placeNonCollidingPointLabels(
+        [
+          {
+            point: projectPoint(transform, centroid),
+            text: footprint.label,
+            fontSize: footprintFont,
+          },
+        ],
+        {
+          measureText,
+          occupied,
+          pageScale: transform.scale,
+          bounds,
+          minFontSize: footprintFont,
+          maxNudgeIterations: 24,
+        },
+      )[0];
+      if (placed) occupied.push(placed);
+      footprints.push({
+        footprintId: footprint.footprintId,
+        rings,
+        label: placed ?? null,
+      });
+    }
+  }
+
   // Same origin + +x direction the DXF worker draws the scale bar with.
   const scaleBarStart: LocalPoint = {
     x: model.north.originLocal.x,
@@ -938,6 +988,7 @@ export function buildSitePlanDrawingLayout(
     },
     degenerateCallout,
     contours: decluttered.contours,
+    footprints,
     elevationLabels,
     streets: {
       honestAbsence: streetsRaw.honestAbsence,
