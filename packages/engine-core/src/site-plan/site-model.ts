@@ -154,6 +154,15 @@ export type EnvelopeOutcomeInput =
        */
       atomDid?: string;
       /**
+       * P-261 / A-180 — whether the atom behind `atomDid` is VERIFIED (carries
+       * the depth-warm promotion marker; see `envelope-promotion.ts`). Set by
+       * `resolveEnvelopeOutcome` (author.ts) from the persisted atom itself, the
+       * one place the atom is read. `undefined` means "not established" and is
+       * treated exactly like `false`: the figure is refused. Atom-backing alone
+       * is no longer enough to print a buildable-area number.
+       */
+      depthWarmPromoted?: boolean;
+      /**
        * P-219 — set by the caller when the setback values THIS export followed
        * differ from the ones the persisted setback-rule atom carries, i.e.
        * when this envelope atom was derived from a source the sheet has
@@ -751,6 +760,24 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
       : null;
 
   /**
+   * P-261 / A-180 — atom-backing is necessary but no longer sufficient: the
+   * figure prints only when the atom is VERIFIED.
+   *
+   * A-183's teardown found the wire field is `depthWarmPromotion ===
+   * "depth-warm-promoted-v1"` (with the `sourceCitation` fallback hauska-map's
+   * `isDepthWarmPromoted` uses), and that the PDF and the MCP payload did not
+   * enforce it (P-261, P-249): a cold-derived envelope atom with an area and no
+   * marker printed its number on every sheet. The marker is read off the atom in
+   * `resolveEnvelopeOutcome` (author.ts) — the one place the atom is loaded — and
+   * carried here as a boolean, so this composer never re-reads provenance and
+   * there is exactly one predicate (`envelope-promotion.ts`).
+   */
+  const envelopePromoted =
+    inputs.envelopeOutcome?.kind === "buildable" &&
+    inputs.envelopeOutcome.depthWarmPromoted === true;
+  const envelopeUnverified = atomRef != null && !envelopePromoted;
+
+  /**
    * P-219 / D2 — an envelope atom baked from setbacks this sheet no longer
    * follows may not print its figure.
    *
@@ -796,37 +823,51 @@ export function composeSitePlanModel(inputs: ComposeSitePlanModelInputs): SitePl
           ? (inputs.envelopeOutcome.supersededReason ?? null)
           : null;
 
+  const unverifiedReason =
+    "Buildable area withheld: the buildable-envelope atom on file is not depth-warm verified, so this figure is refused until a verified envelope backs it.";
+
   const printedBuildable: PrintedBuildable =
-    atomRef != null && warmAreaSqFt != null && envelopeSupersededReason == null
+    atomRef != null &&
+    warmAreaSqFt != null &&
+    envelopeSupersededReason == null &&
+    !envelopeUnverified
       ? { kind: "atom", areaSqFt: warmAreaSqFt, atomRef }
-      : envelopeSupersededReason != null
+      : envelopeUnverified
         ? {
             kind: "refused",
-            // No figure leaks into this reason — printing either number here
-            // is the exact thing the refusal exists to prevent.
-            reason: envelopeSupersededReason,
+            // P-261 / A-180. Short and number-free — the reason renders as a
+            // chip on the summary sheet and must not carry the figure it exists
+            // to withhold.
+            reason: unverifiedReason,
           }
-        : {
-            kind: "refused",
-            // Kept to one short line deliberately (§21 vertical-rhythm gate: this
-            // reason renders as a "kv-row" chip on the site-plan summary sheet,
-            // sized the same as every other REASON constant there).
-            //
-            // P-167 wave 5 (OPS-23 R-2/R-4). buildable-with-area / provisional's
-            // OWN buildableVocab.pdfLabel is a raw local or warm figure — it must
-            // never leak into a "refused" reason (that is the exact number this
-            // field exists to withhold). This used to be a hardcoded literal;
-            // it now reads the SAME vocabulary function the MCP's overlay
-            // reasonDisplayText already calls for the identical disposition
-            // (setbacks/geometry present, buildable-envelope atom not yet
-            // minted) — `envelopeHuman("atom_path_pending")` — so the PDF and
-            // the MCP say the identical sentence instead of two hand-typed
-            // wordings for the same honest refusal, with no figure leak.
-            reason:
-              buildableVocab.kind === "buildable-with-area" || buildableVocab.kind === "provisional"
-                ? (envelopeHuman("atom_path_pending") ?? "Withheld, setbacks unruled")
-                : buildableVocab.pdfLabel,
-          };
+        : envelopeSupersededReason != null
+          ? {
+              kind: "refused",
+              // No figure leaks into this reason — printing either number here
+              // is the exact thing the refusal exists to prevent.
+              reason: envelopeSupersededReason,
+            }
+          : {
+              kind: "refused",
+              // Kept to one short line deliberately (§21 vertical-rhythm gate: this
+              // reason renders as a "kv-row" chip on the site-plan summary sheet,
+              // sized the same as every other REASON constant there).
+              //
+              // P-167 wave 5 (OPS-23 R-2/R-4). buildable-with-area / provisional's
+              // OWN buildableVocab.pdfLabel is a raw local or warm figure — it must
+              // never leak into a "refused" reason (that is the exact number this
+              // field exists to withhold). This used to be a hardcoded literal;
+              // it now reads the SAME vocabulary function the MCP's overlay
+              // reasonDisplayText already calls for the identical disposition
+              // (setbacks/geometry present, buildable-envelope atom not yet
+              // minted) — `envelopeHuman("atom_path_pending")` — so the PDF and
+              // the MCP say the identical sentence instead of two hand-typed
+              // wordings for the same honest refusal, with no figure leak.
+              reason:
+                buildableVocab.kind === "buildable-with-area" || buildableVocab.kind === "provisional"
+                  ? (envelopeHuman("atom_path_pending") ?? "Withheld, setbacks unruled")
+                  : buildableVocab.pdfLabel,
+            };
 
   const summary: SitePlanSummaryModel = {
     parcelNodeId: inputs.parcelNodeId,

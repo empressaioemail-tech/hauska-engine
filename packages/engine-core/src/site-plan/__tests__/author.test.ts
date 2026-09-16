@@ -383,6 +383,12 @@ describe("authorParcelSitePlanExport", { timeout: 20_000 }, () => {
         kind: "buildable",
         areaSqFt: 5_250,
         atomDid: "did:hauska:buildable-envelope:test-seam:1",
+        // P-261 / A-180: the override path is proven reaching the renderer
+        // through the figure it prints, and a figure now needs a VERIFIED
+        // atom — so this fixture carries the promotion the production read
+        // supplies (`resolveEnvelopeOutcome`). The unpromoted refusal is
+        // `pdf/__tests__/p261-verified-figure-decode-probe.test.ts`.
+        depthWarmPromoted: true,
       },
     });
 
