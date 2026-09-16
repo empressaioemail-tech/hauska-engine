@@ -78,26 +78,45 @@ async function seedSetback(storage: InMemoryStorage, parcelNodeId: string): Prom
   await storage.writePropertyAtom(atom);
 }
 
+/** P-240 (OPS-24, 2026-09-15): refresh is now asynchronous — mirrors
+ * waitForJobSettled in feasibility-export-route.test.ts. Polls
+ * GET .../site-plan-export until the job reaches a terminal state. */
+async function waitForJobSettled(
+  app: ReturnType<typeof buildParcelTerrainRoutes>,
+  id: string,
+  maxAttempts = 50,
+): Promise<Record<string, unknown>> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await app.request(`/${id}/site-plan-export`);
+    const body = (await res.json()) as Record<string, unknown>;
+    if (body.state === "ready" || body.state === "failed") return body;
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+  throw new Error(`site-plan-export job for ${id} did not settle within ${maxAttempts} polls`);
+}
+
 describe("site-plan setback gate", () => {
   beforeEach(() => {
     vi.mocked(authorParcelSitePlanExport).mockClear();
   });
 
-  it("exports honest-absent (201, NOT 422) when no setback-rule atom exists (2026-07-27 operator requirement)", async () => {
+  it("exports honest-absent (ready, NOT failed) when no setback-rule atom exists (2026-07-27 operator requirement)", async () => {
     const storage = new InMemoryStorage();
     const app = buildParcelTerrainRoutes(
       { async resolve() { return null; } },
       storage,
     );
-    const res = await app.request(
+    const refreshRes = await app.request(
       `/${parcelMissing}/site-plan-export/refresh`,
       { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
     );
     // The whole sheet still exports; the setback layer is honest-absent, never a
-    // 422 refusal and never a fabricated F/S/R.
-    expect(res.status).toBe(201);
-    const body = await res.json() as { setbackHonestAbsence?: boolean };
-    expect(body.setbackHonestAbsence).toBe(true);
+    // failed job and never a fabricated F/S/R.
+    expect(refreshRes.status).toBe(202);
+    const settled = await waitForJobSettled(app, parcelMissing);
+    expect(settled.state).toBe("ready");
+    const result = settled.result as { setbackHonestAbsence?: boolean };
+    expect(result.setbackHonestAbsence).toBe(true);
     // The author was called with NO setback atom (undefined) — nothing fabricated.
     expect(authorParcelSitePlanExport).toHaveBeenCalledOnce();
     const call = vi.mocked(authorParcelSitePlanExport).mock.calls[0]![0]!;
@@ -111,11 +130,12 @@ describe("site-plan setback gate", () => {
       { async resolve() { return null; } },
       storage,
     );
-    const res = await app.request(
+    const refreshRes = await app.request(
       `/${parcelWithSetback}/site-plan-export/refresh`,
       { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
     );
-    expect(res.status).toBe(201);
+    expect(refreshRes.status).toBe(202);
+    await waitForJobSettled(app, parcelWithSetback);
     expect(authorParcelSitePlanExport).toHaveBeenCalledOnce();
     const call = vi.mocked(authorParcelSitePlanExport).mock.calls[0]![0]!;
     expect(call.setback).toBeDefined();

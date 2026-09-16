@@ -179,6 +179,63 @@ export interface FeasibilityExportJob {
   updatedAt: string;
 }
 
+/**
+ * P-240 (OPS-24, 2026-09-15): durable flood-drainage-refresh job state, same
+ * shape and lifecycle as `FeasibilityExportJob` (P-155). No result payload —
+ * `GET .../flood-drainage/study` and `GET .../flood-drainage/download`
+ * already re-serve everything the old synchronous refresh response carried,
+ * so this row exists purely to answer queued/running/ready/failed for the
+ * poll leg. `never-requested` is the absence of a row, not a member of this
+ * type.
+ */
+export type FloodDrainageRefreshJobState = "queued" | "running" | "ready" | "failed";
+
+export interface FloodDrainageRefreshJob {
+  parcelNodeId: string;
+  jobRef: string;
+  state: FloodDrainageRefreshJobState;
+  queuedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  failedAt?: string | null;
+  errorClass?: string | null;
+  errorMessage?: string | null;
+  updatedAt: string;
+}
+
+/**
+ * P-240 (OPS-24, 2026-09-15): durable site-plan-export job state, same
+ * shape and lifecycle as `FeasibilityExportJob` (P-155). `resultSummary`
+ * carries exactly the fields the old synchronous refresh response returned
+ * that have no other read path -- `atom`/`artifacts` remain re-readable from
+ * `GET .../site-plan-export`, but the honest-absence/degenerate flags below
+ * are computed fresh by `authorParcelSitePlanExport()` each call and are
+ * never persisted to the atom.
+ */
+export type SitePlanExportJobState = "queued" | "running" | "ready" | "failed";
+
+export interface SitePlanExportJob {
+  parcelNodeId: string;
+  jobRef: string;
+  state: SitePlanExportJobState;
+  queuedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  failedAt?: string | null;
+  errorClass?: string | null;
+  errorMessage?: string | null;
+  resultSummary?: {
+    setbackDegenerate?: boolean;
+    setbackDegenerateReason?: string;
+    setbackHonestAbsence?: boolean;
+    setbackHonestAbsenceReason?: string;
+    streetHonestAbsence?: boolean;
+    zoningHonestAbsence?: boolean;
+    floodZoneHonestUnavailable?: boolean;
+  } | null;
+  updatedAt: string;
+}
+
 export interface StoragePort {
   /** Atomic write: pin to IPFS, index in Postgres, emit event. */
   writeAtom(instance: CodeAtomInstance): Promise<{ atomDid: string; cid: string }>;
@@ -431,4 +488,38 @@ export interface StoragePort {
       state: FeasibilityExportJobState;
     },
   ): Promise<FeasibilityExportJob>;
+
+  /**
+   * P-240: read the current flood-drainage-refresh job row for a parcel.
+   * null means no row exists -- `never-requested`. Optional on older ports
+   * -- callers must feature-detect.
+   */
+  getFloodDrainageRefreshJob?(parcelNodeId: string): Promise<FloodDrainageRefreshJob | null>;
+
+  /** P-240: create or transition the flood-drainage-refresh job row. Same
+   * merge-onto-existing-row semantics as `upsertFeasibilityExportJob`. */
+  upsertFloodDrainageRefreshJob?(
+    parcelNodeId: string,
+    patch: Partial<Omit<FloodDrainageRefreshJob, "parcelNodeId" | "jobRef" | "state">> & {
+      jobRef: string;
+      state: FloodDrainageRefreshJobState;
+    },
+  ): Promise<FloodDrainageRefreshJob>;
+
+  /**
+   * P-240: read the current site-plan-export job row for a parcel. null
+   * means no row exists -- `never-requested`. Optional on older ports --
+   * callers must feature-detect.
+   */
+  getSitePlanExportJob?(parcelNodeId: string): Promise<SitePlanExportJob | null>;
+
+  /** P-240: create or transition the site-plan-export job row. Same
+   * merge-onto-existing-row semantics as `upsertFeasibilityExportJob`. */
+  upsertSitePlanExportJob?(
+    parcelNodeId: string,
+    patch: Partial<Omit<SitePlanExportJob, "parcelNodeId" | "jobRef" | "state">> & {
+      jobRef: string;
+      state: SitePlanExportJobState;
+    },
+  ): Promise<SitePlanExportJob>;
 }
