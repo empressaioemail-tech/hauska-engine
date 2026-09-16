@@ -278,6 +278,8 @@ describe("a footprint miss is not evidence of an empty lot", () => {
     wellsPipelines: absent("n/a"),
     terrain: absent("n/a"),
     utilities: absent("n/a"),
+    overlayDistricts: absent("n/a"),
+    readerParcelArea: absent("n/a"),
     hoa: { recordedRestrictions: undefined },
     dischargePoint: absent("n/a"),
     floodplainAcreage: absent("n/a"),

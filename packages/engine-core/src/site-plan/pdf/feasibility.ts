@@ -148,6 +148,7 @@ const OPEN_ITEM_SECTION_LABELS: Readonly<Record<string, string>> = Object.freeze
   specialDistricts: "Special districts",
   wellsPipelines: "Wells and pipelines",
   utilities: "Utilities",
+  overlayDistricts: "Overlay districts",
   footprint: "Existing structures",
   drainage: "Drainage study",
   hoa: "HOA and recorded restrictions",
@@ -169,12 +170,49 @@ export const CONSEQUENCE_ROW_LABEL = "What this means";
 function factOrChip(
   label: string,
   value: string | number | undefined | null,
-  opts: { source?: string; vintage?: string; absentReason?: string } = {},
+  opts: {
+    source?: string;
+    vintage?: string;
+    absentReason?: string;
+    /** D5 (P-222): set true when the absence is a verified, checked-and-clear
+     * finding (`FeasibilityFactState`'s `kind: "clear"`) — draws a distinct
+     * chip and skips the generic "no matching record" prefix. */
+    verifiedClear?: boolean;
+    /** Vintage to print alongside a verified-clear absence (its own asOfIso). */
+    absentVintage?: string;
+  } = {},
 ) {
   if (value === undefined || value === null || value === "") {
-    return { label, value: undefined, source: opts.absentReason, vintage: undefined };
+    return {
+      label,
+      value: undefined,
+      source: opts.absentReason,
+      vintage: opts.absentVintage,
+      ...(opts.verifiedClear ? { verifiedClear: true } : {}),
+    };
   }
   return { label, value: String(value), source: opts.source, vintage: opts.vintage };
+}
+
+/** D5 (P-222): shared helper for the several sections whose absence resolves
+ * through `report-model.ts`'s `absent(kind, reason, consequence, provenance)`
+ * — reads `kind`/`sourceCitation`/`asOfIso` off a `FeasibilityFactState`'s
+ * absent branch so every call site does not have to repeat the same
+ * kind-to-chip mapping. */
+function absentChipOpts(state: { kind: string; reason: string; sourceCitation?: string; asOfIso?: string }): {
+  absentReason: string;
+  verifiedClear: boolean;
+  absentVintage?: string;
+} {
+  // The absent-row grey line has one slot (source · vintage) shared with
+  // absentReason above it; a citation and a date both fit there joined,
+  // matching the present-row convention ([source, vintage] joined by " · ").
+  const absentVintage = [state.sourceCitation, state.asOfIso].filter(Boolean).join(" · ") || undefined;
+  return {
+    absentReason: state.reason,
+    verifiedClear: state.kind === "clear",
+    ...(absentVintage ? { absentVintage } : {}),
+  };
 }
 
 export function feasibilityModelToBriefSections(model: ParcelReportModel): DossierBriefSectionInput[] {
@@ -237,7 +275,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
             factOrChip("Year built", po.yearBuilt, { source: po.sourceCitation, vintage: po.asOfIso }),
             factOrChip("Living area", po.livingAreaSqft != null ? `${po.livingAreaSqft.toLocaleString()} sq ft` : undefined, { source: po.sourceCitation, vintage: po.asOfIso }),
           ]
-        : [factOrChip("Parcel and ownership", undefined, { absentReason: po.reason })],
+        : [factOrChip("Parcel and ownership", undefined, absentChipOpts(po))],
   });
 
   sections.push(
@@ -298,7 +336,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
                   })
                 : factOrChip("Base flood elevation", undefined),
           ]
-        : [factOrChip("Flood and drainage", undefined, { absentReason: flood.reason })]),
+        : [factOrChip("Flood and drainage", undefined, absentChipOpts(flood))]),
       // R3: this used to be a caller-supplied boolean nothing checked. It is
       // now the REAL parcel-scoped drainage study, present or absent with a
       // reason — never a fabricated "on file".
@@ -330,7 +368,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
             dp.status === "present"
               ? `${Math.round(dp.point.distanceMeters)} m from modeled exit`
               : undefined,
-          absentReason: dp.status === "absent" ? dp.reason : undefined,
+          ...(dp.status === "absent" ? absentChipOpts(dp) : {}),
         },
       ),
     ],
@@ -343,7 +381,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
     facts:
       sd.status === "present"
         ? sd.districts.map((d) => factOrChip(d.districtType ?? "District", d.districtName))
-        : [factOrChip("Special districts", undefined, { absentReason: sd.reason })],
+        : [factOrChip("Special districts", undefined, absentChipOpts(sd))],
   });
 
   const wp = facts.wellsPipelines;
@@ -360,7 +398,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
                 })]
               : []),
           ]
-        : [factOrChip("Wells and pipelines", undefined, { absentReason: wp.reason })],
+        : [factOrChip("Wells and pipelines", undefined, absentChipOpts(wp))],
   });
 
   // P-120 R-05: the five families R-04 composes. Until this landed the model
@@ -385,11 +423,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
               String(facts.floodplainAcreage.zones.length),
             ),
           ]
-        : [
-            factOrChip("Floodplain acreage in tract", undefined, {
-              absentReason: facts.floodplainAcreage.reason,
-            }),
-          ],
+        : [factOrChip("Floodplain acreage in tract", undefined, absentChipOpts(facts.floodplainAcreage))],
   });
 
   sections.push({
@@ -403,7 +437,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
               vintage: panel.effectiveDate ?? undefined,
             }),
           )
-        : [factOrChip("FIRM panel", undefined, { absentReason: facts.firmPanel.reason })],
+        : [factOrChip("FIRM panel", undefined, absentChipOpts(facts.firmPanel))],
   });
 
   sections.push({
@@ -422,7 +456,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
                 : `${facts.soil.slopePercentRounded}%`,
             ),
           ]
-        : [factOrChip("Soil", undefined, { absentReason: facts.soil.reason })],
+        : [factOrChip("Soil", undefined, absentChipOpts(facts.soil))],
   });
 
   sections.push({
@@ -446,13 +480,9 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
                   : undefined,
               }),
             )
-        : [
-            factOrChip("Electric provider", undefined, {
-              absentReason: facts.electricProvider.reason,
-            }),
-          ]),
+        : [factOrChip("Electric provider", undefined, absentChipOpts(facts.electricProvider))]),
       ...(facts.gasProvider.status === "absent"
-        ? [factOrChip("Gas provider", undefined, { absentReason: facts.gasProvider.reason })]
+        ? [factOrChip("Gas provider", undefined, absentChipOpts(facts.gasProvider))]
         : []),
     ],
   });
@@ -470,7 +500,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
               `${facts.terrain.elevationRangeMeters.min.toFixed(1)}–${facts.terrain.elevationRangeMeters.max.toFixed(1)} m`,
             ),
           ]
-        : [factOrChip("Terrain and site conditions", undefined, { absentReason: facts.terrain.reason })],
+        : [factOrChip("Terrain and site conditions", undefined, absentChipOpts(facts.terrain))],
   });
 
   const util = facts.utilities;
@@ -480,10 +510,34 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
     facts:
       util.status === "present"
         ? [
-            ...util.holders.map((h) => factOrChip(h.serviceKind, h.territoryName ?? "territory holder on file")),
+            // D7 (P-222): a reader-sourced holder carries a CCN (Certificate
+            // of Convenience and Necessity) and its own status text — shown
+            // as the vintage/source column rather than folded into the value,
+            // so "CITY OF BASTROP" and "CCN 20466 · Commission Approved" are
+            // never collapsed into one string a future format change could
+            // silently drop half of.
+            ...util.holders.map((h) =>
+              factOrChip(h.serviceKind, h.territoryName ?? "territory holder on file", {
+                vintage: h.ccnNo ? `CCN ${h.ccnNo}${h.ccnStatus ? ` · ${h.ccnStatus}` : ""}` : undefined,
+              }),
+            ),
             factOrChip("Residual", util.residual),
           ]
-        : [factOrChip("Utilities who-serves", undefined, { absentReason: util.reason })],
+        : [factOrChip("Utilities who-serves", undefined, absentChipOpts(util))],
+  });
+
+  const overlay = facts.overlayDistricts;
+  sections.push({
+    id: "overlay-districts",
+    title: "Overlay districts",
+    facts:
+      overlay.status === "present"
+        ? overlay.districts.map((d) =>
+            factOrChip(d.name, d.developmentPattern ?? "on file", {
+              source: [d.cityName, d.description].filter(Boolean).join(" — ") || undefined,
+            }),
+          )
+        : [factOrChip("Overlay districts", undefined, absentChipOpts(overlay))],
   });
 
   sections.push({
@@ -523,7 +577,7 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
                 source: "county appraisal roll (cad_property)",
               }),
             ]
-          : [factOrChip("Existing structures", undefined, { absentReason: fp.reason })],
+          : [factOrChip("Existing structures", undefined, absentChipOpts(fp))],
   });
 
   if (model.package.dataQuality.supersededNotes.length > 0) {
@@ -581,6 +635,7 @@ function attachConsequences(
     "service-providers": facts.electricProvider,
     terrain: facts.terrain,
     utilities: facts.utilities,
+    "overlay-districts": facts.overlayDistricts,
     footprint: facts.footprint,
   };
   return sections.map((section) => {
@@ -826,6 +881,7 @@ const ABSENT_FAMILY_LABELS: ReadonlyArray<readonly [string, string]> = Object.fr
   ["wellsPipelines", "Wells and pipelines"],
   ["terrain", "Terrain"],
   ["utilities", "Utilities"],
+  ["overlayDistricts", "Overlay districts"],
   ["footprint", "Existing structures"],
   ["dischargePoint", "Downstream discharge point"],
   ["floodplainAcreage", "Floodplain acreage in tract"],

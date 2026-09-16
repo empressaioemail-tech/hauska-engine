@@ -217,3 +217,119 @@ export function recordSpecialDistrictNames(rail: ParcelRecordRail | undefined): 
     .filter((n): n is string => n !== null);
   return names.length > 0 ? names : undefined;
 }
+
+/**
+ * P-222 D7. `utilityService`'s cell value carries the whole per-service-type
+ * answer as one object (water/sewer/electric, each null or a CCN record) —
+ * unlike the scalar cad rails, this rail's grain is "value is a small typed
+ * object", so it is read directly off `cell.value` rather than through
+ * `recordScalarValue`'s string/number/boolean gate. Returns `undefined` on
+ * any shape this function does not recognize (fails closed to the caller's
+ * existing HIFLD-only fallback — never a guessed CCN).
+ */
+export interface RecordUtilityHolder {
+  ccnNo: string;
+  utility: string;
+  status?: string;
+  ccnType?: string;
+}
+export interface RecordUtilityService {
+  water: RecordUtilityHolder | null;
+  sewer: RecordUtilityHolder | null;
+  electric: RecordUtilityHolder | null;
+}
+/** `undefined` means "this one holder's own record is malformed" — treated
+ * as uncovered for JUST that service, never discarding valid siblings
+ * (a malformed sewer record must not cost the parcel its valid water and
+ * electric CCN holders). */
+function asUtilityHolder(value: unknown): RecordUtilityHolder | null | undefined {
+  if (value === null) return null;
+  const rec = asRecord(value);
+  if (!rec) return undefined;
+  const ccnNo = asNullableString(rec.ccnNo);
+  const utility = asNullableString(rec.utility);
+  if (!ccnNo || !utility) return undefined;
+  return {
+    ccnNo,
+    utility,
+    ...(asNullableString(rec.status) ? { status: asNullableString(rec.status)! } : {}),
+    ...(asNullableString(rec.ccnType) ? { ccnType: asNullableString(rec.ccnType)! } : {}),
+  };
+}
+export function recordUtilityService(rail: ParcelRecordRail | undefined): RecordUtilityService | undefined {
+  if (!rail || rail.serve !== "record" || !rail.cell) return undefined;
+  const cell = rail.cell;
+  if (asNullableString(cell.kind) !== "value") return undefined;
+  const value = asRecord(cell.value);
+  if (!value) return undefined;
+  // A malformed individual holder reads as "no holder on file" for that ONE
+  // service (== null), never as "the whole rail is unusable" — see
+  // asUtilityHolder's own doc.
+  const asHolderOrNull = (v: unknown) => asUtilityHolder(v) ?? null;
+  return {
+    water: asHolderOrNull(value.water),
+    sewer: asHolderOrNull(value.sewer),
+    electric: asHolderOrNull(value.electric),
+  };
+}
+
+/**
+ * P-222 D8. `overlayDistricts` is a companion rail (same grain as
+ * specialDistricts): district rows live on `companions`, each payload
+ * carrying the city and the ordinance's own attribute bag (`CD_Name`,
+ * `CD_Desc`, `CD_DevelopmentPatterns`, …). Reads defensively — an attribute
+ * this function does not recognize is simply omitted, never fabricated.
+ */
+export interface RecordOverlayDistrict {
+  name: string;
+  cityName?: string;
+  description?: string;
+  developmentPattern?: string;
+}
+/**
+ * Distinguishes "never checked" from "checked, genuinely zero districts" —
+ * collapsing them was the exact D5 defect this program names explicitly.
+ * `checked` mirrors `recordCityLimitsDisposition`'s own `kind ===
+ * "absent-verified"` branch: a rail can serve "record" and confirm an
+ * absence without ever reaching `kind: "value"`.
+ */
+export interface RecordOverlayDistrictsResult {
+  districts: RecordOverlayDistrict[];
+  /** True when the rail ran and confirmed the answer (present or verified
+   * zero); false when nothing ever checked. */
+  checked: boolean;
+}
+export function recordOverlayDistricts(rail: ParcelRecordRail | undefined): RecordOverlayDistrictsResult | undefined {
+  if (!rail || rail.serve !== "record" || !rail.cell) return undefined;
+  const kind = asNullableString(rail.cell.kind);
+  if (kind === "absent-verified") return { districts: [], checked: true };
+  if (kind !== "value") return undefined;
+  const rows = (rail.companions as Array<{ payload?: unknown }> | undefined) ?? [];
+  const districts = rows
+    .map((row): RecordOverlayDistrict | null => {
+      const payload = asRecord(row.payload);
+      if (!payload) return null;
+      const attrs = asRecord(payload.attributes) ?? payload;
+      const name = asNullableString(attrs.overlayName) ?? asNullableString(attrs.CD_Name);
+      if (!name) return null;
+      return {
+        name,
+        ...(asNullableString(payload.city) ? { cityName: asNullableString(payload.city)! } : {}),
+        ...(asNullableString(attrs.CD_Desc) ? { description: asNullableString(attrs.CD_Desc)! } : {}),
+        ...(asNullableString(attrs.CD_DevelopmentPatterns)
+          ? { developmentPattern: asNullableString(attrs.CD_DevelopmentPatterns)! }
+          : {}),
+      };
+    })
+    .filter((d): d is RecordOverlayDistrict => d !== null);
+  return { districts, checked: true };
+}
+
+/**
+ * P-222 D11. `parcelAreaSqFt` is a scalar rail (same grain as the cad
+ * scalars) carrying the reader's own `ST_Area(geography)`-derived area —
+ * read via the existing scalar-number path, never re-implemented.
+ */
+export function recordParcelAreaSqFt(rail: ParcelRecordRail | undefined): number | undefined {
+  return recordScalarNumber(rail);
+}

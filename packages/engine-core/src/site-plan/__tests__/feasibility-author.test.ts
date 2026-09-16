@@ -151,9 +151,10 @@ describe("authorParcelFeasibilityExport", { timeout: 60_000 }, () => {
     expect(result.pageCount - result.feasibilityPageCount).toBeGreaterThanOrEqual(2);
     expect(result.sectionCount).toBeGreaterThan(5);
     // parcelOwnership resolved from the seeded cad-parcel-roll atom, so it's
-    // not one of the open items. Ceiling is 9 now (drainage joined the set
-    // of sections that can be absent, R3), so resolving one leaves 8.
-    expect(result.openItemCount).toBeLessThan(9);
+    // not one of the open items. Ceiling is 10 now (drainage joined the set
+    // of sections that can be absent, R3; overlayDistricts joined it too,
+    // P-222 D8), so resolving one leaves 9.
+    expect(result.openItemCount).toBeLessThan(10);
     expect(result.narrativeIsDeterministicSkeleton).toBe(true);
 
     expect(result.atom.entityType).toBe("parcel-terrain-model");
