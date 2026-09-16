@@ -23,7 +23,10 @@
 import { describe, expect, it } from "vitest";
 
 import { labelEdgesFromRoads } from "../edgeLabeling.js";
-import { groupRingChordsIntoLogicalEdges } from "../ring-logical-edges.js";
+import {
+  groupRingChordsIntoLogicalEdges,
+  scrubRingForLabeling,
+} from "../ring-logical-edges.js";
 import { warmThenVerify } from "../warm-then-verify.js";
 import { checkEnvelopeGroundTruth } from "../../geometry/envelope-ground-truth.js";
 import type { JurisdictionDescriptor, SetbackTableDescriptor } from "../../property-reasoning/types.js";
@@ -45,6 +48,12 @@ import {
   SITUS_312_KNOCKOUT_ROSE,
   SITUS_324_KNOCKOUT_ROSE,
 } from "../fixtures/p262CurvedFrontage.js";
+import {
+  PARCEL_ARTIFACT_CLEAN,
+  PARCEL_ARTIFACT_RING,
+  ROADS_AROUND_ARTIFACT_RING,
+  SITUS_ARTIFACT_RING,
+} from "../fixtures/p262ArtifactRing.js";
 
 const DISTRICT = "SF-6";
 
@@ -451,4 +460,191 @@ describe("P-262 item 3 — curved frontage fixtures (one front over the curve)",
     expect(result.verify.pass, JSON.stringify(result.verify.gates, null, 2)).toBe(true);
     expect(groundTruth!.pass, JSON.stringify(groundTruth!.p2.edges.filter((e) => !e.pass))).toBe(true);
   }, 120_000);
+});
+
+describe("P-262 item 1 — a ring with artifact vertices, against its own clean control", () => {
+  // The fixture pair is SYNTHETIC by design (see fixtures/p262ArtifactRing.ts):
+  // the same 40 m x 20 m lot twice, once clean and once with a 0.2 m duplicate
+  // and two 0.05 m near-collinear vertices. No real ring can state the
+  // invariant, because no real ring is available both ways.
+  it("the scrub recovers the clean control's own vertex list, and only the counts differ", () => {
+    const clean = scrubRingForLabeling(PARCEL_ARTIFACT_CLEAN);
+    const artifact = scrubRingForLabeling(PARCEL_ARTIFACT_RING);
+    expect(clean.ok).toBe(true);
+    expect(artifact.ok).toBe(true);
+    if (!clean.ok || !artifact.ok) return;
+
+    expect(clean.duplicateVerticesRemoved).toBe(0);
+    expect(clean.collinearVerticesRemoved).toBe(0);
+    expect(clean.keptOriginalVertexIndices).toEqual([0, 1, 2, 3]);
+
+    // 1 duplicate (0.2 m, inside the 0.5 m tolerance) and 3 near-collinear
+    // vertices (turns 0.00/0.22/0.41 on the front line, 0.31 on the rear).
+    expect(artifact.duplicateVerticesRemoved).toBe(1);
+    expect(artifact.collinearVerticesRemoved).toBe(3);
+    // The survivors are the clean ring's OWN four corners, in the same order.
+    expect(artifact.keptOriginalVertexIndices).toEqual([0, 4, 5, 7]);
+    expect(artifact.vertices.length).toBe(clean.vertices.length);
+    for (const [i, vertex] of clean.vertices.entries()) {
+      const kept = artifact.vertices[i]!;
+      expect(Math.abs(kept[0]! - vertex[0]!)).toBeLessThan(1e-12);
+      expect(Math.abs(kept[1]! - vertex[1]!)).toBeLessThan(1e-12);
+    }
+  });
+
+  it("labels the artifact ring's chords from its LOT LINES, one front and one rear", () => {
+    const clean = labelEdgesFromRoads({
+      parcelRing: PARCEL_ARTIFACT_CLEAN,
+      roads: ROADS_AROUND_ARTIFACT_RING,
+      situsAddress: SITUS_ARTIFACT_RING,
+    });
+    const artifact = labelEdgesFromRoads({
+      parcelRing: PARCEL_ARTIFACT_RING,
+      roads: ROADS_AROUND_ARTIFACT_RING,
+      situsAddress: SITUS_ARTIFACT_RING,
+    });
+    expect(clean.ok).toBe(true);
+    expect(artifact.ok).toBe(true);
+    if (!clean.ok || !artifact.ok) return;
+
+    expect(clean.edgeLabels.map((e) => e.label)).toEqual(["front", "side", "rear", "side"]);
+    expect(clean.edgeLabels[0]!.frontBasis).toBe("situs-street-match");
+    // The artifact ring: edges 0-3 are the FRONT LINE (all four chords front,
+    // including the 0.2 m duplicate — a chord cannot out-vote its own line),
+    // edge 4 side, edges 5-6 the REAR LINE, edge 7 side.
+    expect(artifact.edgeLabels.map((e) => e.label)).toEqual([
+      "front",
+      "front",
+      "front",
+      "front",
+      "side",
+      "rear",
+      "rear",
+      "side",
+    ]);
+    expect(artifact.edgeLabels.filter((e) => e.label === "front")).toHaveLength(4);
+    expect(
+      artifact.edgeLabels.filter((e) => e.label === "front").every((e) => e.frontBasis === "situs-street-match"),
+    ).toBe(true);
+  });
+
+  it("passes every gate and draws a non-empty envelope for BOTH rings — but the artifacts do reach the boundary", async () => {    const cleanLabels = labelEdgesFromRoads({
+      parcelRing: PARCEL_ARTIFACT_CLEAN,
+      roads: ROADS_AROUND_ARTIFACT_RING,
+      situsAddress: SITUS_ARTIFACT_RING,
+    });
+    const artifactLabels = labelEdgesFromRoads({
+      parcelRing: PARCEL_ARTIFACT_RING,
+      roads: ROADS_AROUND_ARTIFACT_RING,
+      situsAddress: SITUS_ARTIFACT_RING,
+    });
+    if (!cleanLabels.ok) throw new Error(cleanLabels.decline);
+    if (!artifactLabels.ok) throw new Error(artifactLabels.decline);
+
+    const clean = await drawAndGrade(
+      PARCEL_ARTIFACT_CLEAN,
+      ROADS_AROUND_ARTIFACT_RING,
+      SITUS_ARTIFACT_RING,
+      cleanLabels.edgeLabels,
+    );
+    const artifact = await drawAndGrade(
+      PARCEL_ARTIFACT_RING,
+      ROADS_AROUND_ARTIFACT_RING,
+      SITUS_ARTIFACT_RING,
+      artifactLabels.edgeLabels,
+    );
+
+    // Both verify (the 0.2 m chord IS measured: it inherits its line's front
+    // measurement rather than reporting a false 0 ft).
+    expect(clean.result.verify.pass, JSON.stringify(clean.result.verify.gates)).toBe(true);
+    expect(artifact.result.verify.pass, JSON.stringify(artifact.result.verify.gates)).toBe(true);
+    expect(clean.groundTruth!.pass).toBe(true);
+    expect(artifact.groundTruth!.pass).toBe(true);
+
+    const cleanRing = clean.result.candidate.insetRing;
+    const artifactRing = artifact.result.candidate.insetRing;
+    expect(cleanRing).not.toBeNull();
+    if (!cleanRing || !artifactRing) return;
+    // MEASURED, and it CONTRADICTS this lane's pre-registered expectation that
+    // the drawn envelope would be identical to the clean rectangle's: the
+    // 0.05 m bump survives the offset core, which miters at the bump instead of
+    // ignoring it — 7 boundary vertices instead of 5 (one of which is the
+    // closing repeat), area 2434.1 sq ft against
+    // the clean 2499.4 (2.6% smaller, boundary positions within ~0.15 m). The
+    // ROLES and the gate verdicts are artifact-invariant; the drawn boundary is
+    // not exactly so, and that limit is recorded here rather than smoothed over.
+    expect(artifactRing.length).toBe(7);
+    expect(cleanRing.length).toBe(5);
+    const areaRatio = ringAreaSqFt(artifactRing) / ringAreaSqFt(cleanRing);
+    expect(areaRatio).toBeGreaterThan(0.95);
+    expect(areaRatio).toBeLessThan(1);
+  }, 120_000);
+
+  it("F4 — pre-scrubbing every fixture ring before the labeller changes no role", () => {
+    // The labeller scrubs internally, so scrubbing first must be a no-op for
+    // the answer. Roles are compared per LOGICAL LINE (the scrub removes
+    // chords, so index-keyed role lists legitimately differ in length).
+    const cases: Array<{ name: string; ring: Ring; roads: WarmRoadSource[]; situs: string }> = [
+      {
+        name: "48209:97658",
+        ring: PARCEL_48209_97658_SAN_MARCOS,
+        roads: ROADS_AROUND_48209_97658,
+        situs: SITUS_48209_97658,
+      },
+      {
+        name: "48453:427599",
+        ring: PARCEL_48453_427599_PFLUGERVILLE,
+        roads: ROADS_AROUND_48453_427599,
+        situs: SITUS_48453_427599,
+      },
+      {
+        name: "324-knockout-rose",
+        ring: PARCEL_324_KNOCKOUT_ROSE_SAN_MARCOS,
+        roads: ROADS_AROUND_KNOCKOUT_ROSE,
+        situs: SITUS_324_KNOCKOUT_ROSE,
+      },
+      {
+        name: "312-knockout-rose",
+        ring: PARCEL_312_KNOCKOUT_ROSE_SAN_MARCOS,
+        roads: ROADS_AROUND_KNOCKOUT_ROSE,
+        situs: SITUS_312_KNOCKOUT_ROSE,
+      },
+      {
+        name: "artifact-clean",
+        ring: PARCEL_ARTIFACT_CLEAN,
+        roads: ROADS_AROUND_ARTIFACT_RING,
+        situs: SITUS_ARTIFACT_RING,
+      },
+      {
+        name: "artifact-ring",
+        ring: PARCEL_ARTIFACT_RING,
+        roads: ROADS_AROUND_ARTIFACT_RING,
+        situs: SITUS_ARTIFACT_RING,
+      },
+    ];
+
+    for (const { name, ring, roads, situs } of cases) {
+      const rolesPerLine = (input: Ring): string => {
+        const labels = labelEdgesFromRoads({ parcelRing: input, roads, situsAddress: situs });
+        if (!labels.ok) return `DECLINE:${labels.decline}`;
+        const groups = groupRingChordsIntoLogicalEdges(projectRing(input)!);
+        const roleByChord = new Map(labels.edgeLabels.map((e) => [e.index, e.label]));
+        return groups
+          .map((g) => {
+            const roles = new Set(g.chordIndices.map((c) => roleByChord.get(c)));
+            // Within one line, chords never disagree — that is the whole point.
+            expect(roles.size, `${name}: chords of one line disagreed: ${[...roles].join(",")}`).toBe(1);
+            return [...roles][0];
+          })
+          .join("|");
+      };
+
+      const direct = rolesPerLine(ring);
+      expect(direct.startsWith("DECLINE"), `${name} declined outright: ${direct}`).toBe(false);
+      const scrubbed = scrubRingForLabeling(ring);
+      expect(scrubbed.ok, `${name} did not scrub`).toBe(true);
+      if (!scrubbed.ok) continue;
+      expect(rolesPerLine(scrubbed.vertices), `${name}: pre-scrubbed roles differ from raw roles`).toBe(direct);
+    }
+  });
 });

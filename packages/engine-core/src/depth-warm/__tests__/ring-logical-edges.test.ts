@@ -42,10 +42,12 @@ import {
   ROADS_AROUND_48209_97658,
 } from "../fixtures/p262Parcels.js";
 import {
+  PARCEL_312_KNOCKOUT_ROSE_SAN_MARCOS,
   PARCEL_324_KNOCKOUT_ROSE_SAN_MARCOS,
   ROADS_AROUND_KNOCKOUT_ROSE,
   SITUS_324_KNOCKOUT_ROSE,
 } from "../fixtures/p262CurvedFrontage.js";
+import { PARCEL_ARTIFACT_RING } from "../fixtures/p262ArtifactRing.js";
 
 const EARTH_RADIUS_M = 6_378_137;
 const LNG0 = -97.5;
@@ -209,6 +211,61 @@ describe("P-262 item 1 — the scrub, at its own stated tolerances", () => {
         expect(Math.abs(source[0] - kept[0])).toBeLessThan(1e-9);
         expect(Math.abs(source[1] - kept[1])).toBeLessThan(1e-9);
       }
+    }
+  });
+
+  it("the collapse is DISTINCT and the output a partition of the input", () => {
+    const ring = ringFromMetres([
+      [0, 0],
+      [50, 0],
+      [50.3, 0],
+      [80, 0],
+      [80, 100],
+      [0, 100],
+    ]);
+    const scrub = scrubRingForLabeling(ring);
+    expect(scrub.ok).toBe(true);
+    if (!scrub.ok) return;
+    // Distinct: a vertex counted twice, or counted as both a duplicate and a
+    // collinear vertex, would let removed + kept overrun the input.
+    expect(scrub.duplicateVerticesRemoved + scrub.collinearVerticesRemoved + scrub.vertices.length).toBe(
+      openRing(ring).length,
+    );
+    // A partition: every input vertex index is either kept or accounted as
+    // removed, and no index is both.
+    const kept = new Set(scrub.keptOriginalVertexIndices);
+    expect(kept.size).toBe(scrub.keptOriginalVertexIndices.length);
+    for (const index of kept) expect(index).toBeLessThan(openRing(ring).length);
+  });
+
+  it("OK always means a ring someone can label: 3+ finite vertices", () => {
+    // The contract the decline vocabulary leans on — if ok were ever true with
+    // fewer than three vertices there would be no edge to label and no way to
+    // say so. Checked against the exported predicate on the real fixtures and
+    // on the degenerate ring the decline test uses.
+    const rings: Ring[] = [
+      ringFromMetres(squareWithVertex([50, 0])),
+      ringFromMetres([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+      ]),
+      PARCEL_48209_97658_SAN_MARCOS,
+      PARCEL_48453_427599_PFLUGERVILLE,
+      PARCEL_324_KNOCKOUT_ROSE_SAN_MARCOS,
+      PARCEL_312_KNOCKOUT_ROSE_SAN_MARCOS,
+      PARCEL_ARTIFACT_RING,
+    ];
+    for (const ring of rings) {
+      const scrub = scrubRingForLabeling(ring);
+      expect(scrub.ok, "fixture ring should scrub").toBe(true);
+      if (!scrub.ok) continue;
+      expect(scrub.vertices.length).toBeGreaterThanOrEqual(3);
+      for (const [lng, lat] of scrub.vertices) {
+        expect(Number.isFinite(lng) && Number.isFinite(lat)).toBe(true);
+      }
+      // ...and the scrubbed ring is itself a closed ring a labeller accepts.
+      expect(validateParcelRing([...scrub.vertices, scrub.vertices[0]!])).toBeNull();
     }
   });
 });
