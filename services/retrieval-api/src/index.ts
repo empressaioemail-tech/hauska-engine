@@ -40,6 +40,10 @@ import {
   resolveMemoryLimitMib,
 } from "./resource-headroom.js";
 import { createFactoryRoStore, resolveFactoryDatabaseUrl } from "./parcel-record-db.js";
+import {
+  createCoverageCheckStore,
+  resolveCoverageDatabaseUrl,
+} from "./coverage-check.js";
 import { startServer, buildApp } from "./server.js";
 
 /**
@@ -116,6 +120,23 @@ if (isMain) {
     );
   }
 
+  const coverageDatabaseUrl = resolveCoverageDatabaseUrl();
+  const coverageStore = coverageDatabaseUrl
+    ? createCoverageCheckStore({ databaseUrl: coverageDatabaseUrl })
+    : null;
+  if (!coverageStore) {
+    console.log(
+      JSON.stringify({
+        level: "warn",
+        service: "retrieval-api",
+        event: "coverage_check.store.not_configured",
+        message:
+          "OVERLAY_DATABASE_URL / CORTEX_DATABASE_URL unset — /parcel-record-gate-verdict/coverage/check declares a refusal on every request",
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
+
   const factoryDatabaseUrl = resolveFactoryDatabaseUrl();
   const factoryStore = factoryDatabaseUrl
     ? createFactoryRoStore({ databaseUrl: factoryDatabaseUrl })
@@ -137,6 +158,7 @@ if (isMain) {
     storage,
     calibrationOverlay: overlayHandle?.port ?? null,
     factoryStore,
+    coverageStore,
   });
   // Listen before expensive substrate telemetry — Cloud Run's startup probe
   // is a TCP check on PORT. Every instance start (deploy, autoscale-out,
@@ -181,6 +203,7 @@ if (isMain) {
     await boot.close();
     if (overlayHandle) await overlayHandle.close();
     if (factoryStore) await factoryStore.close();
+    if (coverageStore) await coverageStore.close();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
