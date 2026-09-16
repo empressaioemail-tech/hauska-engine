@@ -130,6 +130,22 @@ export interface EnvelopeGroundTruthP2EdgeResult {
    * for it).
    */
   satisfiedByMoreRestrictiveNeighbor?: boolean;
+  /**
+   * P-262: true when this raw ring edge is a COLLINEAR FRAGMENT of a logical lot
+   * line whose setback boundary IS measured — `measuredFt` is then that LINE's
+   * measurement, not this fragment's own dedicated offset (a fragment inside a
+   * corner region owned by a deeper neighbouring setback is spanned by no
+   * envelope edge; see measure-inset.ts's doc).
+   *
+   * NOT treated as honestly non-comparable — the row is still COMPARED, just
+   * against the LINE's number rather than a fragment's own zero (a bare 0 ft
+   * would read as "this edge's 15 ft setback became 0 ft"). The comparison is
+   * real: the fragment carries its own ROLE's expectedFt, and P-262 labels a
+   * logical line's role onto all of its chords, so a candidate whose fragment
+   * and line disagree (a pre-P-262 mixed-role line: 20 ft on one chord, 5 ft on
+   * its collinear fragment) still FAILS on the fragment's own row.
+   */
+  collinearFragmentOfLogicalLine?: boolean;
 }
 
 export interface EnvelopeGroundTruthP2Result {
@@ -256,6 +272,8 @@ function checkInsetDistances(
     measuredFt: number | null;
     satisfiedByMoreRestrictiveNeighbor: boolean;
     miterAbsorbed: boolean;
+    /** P-262: raw edge is a collinear fragment of a logical line whose line is measured. */
+    collinearFragment: boolean;
     noDeterminable: boolean;
   }
   const drafts: Draft[] = measured.map((m: MeasuredEdgeInset) => {
@@ -275,6 +293,7 @@ function checkInsetDistances(
       measuredFt,
       satisfiedByMoreRestrictiveNeighbor: m.satisfiedByMoreRestrictiveNeighbor === true,
       miterAbsorbed,
+      collinearFragment: m.collinearFragmentOfLogicalLine === true,
       noDeterminable: role == null || expectedFt == null || measuredFt == null,
     };
   });
@@ -294,6 +313,13 @@ function checkInsetDistances(
       }
       // else: cap already spent — falls through, graded as a real mismatch.
     }
+    // P-262: a collinear fragment of a logical lot line reports its LINE's
+    // measurement (measure-inset.ts's pass 3), and the comparison below is still
+    // made — against the fragment's OWN role. So this is not an escape: a
+    // candidate whose fragment and line disagree (a pre-P-262 mixed-role line
+    // carrying 20 ft on one chord and 5 ft on its collinear fragment) measures
+    // the line's value against the fragment's expected value and FAILS.
+    const collinearFragment = d.collinearFragment === true;
     const pass = honestlyNonComparable
       ? true
       : Math.abs((d.measuredFt as number) - (d.expectedFt as number)) <= toleranceFt;
@@ -304,6 +330,7 @@ function checkInsetDistances(
       expectedFt: d.expectedFt,
       pass,
       satisfiedByMoreRestrictiveNeighbor: d.satisfiedByMoreRestrictiveNeighbor,
+      ...(collinearFragment ? { collinearFragmentOfLogicalLine: true } : {}),
     };
   });
 

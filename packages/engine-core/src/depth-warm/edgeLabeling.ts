@@ -14,8 +14,14 @@
 import type { RoadClassification } from "@hauska-engine/atoms";
 import { isPedestrianOsmHighwayTag } from "@hauska-engine/atoms";
 
-import { projectRing, type Ring } from "./geometry.js";
+import { projectRing, type ProjectedRing, type Ring } from "./geometry.js";
 import type { WarmEdgeRole, WarmRoadProvenanceKind, WarmRoadSource } from "./types.js";
+import {
+  expandLineRolesOntoChords,
+  groupRingChordsIntoLogicalEdges,
+  logicalLineProjection,
+  scrubRingForLabeling,
+} from "./ring-logical-edges.js";
 
 /** Default max metres from edge midpoint to road centerline. */
 export const DEFAULT_ROAD_PROXIMITY_THRESHOLD_M = 25;
@@ -216,12 +222,21 @@ export function normalizeStreetNameForMatch(raw: string): string {
 
 export type LabelEdgesDeclineReason =
   | "invalid-parcel-ring"
+  | "ring-validation-failed"
   | "no-roads-available"
   | "no-road-adjacency"
   | "front-orientation-unresolved";
 
 export type LabelEdgesResult =
   | { ok: true; edgeLabels: EdgeLabelDraft[] }
+  | { ok: false; decline: LabelEdgesDeclineReason };
+
+/**
+ * Outcome of running the role rules over ONE frame (the logical-line view, or
+ * the raw chord view). Internal to labelEdgesFromRoads.
+ */
+type RoleResolution =
+  | { ok: true; labels: EdgeLabelDraft[] }
   | { ok: false; decline: LabelEdgesDeclineReason };
 
 interface XY {
@@ -419,8 +434,10 @@ function selectFlagLotSameStreetRearEdge(
   hits: ReadonlyArray<EdgeRoadHit>,
   frontHit: EdgeRoadHit,
   proj: NonNullable<ReturnType<typeof projectRing>>,
+  /** P-262: the flag-lot verdict, decided on the RAW ring by the caller. */
+  isFlagLot: boolean = detectFlagLotShape(proj),
 ): number | null {
-  if (!detectFlagLotShape(proj)) return null;
+  if (!isFlagLot) return null;
   const n = proj.points.length;
   const frontN = inwardNormalForEdge(proj, frontHit.edgeIndex);
   let bestIndex: number | null = null;
@@ -461,6 +478,162 @@ function selectFlagLotSameStreetRearEdge(
   return bestIndex;
 }
 
+/**
+ * P-262 — how far a frontage run may bend at ONE vertex and still be the same
+ * front (degrees). See extendFrontAcrossCurvedFrontage for the measured case
+ * that sets it: 324 Knockout Rose Drive's frontage curve meets its own nearest
+ * chord at 32.1 degrees, the next transition on that parcel (the curve's far
+ * end, and the front's other neighbour) measures 57.2 and 90.9, so 45 sits
+ * between a real frontage bend and the nearest non-front transition.
+ */
+export const P262_CURVED_FRONTAGE_MAX_TURN_DEG = 45;
+
+/** Nearest front-eligible road hit for ONE edge of a frame, or null. */
+function bestEligibleHitForEdge(
+  frame: ProjectedRing,
+  edgeIndex: number,
+  roads: ReadonlyArray<WarmRoadSource>,
+  thresholdM: number,
+): EdgeRoadHit | null {
+  const n = frame.points.length;
+  const a = frame.points[edgeIndex]!;
+  const b = frame.points[(edgeIndex + 1) % n]!;
+  let best: EdgeRoadHit | null = null;
+  for (const road of roads) {
+    if (!isFrontEligibleRoad(road) || isAlleyClassification(road.classification)) continue;
+    const poly = projectPolylineInFrame(road.polyline, frame);
+    if (!poly || poly.length < 1) continue;
+    const distanceM = minDistanceEdgeToPolyline(a, b, poly);
+    if (distanceM > thresholdM) continue;
+    if (!best || distanceM < best.distanceM) best = { edgeIndex, distanceM, road };
+  }
+  return best;
+}
+
+/**
+ * Name of the nearest road of ANY class to ONE edge of a frame, or null when
+ * the frame has no road geometry at all. Road identity for the frontage-run
+ * test is the NAME, not the way id: one street is routinely split across
+ * several OSM ways (a name is what a situs address matches, and what the front
+ * was chosen by).
+ */
+function nearestRoadNameForEdge(
+  frame: ProjectedRing,
+  edgeIndex: number,
+  roads: ReadonlyArray<WarmRoadSource>,
+): string | null {
+  const n = frame.points.length;
+  const a = frame.points[edgeIndex]!;
+  const b = frame.points[(edgeIndex + 1) % n]!;
+  let best: { distanceM: number; name: string | null } | null = null;
+  for (const road of roads) {
+    const poly = projectPolylineInFrame(road.polyline, frame);
+    if (!poly || poly.length < 1) continue;
+    const distanceM = minDistanceEdgeToPolyline(a, b, poly);
+    if (!best || distanceM < best.distanceM) best = { distanceM, name: road.name ?? null };
+  }
+  return best?.name ?? null;
+}
+
+/** Signed turn from edge i's heading to edge j's heading, degrees. */
+function signedTurnBetweenEdges(frame: ProjectedRing, i: number, j: number): number {
+  const n = frame.points.length;
+  const a0 = frame.points[i]!;
+  const a1 = frame.points[(i + 1) % n]!;
+  const b0 = frame.points[j]!;
+  const b1 = frame.points[(j + 1) % n]!;
+  const aix = a1.x - a0.x;
+  const aiy = a1.y - a0.y;
+  const bjx = b1.x - b0.x;
+  const bjy = b1.y - b0.y;
+  return (Math.atan2(aix * bjy - aiy * bjx, aix * bjx + aiy * bjy) * 180) / Math.PI;
+}
+
+/**
+ * P-262 item 6 — CURVED FRONTAGE IS ONE FRONT.
+ *
+ * A lot on a curve (a cul-de-sac bulb, a street that bends along the front) is
+ * digitised as several chords whose turns measure 9-30 degrees each: too sharp
+ * for the logical-edge grouping (P262_LOGICAL_EDGE_MAX_TURN_DEG = 10), so the
+ * curve is several lines, not one — and the front rules then hand the front to
+ * whichever single line sits nearest the centerline while the REST of the same
+ * frontage takes a side setback. Measured on 324 Knockout Rose Drive (the
+ * fixture in fixtures/p262CurvedFrontage.ts): the front went to the 9.78 m
+ * chord at 3.8 m and the other nine chords of the same frontage curve —
+ * 3.42 m and 0.84 m chords at 3.9-13.2 m, the distance growing as the curve
+ * wraps away from the street — were labelled `side`. Five feet of setback
+ * across 30 m of street frontage, next to 25 ft on the 9.78 m chord: one
+ * frontage, two setbacks, and the envelope follows the wrong one.
+ *
+ * So after the roles are resolved on the line view, the front RUN is grown
+ * along the ring over adjacent lines that are all still the same frontage:
+ *
+ *   1. the neighbour currently carries `side` — a `rear` (alley-backed) or a
+ *      `side_corner` line is a settled verdict, never re-opened here;
+ *   2. the neighbour's OWN nearest road, over every road in the input, is the
+ *      front's street (by name) — a line that is closer to another street is
+ *      not this frontage;
+ *   3. that street is within the same proximity threshold the front needed;
+ *   4. the turn between the two lines is at or below
+ *      P262_CURVED_FRONTAGE_MAX_TURN_DEG — a bend, not a corner.
+ *
+ * The grown lines take the front's role AND its road attributes, so the
+ * expansion onto chords then gives every chord of the frontage the front
+ * setback. Nothing else moves: the front's own basis (situs-street-match /
+ * adjacency-heuristic) is carried onto the grown lines unchanged, so no
+ * consumer's `frontBasis` vocabulary changes and a served artifact's contract
+ * is untouched.
+ *
+ * Returns the frame edge indices it promoted (for tests and diagnostics).
+ */
+export function extendFrontAcrossCurvedFrontage(
+  frame: ProjectedRing,
+  labels: EdgeLabelDraft[],
+  roads: ReadonlyArray<WarmRoadSource>,
+  thresholdM: number = DEFAULT_ROAD_PROXIMITY_THRESHOLD_M,
+): number[] {
+  const n = frame.points.length;
+  const frontIndex = labels.findIndex((l) => l.label === "front");
+  if (frontIndex < 0) return [];
+  const frontLabel = labels[frontIndex]!;
+  const frontHit = bestEligibleHitForEdge(frame, frontIndex, roads, thresholdM);
+  const frontRoadName = frontHit?.road.name ?? null;
+  if (!frontHit || !frontRoadName) return [];
+  // The front's own street must be the closest road to the front line: a front
+  // hit taken at long range on provenance (a county centerline far behind a
+  // nearer street) must not seed a run that then walks along the other street.
+  if (nearestRoadNameForEdge(frame, frontIndex, roads) !== frontRoadName) return [];
+
+  const promoted: number[] = [];
+  for (const step of [1, -1] as const) {
+    let current = frontIndex;
+    for (let hop = 0; hop < n; hop++) {
+      const candidate = (current + step + n) % n;
+      if (candidate === frontIndex) break;
+      const candidateLabel = labels[candidate];
+      if (!candidateLabel || candidateLabel.label !== "side") break;
+      const candidateHit = bestEligibleHitForEdge(frame, candidate, roads, thresholdM);
+      if (!candidateHit || candidateHit.road.name !== frontRoadName) break;
+      if (nearestRoadNameForEdge(frame, candidate, roads) !== frontRoadName) break;
+      const turn = signedTurnBetweenEdges(frame, current, candidate);
+      if (Math.abs(turn) > P262_CURVED_FRONTAGE_MAX_TURN_DEG) break;
+      labels[candidate] = {
+        ...candidateLabel,
+        label: "front",
+        roadClass: frontLabel.roadClass,
+        osmHighwayTag: frontLabel.osmHighwayTag,
+        osmSurfaceTag: frontLabel.osmSurfaceTag,
+        roadProvenanceKind: frontLabel.roadProvenanceKind,
+        osmWayId: frontLabel.osmWayId,
+        ...(frontLabel.frontBasis ? { frontBasis: frontLabel.frontBasis } : {}),
+      };
+      promoted.push(candidate);
+      current = candidate;
+    }
+  }
+  return promoted;
+}
+
 function frontStreetPreference(classification: RoadClassification): number {
   if (classification === "residential") return 5;
   if (classification === "unclassified") return 4;
@@ -485,6 +658,16 @@ export function labelEdgesFromRoads(input: {
   situsAddress?: string | null;
 }): LabelEdgesResult {
   const threshold = input.proximityThresholdM ?? DEFAULT_ROAD_PROXIMITY_THRESHOLD_M;
+  // P-262 item 5: a ring that cannot be labelled — fewer than 3 distinct
+  // vertices, a duplicated vertex, a non-finite coordinate, or a ring that
+  // collapses to nothing once its GIS artifacts (near-duplicate and
+  // near-collinear vertices) are scrubbed — says WHY. Checked before the
+  // projection so a degenerate ring reaches a NAMED decline, never an empty
+  // label set (P-249 relies on this).
+  const scrub = scrubRingForLabeling(input.parcelRing);
+  if (!scrub.ok) {
+    return { ok: false, decline: "ring-validation-failed" };
+  }
   const proj = projectRing(input.parcelRing);
   if (!proj || proj.points.length < 3) {
     return { ok: false, decline: "invalid-parcel-ring" };
@@ -493,229 +676,219 @@ export function labelEdgesFromRoads(input: {
     return { ok: false, decline: "no-roads-available" };
   }
 
-  const n = proj.points.length;
-  const hits: EdgeRoadHit[] = [];
+  // P-262 items 1-2. The rules below were written against a SURVEYED ring, but a
+  // county ring is digitised and carries chords that no lot line has: measured
+  // on 48209:97658, three collinear runs (2.14+42.11+3.44 m, 3.53+41.98+2.10 m,
+  // 11.50+5.29 m) whose internal turns are 0.0 degrees. Labelling those chords
+  // individually hands two different setbacks to ONE lot line, and a 3.44 m
+  // chord given a 15 ft side-corner setback is asked to inset deeper than it is
+  // long — which folds the offset and empties the envelope.
+  //
+  // So the decision space is the LOGICAL LINE, not the chord: consecutive
+  // chords joined within P262_LOGICAL_EDGE_MAX_TURN_DEG are one edge. The
+  // projection handed to every rule below is the line view (same origin and
+  // scale, one vertex per line), and the labels are expanded back onto the raw
+  // chord indices at the end, so the output frame never changes — the binding
+  // "index transform across frames" rule holds, and callers that align labels to
+  // the parcel ring (boundary-primitive/compute.ts, promote.ts) are unaffected.
+  //
+  // On a ring with no such run — 48453:427599, every internal turn 89.4-95.0
+  // degrees — the line view is POINTWISE IDENTICAL to the chord view and the
+  // grouping is the identity, which is what makes the control parcel
+  // byte-identical.
+  const lineGroups = groupRingChordsIntoLogicalEdges(proj);
+  const shape: ProjectedRing = logicalLineProjection(proj, lineGroups);
+  // The flag-lot / neck verdict belongs to the RAW ring (see resolveRoles).
+  const flagLotOnChords = detectFlagLotShape(proj);
 
-  for (let i = 0; i < n; i++) {
-    const a = proj.points[i]!;
-    const b = proj.points[(i + 1) % n]!;
-    for (const road of input.roads) {
-      const poly = projectPolylineInFrame(road.polyline, proj);
-      if (!poly || poly.length < 1) continue;
-      const distanceM = minDistanceEdgeToPolyline(a, b, poly);
-      if (distanceM <= threshold) {
-        hits.push({ edgeIndex: i, distanceM, road });
+  /**
+   * Resolve the role of every edge of ONE frame. `shape` walks the parcel's
+   * logical lot lines (a digitised line is one edge, however many chords the
+   * county ring spent on it); `proj` walks the raw chords, and is only consulted
+   * for a chord too long to be a digitisation artifact (see the expansion
+   * below). Every rule below is frame-agnostic and unchanged: it reads
+   * `frame.points`, `frame.points.length` and the road frame that
+   * `projectPolylineInFrame` derives from the same `frame`, so a ring with no
+   * artifact run (shape === proj) takes the identical arithmetic path it took
+   * before P-262.
+   */
+  const resolveRoles = (
+    frame: ProjectedRing,
+    flagLotShape: boolean,
+  ): RoleResolution => {
+    const n = frame.points.length;
+    const hits: EdgeRoadHit[] = [];
+
+    for (let i = 0; i < n; i++) {
+      const a = frame.points[i]!;
+      const b = frame.points[(i + 1) % n]!;
+      for (const road of input.roads) {
+        const poly = projectPolylineInFrame(road.polyline, frame);
+        if (!poly || poly.length < 1) continue;
+        const distanceM = minDistanceEdgeToPolyline(a, b, poly);
+        if (distanceM <= threshold) {
+          hits.push({ edgeIndex: i, distanceM, road });
+        }
       }
     }
-  }
 
-  if (hits.length === 0) {
-    return { ok: false, decline: "no-road-adjacency" };
-  }
+    if (hits.length === 0) {
+      return { ok: false, decline: "no-road-adjacency" };
+    }
 
-  const bestByEdge = new Map<number, EdgeRoadHit>();
-  for (const hit of hits) {
-    const prior = bestByEdge.get(hit.edgeIndex);
-    bestByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
-  }
+    const bestByEdge = new Map<number, EdgeRoadHit>();
+    for (const hit of hits) {
+      const prior = bestByEdge.get(hit.edgeIndex);
+      bestByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
+    }
 
-  const bestEligibleNonAlleyByEdge = new Map<number, EdgeRoadHit>();
-  for (const hit of hits) {
-    if (isAlleyClassification(hit.road.classification)) continue;
-    if (!isFrontEligibleRoad(hit.road)) continue;
-    const prior = bestEligibleNonAlleyByEdge.get(hit.edgeIndex);
-    bestEligibleNonAlleyByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
-  }
-
-  const frontCandidates = [...bestEligibleNonAlleyByEdge.values()];
-  const alleyHits = [...bestByEdge.values()].filter((h) =>
-    isAlleyClassification(h.road.classification),
-  );
-
-  let frontHit: EdgeRoadHit | null = null;
-  let frontBasis: FrontRoleBasis = "adjacency-heuristic";
-
-  // Situs-street preference: when the parcel's address street is among the
-  // adjacent roads and matches exactly one edge, that edge is front.
-  // The situs is often a FULL address ("901 PECAN ST , BASTROP, TX 78602") —
-  // the normalizer's punctuation strip turns the comma into a space, so the
-  // city/state/zip tail would survive into the key and never match a road
-  // name. Cut at the first comma (the street segment) BEFORE normalizing.
-  // (Live-caught 2026-07-29: txgio situs is 100%-populated full addresses;
-  // the county-wide restamp silently fell back to the heuristic without this.)
-  const situsKey = input.situsAddress
-    ? normalizeStreetNameForMatch(situsStreetSegment(input.situsAddress))
-    : "";
-  if (situsKey) {
-    const situsMatchByEdge = new Map<number, EdgeRoadHit>();
+    const bestEligibleNonAlleyByEdge = new Map<number, EdgeRoadHit>();
     for (const hit of hits) {
       if (isAlleyClassification(hit.road.classification)) continue;
       if (!isFrontEligibleRoad(hit.road)) continue;
-      const roadKey = hit.road.name ? normalizeStreetNameForMatch(hit.road.name) : "";
-      if (!roadKey || roadKey !== situsKey) continue;
-      const prior = situsMatchByEdge.get(hit.edgeIndex);
-      situsMatchByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
+      const prior = bestEligibleNonAlleyByEdge.get(hit.edgeIndex);
+      bestEligibleNonAlleyByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
     }
-    // R30: when situs matches one or more edges, the CLOSEST situs-matching
-    // edge wins front (907 Chestnut on a lot hugging Chestnut on two edges).
-    // Zero matches → fall through to heuristic or fail-closed below.
-    if (situsMatchByEdge.size >= 1) {
-      const matches = [...situsMatchByEdge.values()].sort(
-        (a, b) => a.distanceM - b.distanceM,
-      );
-      frontHit = matches[0]!;
-      frontBasis = "situs-street-match";
-    }
-  }
 
-  if (!frontHit && frontCandidates.length > 0) {
-    frontCandidates.sort((a, b) => {
-      const pref =
-        frontStreetPreference(b.road.classification) -
-        frontStreetPreference(a.road.classification);
-      if (pref !== 0) return pref;
-      return a.distanceM - b.distanceM;
-    });
-    frontHit = frontCandidates[0]!;
-    frontBasis = "adjacency-heuristic";
-  }
-
-  // R30 fail-closed: situs was provided but did not match any adjacent road,
-  // and the heuristic picked a different street class — decline rather than
-  // inset the wrong edge (distant-road / wrong-street frontage).
-  if (
-    situsKey &&
-    !frontHit &&
-    frontCandidates.length === 0
-  ) {
-    return { ok: false, decline: "front-orientation-unresolved" };
-  }
-  if (situsKey && frontBasis === "adjacency-heuristic" && frontHit) {
-    const situsAdjacentEligible = hits.some(
-      (h) =>
-        !isAlleyClassification(h.road.classification) &&
-        isFrontEligibleRoad(h.road) &&
-        h.road.name &&
-        normalizeStreetNameForMatch(h.road.name) === situsKey,
+    const frontCandidates = [...bestEligibleNonAlleyByEdge.values()];
+    const alleyHits = [...bestByEdge.values()].filter((h) =>
+      isAlleyClassification(h.road.classification),
     );
-    if (situsAdjacentEligible) {
-      return { ok: false, decline: "front-orientation-unresolved" };
-    }
-  }
 
-  // R33 street-distance sanity guard (2026-08-07, master planner ruling):
-  // cheap insurance modeled on the independent auditor's own street-
-  // distance check. A chosen front edge whose OWN distance to its matched
-  // road is much larger than another road-adjacent edge's distance to a
-  // road of EQUAL OR HIGHER class preference is a labeling error signature
-  // (the front candidate that should have won proximity did not, among
-  // comparably-or-more-preferred road classes) — fail closed rather than
-  // silently promote a wrong-edge front. Scoped to equal-or-higher
-  // preference ONLY: the adjacency-heuristic legitimately prefers a
-  // farther higher-class-preference road (e.g. a residential street) over
-  // a closer LOWER-preference one (e.g. a collector) — verified against
-  // 48021:34785's real fixture (front correctly on an unclassified/local
-  // edge 3, not the nearer collector) — so a closer LOWER-preference
-  // sibling losing to a farther front is the intended, legitimate outcome
-  // and must not trip the guard; only a closer-or-equal-distance sibling
-  // of EQUAL OR BETTER class standing signals a genuine labeling error.
-  // Verified this round
-  // that labelEdgesFromRoads' actual front selection was CORRECT on every
-  // parcel it was suspected of inverting (coordinate-keyed cross-check
-  // against the independent auditor's re-grade), so this guard is not
-  // patching a live defect — it is a fail-closed backstop making a future
-  // instance of this defect class impossible to silently serve, the same
-  // "make the class unrepresentable" principle as the joined-structure
-  // clipper-input invariant.
-  if (frontHit) {
-    const frontPreference = frontStreetPreference(frontHit.road.classification);
-    const bestOtherDistanceM = Math.min(
-      ...frontCandidates
-        .filter(
-          (h) =>
-            h.edgeIndex !== frontHit!.edgeIndex &&
-            frontStreetPreference(h.road.classification) >= frontPreference,
-        )
-        .map((h) => h.distanceM),
-      Infinity,
-    );
+    let frontHit: EdgeRoadHit | null = null;
+    let frontBasis: FrontRoleBasis = "adjacency-heuristic";
+
+    // Situs-street preference: when the parcel's address street is among the
+    // adjacent roads and matches exactly one edge, that edge is front.
+    // The situs is often a FULL address ("901 PECAN ST , BASTROP, TX 78602") —
+    // the normalizer's punctuation strip turns the comma into a space, so the
+    // city/state/zip tail would survive into the key and never match a road
+    // name. Cut at the first comma (the street segment) BEFORE normalizing.
+    // (Live-caught 2026-07-29: txgio situs is 100%-populated full addresses;
+    // the county-wide restamp silently fell back to the heuristic without this.)
+    const situsKey = input.situsAddress
+      ? normalizeStreetNameForMatch(situsStreetSegment(input.situsAddress))
+      : "";
+    if (situsKey) {
+      const situsMatchByEdge = new Map<number, EdgeRoadHit>();
+      for (const hit of hits) {
+        if (isAlleyClassification(hit.road.classification)) continue;
+        if (!isFrontEligibleRoad(hit.road)) continue;
+        const roadKey = hit.road.name ? normalizeStreetNameForMatch(hit.road.name) : "";
+        if (!roadKey || roadKey !== situsKey) continue;
+        const prior = situsMatchByEdge.get(hit.edgeIndex);
+        situsMatchByEdge.set(hit.edgeIndex, preferRoadHit(prior, hit));
+      }
+      // R30: when situs matches one or more edges, the CLOSEST situs-matching
+      // edge wins front (907 Chestnut on a lot hugging Chestnut on two edges).
+      // Zero matches → fall through to heuristic or fail-closed below.
+      if (situsMatchByEdge.size >= 1) {
+        const matches = [...situsMatchByEdge.values()].sort(
+          (a, b) => a.distanceM - b.distanceM,
+        );
+        frontHit = matches[0]!;
+        frontBasis = "situs-street-match";
+      }
+    }
+
+    if (!frontHit && frontCandidates.length > 0) {
+      frontCandidates.sort((a, b) => {
+        const pref =
+          frontStreetPreference(b.road.classification) -
+          frontStreetPreference(a.road.classification);
+        if (pref !== 0) return pref;
+        return a.distanceM - b.distanceM;
+      });
+      frontHit = frontCandidates[0]!;
+      frontBasis = "adjacency-heuristic";
+    }
+
+    // R30 fail-closed: situs was provided but did not match any adjacent road,
+    // and the heuristic picked a different street class — decline rather than
+    // inset the wrong edge (distant-road / wrong-street frontage).
     if (
-      Number.isFinite(bestOtherDistanceM) &&
-      bestOtherDistanceM > 0 &&
-      frontHit.distanceM > bestOtherDistanceM * FRONT_STREET_DISTANCE_SANITY_RATIO
+      situsKey &&
+      !frontHit &&
+      frontCandidates.length === 0
     ) {
       return { ok: false, decline: "front-orientation-unresolved" };
     }
-  }
-
-  let rearHit: EdgeRoadHit | null = null;
-  if (alleyHits.length > 0) {
-    alleyHits.sort((a, b) => a.distanceM - b.distanceM);
-    rearHit =
-      alleyHits.find((h) => h.edgeIndex !== frontHit?.edgeIndex) ?? alleyHits[0]!;
-  } else if (frontHit && n >= 4) {
-    if (detectFlagLotShape(proj)) {
-      const flagSameStreetRear = selectFlagLotSameStreetRearEdge(hits, frontHit, proj);
-      const rearEdgeIndex =
-        flagSameStreetRear ?? selectRearEdgeByNormalOpposition(proj, frontHit.edgeIndex);
-      if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
-        const roadHit = bestByEdge.get(rearEdgeIndex);
-        rearHit = {
-          edgeIndex: rearEdgeIndex,
-          distanceM: roadHit?.distanceM ?? Infinity,
-          road: roadHit?.road ?? frontHit.road,
-        };
+    if (situsKey && frontBasis === "adjacency-heuristic" && frontHit) {
+      const situsAdjacentEligible = hits.some(
+        (h) =>
+          !isAlleyClassification(h.road.classification) &&
+          isFrontEligibleRoad(h.road) &&
+          h.road.name &&
+          normalizeStreetNameForMatch(h.road.name) === situsKey,
+      );
+      if (situsAdjacentEligible) {
+        return { ok: false, decline: "front-orientation-unresolved" };
       }
-    } else {
-      const nonFrontRoadHits = [...bestByEdge.values()].filter(
-        (h) => h.edgeIndex !== frontHit.edgeIndex,
+    }
+
+    // R33 street-distance sanity guard (2026-08-07, master planner ruling):
+    // cheap insurance modeled on the independent auditor's own street-
+    // distance check. A chosen front edge whose OWN distance to its matched
+    // road is much larger than another road-adjacent edge's distance to a
+    // road of EQUAL OR HIGHER class preference is a labeling error signature
+    // (the front candidate that should have won proximity did not, among
+    // comparably-or-more-preferred road classes) — fail closed rather than
+    // silently promote a wrong-edge front. Scoped to equal-or-higher
+    // preference ONLY: the adjacency-heuristic legitimately prefers a
+    // farther higher-class-preference road (e.g. a residential street) over
+    // a closer LOWER-preference one (e.g. a collector) — verified against
+    // 48021:34785's real fixture (front correctly on an unclassified/local
+    // edge 3, not the nearer collector) — so a closer LOWER-preference
+    // sibling losing to a farther front is the intended, legitimate outcome
+    // and must not trip the guard; only a closer-or-equal-distance sibling
+    // of EQUAL OR BETTER class standing signals a genuine labeling error.
+    // Verified this round
+    // that labelEdgesFromRoads' actual front selection was CORRECT on every
+    // parcel it was suspected of inverting (coordinate-keyed cross-check
+    // against the independent auditor's re-grade), so this guard is not
+    // patching a live defect — it is a fail-closed backstop making a future
+    // instance of this defect class impossible to silently serve, the same
+    // "make the class unrepresentable" principle as the joined-structure
+    // clipper-input invariant.
+    if (frontHit) {
+      const frontPreference = frontStreetPreference(frontHit.road.classification);
+      const bestOtherDistanceM = Math.min(
+        ...frontCandidates
+          .filter(
+            (h) =>
+              h.edgeIndex !== frontHit!.edgeIndex &&
+              frontStreetPreference(h.road.classification) >= frontPreference,
+          )
+          .map((h) => h.distanceM),
+        Infinity,
       );
       if (
-        nonFrontRoadHits.length === 1 &&
-        nonFrontRoadHits[0]!.road.osmWayId !== frontHit.road.osmWayId
+        Number.isFinite(bestOtherDistanceM) &&
+        bestOtherDistanceM > 0 &&
+        frontHit.distanceM > bestOtherDistanceM * FRONT_STREET_DISTANCE_SANITY_RATIO
       ) {
-        // Corner lot: the sole non-front road-adjacent edge faces a
-        // DIFFERENT street — rear (34177 class).
-        rearHit = nonFrontRoadHits[0]!;
-      } else if (
-        nonFrontRoadHits.length === 1 &&
-        nonFrontRoadHits[0]!.road.osmWayId === frontHit.road.osmWayId
-      ) {
-        // 2026-08-07 (master planner scoped reopen, 48021:31317) — the sole
-        // non-front road-adjacent edge faces the SAME street as front: this
-        // is a same-street corner/clipped-corner segment (a parcel boundary
-        // jog along one continuous ROW, e.g. 48021:31317's raw edge 1,
-        // 16.22ft, 24.09ft from Jones Street — essentially tied with the
-        // 23.87ft front edge, and sharing a vertex with it), never a rear.
-        // Leaving rearHit unset here lets the side_corner same-street-clip
-        // check below (bestEligibleNonAlleyByEdge + shares-vertex-with-front)
-        // correctly label it, instead of this heuristic wrongly claiming it
-        // as rear first.
-      } else if (nonFrontRoadHits.length > 1) {
-        const farthestHit = selectRearEdgeByFarthestRoadAdjacent(proj, frontHit, bestByEdge);
-        const frontN = inwardNormalForEdge(proj, frontHit.edgeIndex);
-        const farthestOpposesFront =
-          farthestHit != null &&
-          inwardNormalForEdge(proj, farthestHit.edgeIndex).x * frontN.x +
-            inwardNormalForEdge(proj, farthestHit.edgeIndex).y * frontN.y <
-            -0.5;
-        if (farthestHit && farthestOpposesFront) {
-          rearHit = farthestHit;
-        } else {
-          const rearEdgeIndex = selectRearEdgeByNormalOpposition(proj, frontHit.edgeIndex);
-          if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
-            const roadHit = bestByEdge.get(rearEdgeIndex);
-            rearHit = {
-              edgeIndex: rearEdgeIndex,
-              distanceM: roadHit?.distanceM ?? Infinity,
-              road: roadHit?.road ?? frontHit.road,
-            };
-          } else if (farthestHit) {
-            rearHit = farthestHit;
-          }
-        }
-      } else {
-        const rearEdgeIndex = selectRearEdgeByNormalOpposition(proj, frontHit.edgeIndex);
+        return { ok: false, decline: "front-orientation-unresolved" };
+      }
+    }
+
+    let rearHit: EdgeRoadHit | null = null;
+    if (alleyHits.length > 0) {
+      alleyHits.sort((a, b) => a.distanceM - b.distanceM);
+      rearHit =
+        alleyHits.find((h) => h.edgeIndex !== frontHit?.edgeIndex) ?? alleyHits[0]!;
+    } else if (frontHit && n >= 4) {
+      // P-262: the flag-lot / neck test is a property of the RAW ring — a jog or
+      // connector vertex the county digitised — so it is decided once on the
+      // chord frame and passed in, never re-decided on the line view. Measured
+      // why: 48021:31308's line view has 4 edges, below detectFlagLotShape's own
+      // n >= 5 gate, so re-deciding here broke 31308's rear line (its 21.81 m
+      // rear chord and its 2.77 m line-mate went from rear to side, a 25 ft
+      // setback becoming 5 ft, because the same-street corner-clip branch below
+      // short-circuits before the normal-opposition rear search).
+      if (flagLotShape) {
+        const flagSameStreetRear = selectFlagLotSameStreetRearEdge(hits, frontHit, frame, true);
+        const rearEdgeIndex =
+          flagSameStreetRear ?? selectRearEdgeByNormalOpposition(frame, frontHit.edgeIndex);
         if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
           const roadHit = bestByEdge.get(rearEdgeIndex);
           rearHit = {
@@ -724,116 +897,208 @@ export function labelEdgesFromRoads(input: {
             road: roadHit?.road ?? frontHit.road,
           };
         }
+      } else {
+        const nonFrontRoadHits = [...bestByEdge.values()].filter(
+          (h) => h.edgeIndex !== frontHit.edgeIndex,
+        );
+        if (
+          nonFrontRoadHits.length === 1 &&
+          nonFrontRoadHits[0]!.road.osmWayId !== frontHit.road.osmWayId
+        ) {
+          // Corner lot: the sole non-front road-adjacent edge faces a
+          // DIFFERENT street — rear (34177 class).
+          rearHit = nonFrontRoadHits[0]!;
+        } else if (
+          nonFrontRoadHits.length === 1 &&
+          nonFrontRoadHits[0]!.road.osmWayId === frontHit.road.osmWayId
+        ) {
+          // 2026-08-07 (master planner scoped reopen, 48021:31317) — the sole
+          // non-front road-adjacent edge faces the SAME street as front: this
+          // is a same-street corner/clipped-corner segment (a parcel boundary
+          // jog along one continuous ROW, e.g. 48021:31317's raw edge 1,
+          // 16.22ft, 24.09ft from Jones Street — essentially tied with the
+          // 23.87ft front edge, and sharing a vertex with it), never a rear.
+          // Leaving rearHit unset here lets the side_corner same-street-clip
+          // check below (bestEligibleNonAlleyByEdge + shares-vertex-with-front)
+          // correctly label it, instead of this heuristic wrongly claiming it
+          // as rear first.
+        } else if (nonFrontRoadHits.length > 1) {
+          const farthestHit = selectRearEdgeByFarthestRoadAdjacent(frame, frontHit, bestByEdge);
+          const frontN = inwardNormalForEdge(frame, frontHit.edgeIndex);
+          const farthestOpposesFront =
+            farthestHit != null &&
+            inwardNormalForEdge(frame, farthestHit.edgeIndex).x * frontN.x +
+              inwardNormalForEdge(frame, farthestHit.edgeIndex).y * frontN.y <
+              -0.5;
+          if (farthestHit && farthestOpposesFront) {
+            rearHit = farthestHit;
+          } else {
+            const rearEdgeIndex = selectRearEdgeByNormalOpposition(frame, frontHit.edgeIndex);
+            if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
+              const roadHit = bestByEdge.get(rearEdgeIndex);
+              rearHit = {
+                edgeIndex: rearEdgeIndex,
+                distanceM: roadHit?.distanceM ?? Infinity,
+                road: roadHit?.road ?? frontHit.road,
+              };
+            } else if (farthestHit) {
+              rearHit = farthestHit;
+            }
+          }
+        } else {
+          const rearEdgeIndex = selectRearEdgeByNormalOpposition(frame, frontHit.edgeIndex);
+          if (rearEdgeIndex != null && rearEdgeIndex !== frontHit.edgeIndex) {
+            const roadHit = bestByEdge.get(rearEdgeIndex);
+            rearHit = {
+              edgeIndex: rearEdgeIndex,
+              distanceM: roadHit?.distanceM ?? Infinity,
+              road: roadHit?.road ?? frontHit.road,
+            };
+          }
+        }
       }
     }
-  }
 
-  const edgeLabels: EdgeLabelDraft[] = [];
-  for (let i = 0; i < n; i++) {
-    if (frontHit && i === frontHit.edgeIndex) {
-      edgeLabels.push({
-        index: i,
-        label: "front",
-        roadClass: frontHit.road.classification,
-        osmHighwayTag: frontHit.road.osmHighwayTag,
-        osmSurfaceTag: frontHit.road.surface,
-        roadProvenanceKind: frontHit.road.provenanceKind ?? "osm-fallback",
-        frontBasis,
-        osmWayId: frontHit.road.osmWayId,
-      });
-      continue;
-    }
-    if (rearHit && i === rearHit.edgeIndex && isAlleyClassification(rearHit.road.classification)) {
-      edgeLabels.push({
-        index: i,
-        label: "rear",
-        roadClass: rearHit.road.classification,
-        osmHighwayTag: rearHit.road.osmHighwayTag,
-        osmSurfaceTag: rearHit.road.surface,
-        roadProvenanceKind: rearHit.road.provenanceKind ?? "osm-fallback",
-        osmWayId: rearHit.road.osmWayId,
-      });
-      continue;
-    }
-    if (rearHit && i === rearHit.edgeIndex) {
-      edgeLabels.push({ index: i, label: "rear" });
-      continue;
-    }
-    const hit = bestByEdge.get(i);
-    if (
-      hit &&
-      frontHit &&
-      hit.road.osmWayId !== frontHit.road.osmWayId &&
-      !isAlleyClassification(hit.road.classification)
-    ) {
-      edgeLabels.push({
-        index: i,
-        label: "side_corner",
-        roadClass: hit.road.classification,
-        osmHighwayTag: hit.road.osmHighwayTag,
-        osmSurfaceTag: hit.road.surface,
-        roadProvenanceKind: hit.road.provenanceKind ?? "osm-fallback",
-        osmWayId: hit.road.osmWayId,
-      });
-      continue;
-    }
-    // 2026-08-07 (master planner scoped reopen, 48021:31317 double-frontage
-    // corner) — SAME-STREET corner clip: a genuine corner/clipped-corner
-    // lot can have TWO edges both abutting the SAME street (not two
-    // different streets), when the parcel boundary jogs along a single
-    // continuous ROW (verified ground-truth: 48021:31317's raw edge 1,
-    // 16.22ft long, sits 24.09ft from Jones Street — essentially tied with
-    // the 23.87ft front edge 2, and shares a vertex with it). The check
-    // above only recognizes a corner formed by two DIFFERENT streets
-    // (hit.road.osmWayId !== frontHit.road.osmWayId); it never fires here
-    // because both edges face the SAME way id, so this edge fell through
-    // to a plain "side" (5ft) default — the wrong setback for a genuinely
-    // street-facing corner segment, and the root cause of the served
-    // envelope's diagonal skew. Scoped narrowly to avoid mislabeling an
-    // ordinary long side run that happens to be near the same street at
-    // long range: this edge must (a) be front-eligible-road-adjacent to
-    // the EXACT SAME way as frontHit (not merely bestByEdge-adjacent to
-    // some road), and (b) share a vertex with the front edge (genuinely
-    // the front's own immediate neighbor, not a distant edge elsewhere on
-    // the parcel).
-    // Distance parity with front — the actual discriminator between a
-    // genuine corner-clip continuation (this edge's own distance to the
-    // shared street is essentially TIED with front's own distance, e.g.
-    // 31317: 24.09ft vs front's 23.87ft) and an ordinary adjacent side run
-    // that merely falls within the loose 25m proximity threshold at its
-    // far end while running much farther from the street on average
-    // (verified regression case: 48021:31371/31380's ~85-97ft side runs,
-    // whose OWN edge-to-street distance is nowhere near front's ~74-76ft —
-    // sharesVertexWithFront alone is true for BOTH of a front edge's two
-    // neighbors on every parcel, so it cannot discriminate by itself).
-    const eligibleHit = bestEligibleNonAlleyByEdge.get(i);
-    const sharesVertexWithFront =
-      frontHit != null && (i === (frontHit.edgeIndex + n - 1) % n || i === (frontHit.edgeIndex + 1) % n);
-    const CORNER_CLIP_DISTANCE_PARITY_M = 3; // ~10ft — comfortably above GPS/digitization noise, well below the 31371/31380 far-run gap (tens of feet)
-    const distanceParityWithFront =
-      eligibleHit != null &&
-      frontHit != null &&
-      Math.abs(eligibleHit.distanceM - frontHit.distanceM) <= CORNER_CLIP_DISTANCE_PARITY_M;
-    if (
-      eligibleHit &&
-      frontHit &&
-      eligibleHit.road.osmWayId === frontHit.road.osmWayId &&
-      sharesVertexWithFront &&
-      distanceParityWithFront
-    ) {
-      edgeLabels.push({
-        index: i,
-        label: "side_corner",
-        roadClass: eligibleHit.road.classification,
-        osmHighwayTag: eligibleHit.road.osmHighwayTag,
-        osmSurfaceTag: eligibleHit.road.surface,
-        roadProvenanceKind: eligibleHit.road.provenanceKind ?? "osm-fallback",
-        osmWayId: eligibleHit.road.osmWayId,
-      });
-      continue;
-    }
-    edgeLabels.push({ index: i, label: "side" });
-  }
+    const lineLabels: EdgeLabelDraft[] = [];
+      for (let i = 0; i < n; i++) {
+        if (frontHit && i === frontHit.edgeIndex) {
+          lineLabels.push({
+            index: i,
+            label: "front",
+            roadClass: frontHit.road.classification,
+            osmHighwayTag: frontHit.road.osmHighwayTag,
+            osmSurfaceTag: frontHit.road.surface,
+            roadProvenanceKind: frontHit.road.provenanceKind ?? "osm-fallback",
+            frontBasis,
+            osmWayId: frontHit.road.osmWayId,
+          });
+          continue;
+        }
+        if (rearHit && i === rearHit.edgeIndex && isAlleyClassification(rearHit.road.classification)) {
+          lineLabels.push({
+            index: i,
+            label: "rear",
+            roadClass: rearHit.road.classification,
+            osmHighwayTag: rearHit.road.osmHighwayTag,
+            osmSurfaceTag: rearHit.road.surface,
+            roadProvenanceKind: rearHit.road.provenanceKind ?? "osm-fallback",
+            osmWayId: rearHit.road.osmWayId,
+          });
+          continue;
+        }
+        if (rearHit && i === rearHit.edgeIndex) {
+          lineLabels.push({ index: i, label: "rear" });
+          continue;
+        }
+        const hit = bestByEdge.get(i);
+        if (
+          hit &&
+          frontHit &&
+          hit.road.osmWayId !== frontHit.road.osmWayId &&
+          !isAlleyClassification(hit.road.classification)
+        ) {
+          lineLabels.push({
+            index: i,
+            label: "side_corner",
+            roadClass: hit.road.classification,
+            osmHighwayTag: hit.road.osmHighwayTag,
+            osmSurfaceTag: hit.road.surface,
+            roadProvenanceKind: hit.road.provenanceKind ?? "osm-fallback",
+            osmWayId: hit.road.osmWayId,
+          });
+          continue;
+        }
+        // 2026-08-07 (master planner scoped reopen, 48021:31317 double-frontage
+        // corner) — SAME-STREET corner clip: a genuine corner/clipped-corner
+        // lot can have TWO edges both abutting the SAME street (not two
+        // different streets), when the parcel boundary jogs along a single
+        // continuous ROW (verified ground-truth: 48021:31317's raw edge 1,
+        // 16.22ft long, sits 24.09ft from Jones Street — essentially tied with
+        // the 23.87ft front edge 2, and shares a vertex with it). The check
+        // above only recognizes a corner formed by two DIFFERENT streets
+        // (hit.road.osmWayId !== frontHit.road.osmWayId); it never fires here
+        // because both edges face the SAME way id, so this edge fell through
+        // to a plain "side" (5ft) default — the wrong setback for a genuinely
+        // street-facing corner segment, and the root cause of the served
+        // envelope's diagonal skew. Scoped narrowly to avoid mislabeling an
+        // ordinary long side run that happens to be near the same street at
+        // long range: this edge must (a) be front-eligible-road-adjacent to
+        // the EXACT SAME way as frontHit (not merely bestByEdge-adjacent to
+        // some road), and (b) share a vertex with the front edge (genuinely
+        // the front's own immediate neighbor, not a distant edge elsewhere on
+        // the parcel).
+        // Distance parity with front — the actual discriminator between a
+        // genuine corner-clip continuation (this edge's own distance to the
+        // shared street is essentially TIED with front's own distance, e.g.
+        // 31317: 24.09ft vs front's 23.87ft) and an ordinary adjacent side run
+        // that merely falls within the loose 25m proximity threshold at its
+        // far end while running much farther from the street on average
+        // (verified regression case: 48021:31371/31380's ~85-97ft side runs,
+        // whose OWN edge-to-street distance is nowhere near front's ~74-76ft —
+        // sharesVertexWithFront alone is true for BOTH of a front edge's two
+        // neighbors on every parcel, so it cannot discriminate by itself).
+        const eligibleHit = bestEligibleNonAlleyByEdge.get(i);
+        const sharesVertexWithFront =
+          frontHit != null && (i === (frontHit.edgeIndex + n - 1) % n || i === (frontHit.edgeIndex + 1) % n);
+        const CORNER_CLIP_DISTANCE_PARITY_M = 3; // ~10ft — comfortably above GPS/digitization noise, well below the 31371/31380 far-run gap (tens of feet)
+        const distanceParityWithFront =
+          eligibleHit != null &&
+          frontHit != null &&
+          Math.abs(eligibleHit.distanceM - frontHit.distanceM) <= CORNER_CLIP_DISTANCE_PARITY_M;
+        if (
+          eligibleHit &&
+          frontHit &&
+          eligibleHit.road.osmWayId === frontHit.road.osmWayId &&
+          sharesVertexWithFront &&
+          distanceParityWithFront
+        ) {
+          lineLabels.push({
+            index: i,
+            label: "side_corner",
+            roadClass: eligibleHit.road.classification,
+            osmHighwayTag: eligibleHit.road.osmHighwayTag,
+            osmSurfaceTag: eligibleHit.road.surface,
+            roadProvenanceKind: eligibleHit.road.provenanceKind ?? "osm-fallback",
+            osmWayId: eligibleHit.road.osmWayId,
+          });
+          continue;
+        }
+        lineLabels.push({ index: i, label: "side" });
+      }
+  
+    return { ok: true, labels: lineLabels };
+  };
+
+  // Decide on the LOGICAL LINES, then expand onto the raw chord index space.
+  // Every chord of a logical line carries that line's role and road
+  // attributes, so a lot line is inset by ONE setback along its whole length —
+  // the dispatch's items 1-3, and the reason a 3.44 m artifact chord can no
+  // longer be handed a 15 ft inset it cannot hold. Measured on 48209:97658's
+  // ring (chord index space of projectRing):
+  //   line 0-1 (far end line, 16.79 m)     -> rear on both chords
+  //   line 2-4 (long side, 47.62 m)        -> side on all three chords
+  //   line 5   (Sturgeon frontage, 16.8 m) -> front
+  //   line 6-8 (long side, 47.68 m)        -> side on all three chords
+  //
+  // One lot line, one role: every chord of a logical line takes the line's own
+  // role, so a 5.28 m chord cannot be handed a setback deeper than it is long
+  // and two chords of one rear line cannot carry 20 ft and 5 ft. The
+  // chord-level pass is still computed (and its labels still carry the road
+  // provenance for a caller that wants per-chord detail), but where a line's
+  // chords disagreed it is the LINE that decides — that disagreement IS the
+  // defect this lane removes. See expandLineRolesOntoChords for the measured
+  // evidence that the alternative (an artifact-length cap) leaves 48209:97658
+  // broken.
+  const lineRes = resolveRoles(shape, flagLotOnChords);
+  if (!lineRes.ok) return { ok: false, decline: lineRes.decline };
+  // P-262 item 6: a frontage CURVE is several lines (its turns measure above
+  // the grouping threshold), so the front is grown over the rest of the curve
+  // before the roles are expanded onto the chords.
+  extendFrontAcrossCurvedFrontage(shape, lineRes.labels, input.roads, threshold);
+  const chordRes = shape === proj ? lineRes : resolveRoles(proj, flagLotOnChords);
+  if (!chordRes.ok) return { ok: false, decline: chordRes.decline };
+
+  const edgeLabels = expandLineRolesOntoChords(chordRes.labels, lineRes.labels, lineGroups);
 
   return { ok: true, edgeLabels };
 }
