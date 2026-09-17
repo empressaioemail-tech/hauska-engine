@@ -228,10 +228,53 @@ function cadJoinMissVerified(
 }
 
 /**
+ * True when an absent-verified cell carries the JOIN-MISS badge rather than a
+ * matched row's null-field basis. A matched row's basis always carries a
+ * taxYear (`cadNullVerified` refuses to emit without one); a join-miss basis
+ * never can, because there is no row to read a year from. This is the same
+ * predicate the factory's job-level completion step keys on
+ * (`isCadJoinMissBasis`, hauska-factory src/jobs/parcel-record-fill.mjs at
+ * 1fa850e7), and the two are held together by the parity test in
+ * `__tests__/parcel-record.test.ts`.
+ */
+function isCadJoinMissBasis(
+  basis: ScalarAbsentVerifiedCell["basis"],
+): basis is CadJoinMissBasis {
+  if (basis == null || typeof basis !== "object") return false;
+  const b = basis as Record<string, unknown>;
+  return (
+    b.source === CAD_SOURCE &&
+    b.taxYear === undefined &&
+    b.vintage != null &&
+    typeof b.propId === "string"
+  );
+}
+
+/**
  * A genuine join miss: no cad_property row for this propId in any tax year
  * CAD_ROWS_SQL observed for this county. Stamps the same CAD-scalar fields
  * applyCadScalar would leave absent-verified for a matched row with a
  * null/blank field — never a value, since there is no row to read one from.
+ *
+ * P-308 (2026-09-17): the two PROVENANCE fields also get stamped, for the same
+ * reason applyCadScalar states beside them — "a verified-absent source field
+ * has a verified-absent provenance too, not an unresolved one". This branch used
+ * to stamp the 13 value-scalars and touch neither `acreageMethod` nor
+ * `landUseSource`, so every join-miss parcel carried an absent-verified
+ * `acreageAcres` / `landUseCode` beside an `unaccounted` provenance forever,
+ * and no replay could ever fix it (the gap was measured on Hays by the
+ * P-266/P-268 lane, 2026-09-17, and worked around job-side in the factory by
+ * `completeJoinMissCompanionsOntoRecords`).
+ *
+ * The stamp is gated on the PRIMARY's own badge rather than on this record's
+ * join-miss state, because the cells it writes are only ever written when
+ * `unaccounted`: a store cell may already be absent-verified from an earlier
+ * MATCHED-row pass, carrying a taxYear. Writing a join-miss provenance beside a
+ * matched-row provenance would be an internally inconsistent pair — and it is
+ * exactly what the factory predicate refuses — so a companion is stamped only
+ * when its primary reads absent-verified WITH the join-miss basis. That also
+ * makes the pass idempotent: a replay of a join-miss parcel re-stamps nothing.
+ * A companion already `value` or `absent-verified` is never rewritten.
  */
 function applyCadJoinMiss(record: ParcelRecordRow, vintage: string): number {
   let moved = 0;
@@ -239,6 +282,26 @@ function applyCadJoinMiss(record: ParcelRecordRow, vintage: string): number {
   const stampAbsent = (key: keyof typeof c) => {
     if (c[key].kind !== "unaccounted") return;
     (c as Record<string, ScalarCellState>)[key] = cadJoinMissVerified(record, vintage);
+    moved += 1;
+  };
+  /**
+   * `acreageMethod` describes where `acreageAcres` came from; `landUseSource`
+   * describes where `landUseCode` came from. Emitted only when the primary is
+   * itself a verified join miss, so the pair can never disagree about why the
+   * source field is absent.
+   */
+  const stampProvenanceBesidePrimary = (
+    primaryKey: keyof typeof c,
+    provenanceKey: keyof typeof c,
+  ) => {
+    const primary = c[primaryKey];
+    if (primary.kind !== "absent-verified") return;
+    if (!isCadJoinMissBasis(primary.basis)) return;
+    if (c[provenanceKey].kind !== "unaccounted") return;
+    (c as Record<string, ScalarCellState>)[provenanceKey] = cadJoinMissVerified(
+      record,
+      vintage,
+    );
     moved += 1;
   };
 
@@ -255,6 +318,8 @@ function applyCadJoinMiss(record: ParcelRecordRow, vintage: string): number {
   stampAbsent("yearBuilt");
   stampAbsent("livingAreaSqft");
   stampAbsent("acreageAcres");
+  stampProvenanceBesidePrimary("landUseCode", "landUseSource");
+  stampProvenanceBesidePrimary("acreageAcres", "acreageMethod");
 
   return moved;
 }
