@@ -24,19 +24,27 @@
  * candidate list and runs the same live corroboration, reporting exactly
  * what would be reactivated and what would stay retired, without writing.
  *
- * LIVE CORROBORATION IS COUNTY-SPECIFIC. Only Bastrop (48021) has a wired
- * live source today (parcelCurrencyFromBcadMap against the public Bastrop
- * cadastral FeatureServer, the same one bastrop-batch-bulk-prefetch.mjs and
- * depth-warm-city-batch.mjs already use). A county with no registered live
- * source reports its candidates but reactivates none of them — no live
- * corroboration is available, so none is assumed; candidates are reported so
- * a human can register that county's source next, never dropped silently.
+ * LIVE CORROBORATION IS COUNTY-SPECIFIC. Bastrop (48021) has used
+ * parcelCurrencyFromBcadMap against the public Bastrop cadastral FeatureServer since
+ * P-212 (the same source bastrop-batch-bulk-prefetch.mjs and depth-warm-city-batch.mjs
+ * use). P-275 adds a second, independent reading for Caldwell (48055), Hays (48209),
+ * Travis (48453) and Williamson (48491) via `county-parcel-id-currency.mjs`, each against
+ * that county's OWN public cadastral service. McLennan (48309) has NO usable public
+ * county-wide service and therefore NO registered source — deliberately, and reported as
+ * such (see LIVE_CURRENCY_SOURCES).
+ *
+ * THE READING IS TRI-STATE (P-275). A candidate is `live`, `absent` (the county's own
+ * source was asked and does not have it), or `unmeasured` (nobody asked: no source
+ * registered, the source was unreachable, the chunk failed, or the id is a synthetic
+ * within-vintage key that no external service can be asked about). A county with no
+ * source reports its candidates as UNMEASURED — never as "not found" — because the
+ * absence of a measurement is not a measurement of absence.
  *
  *   PARCEL_NODE_PATH=1 \
  *   TXGIO_DATABASE_URL=...ldt-deployment... \
  *   DATABASE_URL=...hauska_mcp... \
  *     pnpm --filter @hauska-engine/engine-core run review-retired-parcel-nodes -- \
- *       --county=48021 [--apply --run-id=<id>] [--out=path.json]
+ *       --county=48021 [--apply --run-id=<id>] [--out=path.json] [--blast-radius-override=<token>]
  */
 
 import { writeFileSync } from "node:fs";
@@ -52,6 +60,7 @@ import {
 
 import {
   decideRetiredParcelNodeReactivations,
+  isSyntheticParcelKey,
   planCountyParcelNodes,
   reviewRetiredParcelNodes,
 } from "../src/parcel-node/index.ts";
@@ -60,22 +69,34 @@ import {
   railLeaseArgs,
   refuseApplyWithoutRunId,
 } from "./writer-apply-lease.mjs";
-import { parcelCurrencyFromBcadMap, bulkLoadBcadRingsByPropId } from "./bastrop-batch-bulk-prefetch.mjs";
+import {
+  LIVE_CURRENCY_SOURCES,
+  NO_SOURCE_REASONS,
+  registeredLiveCurrencyCounties,
+} from "./county-live-currency-sources.mjs";
+import {
+  MAX_REACTIVATION_SHARE,
+  REACTIVATION_TRANSITION,
+  REACTIVATION_WRITER,
+  planReactivationWrite,
+  reactivationOverrideFromEnv,
+  reactivationOverrideValue,
+} from "./retired-reactivation-guard.mjs";
 
-/** County FIPS -> a function producing a propId -> boolean live-currency map. */
-const LIVE_CURRENCY_SOURCES = {
-  "48021": async (propIds) => {
-    const bcadByPropId = await bulkLoadBcadRingsByPropId(propIds);
-    const out = new Map();
-    for (const propId of propIds) {
-      out.set(propId, parcelCurrencyFromBcadMap(propId, bcadByPropId).ok);
-    }
-    return out;
-  },
+/**
+ * The registry itself lives in `county-live-currency-sources.mjs` — one place that says which
+ * county is read from where, by which field, and why that field is the node-id namespace. See that
+ * file for the Q1/Q2 test, the Williamson `QuickRefID` trap, and the county that deliberately
+ * registers nothing. This CLI never imports a source directly: it asks the registry, and reports
+ * the registry's own shape in the summary so a reader can tell "no candidates" from "no source".
+ */
+const REGISTRY_SUMMARY = {
+  registered: registeredLiveCurrencyCounties(),
+  noSourceReason: NO_SOURCE_REASONS,
 };
 
 function parseArgs(argv) {
-  const out = { county: null, apply: false, out: null, runId: null };
+  const out = { county: null, apply: false, out: null, runId: null, blastRadiusOverride: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--county") out.county = String(argv[++i] || "").trim();
@@ -83,7 +104,10 @@ function parseArgs(argv) {
     else if (a === "--apply") out.apply = true;
     else if (a === "--out") out.out = String(argv[++i] || "").trim() || null;
     else if (a.startsWith("--out=")) out.out = a.slice("--out=".length).trim() || null;
-    else {
+    else if (a === "--blast-radius-override") out.blastRadiusOverride = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--blast-radius-override=")) {
+      out.blastRadiusOverride = a.slice("--blast-radius-override=".length).trim() || null;
+    } else {
       const next = consumeRunIdArg(a, argv, i, out);
       if (next !== null) i = next;
     }
@@ -135,7 +159,15 @@ const summary = {
   priorRetired: 0,
   candidates: 0,
   stillAbsent: 0,
+  // P-275: the live-currency reading is tri-state, and the three counts are reported apart.
+  // `unmeasured` is NOT folded into anything: it is the absence of a reading, not a reading.
   liveCurrencySource: LIVE_CURRENCY_SOURCES[args.county] ? "registered" : "none-registered",
+  liveCurrencyRegistry: REGISTRY_SUMMARY,
+  liveCurrencyRequests: 0,
+  confirmedLive: 0,
+  confirmedAbsent: 0,
+  unmeasured: 0,
+  unmeasuredReasons: [],
   reactivated: 0,
   stillRetired: 0,
   verifyFailures: [],
@@ -205,32 +237,140 @@ try {
       retiredReason: r.body?.retiredReason ?? null,
     }));
 
+    // The county's whole parcel-node population, so a retired SHARE has a denominator that is
+    // stated rather than assumed. One aggregate on the same predicate as the retired read.
+    const [countyCounts] = await reviewSql`
+      SELECT count(*)::int AS total,
+             count(*) FILTER (WHERE body->>'status' = 'retired')::int AS retired
+      FROM atoms
+      WHERE entity_type = 'parcel-node'
+        AND body->>'countyFips' = ${args.county}
+    `;
+    summary.countyParcelNodesRetiredAsStored = countyCounts.retired;
+    if (countyCounts.retired !== retired.length) {
+      // Read at two different instants, or the row filter disagrees. Either way it is stated, so a
+      // reader knows the shares below rest on the same predicate as the review.
+      summary.countyParcelNodesRetiredNote =
+        "the aggregate and the row read disagreed on the retired count; the row read is authoritative for this review";
+    }
+
     const review = reviewRetiredParcelNodes(retired, plan);
     summary.priorRetired = review.priorRetired;
     summary.candidates = review.candidates.length;
     summary.stillAbsent = review.stillAbsent;
 
-    // ---- Live corroboration, county-specific. No registered source => empty
-    // map => decideRetiredParcelNodeReactivations reactivates nothing, and
-    // every candidate is reported under stillRetired so it is never dropped.
+    // ---- Live corroboration, county-specific, TRI-STATE (P-275).
+    //
+    // Three things a candidate can be, and they are not interchangeable:
+    //   live        the county's own source answered and HAS this id.
+    //   absent      the county's own source answered and does NOT have this id.
+    //   unmeasured  nobody obtained an answer: no source registered, the source was
+    //               unreachable, a chunk failed, or the id is a synthetic within-vintage key
+    //               that no external service can be asked about at all.
+    //
+    // `unmeasured` is never reported as `absent`. That conflation is the defect this replaces:
+    // an unreachable source used to look exactly like a county-wide "the parcels are gone".
     const source = LIVE_CURRENCY_SOURCES[args.county];
-    let liveCurrency = new Map();
-    if (source && review.candidates.length > 0) {
-      const propIds = review.candidates.map((c) => c.parcelNodeId.split(":")[1]);
-      const byPropId = await source(propIds);
-      liveCurrency = new Map(
-        review.candidates.map((c) => [
-          c.parcelNodeId,
-          byPropId.get(c.parcelNodeId.split(":")[1]) === true,
-        ]),
-      );
+    const liveCurrency = new Map();
+    if (review.candidates.length > 0) {
+      if (!source) {
+        for (const c of review.candidates) {
+          liveCurrency.set(c.parcelNodeId, {
+            reading: "unmeasured",
+            reason: `no live-currency source registered for county ${args.county}`,
+          });
+        }
+      } else {
+        // A synthetic key is `{county}:{SYNTHETIC_PARCEL_KEY_PREFIX}...` — an identity scoped to
+        // one source vintage (invariant S1). It is not a live-queryable identity anywhere, so
+        // asking a county about it would be asking a meaningless question; the honest reading is
+        // UNMEASURED with that reason, and it must not be reported as absent.
+        const askable = [];
+        for (const c of review.candidates) {
+          if (isSyntheticParcelKey(c.parcelNodeId)) {
+            liveCurrency.set(c.parcelNodeId, {
+              reading: "unmeasured",
+              reason:
+                "synthetic within-vintage key: it is an identity for one source vintage only " +
+                "(invariant S1), not a parcel identifier any external service can be asked about",
+            });
+          } else {
+            askable.push(c.parcelNodeId);
+          }
+        }
+        if (askable.length > 0) {
+          // The request count is a property of the READER (a getter on the ArcGIS factory, and on
+          // the Bastrop source since P-275), but Bastrop's ALSO rides the returned Map for older
+          // callers -- accept either, and never mistake "no count available" for a count of 0.
+          const countOf = (v) => (typeof v?.requests === "number" ? v.requests : null);
+          let liveRequests = countOf(source);
+          try {
+            const byId = await source(askable.map((id) => id.split(":")[1]));
+            liveRequests = countOf(byId) ?? countOf(source) ?? liveRequests;
+            for (const id of askable) {
+              const key = id.split(":")[1];
+              // The Bastrop source keys by normalized propId, the ArcGIS reader by normalized
+              // id; accept either spelling of the same token.
+              const reading = byId.get(key) ?? byId.get(String(Number(key))) ?? byId.get(key.replace(/^0+(?=\d)/, ""));
+              if (reading && typeof reading === "object" && typeof reading.reading === "string") {
+                liveCurrency.set(id, reading);
+              } else if (reading === true || reading === "live") {
+                liveCurrency.set(id, { reading: "live" });
+              } else if (reading === false || reading === "absent") {
+                liveCurrency.set(id, { reading: "absent" });
+              } else {
+                liveCurrency.set(id, {
+                  reading: "unmeasured",
+                  reason: `county ${args.county} source returned no reading for this id`,
+                });
+              }
+            }
+          } catch (err) {
+            // WHOLE-SOURCE failure (bad URL, DNS, no such field on the layer, non-JSON). Every
+            // candidate of this county becomes UNMEASURED with the transport reason -- the run
+            // does not report zero candidates and does not report them as absent.
+            summary.liveCurrencySource = "unreachable";
+            // `fetch failed` alone hides the transport cause on this host (an untrusted leaf
+            // certificate reads as a bare "fetch failed"), and the cause is exactly what the
+            // operator needs to tell a broken source from an unreachable host.
+            const cause = err?.cause?.message ? ` (cause: ${err.cause.message})` : "";
+            const reason = `county ${args.county} live-currency source unreachable: ${err?.message ?? err}${cause}`;
+            for (const id of askable) liveCurrency.set(id, { reading: "unmeasured", reason });
+          }
+          summary.liveCurrencyRequests = liveRequests;
+        }
+      }
     }
 
     const verdict = decideRetiredParcelNodeReactivations(review, liveCurrency);
+    summary.confirmedLive = verdict.reactivate.length;
+    summary.confirmedAbsent = verdict.confirmedAbsent.length;
+    summary.unmeasured = verdict.unmeasured.length;
+    summary.unmeasuredReasons = [
+      ...new Set(verdict.unmeasured.map((u) => u.reason.replace(/UNMEASURED: /, ""))),
+    ].slice(0, 5);
     summary.reactivated = verdict.reactivate.length;
     summary.stillRetired = verdict.stillRetired.length;
+
+    // ---- The share readings, each with its denominator NAMED IN THE KEY, because the dispatch's
+    // falsifier turns on exactly this: a "live count" is meaningless without the set it was
+    // measured over. Three different shares, three different denominators:
+    //   retiredShareOfCountyNodes_*        denominator = ALL of the county's parcel-node atoms
+    //   reactivationShareOfRetiredPopulation  denominator = the retired atoms this run drew from
+    // The last one is also the blast-radius denominator, so a reader can see the number the guard
+    // was measured against rather than inferring it.
+    summary.countyParcelNodes = countyCounts.total;
+    summary.retiredShareOfCountyNodesBefore =
+      countyCounts.total > 0 ? review.priorRetired / countyCounts.total : null;
+    summary.retiredShareOfCountyNodesAfterHypotheticalReactivation =
+      countyCounts.total > 0
+        ? (review.priorRetired - verdict.reactivate.length) / countyCounts.total
+        : null;
+    summary.reactivationShareOfRetiredPopulation =
+      review.priorRetired > 0 ? verdict.reactivate.length / review.priorRetired : null;
     summary.reactivateSample = verdict.reactivate.slice(0, 20);
-    summary.stillRetiredSample = verdict.stillRetired.slice(0, 20);
+    summary.confirmedAbsentSample = verdict.confirmedAbsent.slice(0, 20);
+    summary.unmeasuredSample = verdict.unmeasured.slice(0, 20);
 
     if (!args.apply) {
       console.log(
@@ -245,8 +385,26 @@ try {
         ),
       );
     } else {
-      if (verdict.reactivate.length === 0) {
-        console.log(JSON.stringify({ ...summary, note: "nothing to reactivate" }, null, 2));
+      // P-275: the blast-radius refusal on the REACTIVATION direction, BEFORE the write lease.
+      // `planReactivationWrite` throws (BLAST_RADIUS_EXCEEDED, or an override mismatch/malformed
+      // token) rather than returning a plan, so the `await takeScopedLease` below is unreachable
+      // on a refusal. Nothing is written, and the refusal names the exact token that would
+      // authorize THESE measured counts.
+      summary.blastRadiusControl = {
+        writer: REACTIVATION_WRITER,
+        transition: REACTIVATION_TRANSITION,
+        maxShare: MAX_REACTIVATION_SHARE,
+        denominator: "the county's prior retired rows this reactivation is drawn from",
+      };
+      const writePlan = planReactivationWrite({
+        countyFips: args.county,
+        review,
+        verdict,
+        override: args.blastRadiusOverride ?? reactivationOverrideFromEnv(),
+      });
+      summary.blastRadius = writePlan.blastRadius;
+      if (!writePlan.write) {
+        console.log(JSON.stringify({ ...summary, note: writePlan.reason }, null, 2));
       } else {
         const lease = await takeScopedLease(
           handle.sql,
@@ -327,6 +485,15 @@ try {
 } catch (err) {
   summary.errors += 1;
   summary.error = String(err?.stack || err);
+  // P-213/P-275: a blast-radius refusal carries its own measured record (share, affected,
+  // population) plus the exact token that would authorize it -- surface both, so the refusal is
+  // as legible as a pass and the authorized re-run is mechanical rather than a hunt.
+  if (err?.record) summary.blastRadius = err.record;
+  if (err?.code === "BLAST_RADIUS_EXCEEDED" && err?.expectedToken) {
+    summary.blastRadiusOverrideNeeded = err.expectedToken;
+    summary.blastRadiusReRunHint =
+      `re-execute with --blast-radius-override=${reactivationOverrideValue(args.county, err.affected, err.population)}`;
+  }
   console.error(JSON.stringify(summary, null, 2));
   process.exitCode = 1;
 } finally {
