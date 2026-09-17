@@ -2,6 +2,7 @@
   "$schema": "./schema.json",
   "jurisdictionKey": "bastrop-development-code",
   "jurisdictionDisplayName": "City of Bastrop, TX (Bastrop Development Code / Ord. 2026-06)",
+  "effectiveDate": "2026-04-14",
   "note": "WDLL 2026-07-29 BDC STEP 3 item 1. AUTHORITATIVE setback VALUES for City of Bastrop Euclidean districts — ordinance TEXT Sec. 14.02.003 (CORRECTION A), not the GIS card. Ord. 2026-06 repealed B3 Place Types (P-1..P-5) effective 2026-04-14. Rows ONLY for scalar Euclidean districts SF-1/SF-2/SF-3/RR. MU/GC/PI/IND/P/OS/PDD intentionally ABSENT (CORRECTION C honest-decline: conditional/contextual standards the flat model cannot hold). Min-lot notes: SF-1 1/3 ac; SF-2 7,500 sf; SF-3 5,000 sf; RR 1 ac. Do not invent scalars for omitted districts.",
   "districts": [
     {

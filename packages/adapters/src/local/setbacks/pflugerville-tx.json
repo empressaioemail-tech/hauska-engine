@@ -2,7 +2,7 @@
   "$schema": "./schema.json",
   "jurisdictionKey": "pflugerville-tx",
   "jurisdictionDisplayName": "City of Pflugerville, TX",
-  "note": "Codified from City of Pflugerville Unified Development Code §4.2.4, Tables 4.2.4A–C, at https://online.encodeplus.com/regs/pflugerville/doc-view.aspx?print=1&tocid=004.004, accessed 2026-07-21/23. SHIPPED rows: SF-S, SF-R, MF-20, SF-MU, 2-F, GB1, GB2, LI, MH, A. SF-MU/2-F use Table 4.2.4A abutting-SF interior-side where listed. Non-residential GB1/GB2/LI use tabulated base yards without height-escalator adjacency. OMITTED: corridor CL3/CL4/CL5, PUD, PF, NS, O, CI, GI, and overlays. max_lot_coverage_pct and max_impervious_pct use the established non-binding sentinel 100 where not scalar.",
+  "note": "Codified from City of Pflugerville Unified Development Code §4.2.4, Tables 4.2.4A–C, at https://online.encodeplus.com/regs/pflugerville/doc-view.aspx?print=1&tocid=004.004, accessed 2026-07-21/23. SHIPPED rows: SF-S, SF-R, MF-20, SF-MU, 2-F, GB1, GB2, LI, MH, A. SF-MU/2-F use Table 4.2.4A abutting-SF interior-side where listed. Non-residential GB1/GB2/LI use tabulated base yards without height-escalator adjacency. OMITTED IN THE ORIGINAL PASS, SUPERSEDED IN PART BY THE P-258 LANE-C ADDENDUM AT THE END OF THIS NOTE (CL3/CL4/CL5 NOW HAVE ROWS): corridor CL3/CL4/CL5, PUD, PF, NS, O, CI, GI, and overlays. max_lot_coverage_pct and max_impervious_pct use the established non-binding sentinel 100 where not scalar. P-258 LANE-C ADDENDUM (2026-09-16, acquisition campaign, branch seat/p258-lane-c): 3 districts added -- the corridor districts CL3, CL4 and CL5 -- from the SAME encodeplus source this file already cites (Pflugerville Unified Development Code, Sec. 4.4 Corridor Districts / Table 4.4.4 General Regulations & Height Standards, https://online.encodeplus.com/regs/pflugerville/doc-view.aspx?print=1&tocid=004.004, read 2026-09-16; the corridor district text was last amended by Ord. # 1623-24-04-23, Corridor District Text Amendments, 04/23/2024, quoted from the page). Values: CL3 F15/S5/C15/R20/H35/LC65%/IC80%; CL4 F15/S5/C15/R10/H60/LC85%/IC85%; CL5 F15/S5/C15/R10/H85/LC85%/IC85%. READ CAREFULLY, NOT BLINDLY: (1) the corridor table splits its first three columns by land-use type (SF Detach, SF Attach, and 'MF; Non-residential'); for front, side and corner the three columns print the SAME figures (15 / 5 / 15), so CL3 carries no pick -- only the rear differs (20/15/20) and the 'MF; Non-residential' figure (20) is codified with both alternatives quoted. (2) The interior-side cell is \"5' or 0' on interior\": 5 ft. is the base and the 0 ft. party-wall case is quoted. (3) The rows '(abutting single-family residential zoning)' print 30 ft. for side and rear and are CONDITIONAL escalations, quoted not codified. (4) The impervious-cover rows are USE-DEPENDENT (non-residential 80/85/85 vs multi-family 60 unless an SUP allows more); the non-residential figure is codified and the lower multi-family figure is quoted, with the choice flagged use_dependent in provenance rather than left silent. (5) This district states a REAL building lot-coverage cap (65/85/85%) and a REAL height in feet, so those two fields are ordinance-sourced here, unlike most rows in this file. STILL NOT ACQUIRED IN THIS CITY, WITH THE SOURCE THAT WOULD CLOSE IT (these remain honest gaps, not rows): the layer codes R, MF-10, O, CI, NS, PF, GI, SF-E (about 125 parcels). They are NOT in the corridor chapter; they sit in the conventional-district tables (the Sec. 4.2.4 series this file's existing rows already cite) and were not re-read this pass. Sources tried for them: the encodeplus §4.4 page (read, above) and the file's own existing citation to the §4.2.4 tables (carried, not re-fetched). Municode's Pflugerville client, eCode360 and American Legal were not tried for this city because the City's own encodeplus publication served the code directly. P-299 OT-1 (height-flag reconciliation, 2026-09-17): every max_height_ft row in this file that carried not_specified was re-read against its own provenance quote and classified with this repo's not_specified-meaning instrument (doc_repo scripts/corpus_not_specified_audit.py, OPS-21-R1). FLAG REMOVED, VALUE KEPT -- here the FLAG was the defect and the number was real; not_specified on these rows asserted a false absence. The basis is stated PER ROW because it is not the same for all of them: the row's own quote states the feet figure (SF-MU Single Family Mixed Use (keeps 35); 2-F Two Family Residential (keeps 35); GB1 General Business 1 (keeps 50); GB2 General Business 2 (keeps 50); LI Light Industrial (keeps 50); A Agricultural (keeps 35)) whereas for these rows the quote names the tabulated height column without restating the number, so the basis is the OPS-21-R1 / P-146 instrument's classification REAL_VALUE_FLAGGED -- the values across that row's flagged siblings are VARIED (transcribed numbers, not one uniform placeholder), which is the discriminator the ruling names (MH Manufactured Housing (keeps 35)).",
   "districts": [
     {
       "district_name": "SF-S Single Family Suburban",
@@ -244,8 +244,7 @@
           "section_number": "4.2.4",
           "quote": "Table 4.2.4A SF-MU: front 15; interior side abutting-SF 7.5; rear 20; corner 15; height 35.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "pflugerville_tx/udc/4.2.4",
@@ -313,8 +312,7 @@
           "section_number": "4.2.4",
           "quote": "Table 4.2.4A 2-F: front 15; interior side abutting-SF 10; rear abutting 20; corner 15; height 35.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "pflugerville_tx/udc/4.2.4",
@@ -382,8 +380,7 @@
           "section_number": "4.2.4",
           "quote": "Table 4.2.4 non-residential GB1 base yards: front 15, side 10, rear 20; height 50.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "pflugerville_tx/udc/4.2.4",
@@ -451,8 +448,7 @@
           "section_number": "4.2.4",
           "quote": "Table 4.2.4 non-residential GB2 base yards: front 15, side 10, rear 20; height 50.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "pflugerville_tx/udc/4.2.4",
@@ -520,8 +516,7 @@
           "section_number": "4.2.4",
           "quote": "Table 4.2.4 LI base yards: front 15, side 10, rear 25; height 50.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "pflugerville_tx/udc/4.2.4",
@@ -589,8 +584,7 @@
           "section_number": "4.2.4",
           "quote": "Table 4.2.4 MH uses SF-S-class residential yards as the scalar baseline pending type-specific stamp.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "pflugerville_tx/udc/4.2.4",
@@ -658,8 +652,7 @@
           "section_number": "4.2.4",
           "quote": "Table 4.2.4 A district height matches SF class at 35; yards use SF-S baseline as conservative scalar.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "pflugerville_tx/udc/4.2.4",
@@ -676,6 +669,174 @@
           "confidence": 0.6,
           "verification_state": "asserted",
           "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "CL3 Corridor District - Neighborhood (Level 3)",
+      "front_ft": 15,
+      "rear_ft": 20,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 65,
+      "max_impervious_pct": 80,
+      "citation_url": "https://online.encodeplus.com/regs/pflugerville/doc-view.aspx?print=1&tocid=004.004",
+      "provenance": {
+        "front_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4 Corridor Districts - General Regulations & Height Standards, row 'Minimum Front Street Setback (Building Setback)': CL3 = 15'. All three corridor columns (SF Detach, SF Attach, and 'MF; Non-residential') print 15', so the value is unambiguous across the district's land-use types.",
+          "confidence": 0.9,
+          "verification_state": "primary-source-verified"
+        },
+        "rear_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Minimum Rear Setback': CL3 = 20'. (The adjacent row 'Minimum Rear Setback (1) (abutting single-family residential zoning)' prints 30' for this district -- a conditional escalation, quoted not codified.)",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "side_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Minimum Interior Side Setback': CL3 = \"5' or 0' on interior\"'. The 5 ft. base is codified; 0 ft. on the interior (shared/party-wall) side is quoted. The adjacent row abutting single-family zoning prints 30' -- a conditional escalation, quoted not codified.",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "side_corner_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Minimum Side Street Setback (Corner Lot)': CL3 = 15'.",
+          "confidence": 0.9,
+          "verification_state": "primary-source-verified"
+        },
+        "max_height_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Maximum Building Height (1)': CL3 = 35'. Footnote (1) exempts assisted-living/nursing-home dwelling units; footnote (2) permits additional height for Multi-Family, Urban land use with administrative approval (and a further 15% or as needed for regulatory compliance). Those conditions are quoted, not codified as the base.",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Maximum Lot Coverage (Structure) (does not include pavement, and not to exceed maximum impervious cover)': CL3 = 65%. This is a real building-coverage figure, so the field is ordinance-sourced on this row rather than the corpus's usual sentinel.",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "max_impervious_pct": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, rows 'Maximum Impervious Cover (non-residential)': CL3 = 80%, and 'Maximum Impervious Cover for multi-family unless greater percentage is permitted through the SUP': 60%. The NON-RESIDENTIAL figure is codified as the district's tabulated maximum and the lower multi-family figure is quoted; the choice is stated rather than silent, and it is flagged use_dependent because this district's impervious cap varies by land-use type.",
+          "confidence": 0.75,
+          "verification_state": "primary-source-verified",
+          "use_dependent": true
+        }
+      }
+    },
+    {
+      "district_name": "CL4 Corridor District - Urban (Level 4)",
+      "front_ft": 15,
+      "rear_ft": 10,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 85,
+      "max_impervious_pct": 85,
+      "citation_url": "https://online.encodeplus.com/regs/pflugerville/doc-view.aspx?print=1&tocid=004.004",
+      "provenance": {
+        "front_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4 Corridor Districts - General Regulations & Height Standards, row 'Minimum Front Street Setback (Building Setback)': CL4 = 15'. All three corridor columns (SF Detach, SF Attach, and 'MF; Non-residential') print 15', so the value is unambiguous across the district's land-use types.",
+          "confidence": 0.9,
+          "verification_state": "primary-source-verified"
+        },
+        "rear_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Minimum Rear Setback': CL4 = 10'. (The adjacent row 'Minimum Rear Setback (1) (abutting single-family residential zoning)' prints 30' for this district -- a conditional escalation, quoted not codified.)",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "side_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Minimum Interior Side Setback': CL4 = \"5' or 0' on interior\"'. The 5 ft. base is codified; 0 ft. on the interior (shared/party-wall) side is quoted. The adjacent row abutting single-family zoning prints 30' -- a conditional escalation, quoted not codified.",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "side_corner_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Minimum Side Street Setback (Corner Lot)': CL4 = 15'.",
+          "confidence": 0.9,
+          "verification_state": "primary-source-verified"
+        },
+        "max_height_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Maximum Building Height (1)': CL4 = 60'. Footnote (1) exempts assisted-living/nursing-home dwelling units; footnote (2) permits additional height for Multi-Family, Urban land use with administrative approval (and a further 15% or as needed for regulatory compliance). Those conditions are quoted, not codified as the base.",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Maximum Lot Coverage (Structure) (does not include pavement, and not to exceed maximum impervious cover)': CL4 = 85%. This is a real building-coverage figure, so the field is ordinance-sourced on this row rather than the corpus's usual sentinel.",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "max_impervious_pct": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, rows 'Maximum Impervious Cover (non-residential)': CL4 = 85%, and 'Maximum Impervious Cover for multi-family unless greater percentage is permitted through the SUP': 60%. The NON-RESIDENTIAL figure is codified as the district's tabulated maximum and the lower multi-family figure is quoted; the choice is stated rather than silent, and it is flagged use_dependent because this district's impervious cap varies by land-use type.",
+          "confidence": 0.75,
+          "verification_state": "primary-source-verified",
+          "use_dependent": true
+        }
+      }
+    },
+    {
+      "district_name": "CL5 Corridor District - Urban Center (Level 5)",
+      "front_ft": 15,
+      "rear_ft": 10,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 85,
+      "max_lot_coverage_pct": 85,
+      "max_impervious_pct": 85,
+      "citation_url": "https://online.encodeplus.com/regs/pflugerville/doc-view.aspx?print=1&tocid=004.004",
+      "provenance": {
+        "front_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4 Corridor Districts - General Regulations & Height Standards, row 'Minimum Front Street Setback (Building Setback)': CL5 = 15'. All three corridor columns (SF Detach, SF Attach, and 'MF; Non-residential') print 15', so the value is unambiguous across the district's land-use types.",
+          "confidence": 0.9,
+          "verification_state": "primary-source-verified"
+        },
+        "rear_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Minimum Rear Setback': CL5 = 10'. (The adjacent row 'Minimum Rear Setback (1) (abutting single-family residential zoning)' prints 30' for this district -- a conditional escalation, quoted not codified.)",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "side_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Minimum Interior Side Setback': CL5 = \"5' or 0' on interior\"'. The 5 ft. base is codified; 0 ft. on the interior (shared/party-wall) side is quoted. The adjacent row abutting single-family zoning prints 30' -- a conditional escalation, quoted not codified.",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "side_corner_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Minimum Side Street Setback (Corner Lot)': CL5 = 15'.",
+          "confidence": 0.9,
+          "verification_state": "primary-source-verified"
+        },
+        "max_height_ft": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Maximum Building Height (1)': CL5 = 85'. Footnote (1) exempts assisted-living/nursing-home dwelling units; footnote (2) permits additional height for Multi-Family, Urban land use with administrative approval (and a further 15% or as needed for regulatory compliance). Those conditions are quoted, not codified as the base.",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, row 'Maximum Lot Coverage (Structure) (does not include pavement, and not to exceed maximum impervious cover)': CL5 = 85%. This is a real building-coverage figure, so the field is ordinance-sourced on this row rather than the corpus's usual sentinel.",
+          "confidence": 0.85,
+          "verification_state": "primary-source-verified"
+        },
+        "max_impervious_pct": {
+          "section_number": "4.4.4",
+          "quote": "Table 4.4.4, rows 'Maximum Impervious Cover (non-residential)': CL5 = 85%, and 'Maximum Impervious Cover for multi-family unless greater percentage is permitted through the SUP': 60%. The NON-RESIDENTIAL figure is codified as the district's tabulated maximum and the lower multi-family figure is quoted; the choice is stated rather than silent, and it is flagged use_dependent because this district's impervious cap varies by land-use type.",
+          "confidence": 0.75,
+          "verification_state": "primary-source-verified",
+          "use_dependent": true
         }
       }
     }

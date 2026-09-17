@@ -2,7 +2,7 @@
   "$schema": "./schema.json",
   "jurisdictionKey": "austin-tx",
   "jurisdictionDisplayName": "City of Austin, TX",
-  "note": "WDLL 51. Base-zone scalar rows transcribed from City of Austin LDC ?25-2-492 public table at https://services.austintexas.gov/edims/document.cfm?id=419477, cross-referenced by the City zoning resources page https://www.austintexas.gov/planning/zoning-resources-site-regulations (accessed 2026-07-23). These rows serve only the listed base GIS stamps. OMITTED: Austin combining and overlay districts (CO, NCCD, PUD, downtown, etc.), compatibility/average-front-yard calculations, watershed controls, and any use-, lot-, or frontage-dependent variation because the envelope request lacks those facts.",
+  "note": "WDLL 51. Base-zone scalar rows transcribed from City of Austin LDC ?25-2-492 public table at https://services.austintexas.gov/edims/document.cfm?id=419477, cross-referenced by the City zoning resources page https://www.austintexas.gov/planning/zoning-resources-site-regulations (accessed 2026-07-23). These rows serve only the listed base GIS stamps. OMITTED: Austin combining and overlay districts (CO, NCCD, PUD, downtown, etc.), compatibility/average-front-yard calculations, watershed controls, and any use-, lot-, or frontage-dependent variation because the envelope request lacks those facts. P-258 lane-a (added 2026-09-16): 28 further district rows for the austin-tx district-miss worklist, plus the honest non-rows listed below. INSTRUMENT READ AT SOURCE: Land Development Code Chapter 25-2, Subchapter C, Article 2, Division 1, Section 25-2-492 (Site Development Regulations), Subsection (D) site development regulation table — read live 2026-09-16 from a browser render of the Municode page at https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE , whose code is 'Codified through Ordinance No. 20260122-059, effective February 2, 2026 (Supp. No. 173)' and whose table-level Source line ends 'Ord. No. 20251023-063, Pt. 1, 11-3-25' (CBD 350 ft maximum height, effective 2025-11-03). NOTE ON CHANNEL - HOW THIS TEXT WAS OBTAINED (expanded 2026-09-16 per the wave planner's F-1): the same section's Source line shows the table was amended by Ord. No. 20231207-001, Pt. 5, 12-18-23 (HOME phase 2). ROUTE, STATED PLAINLY: the Subsection (D) text above was obtained by BROWSER RENDER - the citation_url was opened in an in-IDE Chromium browser on 2026-09-16 and Subsection (D) was read out of the rendered DOM (the district columns, the footnote superscript markers and the 'Codified through ...' stamp), then transcribed column-aware. verified by the author through browser render of this URL; a plain fetch of this URL returns only the Municode application shell (planner, 2026-09-16T21:05Z). The author reproduced that same limitation: a plain HTTP GET of the citation_url, and of the legacy .../HTML/15302/level5/... form of it, each returns a ~6 KB Angular shell (ng-app='mcc.library_desktop', serverProps carrying libraryApiUrl '/api' plus azureCodesBlobUrlPrefix, and an 'Internet Explorer not supported' block) with no ordinance text at all. Other routes tried, so a successor lane does not repeat them: www.municode.com/webcontent/austintx/25-2-492.xlsx (the Excel download the elaws mirror advertises) -> HTTP 404; library.municode.com/api/library/tx/austin -> HTTP 401; the blob-prefix root mcclibrary.blob.core.usgovcloudapi.net/codecontent/ -> HTTP 404, because content blobs are addressed by per-document GUIDs that are not enumerable. The City's own LDC page (austintexas.gov/planning/city-and-land-development-code) links only to Municode, so there is no City-hosted PDF of the codified table to fall back on. As of 2026-09-16 NO plain-fetch URL returns the CURRENT table, so this row set's citation_url stays the browser-renderable Municode page. PLAIN-FETCH CORROBORATOR, NOT A CITATION: http://austin-tx.elaws.us/code/ldc_title25_ch25-2_subchc_art2_div1_sec25-2-492 does return the table text to a plain fetch, and aligned column-for-column it agrees with the browser render on all 37 districts for FRONT YARD and on 36 of 37 for MAXIMUM HEIGHT; but it carries no 'codified through' stamp and is pre-2025-11-03 exactly where it matters - its CBD MAXIMUM HEIGHT cell is blank and the string '350' appears nowhere in it (it is also stale on MAXIMUM DWELLING UNITS PER LOT: SF-1/SF-2/SF-3 1/1/[blank] vs 3/3/3). It corroborates the values read; it cannot serve as the citation, because it does not carry the current table. MODELING NOTES: (1) em-dash cells — many yard and coverage cells print an em dash where Subsection (D) states no numeric standard; those are served as sentinels (0 ft for yards, 100 for coverage/impervious percent, 999 for height) with not_specified: true, which the acceptance gate treats as an honest gap rather than a value. (2) footnote-marker cells — where a cell carries a footnote number instead of a number, the row was read from the section the footnote names (fn 4 -> 25-2-779 SF-4A; fn 5 -> 25-2-558 SF-4B; fn 11 -> 25-2-584 W/LO; fn 12 -> 25-2-582 CH; fn 13 -> 25-2-601 IP/MI/LI; fn 14 -> 25-2-603 R&D; fn 15 -> 25-2-623 AV; fn 17 -> 25-2-625 P). (3) adjacency- and gradient-graded cells (IP/MI/LI and R&D yards, CH height, LA impervious) are carried as low-confidence required-by-schema placeholders with not_specified: true, never as a silent pick — the tier text is quoted in each provenance entry. (4) NO ROW, by design: TOD, NBG, ERC and TND are not in the Euclidean Subsection (D) table at all — they are Subchapter E (Design Standards and Mixed Use) districts whose rules are form-based building-placement standards (Subchapter E Arts. 1-4, esp. Art. 2 Site Development Standards), which this Euclidean 7-scalar shape cannot carry; UNZ is unzoned land with no district standards; and the MH column of Subsection (D) is em dashes throughout with no MH district-regulations section anywhere in Chapter 25-2 Subchapter C Article 3. (5) KNOWN CONFLICT NOT TOUCHED: the pre-existing MF-2 and MF-3 rows in this file carry front_ft 15; the current Municode table states 25 ft for both MF-2 (=fn 7 -> 25-2-561) and MF-3 (=fn 8 -> 25-2-562), and a second live source (the §25-2-563 comparison table reproduced in City of Austin edims documents 249719/250098) shows MF-2/MF-3 FRONT YARD 25/25 against MF-4/MF-5/MF-6 15/15/15. Those rows were not researched by this lane and are left exactly as found; the disagreement is reported upward rather than silently corrected or silently matched. P-299 OT-1 (height-flag reconciliation, 2026-09-17): every max_height_ft row in this file that carried not_specified was re-read against its own provenance quote and classified with this repo's not_specified-meaning instrument (doc_repo scripts/corpus_not_specified_audit.py, OPS-21-R1). FLAG REMOVED, VALUE KEPT -- here the FLAG was the defect and the number was real; not_specified on these rows asserted a false absence. The basis is stated PER ROW because it is not the same for all of them: for these rows the quote names the tabulated height column without restating the number, so the basis is the OPS-21-R1 / P-146 instrument's classification REAL_VALUE_FLAGGED -- the values across that row's flagged siblings are VARIED (transcribed numbers, not one uniform placeholder), which is the discriminator the ruling names (SF-1 Single-Family Residence Large Lot (keeps 35); SF-2 Single-Family Residence Standard Lot (keeps 35); SF-3 Family Residence (keeps 35); MF-1 Multifamily Residence Limited Density (keeps 40); MF-2 Multifamily Residence Low Density (keeps 40); MF-3 Multifamily Residence Medium Density (keeps 40); MF-4 Multifamily Residence Moderate-High Density (keeps 60); MF-5 Multifamily Residence High Density (keeps 60); MF-6 Multifamily Residence Highest Density (keeps 90)). P-299 OT-2 (2026-09-17): this table's 196 primary-source-verified value slots are RELABELLED to \"transcription-read\", the fourth verification state added to gate.ts in the same change, with confidence capped at 0.75 (rule G9). Reason, from this file's own note above: every value here was read through a COPY of the governing instrument rather than off the instrument's own text -- browser render of the Municode page (read out of the rendered DOM; a plain fetch returns only the Angular application shell; an eLaws mirror was used only as a corroborator, not as the citation). The state is not a downgrade of the read's quality; it is the honest name for the channel, and it keeps \"primary-source-verified\" meaning what it says for the tables that did reach the instrument's own text. It is treated exactly like primary-source-verified for rule G2 (no code-section atom is required) and skips G5's quote round-trip for the same reason.",
   "districts": [
     {
       "district_name": "SF-1 Single-Family Residence Large Lot",
@@ -49,8 +49,7 @@
           "section_number": "25-2-492",
           "quote": "? 25-2-492 site-development table: SF-1 row provides the stated base-yard, height, building-coverage, and impervious-cover values.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "austin_tx/ldc/25-2-492/25-2-492",
@@ -115,8 +114,7 @@
           "section_number": "25-2-492",
           "quote": "? 25-2-492 site-development table: SF-2 row provides the stated base-yard, height, building-coverage, and impervious-cover values.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "austin_tx/ldc/25-2-492/25-2-492",
@@ -181,8 +179,7 @@
           "section_number": "25-2-492",
           "quote": "? 25-2-492 site-development table: SF-3 row provides the stated base-yard, height, building-coverage, and impervious-cover values.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "austin_tx/ldc/25-2-492/25-2-492",
@@ -247,8 +244,7 @@
           "section_number": "25-2-492",
           "quote": "? 25-2-492 site-development table: MF-1 row provides the stated base-yard, height, building-coverage, and impervious-cover values.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "austin_tx/ldc/25-2-492/25-2-492",
@@ -313,8 +309,7 @@
           "section_number": "25-2-492",
           "quote": "? 25-2-492 site-development table: MF-2 row provides the stated base-yard, height, building-coverage, and impervious-cover values.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "austin_tx/ldc/25-2-492/25-2-492",
@@ -379,8 +374,7 @@
           "section_number": "25-2-492",
           "quote": "? 25-2-492 site-development table: MF-3 row provides the stated base-yard, height, building-coverage, and impervious-cover values.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "austin_tx/ldc/25-2-492/25-2-492",
@@ -445,8 +439,7 @@
           "section_number": "25-2-492",
           "quote": "? 25-2-492 site-development table: MF-4 row provides the stated base-yard, height, building-coverage, and impervious-cover values.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "austin_tx/ldc/25-2-492/25-2-492",
@@ -511,8 +504,7 @@
           "section_number": "25-2-492",
           "quote": "? 25-2-492 site-development table: MF-5 row provides the stated base-yard, height, building-coverage, and impervious-cover values.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "austin_tx/ldc/25-2-492/25-2-492",
@@ -577,8 +569,7 @@
           "section_number": "25-2-492",
           "quote": "? 25-2-492 site-development table: MF-6 row provides the stated base-yard, height, building-coverage, and impervious-cover values.",
           "confidence": 0.6,
-          "verification_state": "asserted",
-          "not_specified": true
+          "verification_state": "asserted"
         },
         "max_lot_coverage_pct": {
           "atom_did": "austin_tx/ldc/25-2-492/25-2-492",
@@ -595,6 +586,1606 @@
           "confidence": 0.6,
           "verification_state": "asserted",
           "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "SF-4A Single-Family Residence Small Lot",
+      "front_ft": 15,
+      "rear_ft": 5,
+      "side_ft": 3.5,
+      "side_corner_ft": 10,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 55,
+      "max_impervious_pct": 65,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-779(D)(4)",
+          "quote": "Austin LDC §25-2-779 (Small Lot Single-Family Residential Use) (D) applies to a small lot single-family residential use on property zoned SF-4A district or less restrictive; (D)(4): 'The minimum front yard setback is 15 feet.' The §25-2-492(D) SF-4A column cells carry only footnote marker 4 ('See Section 25-2-779 (Small Lot Single-Family Residential Uses) and Section 25-4-232 (Small Lot Subdivisions)').",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-779(D)(7)",
+          "quote": "Austin LDC §25-2-779(D)(7): 'The minimum rear yard setback is five feet, excluding easements.' (Table fn 4 referral from the SF-4A column.)",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-779(D)(6)",
+          "quote": "Austin LDC §25-2-779(D)(6): 'The minimum interior side yard setback is three and one-half feet, except: (a) an interior side yard setback is not required if the interior side yard is adjacent to property zoned single-family residence small lot (SF-4A) district; and (b) the combined width of the interior side yards of a lot may not be less than seven feet.' 3.5 ft is the per-side figure; the adjacent-SF-4A exemption and the 7 ft combined minimum are conditions this scalar does not carry.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-779(D)(5)",
+          "quote": "Austin LDC §25-2-779(D)(5): 'The minimum street side yard setback is 10 feet.'",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-779(D)(3)",
+          "quote": "Austin LDC §25-2-779(D)(3): 'The maximum height for a structure is 35 feet.'",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-779(D)(9)",
+          "quote": "Austin LDC §25-2-779(D)(9): 'The maximum building coverage is 55 percent.'",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-779(D)(10)",
+          "quote": "Austin LDC §25-2-779(D)(10): 'The maximum impervious cover is 65 percent.' NOTE: the §25-2-492(D) SF-4A MAXIMUM IMPERVIOUS COVER cell carries a lone '*' marker with NO matching footnote in the Municode footnote list (1-17), so the referral chain runs through fn 4 to §25-2-779 only.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "CS General Commercial Services",
+      "front_ft": 10,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 95,
+      "max_impervious_pct": 95,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, CS column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, REAR YARD / CS row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, INTERIOR SIDE YARD / CS row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, CS column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, CS column: 60.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, CS column: 95%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, CS column: 95%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "SF-6 Townhouse and Condominium Residence",
+      "front_ft": 25,
+      "rear_ft": 10,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 40,
+      "max_impervious_pct": 55,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, SF-6 column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, SF-6 column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, SF-6 column: 5.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, SF-6 column: 15.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, SF-6 column: 35.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, SF-6 column: 40%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, SF-6 column: 55%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "GR Community Commercial",
+      "front_ft": 10,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 75,
+      "max_impervious_pct": 90,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, GR column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, REAR YARD / GR row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, INTERIOR SIDE YARD / GR row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, GR column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, GR column: 60.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, GR column: 75%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, GR column: 90%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "LI Limited Industrial Service",
+      "front_ft": 0,
+      "rear_ft": 50,
+      "side_ft": 50,
+      "side_corner_ft": 0,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 75,
+      "max_impervious_pct": 80,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, FRONT YARD / LI row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "rear_ft": {
+          "section_number": "25-2-601(B)",
+          "quote": "Austin LDC §25-2-601(B) (Table fn 13 referral from the LI column): 'The minimum interior yard setback and rear yard setback is: (1) 50 feet, if adjacent to property zoned as or used for a use permitted in an LA, RR, SF-1, SF-2, SF-3, SF-4, SF-5, or SF-6 district; (2) 25 feet ... MF-1 ... MH district; (3) 15 feet ... NO, LO, GO, CR, LR, or GR district; and (4) 10 feet, if adjacent to property zoned as or used for a use permitted in an L or less restrictive district.' Adjacency-graded, so no single district scalar exists: 50 (the most restrictive tier) is carried ONLY as a required-by-schema placeholder — treat as unresolved.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-601(B)",
+          "quote": "Austin LDC §25-2-601(B): the minimum interior yard setback is adjacency-graded (50 / 25 / 15 / 10 ft — see the rear_ft quote for the full tiers). 50 (most restrictive tier) is a required-by-schema placeholder, not a district-wide value.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, STREET SIDE YARD / LI row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, LI column: 60.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, LI column: 75%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, LI column: 80%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "RR Rural Residence",
+      "front_ft": 40,
+      "rear_ft": 20,
+      "side_ft": 10,
+      "side_corner_ft": 25,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 20,
+      "max_impervious_pct": 25,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, RR column: 40.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, RR column: 20.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, RR column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, RR column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, RR column: 35.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, RR column: 20%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, RR column: 25%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "P Public",
+      "front_ft": 0,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-625",
+          "quote": "Austin LDC §25-2-625 (Table fn 17 referral from the P column): the P district sets no district-wide dimensional scalars — (C) 'For a residential use, the site development regulations of the most comparable residential zoning district apply'; (D)(1) for a nonresidential site under one acre the adjoining district's regulations apply for 100 feet into the site; (D)(2) for a site of one acre or more the regulations are established by the approval of a conditional use site plan. 0 is a required-by-schema placeholder only — treat as unresolved.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "rear_ft": {
+          "section_number": "25-2-625",
+          "quote": "Austin LDC §25-2-625: no district-wide rear-yard scalar; site-dependent per §25-2-625(C)-(E) (see front_ft). Placeholder only.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-625",
+          "quote": "Austin LDC §25-2-625: no district-wide interior-side-yard scalar; site-dependent per §25-2-625(C)-(E). Placeholder only.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-625",
+          "quote": "Austin LDC §25-2-625: no district-wide street-side-yard scalar; site-dependent per §25-2-625(C)-(E). Placeholder only.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "section_number": "25-2-625",
+          "quote": "Austin LDC §25-2-625: no district-wide height scalar; site-dependent per §25-2-625(C)-(E). Sentinel 999 (established convention, see round-rock-tx.json RULING 4) as a required-by-schema placeholder.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-625",
+          "quote": "Austin LDC §25-2-625: no district-wide building-coverage scalar (P column cell in §25-2-492(D) is footnote marker 17 pointing here). Sentinel 100 (established convention) as placeholder.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-625",
+          "quote": "Austin LDC §25-2-625: no district-wide impervious-cover scalar (P column cell in §25-2-492(D) is footnote marker 17 pointing here). Sentinel 100 (established convention) as placeholder.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "LO Limited Office",
+      "front_ft": 25,
+      "rear_ft": 5,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 40,
+      "max_lot_coverage_pct": 50,
+      "max_impervious_pct": 70,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, LO column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, LO column: 5.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, LO column: 5.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, LO column: 15.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, LO column: 40 or 3 stories.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, LO column: 50%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, LO column: 70%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "LA Lake Austin Residence",
+      "front_ft": 40,
+      "rear_ft": 20,
+      "side_ft": 10,
+      "side_corner_ft": 25,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 20,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, LA column: 40.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, LA column: 20.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, LA column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, LA column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, LA column: 35.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, MAXIMUM BUILDING COVERAGE / LA row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 100 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-551(C)(2)",
+          "quote": "Austin LDC §25-2-551(C)(2) (Table fn 1 referral from the LA column): 'For a lot included in a subdivision plat recorded after April 22, 1982, impervious cover may not exceed: (a) 20 percent, on a slope with a gradient of 25 percent or less; (b) 10 percent, on a slope with a gradient of more than 25 percent and not more than 35 percent; or (c) if impervious cover is transferred under Subsection (D), 30 percent.' Gradient-graded: 20 (the gentle-slope tier) is a required-by-schema placeholder, not a district-wide cap; watershed limits in Chapter 25-8 may also apply.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "LR Neighborhood Commercial",
+      "front_ft": 25,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 15,
+      "max_height_ft": 40,
+      "max_lot_coverage_pct": 50,
+      "max_impervious_pct": 80,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, LR column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, REAR YARD / LR row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, INTERIOR SIDE YARD / LR row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, LR column: 15.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, LR column: 40 or 3 stories.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, LR column: 50%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, LR column: 80%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "MH Mobile Home Residence",
+      "front_ft": 0,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), MH column: the FRONT YARD cell is an em dash (—). Every cell in the MH column of the table is an em dash; Chapter 25-2 Subchapter C Article 3 (Divisions 1-4: residential, commercial, industrial, special-purpose district regulations) contains no MH (Mobile Home Residence) district-regulations section, so no dimensional scalar was found at source. 0 is a required-by-schema placeholder — treat as unresolved.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), MH column: the REAR YARD cell is an em dash (—); no MH district-regulations section found (see front_ft). Placeholder only.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), MH column: the INTERIOR SIDE YARD cell is an em dash (—); no MH district-regulations section found (see front_ft). Placeholder only.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), MH column: the STREET SIDE YARD cell is an em dash (—); no MH district-regulations section found (see front_ft). Placeholder only.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), MH column: the MAXIMUM HEIGHT cell is an em dash (—); no MH district-regulations section found (see front_ft). Sentinel 999 as placeholder.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), MH column: the MAXIMUM BUILDING COVERAGE cell is an em dash (—); no MH district-regulations section found. Sentinel 100 as placeholder.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), MH column: the MAXIMUM IMPERVIOUS COVER cell is an em dash (—); no MH district-regulations section found. Sentinel 100 as placeholder.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "DR Development Reserve",
+      "front_ft": 25,
+      "rear_ft": 10,
+      "side_ft": 10,
+      "side_corner_ft": 25,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, DR column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, DR column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, DR column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, DR column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, DR column: 35.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), DR column, MAXIMUM BUILDING COVERAGE cell reads '12,000' while every other district column in that row is a percentage — i.e. the DR cell states an absolute square-foot limit, not a coverage percentage. A percent scalar cannot carry it, so sentinel 100 (established convention) is served as an explicit placeholder; the cell value '12,000' is preserved here verbatim rather than converted.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), DR column, MAXIMUM IMPERVIOUS COVER cell reads '15,000' while every other district column in that row is a percentage — an absolute square-foot limit, not a percentage. Sentinel 100 served as an explicit placeholder; the cell value '15,000' is preserved here verbatim rather than converted.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "CBD Central Business District",
+      "front_ft": 0,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 350,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, FRONT YARD / CBD row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, REAR YARD / CBD row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, INTERIOR SIDE YARD / CBD row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, STREET SIDE YARD / CBD row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), CBD column, MAXIMUM HEIGHT cell: 350. Read live 2026-09-16 from the Municode rendering, whose table-level Source line ends 'Ord. No. 20251023-063, Pt. 1, 11-3-25' — i.e. ordinance 20251023-063, effective 2025-11-03, established the 350 ft CBD maximum. PRE-AMENDMENT CONFLICT RECORDED: the stale austin-tx.elaws.us mirror of the same section still shows the CBD MAXIMUM HEIGHT cell blank, and the older codification had no CBD maximum; 350 (most current wins) is served with the amendment cited rather than a silent pick.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, CBD column: 100%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, CBD column: 100%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "GO General Office",
+      "front_ft": 15,
+      "rear_ft": 5,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 60,
+      "max_impervious_pct": 80,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, GO column: 15.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, GO column: 5.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, GO column: 5.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, GO column: 15.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, GO column: 60.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, GO column: 60%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, GO column: 80%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "DMU Downtown Mixed Use",
+      "front_ft": 0,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 120,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, FRONT YARD / DMU row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, REAR YARD / DMU row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, INTERIOR SIDE YARD / DMU row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, STREET SIDE YARD / DMU row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, DMU column: 120.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, DMU column: 100%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, DMU column: 100%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "NO Neighborhood Office",
+      "front_ft": 25,
+      "rear_ft": 5,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 35,
+      "max_impervious_pct": 60,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, NO column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, NO column: 5.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, NO column: 5.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, NO column: 15.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, NO column: 35 or 2 stories.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, NO column: 35%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, NO column: 60%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "CS-1 Commercial-Liquor Sales",
+      "front_ft": 10,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 95,
+      "max_impervious_pct": 95,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, CS-1 column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, REAR YARD / CS-1 row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, INTERIOR SIDE YARD / CS-1 row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, CS-1 column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, CS-1 column: 60.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, CS-1 column: 95%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, CS-1 column: 95%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "IP Industrial Park",
+      "front_ft": 25,
+      "rear_ft": 50,
+      "side_ft": 50,
+      "side_corner_ft": 25,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 50,
+      "max_impervious_pct": 80,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, IP column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-601(B)",
+          "quote": "Austin LDC §25-2-601(B) (Table fn 13 referral from the IP column): interior and rear yard setbacks are adjacency-graded 50 / 25 / 15 / 10 ft (full tier text quoted in the LI rear_ft provenance of this same table). 50 (most restrictive tier) is carried ONLY as a required-by-schema placeholder — treat as unresolved.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-601(B)",
+          "quote": "Austin LDC §25-2-601(B): adjacency-graded interior yard setback (50 / 25 / 15 / 10 ft). 50 is a required-by-schema placeholder, not a district-wide value.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, IP column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, IP column: 60.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, IP column: 50%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, IP column: 80%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "SF-5 Urban Family Residence",
+      "front_ft": 25,
+      "rear_ft": 10,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 40,
+      "max_impervious_pct": 55,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, SF-5 column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, SF-5 column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, SF-5 column: 5.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, SF-5 column: 15.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, SF-5 column: 35.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, SF-5 column: 40%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, SF-5 column: 55%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "W/LO Warehouse/Limited Office",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 25,
+      "max_height_ft": 25,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 70,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, W/LO column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, W/LO column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, W/LO column: 5.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, W/LO column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D), W/LO column, MAXIMUM HEIGHT cell reads '25 or 1 story' and carries footnote marker 11 (See Section 25-2-584 (Warehouse/Limited Office (W/LO) District Regulations)). 25 ft is the feet-based ceiling; the cell states the limit in the alternative ('or 1 story').",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, MAXIMUM BUILDING COVERAGE / W/LO row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 100 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, W/LO column: 70%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "CH Commercial Highway Services",
+      "front_ft": 50,
+      "rear_ft": 25,
+      "side_ft": 25,
+      "side_corner_ft": 50,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 85,
+      "max_impervious_pct": 85,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, CH column: 50.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, CH column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, CH column: 25.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, CH column: 50.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-582(B)",
+          "quote": "Austin LDC §25-2-582(B) (Table fn 12 referral from the CH MAXIMUM HEIGHT cell): 'the maximum height permitted for a building is: (1) 60 feet, if the impervious cover on the site is more than 80 percent and not more than 85 percent; (2) 80 feet, if ... more than 75 percent and not more than 80 percent; (3) 100 feet, if ... more than 70 percent and not more than 75 percent; (4) 110 feet, if ... more than 65 percent and not more than 70 percent; and (5) 120 feet, if ... not more than 65 percent.' Height is graded by the site's impervious cover, and this table's CH impervious cap is 85 percent, so 60 is the tier that pairs with the district's own coverage rule — the lowest tier the ordinance states for CH. Recorded at reduced confidence because the actual permitted height depends on the site's impervious cover, not on the district alone (this value is deliberately NOT flagged not_specified: it is a real numeric tier, and the gate's G7 rule reserves the not_specified flag on max_height_ft for the 999 honest-gap sentinel).",
+          "confidence": 0.5,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, CH column: 85%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, CH column: 85%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "AV Aviation Services",
+      "front_ft": 0,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-623",
+          "quote": "Austin LDC §25-2-623 (Table fn 15 referral from the AV column): '(A) For publicly owned land in an aviation services (AV) district, this title does not prescribe site development regulations. (B) For privately owned land in an AV district: (1) site development regulations are established by the approval of a conditional use site plan; and (2) approval of an aviation-related use may not be granted until the owner obtains an airport use operating agreement for the intended activity.' No district scalar exists. 0 is a required-by-schema placeholder — treat as unresolved.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "rear_ft": {
+          "section_number": "25-2-623",
+          "quote": "Austin LDC §25-2-623: no AV district scalar; regulations are per-site (conditional use site plan) or not prescribed (publicly owned land). Placeholder only — see front_ft.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-623",
+          "quote": "Austin LDC §25-2-623: no AV district scalar; regulations are per-site (conditional use site plan) or not prescribed (publicly owned land). Placeholder only — see front_ft.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-623",
+          "quote": "Austin LDC §25-2-623: no AV district scalar; regulations are per-site (conditional use site plan) or not prescribed (publicly owned land). Placeholder only — see front_ft.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "section_number": "25-2-623",
+          "quote": "Austin LDC §25-2-623: no AV district height scalar; per-site conditional use site plan. Sentinel 999 as placeholder — see front_ft.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-623",
+          "quote": "Austin LDC §25-2-623: no AV district coverage scalar; per-site conditional use site plan. Sentinel 100 as placeholder — see front_ft.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-623",
+          "quote": "Austin LDC §25-2-623: no AV district impervious-cover scalar; per-site conditional use site plan. Sentinel 100 as placeholder — see front_ft.",
+          "confidence": 0.3,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "MI Major Industry",
+      "front_ft": 0,
+      "rear_ft": 50,
+      "side_ft": 50,
+      "side_corner_ft": 0,
+      "max_height_ft": 120,
+      "max_lot_coverage_pct": 75,
+      "max_impervious_pct": 80,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, FRONT YARD / MI row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "rear_ft": {
+          "section_number": "25-2-601(B)",
+          "quote": "Austin LDC §25-2-601(B) (Table fn 13 referral from the MI column): interior and rear yard setbacks are adjacency-graded 50 / 25 / 15 / 10 ft (full tier text quoted in the LI rear_ft provenance of this same table). 50 is a required-by-schema placeholder — treat as unresolved.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-601(B)",
+          "quote": "Austin LDC §25-2-601(B): adjacency-graded interior yard setback (50 / 25 / 15 / 10 ft). 50 is a required-by-schema placeholder, not a district-wide value.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, STREET SIDE YARD / MI row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, MI column: 120.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, MI column: 75%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, MI column: 80%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "AG Agricultural",
+      "front_ft": 100,
+      "rear_ft": 100,
+      "side_ft": 100,
+      "side_corner_ft": 100,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 20,
+      "max_impervious_pct": 25,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, AG column: 100.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, AG column: 100.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, AG column: 100.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, AG column: 100.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, AG column: 60.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-621(C)(13)",
+          "quote": "Austin LDC §25-2-492(D), AG column, MAXIMUM BUILDING COVERAGE cell is an em dash (—) and the column carries footnote marker 16 (See Section 25-2-621 (Agricultural District Regulations)); §25-2-621(B) fixes permitted-use yards at 100 ft (matching the table) but states no permitted-use coverage cap. §25-2-621(C)(13) sets the conditional-use cap at 'the lesser of 10,000 square feet or 20 percent of the lot area'. 20 is the conditional-use tier carried ONLY as a required-by-schema placeholder — no permitted-use cap is stated.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-621(C)(14)",
+          "quote": "Austin LDC §25-2-492(D), AG column, MAXIMUM IMPERVIOUS COVER cell is an em dash (—) (footnote marker 16 → §25-2-621). §25-2-621(C)(14) sets the conditional-use cap at 'the lesser of 12,500 square feet or 25 percent of the lot area'; no permitted-use cap is stated. 25 is the conditional-use tier carried ONLY as a required-by-schema placeholder.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "R&D Research and Development",
+      "front_ft": 75,
+      "rear_ft": 50,
+      "side_ft": 100,
+      "side_corner_ft": 100,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 40,
+      "max_impervious_pct": 50,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, R&D column: 75.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-603(G)-(J)",
+          "quote": "Austin LDC §25-2-603 (Table fn 14 referral from the R&D column): rear yard is adjacency-graded — (G)(3) 50 feet for the portion of a site within 100 feet of property zoned as or used for a use permitted in an LA, RR, SF-1, SF-2, SF-3, SF-4, SF-5, or SF-6 district; (H)(3) 25 feet for the MF/MH tier; (I)(2) 15 feet for the NO/LO/GO/LR/GR tier; (J) 10 feet for the L or less restrictive tier. 50 (most restrictive tier) is a required-by-schema placeholder — treat as unresolved.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-603(G)(2)",
+          "quote": "Austin LDC §25-2-603(G)(2): minimum interior side yard setback is 100 feet for the portion of a site within 100 feet of LA/RR/SF-x property; the MF/MH tier is 25 feet (H)(2) and the NO/LO/GO/LR/GR tier 15 feet (I)(1). 100 (most restrictive tier) is a required-by-schema placeholder.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-603(G)(1)",
+          "quote": "Austin LDC §25-2-603(G)(1): minimum street side yard setback is 100 feet for the portion of a site within 100 feet of LA/RR/SF-x property; the MF/MH tier is 25 feet (H)(1). 100 (most restrictive tier) is a required-by-schema placeholder.",
+          "confidence": 0.4,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, R&D column: 45.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, R&D column: 40%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-603(K)",
+          "quote": "Austin LDC §25-2-603(K) (Table fn 14 referral from the R&D MAXIMUM IMPERVIOUS COVER cell): 'The maximum impervious cover is 50 percent on land with a gradient of 15 percent or less. Impervious cover is prohibited on land with a gradient greater than 15 percent.' 50% is the stated cap; the prohibition above a 15% gradient is a condition this scalar does not carry.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "CR Commercial Recreation",
+      "front_ft": 50,
+      "rear_ft": 20,
+      "side_ft": 20,
+      "side_corner_ft": 50,
+      "max_height_ft": 40,
+      "max_lot_coverage_pct": 25,
+      "max_impervious_pct": 60,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, CR column: 50.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), REAR YARD row, CR column: 20.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, CR column: 20.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, CR column: 50.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, CR column: 40.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, CR column: 25%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, CR column: 60%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "L Lake Commercial",
+      "front_ft": 10,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 200,
+      "max_lot_coverage_pct": 50,
+      "max_impervious_pct": 50,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), FRONT YARD row, L column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, REAR YARD / L row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table, INTERIOR SIDE YARD / L row/column cell reads an em dash (—): Subsection (D) states no numeric standard for this cell. Sentinel 0 per the established non-binding sentinel convention in this corpus (see waco-tx.json and pflugerville-tx.json) — a required-by-schema placeholder, not a value read as a rule.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), STREET SIDE YARD row, L column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM HEIGHT row, L column: 200.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, L column: 50%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, L column: 50%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "SF-4B Single-Family Residence Condominium Site",
+      "front_ft": 25,
+      "rear_ft": 15,
+      "side_ft": 10,
+      "side_corner_ft": 15,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 40,
+      "max_impervious_pct": 60,
+      "citation_url": "https://library.municode.com/tx/austin/codes/land_development_code?nodeId=TIT25LADE_CH25-2ZO_SUBCHAPTER_CUSDERE_ART2PRUSDERE_DIV1RETA_S25-2-492SIDERE",
+      "provenance": {
+        "front_ft": {
+          "section_number": "25-2-558(I)(1)",
+          "quote": "Austin LDC §25-2-558 (Table fn 5 referral from the SF-4B column) (I): 'If a building faces a public right-of-way: (1) the minimum front yard setback is 25 feet'.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "25-2-558(K)",
+          "quote": "Austin LDC §25-2-558(K): 'The minimum rear yard setback is 15 feet.'",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), INTERIOR SIDE YARD row, SF-4B column: 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "25-2-558(I)(2)",
+          "quote": "Austin LDC §25-2-558(I)(2): 'the minimum side street yard setback is 15 feet.'",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "25-2-558(G)",
+          "quote": "Austin LDC §25-2-558(G): 'Except as provided in Subsection (H), the maximum height of a building is two stories. A story may not exceed a plate height of 10 feet.' Height is stated in stories, not feet, and SF-4B is a condominium-site district; sentinel 999 (established convention, see round-rock-tx.json RULING 4) is carried as a required-by-schema placeholder.",
+          "confidence": 0.5,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM BUILDING COVERAGE row, SF-4B column: 40%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_impervious_pct": {
+          "section_number": "25-2-492(D)",
+          "quote": "Austin LDC §25-2-492(D) site development regulation table (Municode rendering, codified through Ord. No. 20260122-059, eff. 2026-02-02), MAXIMUM IMPERVIOUS COVER row, SF-4B column: 60%.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         }
       }
     }

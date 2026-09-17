@@ -2,10 +2,10 @@
   "$schema": "./schema.json",
   "jurisdictionKey": "kyle-tx",
   "jurisdictionDisplayName": "City of Kyle, TX",
-  "note": "Base-zone scalar rows transcribed from City of Kyle Code of Ordinances Ch. 53 (Zoning) Sec. 53-33(k) 'Chart 1' (front/side/corner/rear/height, https://ecode360.com/45580734) and Sec. 53-33(l) 'Chart 2' (coverage, https://ecode360.com/45580735), current-through Ord. No. 1409 adopted 6/2/2026 per the eCode360 currency banner; Sec. 53-33 itself was last substantively amended by Ordinance 1332, adopted 8/20/2024, with no later amendment shown against it. Accessed 2026-09-06. AMBIGUITY DISCLOSED, not resolved: Sec. 53-33(l) is captioned 'Impervious coverage' and its operative sentence says impervious surfaces 'shall not exceed that set forth in chart 2,' but Chart 2's own column header reads 'Maximum Lot Coverage by Percent.' No separate building-footprint-only coverage table was found anywhere in Sec. 53-33. Both max_lot_coverage_pct and max_impervious_pct below carry the same Chart 2 number for each district; max_impervious_pct is the better-supported reading (subsection heading + operative cross-reference), max_lot_coverage_pct is a non-binding sentinel carried at the same value because the column header nominally names it that. ADDED: R-1-1, R-1-2, R-1-3, R-1-A, R-2. R-1-A side_ft is a non-binding sentinel: Chart 1 footnote (2) states the real rule is asymmetric zero-lot-line ('ten feet on one side, and a zero lot line is permitted on the other side'), not a single scalar; the more conservative 10' value is carried as the sentinel. Front-setback cells for R-1-1/R-1-2/R-1-3/R-2 carry Chart 1 footnote (9), a discretionary council-approval mechanism permitting up to 20% front-setback reduction (floor 16') on up to 50% of lots in a subdivision under conditions; the tabulated (non-reduced) value is used as the base row per this corpus's convention of reporting the default standard, not a discretionary exception. OMITTED, not fabricated: R-1 (footnote (16): 'R-1 zoning is limited to existing lots zoned R-1 per Ordinance Number 92' -- legacy, not assignable to new parcels); R-1-T and R-1-C (Chart 1 explicitly defers their front/side/rear/lot-area cells to Division 5 and Division 6 of Article II respectively -- 'See division 5/6 of this article' -- those division sections were not retrieved in this pass, so no scalar values are asserted for R-1-T or R-1-C); R-3-1, R-3-2, R-3-3 (multifamily); M-1, M-2, M-3 (manufactured home); CBD-1, CBD-2, RS, B, W, CM, E, TU, HS, RV, NC, CC, MXD, O/I (commercial/industrial/mixed-use); A (agricultural) and UE (urban estate); all Article III overlay districts. Kyle is in Hays County (FIPS 48209). CORRECTION (2026-09-07): all provenance entries originally shipped with verification_state 'human-verified' or 'asserted' and a fabricated atom_did (e.g. kyle_tx/ch53/53-33) that never resolved against any real ingested code-section atom -- no code-section atom corpus exists for kyle_tx at all (confirmed directly against the live atoms store). Relabeled to 'primary-source-verified' (a state added in legacy-design-tools PR #628 for exactly this gap) and atom_did removed; the underlying research is unchanged, only the overclaimed verification status is corrected.",
+  "note": "Codified from the City of Kyle Code of Ordinances, Chapter 53 (Zoning), Section 53-33 'General requirements' — the consolidated Chart 1 (Front/Side/Corner/Rear setbacks + Height Limit) and Chart 2 (impervious coverage). Source is eCode360 (General Code); every district's setbacks are cross-referenced from its own division to 'chart 1, section 53-33(k)' and impervious to '53-33(l) / chart 2'. IMPORTANT MODELING NOTE: Chart 2 is captioned 'Maximum Lot Coverage by Percent' but Section 53-33(l) defines it as the maximum IMPERVIOUS coverage ('percentage of lot area which may hereafter be covered by improved surfaces and structures which do not allow for the penetration ... of stormwater'), so its values populate max_impervious_pct. Kyle's zoning charts do NOT state a separate building-only lot-coverage cap, so max_lot_coverage_pct is flagged not_specified in provenance and carries the impervious value as a conservative stand-in (the envelope draw uses setbacks, not this field). Front-setback footnote (9) permits a council-approved reduction of up to 20% (never below 16 ft) on up to 50% of lots; the base district value is codified here. ADDED R-1-A, RS, and M-2 from Chart 1/2 for live GIS frequency. R-1-A side_ft uses the non-zero-lot-line side (10 ft) as the conservative envelope base. OMITTED bare GIS R-1: Ord.92 legacy row would prefix-match R-1-T townhouse stamps into a false envelope; bare R-1 stays unmatched or falls to longer R-1-* prefix only. An additional standard (53-33(l) note) caps single-family lots over 22,000 sqft at 35% impervious regardless of district; that lot-size-conditional override is not modeled per-district. CORRECTION (2026-09-07, CTX-B dispatch, the Kyle regression): every field on every district in this file shipped with a fabricated, repo-style atom_did ('kyle_tx/ch53/53-33') under 'human-verified' (6 fields) or 'asserted' (max_lot_coverage_pct) that never resolved against any real ingested code-section atom -- no code-section atom corpus exists for kyle_tx at all (confirmed directly against the live atoms store, zero atoms). This file is the original source of that fabrication: hauska-engine PR #393 (2026-09-07 01:59 UTC) caught and fixed it independently for the 5 districts engine then carried, but the 2026-09-07 14:09 UTC corpus merge took this file's un-fixed data over engine's fix, reverting the correction and carrying the fabrication onto 4 more districts (R-3-1, R-3-2, RS, M-2) engine's fix never reviewed -- see hauska-setback-corpus's kyle-tx.json for the full incident writeup. Relabeled all 9 districts' 7 fields to 'primary-source-verified' (the state added in this repo's own PR #628 for exactly this gap) and removed every atom_did here; the underlying research (eCode360 Chart 1/2 transcription) is unchanged, only the overclaimed verification status is corrected. max_lot_coverage_pct remains not_specified on all 9 districts, unchanged. P-258 LANE-C ADDENDUM (2026-09-16, acquisition campaign, branch seat/p258-lane-c): 7 districts added from the SAME instrument this table already cites -- City of Kyle Code of Ordinances Ch. 53 Zoning, §53-33 'General requirements' Chart 1 (setbacks), Chart 2 (impervious) and Chart 3 (FAR), retrieved this pass from eCode360 at https://ecode360.com/45580734, plus §53-662 'Building placement' of Division 24 for NC at https://ecode360.com/45581407. ADDED: A, R-3-3, CBD-2, W, CM, HS (Section 53-33 charts) and NC (Section 53-662). Chart 1's columns map as: Front Setback -> front_ft, Side Setback -> side_ft, Corner Lot at Side Street or Alleyway Setback -> side_corner_ft, Rear Setback -> rear_ft, Height Limit -> max_height_ft. READ, DO NOT ASSUME (two places where the chart alone would mislead): (1) A carries NO Chart 2 row at all, so max_impervious_pct is not_specified (100 sentinel) rather than copied from a neighbour; (2) NC's height is stated in STORIES only ('2 stories') in its own division's building-placement table, so max_height_ft is not_specified (100 sentinel), and NC's 'Side Setback to Residential District 10'' is a conditional residential-adjacency requirement layered on the 5 ft base -- the base is codified, the condition is quoted. HS height: Chart 1 prints '100' with footnotes (14) 'Not to exceed 100 feet for the main hospital building, and not to exceed 75 feet for any other building. No portion of any building within 100 feet of the property line of a single-family residential use shall exceed 35 feet in height.' and (15) a structured-parking exception -- 100 ft is codified as the district figure with both conditions quoted verbatim. CONFLICT OBSERVED AND CARRIED, NOT SILENTLY PICKED: a Kyle agenda-packet attachment (kyle.novusagenda.com AttachmentID=16111) reproduces a Chart 1 in which A = 25/25/25/25 and R-1-1 = 30/7 while the codified eCode360 text reads A = 40/25/40/25 and R-1-1 = 35/10. The attachment is an undated staff-report exhibit, not a code source; the codified eCode360 rendering is used for every value, and both readings are recorded here so a future reader can re-check rather than inherit a silent pick. STILL NOT ACQUIRED, with the source that would have to be read (these stay named gaps, not rows): R-1-T (Chart 1 note (3) defers to Division 5, the residential townhouse district) and R-1-C (Chart 1 note (4) defers to Division 6, the residential condominium district) -- their front/side/rear cells are blank in Chart 1 and read '(3)'/'(4)', so no scalar exists in the chart itself; CBD-1 (Chart 1 note (8): 'the conditions and limitations, setbacks and lot requirements set forth in chart 1 applicable to the district governing the proposed base use of the property shall apply within this district' -- fully conditional on the base use, so no flat row is defensible); and CC, MXD, O/I, M-3, C-1, C-2, HI and A-DA, which have no Chart 1 row (Chart 2/3 carry impervious and FAR for CC/MXD/O/I but the setback blocks live in their own divisions of Chapter 53 and were NOT fetched this pass). SOURCES TRIED for the Kyle units above that remain uncoded: eCode360 Ch. 53 §53-33 and Division 24 (read); eCode360 Ch. 53 table of contents (fetch timed out); the City's Novusagenda agenda-attachment mirror (read, conflicting vintage, recorded above); an ArcGIS REST search of the Kyle zoning layer (not attempted this pass -- the layer is already held; the gaps are ordinance text, not the map). DIVERGENCE DISCLOSURE (P-258 lane-c, 2026-09-16): LDT and corpus copies of THIS file differ in ONE pre-existing paragraph -- the CTX-B correction narrative about the fabricated kyle_tx atom_did, which each repo words differently (same substance, different text). That divergence predates this pass and was left intact rather than overwritten; everything this lane added (rows + this addendum) is byte-identical in both copies. A future one-file-both-repos check should treat that paragraph as the known exception. P-299 OT-2 (2026-09-17): this table's 112 primary-source-verified value slots are RELABELLED to \"transcription-read\", the fourth verification state added to gate.ts in the same change, with confidence capped at 0.75 (rule G9). Reason, from this file's own note above: every value here was read through a COPY of the governing instrument rather than off the instrument's own text -- eCode360's Chart 1/2 transcription. The state is not a downgrade of the read's quality; it is the honest name for the channel, and it keeps \"primary-source-verified\" meaning what it says for the tables that did reach the instrument's own text. It is treated exactly like primary-source-verified for rule G2 (no code-section atom is required) and skips G5's quote round-trip for the same reason.",
   "districts": [
     {
-      "district_name": "R-1-1 Single-Family Residential District 1",
+      "district_name": "R-1-1 Single-Family Residential 1",
       "front_ft": 35,
       "rear_ft": 20,
       "side_ft": 10,
@@ -13,55 +13,55 @@
       "max_height_ft": 35,
       "max_lot_coverage_pct": 50,
       "max_impervious_pct": 50,
-      "citation_url": "https://ecode360.com/45580734",
+      "citation_url": "https://ecode360.com/45580717",
       "provenance": {
         "front_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-1 row: Front Setback(feet) 35, footnote (9) (discretionary reduction mechanism, base value used here).",
-          "confidence": 0.85,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-1 | 35",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "rear_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-1 row: Rear Setback(feet) 20.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-1 ... Rear Setback (feet) | 20",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-1 row: Side Setback(feet) 10.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-1 | ... Side Setback (feet) | 10",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_corner_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-1 row: Corner Lot at Side Street or Alleyway Setback(feet) 20.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-1 ... Corner Lot at Side Street or Alleyway Setback (feet) | 20",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_height_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-1 row: Height Limit (feet) 35.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-1 ... Height Limit (feet) | 35",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_lot_coverage_pct": {
           "section_number": "53-33(l)",
-          "quote": "Chart 2, R-1-1 row: 'Maximum Lot Coverage by Percent' 50; non-binding sentinel per file-level note -- Sec. 53-33(l) applies this same number as the impervious-coverage cap, not a distinct building-footprint cap.",
-          "confidence": 0.5,
-          "verification_state": "primary-source-verified",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
           "not_specified": true
         },
         "max_impervious_pct": {
           "section_number": "53-33(l)",
-          "quote": "Sec. 53-33(l) Impervious coverage: impervious surfaces 'shall not exceed that set forth in chart 2'; Chart 2 R-1-1 row = 50.",
-          "confidence": 0.7,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 2 ... R-1-1 | 50",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         }
       }
     },
     {
-      "district_name": "R-1-2 Single-Family Residential District 2",
+      "district_name": "R-1-2 Single-Family Residential 2",
       "front_ft": 25,
       "rear_ft": 15,
       "side_ft": 7.5,
@@ -69,55 +69,55 @@
       "max_height_ft": 35,
       "max_lot_coverage_pct": 60,
       "max_impervious_pct": 60,
-      "citation_url": "https://ecode360.com/45580734",
+      "citation_url": "https://ecode360.com/45580717",
       "provenance": {
         "front_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-2 row: Front Setback(feet) 25, footnote (9) (discretionary reduction mechanism, base value used here).",
-          "confidence": 0.85,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-2 | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "rear_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-2 row: Rear Setback(feet) 15.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-2 ... Rear Setback (feet) | 15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-2 row: Side Setback(feet) 7.5.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-2 ... Side Setback (feet) | 7.5",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_corner_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-2 row: Corner Lot at Side Street or Alleyway Setback(feet) 15.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-2 ... Corner ... Setback (feet) | 15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_height_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-2 row: Height Limit (feet) 35.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-2 ... Height Limit (feet) | 35",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_lot_coverage_pct": {
           "section_number": "53-33(l)",
-          "quote": "Chart 2, R-1-2 row: 'Maximum Lot Coverage by Percent' 60; non-binding sentinel per file-level note -- Sec. 53-33(l) applies this same number as the impervious-coverage cap, not a distinct building-footprint cap.",
-          "confidence": 0.5,
-          "verification_state": "primary-source-verified",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
           "not_specified": true
         },
         "max_impervious_pct": {
           "section_number": "53-33(l)",
-          "quote": "Sec. 53-33(l) Impervious coverage: impervious surfaces 'shall not exceed that set forth in chart 2'; Chart 2 R-1-2 row = 60.",
-          "confidence": 0.7,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 2 ... R-1-2 | 60",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         }
       }
     },
     {
-      "district_name": "R-1-3 Single-Family Residential District 3",
+      "district_name": "R-1-3 Single-Family Residential 3",
       "front_ft": 20,
       "rear_ft": 10,
       "side_ft": 5,
@@ -125,112 +125,55 @@
       "max_height_ft": 35,
       "max_lot_coverage_pct": 65,
       "max_impervious_pct": 65,
-      "citation_url": "https://ecode360.com/45580734",
+      "citation_url": "https://ecode360.com/45580717",
       "provenance": {
         "front_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-3 row: Front Setback(feet) 20, footnote (9) (discretionary reduction mechanism, base value used here). Cross-verified against public search snippet describing 'R-1-3 ... Front setback of 20 feet, side setback of 5 feet, and rear setback of 10 feet.'",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-3 | 20",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "rear_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-3 row: Rear Setback(feet) 10.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-3 ... Rear Setback (feet) | 10",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-3 row: Side Setback(feet) 5.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-3 ... Side Setback (feet) | 5",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_corner_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-3 row: Corner Lot at Side Street or Alleyway Setback(feet) 10.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-3 ... Corner ... Setback (feet) | 10",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_height_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-3 row: Height Limit (feet) 35.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-1-3 ... Height Limit (feet) | 35",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_lot_coverage_pct": {
           "section_number": "53-33(l)",
-          "quote": "Chart 2, R-1-3 row: 'Maximum Lot Coverage by Percent' 65; non-binding sentinel per file-level note -- Sec. 53-33(l) applies this same number as the impervious-coverage cap, not a distinct building-footprint cap.",
-          "confidence": 0.5,
-          "verification_state": "primary-source-verified",
-          "not_specified": true
-        },
-        "max_impervious_pct": {
-          "section_number": "53-33(l)",
-          "quote": "Sec. 53-33(l) Impervious coverage: impervious surfaces 'shall not exceed that set forth in chart 2'; Chart 2 R-1-3 row = 65.",
-          "confidence": 0.7,
-          "verification_state": "primary-source-verified"
-        }
-      }
-    },
-    {
-      "district_name": "R-1-A Single-Family Attached District (Garden Home)",
-      "front_ft": 25,
-      "rear_ft": 15,
-      "side_ft": 10,
-      "side_corner_ft": 10,
-      "max_height_ft": 35,
-      "max_lot_coverage_pct": 65,
-      "max_impervious_pct": 65,
-      "citation_url": "https://ecode360.com/45580734",
-      "provenance": {
-        "front_ft": {
-          "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-A row: Front Setback(feet) 25, no footnote.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
-        },
-        "rear_ft": {
-          "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-A row: Rear Setback(feet) 15.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
-        },
-        "side_ft": {
-          "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-A row side cell is footnote (2), not a scalar: 'Side yard setback for the R-1-A district is ten feet on one side, and a zero lot line is permitted on the other side.' Non-binding sentinel carries the conservative 10' value; the real rule is asymmetric (10'/0').",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
           "confidence": 0.6,
-          "verification_state": "primary-source-verified",
-          "not_specified": true
-        },
-        "side_corner_ft": {
-          "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-A row: Corner Lot at Side Street or Alleyway Setback(feet) 10.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
-        },
-        "max_height_ft": {
-          "section_number": "53-33(k)",
-          "quote": "Chart 1, R-1-A row: Height Limit (feet) 35.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
-        },
-        "max_lot_coverage_pct": {
-          "section_number": "53-33(l)",
-          "quote": "Chart 2, R-1-A row: 'Maximum Lot Coverage by Percent' 65; non-binding sentinel per file-level note -- Sec. 53-33(l) applies this same number as the impervious-coverage cap, not a distinct building-footprint cap.",
-          "confidence": 0.5,
-          "verification_state": "primary-source-verified",
+          "verification_state": "transcription-read",
           "not_specified": true
         },
         "max_impervious_pct": {
           "section_number": "53-33(l)",
-          "quote": "Sec. 53-33(l) Impervious coverage: impervious surfaces 'shall not exceed that set forth in chart 2'; Chart 2 R-1-A row = 65.",
-          "confidence": 0.7,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 2 ... R-1-3 | 65",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         }
       }
     },
     {
-      "district_name": "R-2 Residential Two-Family District (Duplex)",
+      "district_name": "R-2 Residential Two-Family (Duplex)",
       "front_ft": 25,
       "rear_ft": 25,
       "side_ft": 7,
@@ -238,50 +181,724 @@
       "max_height_ft": 35,
       "max_lot_coverage_pct": 55,
       "max_impervious_pct": 55,
-      "citation_url": "https://ecode360.com/45580734",
+      "citation_url": "https://ecode360.com/45580717",
       "provenance": {
         "front_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-2 row: Front Setback(feet) 25, footnote (9) (discretionary reduction mechanism, base value used here).",
-          "confidence": 0.85,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-2 | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "rear_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-2 row: Rear Setback(feet) 25.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-2 ... Rear Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-2 row: Side Setback(feet) 7.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-2 ... Side Setback (feet) | 7",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_corner_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-2 row: Corner Lot at Side Street or Alleyway Setback(feet) 10.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-2 ... Corner ... Setback (feet) | 10",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_height_ft": {
           "section_number": "53-33(k)",
-          "quote": "Chart 1, R-2 row: Height Limit (feet) 35.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 1 ... R-2 ... Height Limit (feet) | 35",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_lot_coverage_pct": {
           "section_number": "53-33(l)",
-          "quote": "Chart 2, R-2 row: 'Maximum Lot Coverage by Percent' 55; non-binding sentinel per file-level note -- Sec. 53-33(l) applies this same number as the impervious-coverage cap, not a distinct building-footprint cap.",
-          "confidence": 0.5,
-          "verification_state": "primary-source-verified",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
           "not_specified": true
         },
         "max_impervious_pct": {
           "section_number": "53-33(l)",
-          "quote": "Sec. 53-33(l) Impervious coverage: impervious surfaces 'shall not exceed that set forth in chart 2'; Chart 2 R-2 row = 55.",
-          "confidence": 0.7,
-          "verification_state": "primary-source-verified"
+          "quote": "Chart 2 ... R-2 | 55",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "R-3-1 Multifamily Residential 1",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 15,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 80,
+      "max_impervious_pct": 80,
+      "citation_url": "https://ecode360.com/45580717",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-1 | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-1 ... Rear Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-1 ... Side Setback (feet) | 15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-1 ... Corner ... Setback (feet) | 15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-1 ... Height Limit (feet) | 35 (not to exceed two stories, footnote 6)",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 ... R-3-1 | 80",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "R-3-2 Multifamily Residential 2",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 20,
+      "side_corner_ft": 15,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 80,
+      "max_impervious_pct": 80,
+      "citation_url": "https://ecode360.com/45580717",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-2 | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-2 ... Rear Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-2 ... Side Setback (feet) | 20",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-2 ... Corner ... Setback (feet) | 15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-2 ... Height Limit (feet) | 45 (not to exceed three stories, footnote 7)",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 ... R-3-2 | 80",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "R-1-A Single-Family Attached",
+      "front_ft": 25,
+      "rear_ft": 15,
+      "side_ft": 10,
+      "side_corner_ft": 10,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 65,
+      "max_impervious_pct": 65,
+      "citation_url": "https://ecode360.com/45580717",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-1-A | Front 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-1-A ... Rear | 15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-1-A side footnote (2): 10 ft on one side / zero-lot-line other; envelope uses 10",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-1-A ... Corner | 10",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-1-A ... Height | 35",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 ... R-1-A | 65",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "RS Retail Services",
+      "front_ft": 25,
+      "rear_ft": 15,
+      "side_ft": 10,
+      "side_corner_ft": 15,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 80,
+      "max_impervious_pct": 80,
+      "citation_url": "https://ecode360.com/45580717",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... RS | Front 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... RS ... Rear | 15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... RS ... Side | 10",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... RS ... Corner | 15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... RS ... Height | 45",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 ... R/S | 80",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "M-2 Manufactured Home 2",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 7,
+      "side_corner_ft": 25,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 50,
+      "max_impervious_pct": 50,
+      "citation_url": "https://ecode360.com/45580717",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... M-2 | Front 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... M-2 ... Rear | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... M-2 ... Side | 7",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... M-2 ... Corner | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... M-2 ... Height | 35",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 ... M-2 | 50",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "A Agricultural District",
+      "front_ft": 40,
+      "rear_ft": 25,
+      "side_ft": 25,
+      "side_corner_ft": 40,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://ecode360.com/45580734",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... A | Front Setback (feet) | 40",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... A | Rear Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... A | Side Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... A | Corner Lot at Side Street or Alleyway Setback (feet) | 40",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... A | Height Limit (feet) | 45",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 (Maximum Lot Coverage by Percent) carries NO row for the A district -- the chart's district list is R-1-1 through TU only. No impervious-coverage figure is stated for A anywhere in Section 53-33; 100 is the established non-binding sentinel and must be treated as not_specified.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        }
+      }
+    },
+    {
+      "district_name": "R-3-3 Multifamily Residential 3",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 7,
+      "side_corner_ft": 15,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 80,
+      "max_impervious_pct": 80,
+      "citation_url": "https://ecode360.com/45580734",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-3 | Front Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-3 | Rear Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-3 | Side Setback (feet) | 7",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-3 | Corner Lot at Side Street or Alleyway Setback (feet) | 15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... R-3-3 | Height Limit (feet) | 45 7",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 | District | Maximum Lot Coverage by Percent ... R-3-3 | 80",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "CBD-2 Central Business District 2",
+      "front_ft": 0,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://ecode360.com/45580734",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CBD-2 | Front Setback (feet) | 0",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CBD-2 | Rear Setback (feet) | 0",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CBD-2 | Side Setback (feet) | 0",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CBD-2 | Corner Lot at Side Street or Alleyway Setback (feet) | 0",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CBD-2 | Height Limit (feet) | 45",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 | District | Maximum Lot Coverage by Percent ... CBD-2 | 100",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "W Warehouse District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 25,
+      "side_corner_ft": 25,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 75,
+      "max_impervious_pct": 75,
+      "citation_url": "https://ecode360.com/45580734",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... W | Front Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... W | Rear Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... W | Side Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... W | Corner Lot at Side Street or Alleyway Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... W | Height Limit (feet) | 45",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 | District | Maximum Lot Coverage by Percent ... W | 75",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "CM Commercial District",
+      "front_ft": 25,
+      "rear_ft": 50,
+      "side_ft": 50,
+      "side_corner_ft": 50,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 75,
+      "max_impervious_pct": 75,
+      "citation_url": "https://ecode360.com/45580734",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CM | Front Setback (feet) | 25",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CM | Rear Setback (feet) | 50",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CM | Side Setback (feet) | 50",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CM | Corner Lot at Side Street or Alleyway Setback (feet) | 50",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... CM | Height Limit (feet) | 45",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 | District | Maximum Lot Coverage by Percent ... CM | 75",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "HS Hospital Services District",
+      "front_ft": 50,
+      "rear_ft": 50,
+      "side_ft": 50,
+      "side_corner_ft": 50,
+      "max_height_ft": 100,
+      "max_lot_coverage_pct": 80,
+      "max_impervious_pct": 80,
+      "citation_url": "https://ecode360.com/45580734",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... HS | Front Setback (feet) | 50",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... HS | Rear Setback (feet) | 50",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... HS | Side Setback (feet) | 50",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... HS | Corner Lot at Side Street or Alleyway Setback (feet) | 50",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-33(k)",
+          "quote": "Chart 1 ... HS | Height Limit (feet) | 100 14/15",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 | District | Maximum Lot Coverage by Percent ... HS | 80",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+    {
+      "district_name": "NC Neighborhood Commercial District",
+      "front_ft": 20,
+      "rear_ft": 20,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 80,
+      "max_impervious_pct": 80,
+      "citation_url": "https://ecode360.com/45581407",
+      "provenance": {
+        "front_ft": {
+          "section_number": "53-662",
+          "quote": "§ 53-662 Building placement: Front Setback** (min. feet) | 20'  (** In already developed areas where adjacent lots have front yard setbacks less than 20 feet, an administrative special exception may be granted to allow for a setback consistent with the median setback along a block face.)",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "53-662",
+          "quote": "§ 53-662: Rear Setback* (min. feet) | 20'  (* When the rear or side lot line abuts a single-family residential zoned lot or a lot used for a single-family residence the rear/side setback shall consist of the following transitional yards: a ten-foot wide planting area ... ; eight-foot privacy fence.) 20 ft is the base; the transitional-yard condition is a real additional requirement layered on top.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "53-662",
+          "quote": "§ 53-662: Side Setback (min. feet) | 5'",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "53-662",
+          "quote": "§ 53-662: Corner Lot - Side Setback | 15'",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "53-662",
+          "quote": "§ 53-662: Max. Height | 2 stories. Height is stated in STORIES only in the NC building-placement table, with no feet figure anywhere in Division 24; 100 is a non-binding sentinel, not an asserted feet entitlement. (P-258 lane-c, 2026-09-16: sentinel normalized from 100 to the canonical 999 defined by rule G7 in hauska-setback-corpus/src/setbacks/gate.ts (NOT_SPECIFIED_MAX_HEIGHT_FT) — the value is not_specified either way and the flag, not the number, is the payload. CORRECTED 2026-09-16: this parenthetical first read 'the gate's canonical 999 per rule G7', which is true of the corpus package's gate and false of legacy-design-tools' own gate.ts (rule union G1-G6, no G7); and it is NOT true that 999 is sanity-flagged — G3's band check is skipped whenever not_specified is set, in both gates. See this file's P-258 LANE-C CORRECTION block.)",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Kyle zoning states impervious coverage (Chart 2: NC | 80), not a separate building lot-coverage cap; stand-in equals impervious value.",
+          "confidence": 0.6,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "53-33(l)",
+          "quote": "Chart 2 | District | Maximum Lot Coverage by Percent ... NC | 80",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         }
       }
     }

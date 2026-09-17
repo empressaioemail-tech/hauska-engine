@@ -15,6 +15,7 @@ import {
   widthedFromFieldProvenance,
   widthedFromMatchBasis,
 } from "./confidence.js";
+import { heightIsAbsent } from "./setback-table-from-adapter.js";
 import type {
   HonestAbsence,
   JurisdictionDescriptor,
@@ -28,6 +29,12 @@ function rowToResolved(row: SetbackTableRowProvenance): ResolvedSetbackRow | Hon
   const rear = row.rear_ft;
   const side = row.side_ft;
   const sideCorner = row.side_corner_ft;
+  /**
+   * P-299 — the height is absent as a FEET FIGURE on either the honest flagged
+   * shape or the bare sentinel; both mean "the code states no feet-based
+   * height", and neither may become a number on an emitted atom.
+   */
+  const heightAbsent = heightIsAbsent(row.max_height_ft);
   // 0 is a valid sentinel (often paired with not_specified) — only miss when absent.
   if (
     front === undefined ||
@@ -48,7 +55,13 @@ function rowToResolved(row: SetbackTableRowProvenance): ResolvedSetbackRow | Hon
     rearFt: rear.value,
     sideFt: side.value,
     sideCornerFt: sideCorner.value,
-    maxHeightFt: row.max_height_ft?.value,
+    // P-299: a height the code does not state in FEET is ABSENT, not a number.
+    // The corpus's stated-absence sentinel is 999 and reads as a plausible
+    // limit to any consumer that receives only the number (which is exactly how
+    // it was served before this), so the sentinel never travels as a value: the
+    // absence is the missing field, and the reason travels separately in
+    // `fieldProvenance.height.notSpecified` below. See heightIsAbsent().
+    ...(heightAbsent ? {} : { maxHeightFt: row.max_height_ft!.value }),
     maxLotCoveragePct: row.max_lot_coverage_pct?.value,
     maxImperviousPct: row.max_impervious_pct?.value,
   };
@@ -74,6 +87,7 @@ function rowToResolved(row: SetbackTableRowProvenance): ResolvedSetbackRow | Hon
     matchBasis: basis,
     prefixMatched: row.prefix_matched,
     setbacks,
+    heightAbsent,
     sourceCodeAtomRef,
     fieldConfidence,
   };
@@ -166,9 +180,14 @@ export function emitSetbackRule(
     sideInteriorFt: row.setbacks.sideFt,
     rear: row.setbacks.rearFt,
     sideCornerFt: row.setbacks.sideCornerFt,
-    maxHeightFt: row.setbacks.maxHeightFt,
     maxLotCoveragePct: row.setbacks.maxLotCoveragePct,
     maxImperviousPct: row.setbacks.maxImperviousPct,
+    // P-299 — genuinely ABSENT (not `undefined` on a present key) when the code
+    // states no feet-based height, so `"maxHeightFt" in atom` is false and no
+    // JSON round-trip can resurrect a placeholder.
+    ...(row.setbacks.maxHeightFt === undefined
+      ? {}
+      : { maxHeightFt: row.setbacks.maxHeightFt }),
     ...(setbackTableRow.display_meta?.min_lot_size
       ? { minLotSize: setbackTableRow.display_meta.min_lot_size }
       : {}),
@@ -256,6 +275,20 @@ export function emitSetbackRule(
           ? { notSpecified: true }
           : {}),
       },
+      // P-299 — the height's reason. Present only when the height is ABSENT (the
+      // value is omitted from the atom in that case), so a reader can tell
+      // "the code states no feet-based height" from "this row has no height
+      // field at all", and `math`/`sizing` code cannot read a placeholder as a
+      // limit. Mirrors legacy-design-tools' `max_height_ft_not_specified`.
+      ...(row.heightAbsent
+        ? {
+            height: {
+              atomDid: row.sourceCodeAtomRef.atomDid,
+              confidence: row.fieldConfidence.maxHeightFt,
+              notSpecified: true,
+            },
+          }
+        : {}),
     },
     ...(row.matchBasis === "fallback"
       ? {
