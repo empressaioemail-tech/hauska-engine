@@ -52,6 +52,30 @@ function mapVerification(
   return "transcribed";
 }
 
+/**
+ * The corpus's canonical stated-absence sentinel for `max_height_ft`
+ * (hauska-setback-corpus rule G7 / `NOT_SPECIFIED_MAX_HEIGHT_FT`). It is a
+ * placeholder, not a height: the meaning lives in the row's
+ * `provenance.max_height_ft.not_specified` flag, and the number carries none.
+ * 999 ft is not a height any code in this corpus states.
+ */
+export const NOT_SPECIFIED_MAX_HEIGHT_FT = 999;
+
+/**
+ * True when a height is ABSENT rather than a number — either the honest form
+ * (`provenance.max_height_ft.not_specified === true`) or the bare canonical
+ * sentinel with no flag. The corpus gate (G8) blocks the bare shape from
+ * shipping, but this boundary reads adapter JSON directly, so it fails closed
+ * on the value too, mirroring legacy-design-tools' `heightIsAbsent()`
+ * (`artifacts/api-server/src/routes/localSetbacks.ts`).
+ */
+export function heightIsAbsent(
+  field: { value: number; not_specified?: boolean } | undefined,
+): boolean {
+  if (!field) return true;
+  return field.not_specified === true || field.value === NOT_SPECIFIED_MAX_HEIGHT_FT;
+}
+
 function fieldFrom(
   value: number | undefined,
   prov: AdapterFieldProv | undefined,
@@ -65,6 +89,24 @@ function fieldFrom(
     verification_state: mapVerification(prov?.verification_state),
     ...(prov?.not_specified === true ? { not_specified: true } : {}),
   };
+}
+
+/**
+ * `fieldFrom` for `max_height_ft` only: additionally stamps the flag when the
+ * value is the bare canonical sentinel, so `heightIsAbsent()` downstream sees
+ * ONE honest shape for both ways a table can state no feet-based height.
+ */
+function heightFieldFrom(
+  value: number | undefined,
+  prov: AdapterFieldProv | undefined,
+  fallbackConfidence: number,
+): SetbackFieldProvenance | undefined {
+  const field = fieldFrom(value, prov, fallbackConfidence);
+  if (!field) return undefined;
+  if (field.value === NOT_SPECIFIED_MAX_HEIGHT_FT && field.not_specified !== true) {
+    return { ...field, not_specified: true };
+  }
+  return field;
 }
 
 function rowFromDistrict(d: AdapterDistrict): SetbackTableRowProvenance | null {
@@ -90,7 +132,7 @@ function rowFromDistrict(d: AdapterDistrict): SetbackTableRowProvenance | null {
     rear_ft: fieldFrom(d.rear_ft, p.rear_ft, 0.7),
     side_ft: fieldFrom(d.side_ft, p.side_ft, 0.7),
     side_corner_ft: fieldFrom(d.side_corner_ft, p.side_corner_ft, 0.6),
-    max_height_ft: fieldFrom(d.max_height_ft, p.max_height_ft, 0.6),
+    max_height_ft: heightFieldFrom(d.max_height_ft, p.max_height_ft, 0.6),
     max_lot_coverage_pct: fieldFrom(
       d.max_lot_coverage_pct,
       p.max_lot_coverage_pct,

@@ -167,6 +167,14 @@ export interface ResolvedSetbackRow {
   matchBasis: MatchBasis;
   prefixMatched?: string;
   setbacks: SetbackDimensions;
+  /**
+   * P-299 — true when `setbacks.maxHeightFt` is absent because the code states
+   * no feet-based height for this district (the row carries the corpus's
+   * `not_specified` flag, or the bare canonical 999 sentinel). The reason
+   * travels to the emitted atom as `fieldProvenance.height.notSpecified`; the
+   * placeholder never travels as a value.
+   */
+  heightAbsent: boolean;
   /** Typed AtomInputRef with required role (rule|fact) — never a bare string. */
   sourceCodeAtomRef: AtomInputRef;
   fieldConfidence: Readonly<Record<keyof SetbackDimensions, WidthedConfidence>>;

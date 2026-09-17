@@ -22,6 +22,7 @@ import type {
   WellFactAtomInstance as ContractWellFactAtomInstance,
   ParcelNodeAtomInstance as ContractParcelNodeAtomInstance,
   ParcelTerrainModelAtomInstance as ContractParcelTerrainModelAtomInstance,
+  SetbackFieldProvenanceEntry,
   SetbackMatchBasis,
   SetbackRuleAtomInstance as ContractSetbackRuleAtomInstance,
   TerrainExportFormat as ContractTerrainExportFormat,
@@ -369,9 +370,34 @@ export type SetbackRuleAtomInstance = ContractSetbackRuleAtomInstance &
     /** Interior side yard (distinct from corner side — AMENDMENT 2 R2). */
     sideInteriorFt?: number;
     sideCornerFt?: number;
+    /**
+     * Feet, or ABSENT when the code states no feet-based height for this
+     * district (P-299). The corpus's canonical stated-absence sentinel is 999
+     * and means "read the provenance flag" — never "999 feet" — so the emit
+     * path resolves a flagged (or bare-sentinel) height to an absent field
+     * instead of putting the placeholder on the atom. Absent is NOT
+     * "unlimited": the district's height is stated in another unit (e.g.
+     * stories) or is conditional, and `fieldProvenance.height.notSpecified`
+     * carries that reason. Same rule legacy-design-tools' `/local-setbacks`
+     * route and `buildableEnvelope/derive.ts` follow.
+     */
     maxHeightFt?: number;
     maxLotCoveragePct?: number;
     maxImperviousPct?: number;
+    /**
+     * Per-field provenance. Widened from the contract's `front`/`side`/`rear`
+     * shape for the two things this engine emits that the contract type does
+     * not name: `notSpecified` (the stated-absence flag, already written at
+     * runtime on the three contract fields before P-299) and, since P-299,
+     * `height` — which is where a stated-absence height's reason lives, because
+     * the height VALUE itself is omitted rather than sent as a sentinel.
+     */
+    fieldProvenance?: {
+      front?: SetbackFieldProvenanceEntry & { notSpecified?: boolean };
+      side?: SetbackFieldProvenanceEntry & { notSpecified?: boolean };
+      rear?: SetbackFieldProvenanceEntry & { notSpecified?: boolean };
+      height?: SetbackFieldProvenanceEntry & { notSpecified?: boolean };
+    };
     /** Minimum lot size verbatim (R24 full-field parity). */
     minLotSize?: string;
     /** R22/R24/R25/R26 — display + disclosure metadata for the PE card. */
