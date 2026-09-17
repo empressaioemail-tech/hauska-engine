@@ -1,0 +1,76 @@
+[
+  {
+    "metadata": {
+      "name": "fixture-svc-00003-ccc"
+    },
+    "spec": {
+      "containers": [
+        {
+          "env": [
+            {
+              "name": "NODE_ENV",
+              "value": "production"
+            },
+            {
+              "name": "FEATURE_FLAG_X",
+              "value": "1"
+            },
+            {
+              "name": "DATABASE_URL",
+              "valueFrom": {
+                "secretKeyRef": {
+                  "key": "latest",
+                  "name": "DATABASE_URL"
+                }
+              }
+            },
+            {
+              "name": "ENGINE_API_GATE_TOKEN",
+              "valueFrom": {
+                "secretKeyRef": {
+                  "key": "latest",
+                  "name": "HAUSKA_ENGINE_API_KEY"
+                }
+              }
+            },
+            {
+              "name": "RETRIEVAL_API_KEY",
+              "valueFrom": {
+                "secretKeyRef": {
+                  "key": "latest",
+                  "name": "HAUSKA_ENGINE_API_KEY"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "fixture-svc-00001-aaa"
+    },
+    "spec": {
+      "containers": [
+        {
+          "env": [
+            {
+              "name": "NODE_ENV",
+              "value": "production"
+            },
+            {
+              "name": "DATABASE_URL",
+              "valueFrom": {
+                "secretKeyRef": {
+                  "key": "latest",
+                  "name": "DATABASE_URL"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
