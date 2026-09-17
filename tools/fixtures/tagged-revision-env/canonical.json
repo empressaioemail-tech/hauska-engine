@@ -1,0 +1,18 @@
+{
+  "predicateVersion": "tagged-revision-env/v1",
+  "fixtureSetId": "tagged-revision-env/2026-09-17",
+  "canonicalRepo": "empressaioemail-tech/hauska-engine",
+  "canonicalPath": "tools/check-tagged-revision-env.mjs",
+  "canonicalRef": null,
+  "canonicalNote": "This is the canonical copy. canonicalRef is null here on purpose: this file has nothing to fetch. The legacy-design-tools copy pins this file at canonicalRef=main (a BRANCH, not a commit SHA: a SHA pin would need re-pinning by hand on every canonical edit, and a squash-merge can make a branch commit unreachable, which reads as a broken gate rather than as drift) and its --check-divergence fetches and byte-compares it.",
+  "sha256": "edbcf318f225c97770c3eaa30b0bca5785f49d399065c2ff47aff649eb942d14",
+  "hashRule": "sha256 over the file's bytes with CRLF/CR normalized to LF (Windows clones and Linux CI must agree).",
+  "fixtureCases": [
+    "pass",
+    "fail",
+    "refuse-ambiguous-traffic",
+    "refuse-no-traffic",
+    "refuse-absent-revision",
+    "refuse-unreadable-revisions"
+  ]
+}

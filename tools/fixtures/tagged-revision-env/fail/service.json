@@ -1,0 +1,17 @@
+{
+  "status": {
+    "latestReadyRevisionName": "fixture-svc-00003-ccc",
+    "traffic": [
+      {
+        "revisionName": "fixture-svc-00003-ccc",
+        "percent": 100,
+        "tag": "canary"
+      },
+      {
+        "revisionName": "fixture-svc-00001-aaa",
+        "percent": 0,
+        "tag": "pre-gate"
+      }
+    ]
+  }
+}

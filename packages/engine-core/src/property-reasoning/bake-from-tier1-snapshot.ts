@@ -17,7 +17,11 @@ import {
   getSetbackTableForZoning,
   requiresPerParcelSetbackRecord,
 } from "@hauska-engine/adapters";
-import type { PropertyAtomInstance } from "@hauska-engine/atoms";
+import type {
+  BuildableEnvelopeZeroProof,
+  EnvelopeHonestOutcome,
+  PropertyAtomInstance,
+} from "@hauska-engine/atoms";
 
 import { emitBuildableEnvelope } from "./emit-buildable-envelope.js";
 import { emitSetbackRule, resolveSetbackTableRow } from "./emit-setback-rule.js";
@@ -30,6 +34,28 @@ import type {
   JurisdictionDescriptor,
   SetbackTableRowProvenance,
 } from "./types.js";
+
+/**
+ * P-263 — the reason string the PRE-fix Tier-1 bake wrote on every envelope it received from
+ * Tier-1 with status `no-buildable-area`. No computation stood behind it, so it asserted a zero
+ * the bake never found, and the serving facet printed "Setbacks consume the lot" for it. No code
+ * writes this string any more (the branch that used it now reports `provisional-front-edge` and
+ * names the upstream status), but the atoms already on record still carry it, so P-263's movement
+ * census attributes that cohort to THIS producer by this exact string.
+ *
+ * It is exported from beside the branch that retired it so the census cannot attribute a cohort to
+ * a producer by keeping a private copy of the producer's literal: if the string ever moves, the
+ * instrument that counts it moves with it.
+ */
+export const LEGACY_TIER1_NO_BUILDABLE_AREA_REASON =
+  "Tier-1 snapshot status no-buildable-area";
+
+/**
+ * P-263 — the honest reason the same branch writes today: the derivation is pending, and the
+ * upstream status is NAMED rather than re-asserted as our own computed zero.
+ */
+export const TIER1_STATUS_NOT_A_ZERO_REASON =
+  "Tier-1 snapshot reports status no-buildable-area; this bake holds no computed zero of its own and does not re-assert the claim (P-263)";
 
 export type Tier1ZoningProvenance = {
   sourceUrl?: string | null;
@@ -338,9 +364,8 @@ export function emitFromTier1Snapshot(
     row.rear_ft?.not_specified === true;
 
   let outcome:
-    | { kind: "no-buildable-area"; reason: string }
-    | { kind: "buildable"; areaSqFt: number }
-    | { kind: "provisional-front-edge"; reason: string };
+    | Extract<EnvelopeHonestOutcome, { kind: "buildable" } | { kind: "provisional-front-edge" }>
+    | { kind: "no-buildable-area"; reason: string; zero: BuildableEnvelopeZeroProof };
   if (silentAxes) {
     // not_specified zeros must never become "no-buildable-area" / consume-lot.
     outcome = {
@@ -349,9 +374,18 @@ export function emitFromTier1Snapshot(
         "One or more scalar setbacks are not_specified (build-to-line governs); refuse to derive consume-lot from silent axes",
     };
   } else if (env?.status === "no-buildable-area") {
+    /*
+     * P-263 — this branch used to emit `no-buildable-area` with the reason
+     * "Tier-1 snapshot status no-buildable-area". That re-asserted an upstream
+     * status as OUR computed zero: no zero proof travelled with it, and the
+     * serving facet turns the kind into "Setbacks consume the lot" for the
+     * customer (retrieval atom-chain-to-facets.ts). A status string is not a
+     * computation, so the bake now says the honest thing instead — the
+     * derivation is pending and the upstream status is named, never claimed.
+     */
     outcome = {
-      kind: "no-buildable-area",
-      reason: "Tier-1 snapshot status no-buildable-area",
+      kind: "provisional-front-edge",
+      reason: TIER1_STATUS_NOT_A_ZERO_REASON,
     };
   } else if (
     env?.status === "ok" &&

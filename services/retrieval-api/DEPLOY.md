@@ -182,6 +182,44 @@ gcloud run deploy hauska-retrieval-api \
 After `curl` on the tagged URL passes `/health`, shift traffic to the new
 revision.
 
+## Post-deploy check — tagged revisions must not outlive a credential (P-279)
+
+Deploy through the wrapper, which runs the deploy and then this check in one command:
+
+```bash
+node tools/deploy-cloud-run-service.mjs \
+  --service hauska-retrieval-api \
+  --project hauska-prod-497015 --region us-central1 \
+  --source . --allow-unauthenticated --set-secrets=SUBSTRATE_DATABASE_URL=DATABASE_URL:latest
+```
+
+Or run the check alone, read-only, against the live service:
+
+```bash
+node tools/check-tagged-revision-env.mjs \
+  --project hauska-prod-497015 --region us-central1 \
+  --service hauska-retrieval-api
+```
+
+Exit `0` pass · `1` FAIL · `2` REFUSE (the question could not be answered — never
+treated as a pass). It FAILS when a tag points at a revision that lacks an auth or
+secret variable the SERVING revision carries, and it names the tag, the revision and
+the missing variable names. It reads Cloud Run by field from `--format=json` and
+never prints a secret value.
+
+Live instance from this class, measured 2026-09-17: tag `item7-countatoms-canary` on
+`hauska-retrieval-api-00080-yax` is missing `FACTORY_DATABASE_URL_RO`, which the
+serving revision carries. Removing or repointing a tag is an operator decision — the
+check names it and never mutates it.
+
+Run it **after the traffic shift as well as after the deploy**: at canary time the
+old revision is still serving, so a credential ADDED by the new revision is invisible
+to the comparison until traffic moves. The instance of this class is created by the
+shift.
+
+Full procedure, the per-service control surface, and the bypass list:
+[`RUNBOOK.tagged-revision-env.md`](RUNBOOK.tagged-revision-env.md).
+
 ## Verify
 
 Replace `<service-url>` with the Cloud Run URL and `<key>` with `RETRIEVAL_API_KEY`.

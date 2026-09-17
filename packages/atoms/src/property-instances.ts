@@ -249,10 +249,46 @@ export interface EnginePropertyPersistence {
   externalKeys?: ReadonlyArray<ParcelExternalKey>;
 }
 
+/**
+ * P-263 — the proof a `no-buildable-area` outcome must carry.
+ *
+ * `no-buildable-area` is a CLAIM that a computation found zero buildable square
+ * feet (the setbacks consume the lot). Before P-263 the arm needed only a reason
+ * string, so any writer holding a DECLINE — "unzoned jurisdiction", "no district
+ * on record", a failed geometry verify — could mint the claim without running a
+ * computation at all. That is how 490,185 of the six counties' breadth-bake
+ * envelopes came to assert "setbacks consume the lot" about land no setback
+ * derivation was ever attempted on, and the serving facet prints exactly that
+ * sentence for any atom carrying this kind (retrieval
+ * `serving-sweep/vendor/atom-chain-to-facets.ts`).
+ *
+ * The proof is REQUIRED rather than optional so the claim cannot be made
+ * without it at the type level: an opinion that was not computed is
+ * `not-applicable` (the ordinance does not reach the parcel) or
+ * `provisional-front-edge` (the derivation is pending), never a zero.
+ */
+export interface BuildableEnvelopeZeroProof {
+  /** The computation that produced the zero. */
+  readonly method:
+    /** The drawn setback inset had no area left inside it. */
+    | "setback-inset-consumes-ring"
+    /** The lot's own span is smaller than the governing setbacks require. */
+    | "district-setback-exceeds-lot-span";
+  /** The computation's own result — exactly zero, never a rounding of "small". */
+  readonly areaSqFt: 0;
+  /** The atom/ref the computation rested on (its verified input). */
+  readonly verifiedBy: string;
+}
+
 /** Optional envelope geometry outcome (engine extension; not a confidence multiply). */
 export type EnvelopeHonestOutcome =
   | { kind: "buildable"; areaSqFt: number }
-  | { kind: "no-buildable-area"; reason: string }
+  | {
+      kind: "no-buildable-area";
+      reason: string;
+      /** P-263 — a computed, verified zero. Required (see the type's docstring). */
+      zero: BuildableEnvelopeZeroProof;
+    }
   | { kind: "provisional-front-edge"; reason: string }
   /**
    * No zoning ordinance exists to derive a setback from (unincorporated
