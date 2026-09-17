@@ -883,11 +883,19 @@ export function firstActionAnswer(model: ParcelReportModel): string | undefined 
  *   failed-this-run   the read broke. Retry.
  *   blocked-at-source no acquisition path exists. Needs a ruling, not a job.
  *   not-applicable    the question does not apply to this parcel.
+ *   refused           (P-302) the serving ledger ran and DECLINED to answer for
+ *                     this parcel's own cell: refused, unaccounted, no cell,
+ *                     or a cell it cannot read. The row carries the store's own
+ *                     code and words. A backfill target like a gap, but a
+ *                     different finding from one: the source was asked.
  *
- * Only `failed-this-run` and `out-of-scope` are jobs. Reporting all five as
- * one undifferentiated gap count is how a backfill ends up chasing families
- * that were already answered.
+ * Only `failed-this-run`, `out-of-scope` and `refused` are jobs. Reporting the
+ * rest as one undifferentiated gap count is how a backfill ends up chasing
+ * families that were already answered.
  */
+
+/** P-302: the kinds the worklist treats as a genuine acquisition/retry target. */
+const ACTIONABLE_ABSENCE_KINDS: ReadonlySet<string> = new Set(["failed-this-run", "out-of-scope", "refused"]);
 export interface AbsentFactFamily {
   section: string;
   label: string;
@@ -929,7 +937,7 @@ export function absentFactFamilies(model: ParcelReportModel): AbsentFactFamily[]
       label,
       kind,
       reason: state.reason ?? "",
-      actionable: kind === "failed-this-run" || kind === "out-of-scope",
+      actionable: ACTIONABLE_ABSENCE_KINDS.has(kind),
     });
   }
   if (model.drainage.status === "absent") {

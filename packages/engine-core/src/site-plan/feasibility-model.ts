@@ -74,6 +74,17 @@ export type FeasibilityFactState<T> =
  *                       `blocked-at-source` (the source itself lacks it):
  *                       conflating "you didn't pay for this" with either of
  *                       those would misstate what is actually true.
+ * - `refused`           P-302 (OPS-24 law 7, A-193). The serving ledger RAN
+ *                       and DECLINED to answer for this parcel's own cell:
+ *                       `refused`, `unaccounted`, no cell at all, a cell it
+ *                       cannot read, or a value cell whose payload does not
+ *                       coerce into the rail's own domain. Distinct from every
+ *                       kind above and for the same reason `clear` and
+ *                       `blocked-at-source` are distinguished: a source that
+ *                       was asked and said "not this parcel" is a different
+ *                       finding from one that never had a path, and neither is
+ *                       our own failure. The `reason` carries the store's own
+ *                       code and words, never ours.
  *
  * `clear` and `blocked-at-source` are the pair most easily confused, and the
  * test is coverage: only claim `clear` when the source actually covers this
@@ -86,6 +97,7 @@ export type AbsenceKind =
   | "out-of-scope"
   | "blocked-at-source"
   | "failed-this-run"
+  | "refused"
   | "entitlement-required";
 
 export function present<T extends object>(
@@ -183,6 +195,17 @@ export interface JurisdictionFacts {
   cityName?: string;
   /** Set only when cityLimitsStatus came from the reader, not the "unresolved" default. */
   cityLimitsSourceCitation?: string;
+  /**
+   * P-302 (OPS-24 law 7, A-193): the slated `cityLimits` rail's own answer when
+   * it is NOT a place name. `cityLimitsStatus` stays `unresolved` in both cases
+   * — "unresolved" is the honest state for a jurisdiction we cannot state — and
+   * this is what keeps the ledger's refusal from being silent instead of
+   * showing a substituted value. Present only for a slated rail; an unslated
+   * rail keeps its pre-cutover path and adds nothing here.
+   */
+  cityLimitsLedgerAnswer?:
+    | { form: "refusal"; code: string; reason: string }
+    | { form: "absence"; verdict: "absent-verified" | "not-applicable"; reason: string | null };
   etjStatus: "unresolved";
 }
 
@@ -203,6 +226,22 @@ export interface ParcelOwnershipFacts {
   absenteeOwner?: boolean;
   landUseCode?: string;
   landUseLabel?: string;
+  /**
+   * P-302 (OPS-24 law 7, A-193): a declared refusal from a slated rail in this
+   * section, carried per field. The field itself is left UNSET — the legacy or
+   * baked roll value is never shown in its place — and this list is what makes
+   * the refusal visible, because an unset field on its own is indistinguishable
+   * from an omission.
+   *
+   * Field-level rather than section-level deliberately: a section-level refusal
+   * would also withhold `ownerName` and `legalDescription`, which the ruling
+   * never asked to withhold. The section falls back to a declared refusal of
+   * its own (via `absent`) only when nothing else can make it present.
+   *
+   * Present only when a slated rail refused; an unslated rail keeps its
+   * substrate value and adds nothing here.
+   */
+  ledgerRefusals?: ReadonlyArray<{ field: string; code: string; reason: string }>;
 }
 
 // ── Section 6: flood (screening fact) ───────────────────────────────────

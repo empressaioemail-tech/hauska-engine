@@ -29,10 +29,46 @@
 // in production and no secret mount is owed. Re-verify at source before
 // relying on this note in turn -- that is the lesson the old one taught.
 
+/**
+ * P-302. The four code tokens the wire's `refusal.code` can carry, mirrored
+ * VERBATIM from the server side (`services/retrieval-api/src/parcel-record-reader.ts`'s
+ * `CellServeRefusalCode`, itself pinned by the cross-repo fixture
+ * `services/retrieval-api/src/__fixtures__/cell-serve-rule.json`). A consumer
+ * that named the same refusal two different ways could not be held to that
+ * fixture, which is the whole reason the codes are tokens rather than prose.
+ * LDT's fifth code, `store-not-configured`, is a TRANSPORT refusal and never
+ * reaches a rail, so it is deliberately not mirrored here.
+ */
+export type ParcelRecordRefusalCode =
+  | "engine-refused"
+  | "unaccounted"
+  | "malformed-cell"
+  | "no-such-parcel-or-rail";
+
+/** The refusal a slated rail declares. Non-null exactly when `serve === "refused"`. */
+export interface ParcelRecordServeRefusal {
+  code: ParcelRecordRefusalCode;
+  reason: string;
+}
+
 export interface ParcelRecordRail {
   cell: Record<string, unknown> | null;
   gate: { verdict: "pass" | "refuse" | "excluded" | null; evaluatedAt: string | null };
   serve: "record" | "refused" | "legacy-transitional";
+  /**
+   * P-302. P-297's additive wire field: the code and the reason a slated rail's
+   * own cell state produced, non-null exactly when `serve === "refused"`. It
+   * exists because the ruling requires a declared refusal to CARRY its reason
+   * and a missing or malformed cell has no cell object to carry one. Mirrored
+   * here so the reason is not thrown away one line after it arrives — before
+   * this lane the client read `serve` and discarded this.
+   *
+   * Typed as required-and-nullable to mirror the wire exactly. Read
+   * DEFENSIVELY anyway (`asServeRefusal`): the response body is cast, never
+   * validated, so a response from a pre-P-297 serving build legitimately has
+   * the field absent at runtime while this type says it is there.
+   */
+  refusal: ParcelRecordServeRefusal | null;
   atom: { did: string; entityType: string; body: unknown } | null;
   atomBacked: boolean;
   rendering: { text: string; atomVersion: string; vocabVersion: string } | null;
@@ -122,14 +158,231 @@ function asNullableNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-/** Read one scalar rail's cell value, gated strictly on `serve === "record"`. Vendored kind-switch, matching hauska-map's `interpretRecordCell` / legacy-design-tools' `interpretParcelRecordCell` (same cell_state shape, same falsifier: byte-for-byte parity is not claimed here since this is a NEW report-path consumer, but the KIND switch itself must not diverge). */
-export function recordScalarValue(rail: ParcelRecordRail | undefined): string | number | boolean | null | undefined {
-  if (!rail || rail.serve !== "record" || !rail.cell) return undefined;
+/* ─────────────────── P-302: the three-way answer, and why ───────────────────
+ *
+ * OPS-24 law 7, operator ruling A-193
+ * (`_decisions/2026-09-16_county_verdict_is_not_the_serve_switch.md`): on a
+ * SLATED rail each parcel is served from its OWN cell, and the legacy or baked
+ * value is never the answer. Concretely, for every rail this client reads:
+ *
+ *   | the rail's own answer                                    | reported as        |
+ *   |----------------------------------------------------------|--------------------|
+ *   | serve `record`, cell `value`                              | the value          |
+ *   | serve `record`, cell `absent-verified`                     | the stated absence |
+ *   | serve `record`, cell `not-applicable`                      | the stated absence |
+ *   | serve `refused` (a `refused`/`unaccounted` cell, no cell,  | a declared refusal,|
+ *   |  a cell this reader cannot read, or a `value` cell whose   | with its code and  |
+ *   |  payload does not coerce into this rail's own domain)      | its reason         |
+ *   | serve `legacy-transitional` (UNSLATED)                     | the pre-cutover    |
+ *   |                                                            | path, untouched    |
+ *
+ * THE FIXTURE IS THE CONTRACT, NOT THIS FILE. `services/retrieval-api/src/__fixtures__/cell-serve-rule.json`
+ * is the cross-repo contract P-297 landed (both readers consume the same rows);
+ * this client CONSUMES that decision rather than re-deriving it. It never
+ * decides from `cell.kind` alone, because a missing, malformed or unreadable
+ * cell has no kind and still refuses — the refusal, not the kind, is what the
+ * response states.
+ *
+ * WHY A TYPED ANSWER AND NOT `undefined`. Every helper here used to return
+ * `undefined` for every non-`value` cell. `undefined` is indistinguishable from
+ * "this rail is unslated", so every caller's `?? cadRoll?.<field>` (and
+ * `resolve-export-setback`'s fall-through to the ruled corpus row) could not
+ * tell a declared refusal from a rail that was never cut over, and printed the
+ * baked value for both. That is the shape A-193 retires. A caller must not be
+ * able to mistake "refused" for "nothing here", which is why the four cases are
+ * a discriminated union and not a nullable value.
+ *
+ * THE LEGACY HELPERS ARE KEPT, and are now thin wrappers over these answers, so
+ * there is exactly ONE kind-switch in this file rather than two that could
+ * drift. Their external behaviour is unchanged (each still returns `undefined`
+ * for a non-value cell), which is what keeps their existing callers and tests
+ * honest rather than re-pointed.
+ */
+
+export type RecordRailAbsenceVerdict = "absent-verified" | "not-applicable";
+
+/**
+ * The refusal codes a caller can see. The first four are the wire's own
+ * (`ParcelRecordRefusalCode`). `refusal-detail-missing` is this client's ONLY
+ * code that cannot come off the wire: it is what a `serve === "refused"` with
+ * no `refusal` object reports — a pre-P-297 serving build, or a truncated body.
+ * Inventing one of the wire's four codes for that case would attribute a
+ * finding to the store it never made, and falling back would be the defect.
+ */
+export type RecordRailRefusalCode = ParcelRecordRefusalCode | "refusal-detail-missing";
+
+/** What one rail answered. `current-path` is the unslated rail: the caller's existing path runs untouched. */
+export type RecordRailAnswer<T> =
+  | { form: "value"; value: T }
+  | { form: "absence"; absenceVerdict: RecordRailAbsenceVerdict; reason: string | null }
+  | { form: "refusal"; code: RecordRailRefusalCode; reason: string }
+  | { form: "current-path" };
+
+export interface RecordRailRefusalEntry {
+  /** The rail key as the wire spells it (e.g. `marketValue`, `setbackFrontFt`). */
+  rail: string;
+  code: RecordRailRefusalCode;
+  reason: string;
+}
+
+function asServeRefusal(value: unknown): ParcelRecordServeRefusal | null {
+  const rec = asRecord(value);
+  if (!rec) return null;
+  const code = asNullableString(rec.code);
+  const reason = asNullableString(rec.reason);
+  if (!code || !reason) return null;
+  return { code: code as ParcelRecordRefusalCode, reason };
+}
+
+/** A short, non-explosive rendering of a raw payload for a refusal's reason. */
+function payloadSnippet(value: unknown, max = 120): string {
+  let text: string;
+  try {
+    text = JSON.stringify(value) ?? String(value);
+  } catch {
+    text = String(value);
+  }
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/**
+ * The rail's own words for a stated absence: `basis.finding` (the shape
+ * `absent-verified` cells carry in production and in the shared fixture), then
+ * the cell's own `reason` (the shape `not-applicable` cells carry). Null when
+ * the cell stated the absence without saying why — reported as a stated absence
+ * with no reason rather than filled in with engine prose.
+ */
+function statedAbsenceReason(cell: Record<string, unknown>): string | null {
+  const basis = asRecord(cell.basis);
+  return (basis ? asNullableString(basis.finding) : null) ?? asNullableString(cell.reason);
+}
+
+/**
+ * THE RULE, once, for every rail in this file.
+ *
+ * `readValueFromCell` is called ONLY for a `value` cell and returns `undefined`
+ * when the cell's payload does not coerce into this rail's own domain — which
+ * the shared fixture names as a declared refusal (its `_notCoveredHere`), not a
+ * silent nothing. For a companion rail (rows live on `companions`) an empty row
+ * set is a legitimate VALUE, so those readers return `[]`, never `undefined`.
+ */
+export function recordRailAnswer<T>(
+  rail: ParcelRecordRail | undefined,
+  readValueFromCell: (rail: ParcelRecordRail) => T | undefined,
+): RecordRailAnswer<T> {
+  // Unslated: byte-identically the pre-cutover path. NOT a refusal, and not a
+  // value — the caller's existing source (including the substrate) still runs.
+  if (!rail || rail.serve === "legacy-transitional") return { form: "current-path" };
+
+  if (rail.serve === "refused") {
+    const refusal = asServeRefusal(rail.refusal);
+    return refusal
+      ? { form: "refusal", code: refusal.code, reason: refusal.reason }
+      : {
+          form: "refusal",
+          code: "refusal-detail-missing",
+          reason:
+            "The parcel ledger refused this rail for this parcel but the response carried no refusal " +
+            "detail. Refusing rather than serving the legacy or baked value, and rather than naming a " +
+            "reason the store did not give.",
+        };
+  }
+
+  // serve === "record": the cell IS the answer, whichever of the three forms it takes.
   const cell = rail.cell;
+  if (!cell) {
+    return {
+      form: "refusal",
+      code: "no-such-parcel-or-rail",
+      reason:
+        "The parcel ledger served this rail with no cell. The store's silence about a rail that is " +
+        "supposed to be served from it is not evidence about the parcel.",
+    };
+  }
+
   const kind = asNullableString(cell.kind);
-  if (kind !== "value") return undefined; // absent-verified/refused/etc: no value to compose, caller keeps its existing fallback
-  const v = cell.value;
+  if (kind === "absent-verified" || kind === "not-applicable") {
+    return { form: "absence", absenceVerdict: kind, reason: statedAbsenceReason(cell) };
+  }
+  if (kind !== "value") {
+    return {
+      form: "refusal",
+      code: "malformed-cell",
+      reason:
+        `The parcel ledger's cell carries kind ${JSON.stringify(kind)}, which this reader does not ` +
+        "recognise. Refusing rather than guessing.",
+    };
+  }
+
+  const value = readValueFromCell(rail);
+  if (value === undefined) {
+    return {
+      form: "refusal",
+      code: "engine-refused",
+      reason:
+        `The parcel ledger's cell for this rail is a value but carries nothing this rail can use ` +
+        `(raw payload ${payloadSnippet(cell.value)}). Refusing rather than serving the legacy or baked value.`,
+    };
+  }
+  return { form: "value", value };
+}
+
+/**
+ * The ONE place a caller turns an answer into a field, and therefore the ONE
+ * place the retired fallback could be reintroduced: a slated rail's absence or
+ * refusal yields nothing, and the substrate value is returned ONLY when the
+ * rail is unslated (`current-path`). Any other reading of this function is the
+ * defect this lane exists to remove, which is why it is a named export with a
+ * mutation as its own falsifier.
+ */
+export function recordRailField<T>(answer: RecordRailAnswer<T>, substrateValue: T | undefined): T | undefined {
+  if (answer.form === "value") return answer.value;
+  if (answer.form === "current-path") return substrateValue;
+  return undefined;
+}
+
+/** Every refusal among `entries`, in the order given, for a caller's reason text and `ledgerRefusals`. */
+export function recordRailRefusals(
+  entries: ReadonlyArray<readonly [string, RecordRailAnswer<unknown>]>,
+): RecordRailRefusalEntry[] {
+  const out: RecordRailRefusalEntry[] = [];
+  for (const [rail, answer] of entries) {
+    if (answer.form === "refusal") out.push({ rail, code: answer.code, reason: answer.reason });
+  }
+  return out;
+}
+
+/**
+ * The customer-facing one-liner for a set of refusals. Names the rails, each
+ * one's code and the store's own reason, then states plainly that nothing was
+ * substituted — because a refusal a reader cannot see is indistinguishable from
+ * an omission, and an omission is what the ruling forbids.
+ */
+export function recordRailRefusalReason(entries: ReadonlyArray<RecordRailRefusalEntry>): string {
+  const parts = entries.map((e) => `${e.rail} (${e.code}): ${e.reason}`);
+  return (
+    `The parcel ledger declared a refusal for this parcel — ${parts.join(" ")} ` +
+    "The legacy or baked value is not shown in its place."
+  );
+}
+
+/** Read one scalar rail's cell value, gated strictly on `serve === "record"`. Vendored kind-switch, matching hauska-map's `interpretRecordCell` / legacy-design-tools' `interpretParcelRecordCell` (same cell_state shape, same falsifier: byte-for-byte parity is not claimed here since this is a NEW report-path consumer, but the KIND switch itself must not diverge). Kept for its existing callers; the kind-switch it used to own now lives once, in `recordRailAnswer`. */
+export function recordScalarValue(rail: ParcelRecordRail | undefined): string | number | boolean | null | undefined {
+  const answer = recordScalarValueAnswer(rail);
+  return answer.form === "value" ? answer.value : undefined;
+}
+
+/** The raw primitive a `value` cell carries, or `undefined` when this rail cannot use it. */
+function rawScalarValue(rail: ParcelRecordRail): string | number | boolean | null | undefined {
+  const v = rail.cell?.value;
   return typeof v === "string" || typeof v === "number" || typeof v === "boolean" || v === null ? v : undefined;
+}
+
+/** P-302: the three-way answer for a plain scalar rail. */
+export function recordScalarValueAnswer(
+  rail: ParcelRecordRail | undefined,
+): RecordRailAnswer<string | number | boolean | null> {
+  return recordRailAnswer(rail, rawScalarValue);
 }
 
 /**
@@ -159,7 +412,13 @@ export function recordScalarValue(rail: ParcelRecordRail | undefined): string | 
  * from a non-numeric string (an empty/garbage string still refuses).
  */
 export function recordScalarNumber(rail: ParcelRecordRail | undefined): number | undefined {
-  const v = recordScalarValue(rail);
+  const answer = recordScalarNumberAnswer(rail);
+  return answer.form === "value" ? answer.value : undefined;
+}
+
+/** The numeric reading of a `value` cell, or `undefined` when the payload names no number. */
+function rawScalarNumber(rail: ParcelRecordRail): number | undefined {
+  const v = rawScalarValue(rail);
   if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
   if (typeof v === "string") {
     const cleaned = v.trim().replace(/^\$/, "").replace(/,/g, "");
@@ -170,52 +429,103 @@ export function recordScalarNumber(rail: ParcelRecordRail | undefined): number |
   return undefined;
 }
 
-export function recordScalarString(rail: ParcelRecordRail | undefined): string | undefined {
-  const v = recordScalarValue(rail);
-  return asNullableString(v) ?? undefined;
+/** P-302: the three-way answer for a numeric rail. A `value` cell whose payload names no number is a declared refusal (`engine-refused`), never a silent nothing. */
+export function recordScalarNumberAnswer(rail: ParcelRecordRail | undefined): RecordRailAnswer<number> {
+  return recordRailAnswer(rail, rawScalarNumber);
 }
+
+export function recordScalarString(rail: ParcelRecordRail | undefined): string | undefined {
+  const answer = recordScalarStringAnswer(rail);
+  return answer.form === "value" ? answer.value : undefined;
+}
+
+/** P-302: the three-way answer for a text rail. */
+export function recordScalarStringAnswer(rail: ParcelRecordRail | undefined): RecordRailAnswer<string> {
+  return recordRailAnswer(rail, (r) => asNullableString(rawScalarValue(r)) ?? undefined);
+}
+
+export type RecordCityLimitsDisposition = {
+  status: "incorporated" | "unincorporated";
+  cityName?: string;
+  source: string;
+  vintage?: string;
+};
 
 /** cityLimits' basis shape carries `disposition`, not `finding` (matches hauska-map's composeCityLimits). */
 export function recordCityLimitsDisposition(
   rail: ParcelRecordRail | undefined,
-): { status: "incorporated" | "unincorporated"; cityName?: string; source: string; vintage?: string } | undefined {
-  if (!rail || rail.serve !== "record" || !rail.cell) return undefined;
-  const cell = rail.cell;
-  const kind = asNullableString(cell.kind);
-  if (kind === "value") {
-    const cityName = asNullableString(cell.value);
-    if (!cityName) return undefined;
-    return {
-      status: "incorporated",
-      cityName,
-      source: asNullableString(cell.source) ?? "parcel_record",
-      vintage: asNullableString(cell.vintage) ?? undefined,
-    };
-  }
-  if (kind === "absent-verified") {
-    const basis = asRecord(cell.basis);
-    const disposition = basis ? asNullableString(basis.disposition) : null;
-    if (disposition) {
-      return { status: "unincorporated", source: (basis && asNullableString(basis.source)) ?? "parcel_record" };
-    }
-    return { status: "unincorporated", source: "parcel_record" };
-  }
-  return undefined;
+): RecordCityLimitsDisposition | undefined {
+  const answer = recordCityLimitsAnswer(rail);
+  return answer.form === "value" ? answer.value : undefined;
 }
 
-/** specialDistricts is a companion rail (grain "companion") — district rows live on `companions`, not the cell_state itself (matches hauska-map's composeSpecialDistricts). */
-export function recordSpecialDistrictNames(rail: ParcelRecordRail | undefined): string[] | undefined {
-  if (!rail || rail.serve !== "record" || !rail.cell) return undefined;
-  const kind = asNullableString(rail.cell.kind);
-  if (kind !== "value") return undefined;
-  const rows = (rail.companions as Array<{ payload?: unknown }> | undefined) ?? [];
-  const names = rows
+/** The place a `value` cell names, or `undefined` when it names none (which P-302 reports as a refusal, not as silence). */
+function rawCityLimitsDisposition(rail: ParcelRecordRail): RecordCityLimitsDisposition | undefined {
+  const cell = rail.cell!;
+  const cityName = asNullableString(cell.value);
+  if (!cityName) return undefined;
+  return {
+    status: "incorporated",
+    cityName,
+    source: asNullableString(cell.source) ?? "parcel_record",
+    vintage: asNullableString(cell.vintage) ?? undefined,
+  };
+}
+
+/**
+ * P-302: cityLimits has one cell kind that is a POSITIVE answer rather than an
+ * absence. `absent-verified` literally asserts "verified: this parcel is not in
+ * a city" — that IS the rail's answer to the city-limits question, and it has
+ * always composed as `unincorporated`. It is therefore promoted to the value
+ * arm, unchanged: reading a verified not-in-a-city as `unincorporated` is not a
+ * substitution, which is why the promotion is here and not in the rule.
+ * Everything else non-`value` keeps its own meaning: `not-applicable` a stated
+ * absence, a refusal a refusal.
+ */
+export function recordCityLimitsAnswer(
+  rail: ParcelRecordRail | undefined,
+): RecordRailAnswer<RecordCityLimitsDisposition> {
+  const answer = recordRailAnswer(rail, rawCityLimitsDisposition);
+  if (answer.form === "absence" && answer.absenceVerdict === "absent-verified" && rail?.cell) {
+    const basis = asRecord(rail.cell.basis);
+    return {
+      form: "value",
+      value: {
+        status: "unincorporated",
+        source: (basis && asNullableString(basis.source)) ?? "parcel_record",
+      },
+    };
+  }
+  return answer;
+}
+
+/** The rail's companion rows, or an empty list — a non-array `companions` is no rows, never a crash. */
+function asCompanionRows(rail: ParcelRecordRail): Array<{ payload?: unknown }> {
+  const rows = rail.companions as Array<{ payload?: unknown }> | undefined;
+  return Array.isArray(rows) ? rows : [];
+}
+
+/** The district names a `value` cell carries on its companion rows. An empty row set is `[]` — the rail's answer of "none", not a failure to answer. */
+function rawSpecialDistrictNames(rail: ParcelRecordRail): string[] {
+  return asCompanionRows(rail)
     .map((row) => {
       const rec = asRecord(row.payload);
       return rec ? asNullableString(rec.districtName) : null;
     })
     .filter((n): n is string => n !== null);
-  return names.length > 0 ? names : undefined;
+}
+
+/** specialDistricts is a companion rail (grain "companion") — district rows live on `companions`, not the cell_state itself (matches hauska-map's composeSpecialDistricts). */
+export function recordSpecialDistrictNames(rail: ParcelRecordRail | undefined): string[] | undefined {
+  const answer = recordSpecialDistrictNamesAnswer(rail);
+  return answer.form === "value" && answer.value.length > 0 ? answer.value : undefined;
+}
+
+/** P-302: the three-way answer for the special-districts rail. */
+export function recordSpecialDistrictNamesAnswer(
+  rail: ParcelRecordRail | undefined,
+): RecordRailAnswer<string[]> {
+  return recordRailAnswer(rail, rawSpecialDistrictNames);
 }
 
 /**
@@ -257,20 +567,32 @@ function asUtilityHolder(value: unknown): RecordUtilityHolder | null | undefined
   };
 }
 export function recordUtilityService(rail: ParcelRecordRail | undefined): RecordUtilityService | undefined {
-  if (!rail || rail.serve !== "record" || !rail.cell) return undefined;
-  const cell = rail.cell;
-  if (asNullableString(cell.kind) !== "value") return undefined;
-  const value = asRecord(cell.value);
+  const answer = recordUtilityServiceAnswer(rail);
+  return answer.form === "value" ? answer.value : undefined;
+}
+
+/**
+ * A malformed individual holder reads as "no holder on file" for that ONE
+ * service (== null), never as "the whole rail is unusable" — see
+ * asUtilityHolder's own doc. A `cell.value` that is not an object at all is the
+ * rail failing to answer, which P-302 reports as a refusal.
+ */
+function rawUtilityService(rail: ParcelRecordRail): RecordUtilityService | undefined {
+  const value = asRecord(rail.cell?.value);
   if (!value) return undefined;
-  // A malformed individual holder reads as "no holder on file" for that ONE
-  // service (== null), never as "the whole rail is unusable" — see
-  // asUtilityHolder's own doc.
   const asHolderOrNull = (v: unknown) => asUtilityHolder(v) ?? null;
   return {
     water: asHolderOrNull(value.water),
     sewer: asHolderOrNull(value.sewer),
     electric: asHolderOrNull(value.electric),
   };
+}
+
+/** P-302: the three-way answer for the utility-service rail. */
+export function recordUtilityServiceAnswer(
+  rail: ParcelRecordRail | undefined,
+): RecordRailAnswer<RecordUtilityService> {
+  return recordRailAnswer(rail, rawUtilityService);
 }
 
 /**
@@ -300,12 +622,13 @@ export interface RecordOverlayDistrictsResult {
   checked: boolean;
 }
 export function recordOverlayDistricts(rail: ParcelRecordRail | undefined): RecordOverlayDistrictsResult | undefined {
-  if (!rail || rail.serve !== "record" || !rail.cell) return undefined;
-  const kind = asNullableString(rail.cell.kind);
-  if (kind === "absent-verified") return { districts: [], checked: true };
-  if (kind !== "value") return undefined;
-  const rows = (rail.companions as Array<{ payload?: unknown }> | undefined) ?? [];
-  const districts = rows
+  const answer = recordOverlayDistrictsAnswer(rail);
+  return answer.form === "value" ? { districts: answer.value, checked: true } : undefined;
+}
+
+/** The overlay districts a `value` cell carries on its companion rows. An empty row set is `[]` — a checked, genuinely-zero answer, not a failure to answer. */
+function rawOverlayDistricts(rail: ParcelRecordRail): RecordOverlayDistrict[] {
+  return asCompanionRows(rail)
     .map((row): RecordOverlayDistrict | null => {
       const payload = asRecord(row.payload);
       if (!payload) return null;
@@ -322,7 +645,13 @@ export function recordOverlayDistricts(rail: ParcelRecordRail | undefined): Reco
       };
     })
     .filter((d): d is RecordOverlayDistrict => d !== null);
-  return { districts, checked: true };
+}
+
+/** P-302: the three-way answer for the overlay-districts rail. A stated absence (`absent-verified`) is an absence here, which is what keeps it distinct from the `blocked-at-source` a rail that never ran earns. */
+export function recordOverlayDistrictsAnswer(
+  rail: ParcelRecordRail | undefined,
+): RecordRailAnswer<RecordOverlayDistrict[]> {
+  return recordRailAnswer(rail, rawOverlayDistricts);
 }
 
 /**
@@ -331,5 +660,11 @@ export function recordOverlayDistricts(rail: ParcelRecordRail | undefined): Reco
  * read via the existing scalar-number path, never re-implemented.
  */
 export function recordParcelAreaSqFt(rail: ParcelRecordRail | undefined): number | undefined {
-  return recordScalarNumber(rail);
+  const answer = recordParcelAreaSqFtAnswer(rail);
+  return answer.form === "value" ? answer.value : undefined;
+}
+
+/** P-302: the three-way answer for the parcel-area rail — the same scalar-number path, never re-implemented. */
+export function recordParcelAreaSqFtAnswer(rail: ParcelRecordRail | undefined): RecordRailAnswer<number> {
+  return recordRailAnswer(rail, rawScalarNumber);
 }
