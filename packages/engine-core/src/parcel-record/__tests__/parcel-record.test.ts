@@ -60,6 +60,155 @@ function accountUnaccounted(rec: ParcelRecordRow, except: readonly ParcelRecordR
   }
 }
 
+/* --------------------------------------------------------------------------------------- *
+ * P-308 PARITY ORACLE - a frozen copy of the factory's job-level completion step.
+ *
+ * Source: hauska-factory src/jobs/parcel-record-fill.mjs:889-923 at commit 1fa850e7 (the
+ * commit the P-266/P-268 close names for P-268; read at origin/main 2026-09-17). Copied
+ * verbatim in semantics and constants; only the types are erased. It is the EXPECTED
+ * OUTPUT of the pair, not a second implementation this repo ships: the engine must produce
+ * what engine+factory produces, and the factory's own cellsMoved must fall to 0.
+ *
+ * Do NOT edit this copy to match a factory change. The factory side is what is being
+ * re-vendored and retired; if the factory's predicate ever changes, that is a divergence
+ * this test exists to catch, and it is settled by a ruling, not by editing the oracle.
+ *
+ * The factory's own reason string, quoted: "The predicate is the engine's own signal, not a
+ * copy of it: a basis with `source: \"cad_property\"` and NO taxYear is reachable only from
+ * cadJoinMissVerified (a matched row's basis always carries taxYear -- cadNullVerified
+ * refuses to emit without one). A companion already earned is never touched."
+ * --------------------------------------------------------------------------------------- */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type P308FactoryRecord = { countyFips: string; propId: string; cells: Record<string, any> };
+
+const P308_FACTORY_JOIN_MISS_COMPANION_PAIRS = Object.freeze([
+  { railKey: "acreageAcres", companionRailKey: "acreageMethod" },
+  { railKey: "landUseCode", companionRailKey: "landUseSource" },
+]);
+
+function p308FactoryIsCadJoinMissBasis(basis: any): boolean {
+  return Boolean(basis)
+    && basis.source === "cad_property"
+    && basis.taxYear === undefined
+    && basis.vintage != null
+    && typeof basis.propId === "string";
+}
+
+function factoryCompleteJoinMissCompanionsOntoRecords(
+  records: P308FactoryRecord[],
+  vintage: string,
+): { cellsMoved: number; parcelsTouched: number } {
+  let cellsMoved = 0;
+  let parcelsTouched = 0;
+  for (const rec of records) {
+    let touched = false;
+    for (const { railKey, companionRailKey } of P308_FACTORY_JOIN_MISS_COMPANION_PAIRS) {
+      const primary = rec.cells[railKey];
+      const companion = rec.cells[companionRailKey];
+      if (!primary || !companion) continue;
+      if (primary.kind !== "absent-verified") continue;
+      if (!p308FactoryIsCadJoinMissBasis(primary.basis)) continue;
+      if (companion.kind !== "unaccounted") continue;
+      rec.cells[companionRailKey] = {
+        kind: "absent-verified",
+        basis: { source: "cad_property", countyFips: rec.countyFips, propId: rec.propId, vintage },
+      };
+      cellsMoved += 1;
+      touched = true;
+    }
+    if (touched) parcelsTouched += 1;
+  }
+  return { cellsMoved, parcelsTouched };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * One fixture set for the P-308 parity test: a bare join miss, a matched row with nulls, a
+ * matched row with values, a join miss whose provenance field is already earned (value), a
+ * join miss whose provenance field is already earned (absent-verified, matched basis), and
+ * a join miss whose PRIMARY carries a stale matched-row basis. Both sides get a fresh
+ * instantiation, so any disagreement is the passes' and not shared object identity.
+ *
+ * `nowIso` is PINNED: `instantiateParcelRecord` stamps the structural `countyFips` cell with
+ * `new Date().toISOString()`, so two unpinned instantiations straddling a millisecond make a
+ * whole-record comparison fail on a field neither pass touches. Measured under a loaded full
+ * `pnpm test` run before this was pinned (record 0, rail countyFips: same value, different
+ * vintage). Pinning is also the stricter fixture: both sides start byte-identical.
+ */
+function p308FixtureSet(): ParcelRecordRow[] {
+  const NOW_ISO = "2026-09-17T00:00:00.000Z";
+  const joinMissBare = instantiateParcelRecord({
+    countyFips: "48209",
+    propId: "88885",
+    incorporated: true,
+    nowIso: NOW_ISO,
+  });
+  const matchedNulls = instantiateParcelRecord({
+    countyFips: "48309",
+    propId: "1",
+    incorporated: true,
+    nowIso: NOW_ISO,
+  });
+  const matchedValues = instantiateParcelRecord({
+    countyFips: "48055",
+    propId: "2",
+    incorporated: true,
+    nowIso: NOW_ISO,
+  });
+  const preEarnedValue = instantiateParcelRecord({
+    countyFips: "48491",
+    propId: "R900001",
+    incorporated: true,
+    nowIso: NOW_ISO,
+  });
+  preEarnedValue.cells.landUseSource = {
+    kind: "value",
+    value: "cad-roll",
+    source: "cad_property",
+    vintage: "2025",
+  };
+  const preEarnedAbsent = instantiateParcelRecord({
+    countyFips: "48491",
+    propId: "R900002",
+    incorporated: true,
+    nowIso: NOW_ISO,
+  });
+  preEarnedAbsent.cells.acreageMethod = {
+    kind: "absent-verified",
+    basis: {
+      source: "cad_property",
+      countyFips: "48491",
+      propId: "R900002",
+      taxYear: 2024,
+      vintage: "2024",
+    },
+  };
+  const staleMatchedPrimary = instantiateParcelRecord({
+    countyFips: "48491",
+    propId: "R900003",
+    incorporated: true,
+    nowIso: NOW_ISO,
+  });
+  staleMatchedPrimary.cells.acreageAcres = {
+    kind: "absent-verified",
+    basis: {
+      source: "cad_property",
+      countyFips: "48491",
+      propId: "R900003",
+      taxYear: 2024,
+      vintage: "2024",
+    },
+  };
+  return [
+    joinMissBare,
+    matchedNulls,
+    matchedValues,
+    preEarnedValue,
+    preEarnedAbsent,
+    staleMatchedPrimary,
+  ];
+}
+
 describe("parcel-record rail set", () => {
   it("has a closed derived set (65 rails as of 2026-09-01 v2)", () => {
     expect(PARCEL_RECORD_RAIL_COUNT).toBe(65);
@@ -706,5 +855,201 @@ describe("ingest existing CAD", () => {
     );
     expect(rec.cells.acreageAcres.kind).toBe("absent-verified");
     expect(rec.cells.acreageMethod.kind).toBe("absent-verified");
+  });
+
+  /* --------------------------------------------------------------------------------------- *
+   * P-308 (2026-09-17). The join-miss path left its two provenance fields unaccounted.
+   *
+   * `acreageMethod` says where `acreageAcres` came from; `landUseSource` says where
+   * `landUseCode` came from. The MATCHED branch stamps both beside their primary (the tests
+   * just above). The JOIN-MISS branch stamped the 13 value-scalars and neither provenance
+   * field, so every join-miss parcel carried an absent-verified primary beside an
+   * `unaccounted` provenance forever, and no replay could reach it. Measured on Hays by the
+   * P-266/P-268 lane 2026-09-17 and worked around job-side in the factory
+   * (`completeJoinMissCompanionsOntoRecords`, factory 1fa850e7). PLAN-ROW P-308 owns the
+   * engine half. The tests below hold the fix to the factory's own predicate; the parity
+   * test runs both sides over one fixture set and fails on any disagreement.
+   * --------------------------------------------------------------------------------------- */
+
+  function joinMissBasis(countyFips: string, propId: string, vintage: string) {
+    return { source: "cad_property", countyFips, propId, vintage };
+  }
+
+  it("(P-308 falsifier 1) a join miss accounts BOTH provenance fields with the join-miss basis, and the basis carries no taxYear", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48209",
+      propId: "88885",
+      incorporated: true,
+    });
+    ingestCadOntoRecords([rec], new Map(), "2025-p308");
+
+    const basis = joinMissBasis("48209", "88885", "2025-p308");
+    expect(rec.cells.landUseCode).toEqual({ kind: "absent-verified", basis });
+    expect(rec.cells.landUseSource).toEqual({ kind: "absent-verified", basis });
+    expect(rec.cells.acreageAcres).toEqual({ kind: "absent-verified", basis });
+    expect(rec.cells.acreageMethod).toEqual({ kind: "absent-verified", basis });
+
+    // The join-miss badge is defined by the ABSENCE of a taxYear (a matched row's basis
+    // always carries one). Assert it explicitly rather than trusting the shape above.
+    for (const rail of ["acreageMethod", "landUseSource", "acreageAcres", "landUseCode"] as const) {
+      const cell = rec.cells[rail];
+      expect(cell.kind).toBe("absent-verified");
+      expect("taxYear" in (cell as { basis: Record<string, unknown> }).basis).toBe(false);
+    }
+  });
+
+  it("(P-308 falsifier 2) a matched record keeps the matched basis on its companions, with taxYear", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48309",
+      propId: "1",
+      incorporated: true,
+    });
+    ingestCadOntoRecords(
+      [rec],
+      new Map([["1", mclennanNullCad({ land_acres: null, property_use_code: null })]]),
+      "2025",
+    );
+    const matchedBasis = {
+      source: "cad_property",
+      countyFips: "48309",
+      propId: "1",
+      taxYear: 2025,
+      vintage: "2025",
+    };
+    expect(rec.cells.landUseSource).toEqual({ kind: "absent-verified", basis: matchedBasis });
+    expect(rec.cells.acreageMethod).toEqual({ kind: "absent-verified", basis: matchedBasis });
+  });
+
+  it("(P-308 falsifier 3a) a companion already earned is never rewritten, by a join miss", () => {
+    type P308Cell = ParcelRecordRow["cells"]["landUseSource"];
+    // (i) pre-earned value companion.
+    const valueRec = instantiateParcelRecord({
+      countyFips: "48491",
+      propId: "R900001",
+      incorporated: true,
+    });
+    const earned: P308Cell = {
+      kind: "value",
+      value: "cad-roll",
+      source: "cad_property",
+      vintage: "2025",
+    };
+    valueRec.cells.landUseSource = earned;
+    const valueMoved = ingestCadOntoRecords([valueRec], new Map(), "2025-p308");
+    expect(valueRec.cells.landUseSource).toBe(earned);
+    // The 15th cell is NOT counted for an earned companion: this record moves 14.
+    expect(valueMoved.cellsMoved).toBe(14);
+
+    // (ii) pre-earned absent-verified companion (a matched-row basis), same treatment.
+    const absentRec = instantiateParcelRecord({
+      countyFips: "48491",
+      propId: "R900002",
+      incorporated: true,
+    });
+    const earnedAbsent: P308Cell = {
+      kind: "absent-verified",
+      basis: { source: "cad_property", countyFips: "48491", propId: "R900002", taxYear: 2024, vintage: "2024" },
+    };
+    absentRec.cells.acreageMethod = earnedAbsent;
+    const absentMoved = ingestCadOntoRecords([absentRec], new Map(), "2025-p308");
+    expect(absentRec.cells.acreageMethod).toBe(earnedAbsent);
+    expect(absentMoved.cellsMoved).toBe(14);
+  });
+
+  it("(P-308 falsifier 3b) a primary absent-verified WITHOUT the join-miss badge never earns a join-miss provenance beside it", () => {
+    // A stale matched-row write: the primary's basis carries taxYear, so this pass has no
+    // join miss to attribute a provenance to and must leave the field unaccounted. The
+    // factory predicate refuses the same case; the parity test pins that they agree.
+    const staleRec = instantiateParcelRecord({
+      countyFips: "48491",
+      propId: "R900003",
+      incorporated: true,
+    });
+    const stalePrimary = {
+      kind: "absent-verified" as const,
+      basis: { source: "cad_property", countyFips: "48491", propId: "R900003", taxYear: 2024, vintage: "2024" },
+    };
+    staleRec.cells.acreageAcres = stalePrimary;
+    ingestCadOntoRecords([staleRec], new Map(), "2025-p308");
+    expect(staleRec.cells.acreageMethod.kind).toBe("unaccounted");
+    expect(staleRec.cells.acreageAcres).toBe(stalePrimary);
+  });
+
+  it("(P-308 falsifier 7) the join-miss pass accounts exactly the 13 value-scalars plus the 2 provenance fields, and nothing else", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48209",
+      propId: "88885",
+      incorporated: true,
+    });
+    const unaccountedBefore = PARCEL_RECORD_RAIL_KEYS.filter(
+      (key) => rec.cells[key].kind === "unaccounted",
+    );
+    ingestCadOntoRecords([rec], new Map(), "2025-p308");
+    const moved = unaccountedBefore.filter((key) => rec.cells[key].kind !== "unaccounted");
+
+    expect(moved).toHaveLength(15);
+    expect([...moved].sort()).toEqual([
+      "acreageAcres",
+      "acreageMethod",
+      "assessedValue",
+      "exemptionCodes",
+      "improvementValue",
+      "landUseCode",
+      "landUseSource",
+      "landValue",
+      "legalDescription",
+      "livingAreaSqft",
+      "marketValue",
+      "situsAddress",
+      "situsCity",
+      "situsZip",
+      "yearBuilt",
+    ]);
+  });
+
+  it("(P-308 falsifier 6) a replay of the join-miss pass moves nothing", () => {
+    const rec = instantiateParcelRecord({
+      countyFips: "48209",
+      propId: "88885",
+      incorporated: true,
+    });
+    const first = ingestCadOntoRecords([rec], new Map(), "2025-p308");
+    expect(first.cellsMoved).toBe(15);
+    const method = rec.cells.acreageMethod;
+    const source = rec.cells.landUseSource;
+
+    const second = ingestCadOntoRecords([rec], new Map(), "2025-p308");
+    expect(second.cellsMoved).toBe(0);
+    expect(rec.cells.acreageMethod).toBe(method);
+    expect(rec.cells.landUseSource).toBe(source);
+  });
+
+  it("(P-308 parity) the engine's join-miss output equals the engine's output run through the factory's job-level completion step, cell for cell", () => {
+    const cad = new Map<string, CadPropertyRow>([
+      ["1", mclennanNullCad({ land_acres: null, property_use_code: null })],
+      ["2", mclennanNullCad({ prop_id: "2", land_acres: 1.5, property_use_code: "A1" })],
+    ]);
+
+    const engineOnly = p308FixtureSet();
+    ingestCadOntoRecords(engineOnly, cad, "2025-p308");
+
+    const engineThenFactory = p308FixtureSet();
+    ingestCadOntoRecords(engineThenFactory, cad, "2025-p308");
+    const factoryPass = factoryCompleteJoinMissCompanionsOntoRecords(engineThenFactory, "2025-p308");
+
+    expect(engineOnly).toHaveLength(engineThenFactory.length);
+    for (let i = 0; i < engineOnly.length; i += 1) {
+      for (const rail of PARCEL_RECORD_RAIL_KEYS) {
+        expect(
+          engineOnly[i]!.cells[rail],
+          `record ${i} (${engineOnly[i]!.placeKey}) rail ${rail}: the engine's own join-miss path must produce what the engine + the factory's job-level step produce`,
+        ).toEqual(engineThenFactory[i]!.cells[rail]);
+      }
+    }
+
+    // The strongest statement available that the engine has ABSORBED the job-level pass:
+    // run against a fixed engine, the factory step has nothing left to do. The factory
+    // workaround becomes a no-op, which is what lets the integration seat retire it.
+    expect(factoryPass).toEqual({ cellsMoved: 0, parcelsTouched: 0 });
   });
 });
