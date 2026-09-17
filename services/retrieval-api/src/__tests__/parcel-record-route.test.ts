@@ -4,7 +4,7 @@ import { InMemoryStorage, buildHaysZoningFactProof } from "@hauska-engine/storag
 
 import { buildApp } from "../server.js";
 import { memoryFactoryStore } from "../parcel-record-db.js";
-import { readParcelRecord } from "../parcel-record-reader.js";
+import { isSlatedForCellServe, readParcelRecord } from "../parcel-record-reader.js";
 
 /**
  * Non-vacuity + refusal tests required by the P-152 dispatch step 6.
@@ -229,5 +229,128 @@ describe("readParcelRecord (unit)", () => {
       "34049",
     );
     expect(result.rails.cityLimits!.cell).toBeNull();
+  });
+});
+
+/**
+ * P-299/P-282 falsifier 4: "A slated Hays record-overlay rail is served from its
+ * cell by the retrieval reader in a test."
+ *
+ * The six 48209 (Hays) record-overlay rails are new to this copy in the
+ * 2026-09-17 re-vendor (LDT lifted its fix(P-177) holdback in 1ca3c7fe,
+ * fix(P-180)). Before that re-vendor none of these tests could exist, because
+ * the rail was unslated here and the reader would have taken the pre-cutover
+ * path. That is why the first assertion checks the SLATE rather than assuming
+ * it: the serve behaviour below is only reachable if the vendored copy really
+ * carries the pair.
+ *
+ * Fixtures are captured verbatim from a live, read-only query against
+ * FACTORY_DATABASE_URL_RO (role parcel_record_ro, SELECT-only) on 2026-09-17 at
+ * 18:03:41-18:03:55Z — the same window the re-vendor read the six verdicts in.
+ * The one synthesized value is labelled as such (a refusing verdict on a slated
+ * rail, which no live 48209:marketValue row holds today).
+ */
+describe("P-299/P-282 falsifier 4 — a slated Hays record-overlay rail is served from its own cell", () => {
+  const HAYS_PLACE = "48209:156346";
+
+  /** Live 2026-09-17T18:03:45Z, verbatim. */
+  const HAYS_MARKET_VALUE_VERDICT = {
+    countyFips: "48209",
+    railKey: "marketValue",
+    verdict: "pass" as const,
+    evaluatedAt: "2026-09-17T18:03:45.026Z",
+  };
+
+  /** Live 2026-09-17, verbatim: the parcel's own earned cell on the rail. */
+  const HAYS_MARKET_VALUE_CELL = {
+    kind: "value",
+    value: "65460",
+    source: "cad_property",
+    vintage: "2026-09-13T23:43:55.984Z",
+  };
+
+  it("the pair is in the vendored slate (otherwise the behaviour below is unreachable by construction)", () => {
+    expect(isSlatedForCellServe("48209", "marketValue")).toBe(true);
+    // Non-vacuity: an unslated Hays rail, used as the control below.
+    expect(isSlatedForCellServe("48209", "pipelines")).toBe(false);
+  });
+
+  it("serves the parcel's OWN cell as `record`, verbatim, not the legacy or baked value", async () => {
+    const factoryStore = memoryFactoryStore({
+      places: [HAYS_PLACE],
+      cells: [{ placeKey: HAYS_PLACE, railKey: "marketValue", cellState: HAYS_MARKET_VALUE_CELL }],
+      verdicts: [HAYS_MARKET_VALUE_VERDICT],
+    });
+    const app = buildApp({ storage: new InMemoryStorage(), apiKey: "", factoryStore });
+
+    const res = await app.request(`/property-nodes/${HAYS_PLACE}/record`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rails: Record<string, { cell: unknown; serve: string; gate: unknown; refusal: unknown }>;
+    };
+
+    const rail = body.rails.marketValue!;
+    expect(rail.serve).toBe("record");
+    expect(rail.cell).toEqual(HAYS_MARKET_VALUE_CELL);
+    expect(rail.refusal).toBeNull();
+    // The rail's value is the cell's, and the cell carries its own source and vintage.
+    expect((rail.cell as { value: string }).value).toBe("65460");
+    expect(rail.gate).toEqual({ verdict: "pass", evaluatedAt: "2026-09-17T18:03:45.026Z" });
+  });
+
+  it("still serves the cell when the county's gate verdict is NOT pass — the verdict travels as information and decides nothing (A-193)", async () => {
+    // SYNTHESIZED pairing, labelled: a real refusing verdict kind on the slated
+    // rail. No live 48209:marketValue verdict row reads this today (it reads
+    // `pass`); the point is that the serve decision does not look at it.
+    const factoryStore = memoryFactoryStore({
+      places: [HAYS_PLACE],
+      cells: [{ placeKey: HAYS_PLACE, railKey: "marketValue", cellState: HAYS_MARKET_VALUE_CELL }],
+      verdicts: [
+        {
+          countyFips: "48209",
+          railKey: "marketValue",
+          verdict: "excluded-no-acquisition-path" as const,
+          evaluatedAt: "2026-09-17T00:00:00.000Z",
+        },
+      ],
+    });
+    const app = buildApp({ storage: new InMemoryStorage(), apiKey: "", factoryStore });
+
+    const res = await app.request(`/property-nodes/${HAYS_PLACE}/record`);
+    const body = (await res.json()) as {
+      rails: Record<string, { cell: unknown; serve: string; gate: { verdict: string } }>;
+    };
+    expect(body.rails.marketValue!.serve).toBe("record");
+    expect(body.rails.marketValue!.cell).toEqual(HAYS_MARKET_VALUE_CELL);
+    expect(body.rails.marketValue!.gate.verdict).toBe("excluded-no-acquisition-path");
+  });
+
+  it("declares a refusal naming the missing row when the slated Hays rail has NO cell — never a legacy value", async () => {
+    const factoryStore = memoryFactoryStore({
+      places: [HAYS_PLACE],
+      verdicts: [HAYS_MARKET_VALUE_VERDICT],
+    });
+    const app = buildApp({ storage: new InMemoryStorage(), apiKey: "", factoryStore });
+
+    const res = await app.request(`/property-nodes/${HAYS_PLACE}/record`);
+    const body = (await res.json()) as {
+      rails: Record<string, { serve: string; cell: unknown; refusal: { code: string } | null }>;
+    };
+    expect(body.rails.marketValue!.serve).toBe("refused");
+    expect(body.rails.marketValue!.cell).toBeNull();
+    expect(body.rails.marketValue!.refusal!.code).toBe("no-such-parcel-or-rail");
+  });
+
+  it("control: the SAME cell on an unslated Hays rail keeps the pre-cutover path, so it is the slate that makes the difference", async () => {
+    const factoryStore = memoryFactoryStore({
+      places: [HAYS_PLACE],
+      cells: [{ placeKey: HAYS_PLACE, railKey: "pipelines", cellState: HAYS_MARKET_VALUE_CELL }],
+      verdicts: [HAYS_MARKET_VALUE_VERDICT],
+    });
+    const app = buildApp({ storage: new InMemoryStorage(), apiKey: "", factoryStore });
+
+    const res = await app.request(`/property-nodes/${HAYS_PLACE}/record`);
+    const body = (await res.json()) as { rails: Record<string, { serve: string }> };
+    expect(body.rails.pipelines!.serve).toBe("legacy-transitional");
   });
 });
