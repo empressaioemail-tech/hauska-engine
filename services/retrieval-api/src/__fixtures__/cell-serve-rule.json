@@ -1,0 +1,216 @@
+{
+  "_purpose": "P-297 (operator ruling A-193, OPS-24 law 7): ONE row per parcel_record cell state, with the serve decision that cell state must produce on a slated rail. This file is the contract between the LDT half and the hauska-engine half of P-297: both readers consume the same rows, so they cannot disagree about what a cell state means. The LDT test is artifacts/api-server/src/lib/cellServeRule.test.ts.",
+  "_ruleId": "cell-serve-rule-v1",
+  "_authority": "_decisions/2026-09-16_county_verdict_is_not_the_serve_switch.md",
+  "_shape": {
+    "name": "stable row name, quoted verbatim in both repos' tests and in the P-297 close",
+    "slated": "is this (county, rail) pair in the code-owned slate? The slate, NOT the county gate verdict, is the cut-over switch.",
+    "cellState": "the store's own parcel_record_cell.cell_state object, verbatim, or null when there is no cell row at all. Kinds: value | absent-verified | not-applicable | refused | unaccounted.",
+    "companionRows": "optional parcel_record_companion_row payloads; present on one row to prove they do not change the decision",
+    "expect": {
+      "serve": "cell = the cell's own answer is served; current-path = the rail's pre-cutover path runs untouched",
+      "form": "value | absence | refusal, or null on current-path",
+      "absenceVerdict": "absent-verified | not-applicable when form=absence, else null",
+      "refusalCode": "the reader's own refusal code when form=refusal, else null"
+    }
+  },
+  "_notCoveredHere": [
+    "A `value` cell whose payload does not coerce into the rail's own domain (a negative dollar, a zero livingAreaSqft) is a declared refusal, but the coercion rule is per-rail, so it is asserted in each rail adapter's own test (P-269 does it for the dollar and structural rails in cadRollFactFromParcelRecord.test.ts). This file cannot express it without inventing a rail.",
+    "Transport failure (retrieval service unreachable, no credential). The LDT reader turns it into a refused cell carrying code `store-not-configured`, which this file already covers through the refusal rows; the transport-level row is repo-local and lives in cellServeRule.test.ts, because the engine does not read a cell over the same transport."
+  ],
+  "pinnedRowNames": [
+    "unslated-value-cell-keeps-the-current-path",
+    "unslated-no-cell-keeps-the-current-path",
+    "slated-value-cell-is-served-as-its-value",
+    "slated-verified-zero-is-served-as-zero-not-as-an-absence",
+    "slated-value-cell-with-companion-rows-is-still-a-value",
+    "slated-absent-verified-is-served-as-the-stated-absence",
+    "slated-not-applicable-is-a-stated-absence-not-a-refusal",
+    "slated-refused-cell-is-a-declared-refusal-carrying-the-engines-own-reason",
+    "slated-unaccounted-cell-is-a-declared-refusal-never-a-legacy-value",
+    "slated-malformed-cell-is-a-declared-refusal-not-a-guess",
+    "slated-no-cell-at-all-is-a-declared-refusal-naming-the-missing-row"
+  ],
+  "_pinnedRowNamesWhy": "The rows a COPY of this file may not quietly drop. Adding a row is fine and expected (a reader may add one to document a state it discovered); removing or renaming one is how a fixture stops being a contract. cellServeRule.test.ts asserts this list equals its own PINNED_ROW_NAMES and that every name in it is present in rows, so the file and the test cannot drift apart.",
+  "rows": [
+    {
+      "name": "unslated-value-cell-keeps-the-current-path",
+      "slated": false,
+      "cellState": {
+        "kind": "value",
+        "source": "@empressaio/setback-corpus@1.3.0:bastrop-development-code",
+        "vintage": "2026-08-26 certified export",
+        "value": "40"
+      },
+      "companionRows": [],
+      "expect": {
+        "serve": "current-path",
+        "form": null,
+        "absenceVerdict": null,
+        "refusalCode": null
+      }
+    },
+    {
+      "name": "unslated-no-cell-keeps-the-current-path",
+      "slated": false,
+      "cellState": null,
+      "companionRows": [],
+      "expect": {
+        "serve": "current-path",
+        "form": null,
+        "absenceVerdict": null,
+        "refusalCode": null
+      }
+    },
+    {
+      "name": "slated-value-cell-is-served-as-its-value",
+      "slated": true,
+      "cellState": {
+        "kind": "value",
+        "source": "@empressaio/setback-corpus@1.3.0:bastrop-development-code",
+        "vintage": "2026-08-26 certified export",
+        "value": "40"
+      },
+      "companionRows": [],
+      "expect": {
+        "serve": "cell",
+        "form": "value",
+        "absenceVerdict": null,
+        "refusalCode": null
+      }
+    },
+    {
+      "name": "slated-verified-zero-is-served-as-zero-not-as-an-absence",
+      "slated": true,
+      "cellState": {
+        "kind": "value",
+        "source": "cad_property",
+        "vintage": "2026",
+        "value": 0
+      },
+      "companionRows": [],
+      "expect": {
+        "serve": "cell",
+        "form": "value",
+        "absenceVerdict": null,
+        "refusalCode": null
+      }
+    },
+    {
+      "name": "slated-value-cell-with-companion-rows-is-still-a-value",
+      "slated": true,
+      "cellState": {
+        "kind": "value",
+        "source": "tx_rrc",
+        "vintage": "2026-08-16",
+        "value": null,
+        "disposition": "rows",
+        "rowCount": 1
+      },
+      "companionRows": [
+        {
+          "rowIndex": 0,
+          "payload": { "api": "42000001030000", "wellStatus": "dry", "isOrphan": false },
+          "source": "tx_rrc",
+          "vintage": "2026-08-16"
+        }
+      ],
+      "expect": {
+        "serve": "cell",
+        "form": "value",
+        "absenceVerdict": null,
+        "refusalCode": null
+      }
+    },
+    {
+      "name": "slated-absent-verified-is-served-as-the-stated-absence",
+      "slated": true,
+      "cellState": {
+        "kind": "absent-verified",
+        "basis": {
+          "method": "zone-major-sweep",
+          "finding": "no tx_rrc_well point falls within this parcel's geometry",
+          "vintage": "2026-08-16"
+        }
+      },
+      "companionRows": [],
+      "expect": {
+        "serve": "cell",
+        "form": "absence",
+        "absenceVerdict": "absent-verified",
+        "refusalCode": null
+      }
+    },
+    {
+      "name": "slated-not-applicable-is-a-stated-absence-not-a-refusal",
+      "slated": true,
+      "cellState": {
+        "kind": "not-applicable",
+        "reason": "unincorporated; the county's unincorporated territory is unzoned"
+      },
+      "companionRows": [],
+      "expect": {
+        "serve": "cell",
+        "form": "absence",
+        "absenceVerdict": "not-applicable",
+        "refusalCode": null
+      }
+    },
+    {
+      "name": "slated-refused-cell-is-a-declared-refusal-carrying-the-engines-own-reason",
+      "slated": true,
+      "cellState": {
+        "kind": "refused",
+        "reason": "no usable zoning district could be resolved for this parcel from the declared source"
+      },
+      "companionRows": [],
+      "expect": {
+        "serve": "cell",
+        "form": "refusal",
+        "absenceVerdict": null,
+        "refusalCode": "engine-refused"
+      }
+    },
+    {
+      "name": "slated-unaccounted-cell-is-a-declared-refusal-never-a-legacy-value",
+      "slated": true,
+      "cellState": {
+        "kind": "unaccounted"
+      },
+      "companionRows": [],
+      "expect": {
+        "serve": "cell",
+        "form": "refusal",
+        "absenceVerdict": null,
+        "refusalCode": "unaccounted"
+      }
+    },
+    {
+      "name": "slated-malformed-cell-is-a-declared-refusal-not-a-guess",
+      "slated": true,
+      "cellState": {
+        "kind": "something-this-reader-has-never-seen",
+        "value": 12
+      },
+      "companionRows": [],
+      "expect": {
+        "serve": "cell",
+        "form": "refusal",
+        "absenceVerdict": null,
+        "refusalCode": "malformed-cell"
+      }
+    },
+    {
+      "name": "slated-no-cell-at-all-is-a-declared-refusal-naming-the-missing-row",
+      "slated": true,
+      "cellState": null,
+      "companionRows": [],
+      "expect": {
+        "serve": "cell",
+        "form": "refusal",
+        "absenceVerdict": null,
+        "refusalCode": "no-such-parcel-or-rail"
+      }
+    }
+  ]
+}
