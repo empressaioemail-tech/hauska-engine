@@ -31,6 +31,9 @@ export {
   reconcileCountyParcelNodes,
   reviewRetiredParcelNodes,
   type CountyReconcilePlan,
+  type LiveCurrencyMeasurement,
+  type LiveCurrencyReading,
+  type LiveCurrencyReadings,
   type OrphanRetirementVerdict,
   type ParcelNodeOrphan,
   type ParcelNodeSurvivor,
@@ -39,6 +42,7 @@ export {
   type RetiredParcelNodeReviewCandidate,
   type RetiredParcelNodeReviewVerdict,
   type RetiredParcelNodeStillRetired,
+  type RetiredParcelNodeUnmeasured,
   type StoredParcelNodeRow,
 } from "./reconcile-county-parcel-nodes.js";
 

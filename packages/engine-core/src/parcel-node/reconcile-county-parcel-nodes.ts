@@ -313,11 +313,79 @@ export interface RetiredParcelNodeStillRetired {
   reason: string;
 }
 
+/**
+ * P-275: a candidate NOBODY obtained a reading for.
+ *
+ * This is not a weaker "absent" — it is the absence of a measurement. The distinction is
+ * the whole point of the tri-state reading: a county whose source is unreachable, or is
+ * not registered at all, must report that its candidates are UNMEASURED, never that they
+ * were found missing. Collapsing the two is how a broken source silently becomes a
+ * confident "not there" for every parcel in a county, and how "0 candidates" reads as a
+ * clean result when nothing was actually asked.
+ */
+export interface RetiredParcelNodeUnmeasured {
+  parcelNodeId: string;
+  reason: string;
+}
+
+/** One candidate's reading from a county's own live cadastral source. */
+export interface LiveCurrencyMeasurement {
+  reading: "live" | "absent" | "unmeasured";
+  /** Why. Required in spirit for `unmeasured`; the caller supplies the transport reason. */
+  reason?: string;
+}
+
+/**
+ * A candidate's live-currency reading.
+ *
+ * A bare `boolean` is accepted for back-compat (`true` -> `live`, `false` -> `absent`).
+ * An id ABSENT from the map is `unmeasured`, NOT `absent`: an empty result is not an
+ * absence claim, it is the absence of a claim.
+ */
+export type LiveCurrencyReading =
+  | boolean
+  | "live"
+  | "absent"
+  | "unmeasured"
+  | LiveCurrencyMeasurement;
+
+export type LiveCurrencyReadings = ReadonlyMap<string, LiveCurrencyReading>;
+
+const UNMEASURED_NO_READING =
+  "no live-currency reading was taken for this parcel: the county's own cadastral source " +
+  "did not answer for it, or no source is registered for the county";
+
+function readLiveCurrency(value: LiveCurrencyReading | undefined): {
+  reading: "live" | "absent" | "unmeasured";
+  reason: string | null;
+} {
+  if (value === undefined) {
+    return { reading: "unmeasured", reason: UNMEASURED_NO_READING };
+  }
+  if (value === true || value === "live") return { reading: "live", reason: null };
+  if (value === false || value === "absent") return { reading: "absent", reason: null };
+  if (value === "unmeasured") {
+    return {
+      reading: "unmeasured",
+      reason: "the county's live-currency source reported no reading for this parcel",
+    };
+  }
+  return { reading: value.reading, reason: value.reason ?? null };
+}
+
 export interface RetiredParcelNodeReviewVerdict {
   countyFips: string;
   /** Candidates a live source corroborated. The only rows a caller may reactivate. */
   reactivate: ReadonlyArray<RetiredParcelNodeReactivation>;
-  /** Candidates the plan predicted again but a live source did NOT corroborate — stay retired. */
+  /** Candidates the plan predicted again and the county's own source reports NOT PRESENT. */
+  confirmedAbsent: ReadonlyArray<RetiredParcelNodeStillRetired>;
+  /** Candidates nobody obtained a reading for. NOT an absence claim — do not report as one. */
+  unmeasured: ReadonlyArray<RetiredParcelNodeUnmeasured>;
+  /**
+   * `confirmedAbsent` followed by `unmeasured`. Retained so existing consumers keep
+   * working; a consumer that reports these as one number is reporting two different
+   * facts as one, and should read `confirmedAbsent`/`unmeasured` directly instead.
+   */
   stillRetired: ReadonlyArray<RetiredParcelNodeStillRetired>;
 }
 
@@ -325,20 +393,29 @@ export interface RetiredParcelNodeReviewVerdict {
  * Apply live corroboration to {@link reviewRetiredParcelNodes}'s candidates.
  *
  * Pure and synchronous on purpose: the live fetch (BCAD, or whatever per-county source
- * exists) happens once in the caller and is handed in as a plain confirmed/not-confirmed
- * map, so THIS decision — which candidates actually get reactivated — is unit-testable
- * against fixtures instead of against a live endpoint. This is the `77293` guard: a
- * candidate absent from `liveCurrency` or mapped `false` stays retired, however
- * confidently the internal plan re-predicted it.
+ * exists) happens once in the caller and is handed in as a plain reading map, so THIS
+ * decision — which candidates actually get reactivated — is unit-testable against
+ * fixtures instead of against a live endpoint. This is the `77293` guard: a candidate
+ * the source did not corroborate stays retired, however confidently the internal plan
+ * re-predicted it.
+ *
+ * P-275: the reading is tri-state. Only `live` reactivates. `absent` and `unmeasured`
+ * both keep the row retired, but they are reported apart — `absent` is a measurement
+ * the county's own source made, `unmeasured` is the absence of one (unreachable source,
+ * unregistered county, transport failure, or an id the source simply was not asked about).
  */
 export function decideRetiredParcelNodeReactivations(
   review: RetiredParcelNodeReview,
-  liveCurrency: ReadonlyMap<string, boolean>,
+  liveCurrency: LiveCurrencyReadings,
 ): RetiredParcelNodeReviewVerdict {
   const reactivate: RetiredParcelNodeReactivation[] = [];
-  const stillRetired: RetiredParcelNodeStillRetired[] = [];
+  const confirmedAbsent: RetiredParcelNodeStillRetired[] = [];
+  const unmeasured: RetiredParcelNodeUnmeasured[] = [];
   for (const candidate of review.candidates) {
-    if (liveCurrency.get(candidate.parcelNodeId) === true) {
+    const { reading, reason } = readLiveCurrency(
+      liveCurrency.get(candidate.parcelNodeId),
+    );
+    if (reading === "live") {
       reactivate.push({
         parcelNodeId: candidate.parcelNodeId,
         reactivatedReason:
@@ -346,14 +423,29 @@ export function decideRetiredParcelNodeReactivations(
           "confirmed live at the county's own cadastral source; the prior retirement " +
           `(${candidate.priorRetiredAt ?? "unknown time"}, reason: ${candidate.priorRetiredReason ?? "unknown"}) is reversed`,
       });
-    } else {
-      stillRetired.push({
+    } else if (reading === "absent") {
+      confirmedAbsent.push({
         parcelNodeId: candidate.parcelNodeId,
         reason:
-          `P-212 review: present in the current plan for county ${review.countyFips} but NOT ` +
-          "confirmed live at the county's own cadastral source; retirement stands pending stronger evidence",
+          `P-212 review: present in the current plan for county ${review.countyFips} but the ` +
+          "county's own live cadastral source reports it NOT PRESENT (measured absent); " +
+          "retirement stands pending stronger evidence",
+      });
+    } else {
+      unmeasured.push({
+        parcelNodeId: candidate.parcelNodeId,
+        reason:
+          `P-275 UNMEASURED: present in the current plan for county ${review.countyFips}, but ` +
+          `${reason ?? UNMEASURED_NO_READING}; the retirement stands and this is NOT a ` +
+          "finding that the parcel is gone",
       });
     }
   }
-  return { countyFips: review.countyFips, reactivate, stillRetired };
+  return {
+    countyFips: review.countyFips,
+    reactivate,
+    confirmedAbsent,
+    unmeasured,
+    stillRetired: [...confirmedAbsent, ...unmeasured],
+  };
 }

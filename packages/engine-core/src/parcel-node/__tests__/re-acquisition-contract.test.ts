@@ -465,13 +465,15 @@ describe("P-212: reconcileCountyParcelNodes cannot recover a false retirement on
       `${COUNTY}:102`,
     ]);
     expect(verdict.stillRetired.map((r) => r.parcelNodeId)).toEqual([`${COUNTY}:103`]);
+    expect(verdict.confirmedAbsent.map((r) => r.parcelNodeId)).toEqual([`${COUNTY}:103`]);
+    expect(verdict.unmeasured).toEqual([]);
 
     // FALSIFIER: a fix that reactivates every candidate regardless of live
     // corroboration is "admitting everything rather than fixing the comparison."
     expect(verdict.reactivate.some((r) => r.parcelNodeId === `${COUNTY}:103`)).toBe(false);
   });
 
-  it("FALSIFIER: an empty live-currency map (no corroboration attempted) reactivates nothing", () => {
+  it("FALSIFIER (P-275): an empty live-currency map (no corroboration attempted) reactivates nothing", () => {
     const afterBadRun: StoredParcelNodeRow[] = [
       { parcelNodeId: `${COUNTY}:101`, status: "retired", sourceVintage: V1, retiredAt: "t", retiredReason: "r" },
     ];
@@ -479,12 +481,75 @@ describe("P-212: reconcileCountyParcelNodes cannot recover a false retirement on
     const review = reviewRetiredParcelNodes(afterBadRun, correctPlan);
     const verdict = decideRetiredParcelNodeReactivations(review, new Map());
     expect(verdict.reactivate).toEqual([]);
-    expect(verdict.stillRetired).toEqual([
+    // P-275: an empty map is the ABSENCE OF A MEASUREMENT, not a measurement of absence.
+    // The candidate lands in `unmeasured` -- never in `confirmedAbsent`, and never in a
+    // report that reads like the county said "not there".
+    expect(verdict.confirmedAbsent).toEqual([]);
+    expect(verdict.unmeasured).toEqual([
       {
         parcelNodeId: `${COUNTY}:101`,
-        reason: expect.stringContaining("NOT confirmed live"),
+        reason: expect.stringContaining("UNMEASURED"),
       },
     ]);
+    expect(verdict.unmeasured[0]!.reason).toContain("NOT a");
+    expect(verdict.stillRetired.map((r) => r.parcelNodeId)).toEqual([`${COUNTY}:101`]);
+  });
+
+  it("P-275 FALSIFIER: an unreachable source reports UNMEASURED, never zero candidates", () => {
+    // The dispatch's falsifier verbatim: "a county whose live source is unreachable
+    // reports UNMEASURED, never zero candidates". The caller (the review script) turns a
+    // transport failure into an `unmeasured` reading for EVERY candidate rather than an
+    // empty map -- both spellings are asserted here so the module cannot drift.
+    const afterBadRun: StoredParcelNodeRow[] = [
+      { parcelNodeId: `${COUNTY}:101`, status: "retired", sourceVintage: V1, retiredAt: "t", retiredReason: "r" },
+      { parcelNodeId: `${COUNTY}:102`, status: "retired", sourceVintage: V1, retiredAt: "t", retiredReason: "r" },
+    ];
+    const correctPlan = planCountyParcelNodes(
+      [feature(11, "101", V1), feature(12, "102", V1)],
+      POLICY,
+    );
+    const review = reviewRetiredParcelNodes(afterBadRun, correctPlan);
+
+    for (const liveCurrency of [
+      // (a) explicit unmeasured readings, the shape the CLI produces on a throw
+      new Map(review.candidates.map((c) => [
+        c.parcelNodeId,
+        { reading: "unmeasured" as const, reason: "ENOTFOUND gis.example.invalid" },
+      ])),
+      // (b) an empty map -- the naive spelling of "the source did not answer"
+      new Map(),
+    ]) {
+      const verdict = decideRetiredParcelNodeReactivations(review, liveCurrency);
+      expect(verdict.reactivate).toEqual([]);
+      expect(verdict.confirmedAbsent).toEqual([]);
+      expect(verdict.unmeasured).toHaveLength(2);
+      expect(verdict.stillRetired).toHaveLength(2);
+    }
+  });
+
+  it("P-275: an absent reading and an unmeasured reading are never the same report line", () => {
+    const afterBadRun: StoredParcelNodeRow[] = [
+      { parcelNodeId: `${COUNTY}:101`, status: "retired", sourceVintage: V1, retiredAt: "t", retiredReason: "r" },
+      { parcelNodeId: `${COUNTY}:102`, status: "retired", sourceVintage: V1, retiredAt: "t", retiredReason: "r" },
+    ];
+    const correctPlan = planCountyParcelNodes(
+      [feature(11, "101", V1), feature(12, "102", V1)],
+      POLICY,
+    );
+    const review = reviewRetiredParcelNodes(afterBadRun, correctPlan);
+    const verdict = decideRetiredParcelNodeReactivations(
+      review,
+      new Map([
+        [`${COUNTY}:101`, "absent" as const],
+        // `102` deliberately has no entry -- a source that answered for one id and not
+        // the other. They must not be reported as the same kind of result.
+        [`${COUNTY}:102`, "unmeasured" as const],
+      ]),
+    );
+    expect(verdict.confirmedAbsent.map((r) => r.parcelNodeId)).toEqual([`${COUNTY}:101`]);
+    expect(verdict.unmeasured.map((r) => r.parcelNodeId)).toEqual([`${COUNTY}:102`]);
+    expect(verdict.confirmedAbsent[0]!.reason).toContain("measured absent");
+    expect(verdict.unmeasured[0]!.reason).toContain("UNMEASURED");
   });
 });
 
