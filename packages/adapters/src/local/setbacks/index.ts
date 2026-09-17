@@ -30,7 +30,12 @@
  * `_decisions/2026-09-13_share_the_most_current_setback_resolver.md`. The
  * algorithm and its public names are unchanged; only the import path moved.
  */
-import { getSetbackTable as getCorpusSetbackTable } from "@empressaio/setback-corpus";
+import {
+  SETBACK_JURISDICTION_KEYS as CORPUS_SETBACK_JURISDICTION_KEYS,
+  getSetbackTable as getCorpusSetbackTable,
+} from "@empressaio/setback-corpus";
+
+export { CORPUS_SETBACK_JURISDICTION_KEYS };
 
 export type {
   SetbackDistrict,
@@ -62,37 +67,159 @@ import {
 } from "@empressaio/setback-corpus/resolve";
 
 /**
- * The jurisdictions this package actually serves — a curated subset of the
- * published corpus, matching this repo's own onboarding history (item-6
- * setback transcription, OPS-19b: Waco/Round Rock/Kyle land as-is per
- * operator go-ahead; Elgin ratified 2026-08-04; Georgetown/San Marcos
- * deliberately withheld pending their own caveats — see doc_repo). Not
- * every corpus jurisdiction is meant to be reachable here.
+ * P-260 (2026-09-17) — the engine's jurisdiction set is READ FROM THE CORPUS,
+ * not kept beside it.
+ *
+ * Before this, `VENDORED_JURISDICTION_KEYS` above was a hand-kept list of 15
+ * keys that happened to be a subset of the corpus's own
+ * `SETBACK_JURISDICTION_KEYS` (43 keys at `@empressaio/setback-corpus@1.4.0`),
+ * and the two could drift in silence: the corpus could gain a jurisdiction and
+ * the engine would neither serve it nor say why, and the engine could name a key
+ * the corpus had dropped and only find out when the throw below fired at module
+ * load. Neither side knew the other's universe.
+ *
+ * Now the corpus supplies the KEY UNIVERSE and this file supplies the POLICY,
+ * and POLICY MUST BE TOTAL: every corpus key carries a row in
+ * {@link SETBACK_ENGINE_REGISTRY} — served, with the routing arm that serves it,
+ * or not served, with the reason. A corpus key with no row is a registry defect
+ * (`__tests__/corpus-registry-divergence.test.ts` fails on it, which is what
+ * makes one side edited alone fail the build rather than drift). The engine's
+ * city routing rules are unchanged and stay here — the corpus is pure data and
+ * was never the place for Bastrop's per-parcel precedence, the repealed B3 Place
+ * Types, the BDC district classification, or the elgin alias resolution.
  */
-const VENDORED_JURISDICTION_KEYS = [
-  "grand-county-ut",
-  "lemhi-county-id",
-  "bastrop-tx",
-  "bastrop-city-tx",
-  "bastrop-development-code",
-  "elgin-development-code",
-  "elgin-tx",
-  "austin-tx",
-  "pflugerville-tx",
-  "san-antonio-tx",
-  "utah-unincorporated",
-  "idaho-unincorporated",
-  "waco-tx",
-  "round-rock-tx",
-  "kyle-tx",
-] as const;
+/** How a jurisdiction the engine SERVES is reached by `getSetbackTableForZoning`. */
+export type SetbackRegistryRouting =
+  /** Bastrop city BDC districts: scalars require the layer-23 per-parcel record (R13); repealed B3 Place Types honest-decline. */
+  | "bastrop-city-layer23"
+  /** bastrop-tx: legacy county rows for non-BDC codes; the city arm owns BDC districts. */
+  | "bastrop-county-legacy"
+  /** elgin-tx (and its canonical key): the city's own development-code table. */
+  | "elgin-development-code"
+  /** No city routing policy: the keyed table is the answer (county and non-routing city tables). */
+  | "keyed-table";
+
+/** Registry row for one corpus jurisdiction. Served or not — never absent. */
+export type SetbackEngineRegistryRow =
+  | {
+      readonly key: string;
+      readonly served: true;
+      readonly routing: SetbackRegistryRouting;
+    }
+  | {
+      readonly key: string;
+      readonly served: false;
+      /** Why THIS engine does not serve a table the corpus carries. Never empty. */
+      readonly reason: string;
+    };
+
+/** Not-served reasons, spelled once so every row that uses one means the same thing. */
+export const SETBACK_NOT_SERVED_REASON = {
+  /**
+   * The corpus carries the table; this engine has no registry row, cohort, or
+   * routing rule wired for the city yet (`setback-writer/city-binding.ts` says
+   * the same thing to a writer as `tableLanded: false`, and
+   * `resolveWiredCityRegistry` lists them per county).
+   */
+  notWired:
+    "corpus table exists; no registry row, cohort, or setback routing rule is wired for this jurisdiction yet",
+  /**
+   * Deliberately withheld by standing ruling, not forgotten: these cities'
+   * tables carry their own caveats recorded in doc_repo, and serving them is an
+   * operator call (the pre-P-260 comment named Georgetown and San Marcos).
+   */
+  withheld:
+    "corpus table exists; serving is withheld pending this city's own recorded caveats (operator call, see doc_repo)",
+} as const;
+
+/** The keys this engine SERVES, with the routing arm that serves each. */
+const SERVED_JURISDICTION_ROUTING: Readonly<Record<string, SetbackRegistryRouting>> = {
+  // Bastrop County + City (48021): city BDC districts need layer 23 (R13).
+  "bastrop-tx": "bastrop-county-legacy",
+  "bastrop-city-tx": "bastrop-city-layer23",
+  "bastrop-development-code": "bastrop-city-layer23",
+  // Elgin (48021, Bastrop-county side) — ratified 2026-08-04. The corpus key is
+  // `elgin-development-code`; `elgin-tx` is this engine's alias for it (see
+  // SERVED_JURISDICTION_ALIASES below) and is deliberately NOT a row here: the
+  // registry is keyed on the corpus's own key universe, and the corpus does not
+  // carry `elgin-tx`.
+  "elgin-development-code": "elgin-development-code",
+  // Wired city tables with no city-specific routing policy (OPS-19b).
+  "austin-tx": "keyed-table",
+  "pflugerville-tx": "keyed-table",
+  "san-antonio-tx": "keyed-table",
+  "waco-tx": "keyed-table",
+  "round-rock-tx": "keyed-table",
+  "kyle-tx": "keyed-table",
+  // Non-Texas corpus jurisdictions the engine has served since before the merge.
+  "grand-county-ut": "keyed-table",
+  "lemhi-county-id": "keyed-table",
+  "utah-unincorporated": "keyed-table",
+  "idaho-unincorporated": "keyed-table",
+};
+
+/** Corpus keys deliberately withheld from serving, with the standing reason. */
+const WITHHELD_JURISDICTION_KEYS: ReadonlySet<string> = new Set([
+  "georgetown-tx",
+  "san-marcos-tx",
+]);
+
+/**
+ * The engine's total policy over the corpus's key universe. Built by mapping
+ * the corpus's own key list, so a key the corpus adds appears here (as
+ * `served: false`, `notWired`) instead of vanishing, and a key the corpus drops
+ * stops appearing here at all. Both transitions fail the divergence test.
+ */
+export const SETBACK_ENGINE_REGISTRY: ReadonlyArray<SetbackEngineRegistryRow> =
+  CORPUS_SETBACK_JURISDICTION_KEYS.map((key): SetbackEngineRegistryRow => {
+    const routing = SERVED_JURISDICTION_ROUTING[key];
+    if (routing) return { key, served: true, routing };
+    return {
+      key,
+      served: false,
+      reason: WITHHELD_JURISDICTION_KEYS.has(key)
+        ? SETBACK_NOT_SERVED_REASON.withheld
+        : SETBACK_NOT_SERVED_REASON.notWired,
+    };
+  });
+
+/** The engine-served subset of {@link SETBACK_ENGINE_REGISTRY}. */
+export const SERVED_JURISDICTION_KEYS: ReadonlyArray<string> =
+  SETBACK_ENGINE_REGISTRY.filter((r) => r.served).map((r) => r.key);
+
+/**
+ * Alternate spellings that resolve to a served canonical key. An alias is a
+ * second NAME for one jurisdiction, not a second jurisdiction, so it is
+ * deliberately not a corpus registry key and gets no registry row — the corpus
+ * package mirrors this same alias (`JURISDICTION_KEY_ALIASES`) so both sides
+ * resolve `elgin-tx` identically.
+ */
+const SERVED_JURISDICTION_ALIASES: Readonly<Record<string, string>> = {
+  "elgin-tx": "elgin-development-code",
+};
+
+/** Every key `getSetbackTable` answers to: the served set plus its aliases. */
+export const SETBACK_LOOKUP_KEYS: ReadonlyArray<string> = [
+  ...new Set([...SERVED_JURISDICTION_KEYS, ...Object.keys(SERVED_JURISDICTION_ALIASES)]),
+];
+
+/** Every corpus key this engine does NOT serve, with its reason. */
+export function listNotServedSetbackJurisdictions(): ReadonlyArray<{
+  key: string;
+  reason: string;
+}> {
+  return SETBACK_ENGINE_REGISTRY.filter((r) => !r.served).map((r) => ({
+    key: r.key,
+    reason: r.reason,
+  }));
+}
 
 const SETBACK_TABLES: Readonly<Record<string, SetbackTable>> = Object.fromEntries(
-  VENDORED_JURISDICTION_KEYS.map((key) => {
+  SETBACK_LOOKUP_KEYS.map((key) => {
     const table = getCorpusSetbackTable(key);
     if (!table) {
       throw new Error(
-        `@empressaio/setback-corpus does not carry "${key}", which this package still vendors locally — repoint regressed.`,
+        `@empressaio/setback-corpus does not carry "${key}", which this engine's registry serves — repoint regressed.`,
       );
     }
     return [key, table as SetbackTable];

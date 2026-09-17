@@ -17,7 +17,11 @@ import {
   getSetbackTableForZoning,
   requiresPerParcelSetbackRecord,
 } from "@hauska-engine/adapters";
-import type { PropertyAtomInstance } from "@hauska-engine/atoms";
+import type {
+  BuildableEnvelopeZeroProof,
+  EnvelopeHonestOutcome,
+  PropertyAtomInstance,
+} from "@hauska-engine/atoms";
 
 import { emitBuildableEnvelope } from "./emit-buildable-envelope.js";
 import { emitSetbackRule, resolveSetbackTableRow } from "./emit-setback-rule.js";
@@ -338,9 +342,8 @@ export function emitFromTier1Snapshot(
     row.rear_ft?.not_specified === true;
 
   let outcome:
-    | { kind: "no-buildable-area"; reason: string }
-    | { kind: "buildable"; areaSqFt: number }
-    | { kind: "provisional-front-edge"; reason: string };
+    | Extract<EnvelopeHonestOutcome, { kind: "buildable" } | { kind: "provisional-front-edge" }>
+    | { kind: "no-buildable-area"; reason: string; zero: BuildableEnvelopeZeroProof };
   if (silentAxes) {
     // not_specified zeros must never become "no-buildable-area" / consume-lot.
     outcome = {
@@ -349,9 +352,19 @@ export function emitFromTier1Snapshot(
         "One or more scalar setbacks are not_specified (build-to-line governs); refuse to derive consume-lot from silent axes",
     };
   } else if (env?.status === "no-buildable-area") {
+    /*
+     * P-263 — this branch used to emit `no-buildable-area` with the reason
+     * "Tier-1 snapshot status no-buildable-area". That re-asserted an upstream
+     * status as OUR computed zero: no zero proof travelled with it, and the
+     * serving facet turns the kind into "Setbacks consume the lot" for the
+     * customer (retrieval atom-chain-to-facets.ts). A status string is not a
+     * computation, so the bake now says the honest thing instead — the
+     * derivation is pending and the upstream status is named, never claimed.
+     */
     outcome = {
-      kind: "no-buildable-area",
-      reason: "Tier-1 snapshot status no-buildable-area",
+      kind: "provisional-front-edge",
+      reason:
+        "Tier-1 snapshot reports status no-buildable-area; this bake holds no computed zero of its own and does not re-assert the claim (P-263)",
     };
   } else if (
     env?.status === "ok" &&

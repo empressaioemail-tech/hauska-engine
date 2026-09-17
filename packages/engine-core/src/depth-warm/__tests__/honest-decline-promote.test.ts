@@ -22,7 +22,7 @@ const descriptor: JurisdictionDescriptor = {
 };
 
 describe("buildHonestVerifyDeclineAtom (extracted from promoteHonestVerifyDecline, R27 shape)", () => {
-  it("builds a no-buildable-area envelope decline citing the zoning-fact and carrying the recipe version + decline code", () => {
+  it("builds a pending-derivation envelope decline citing the zoning-fact and carrying the recipe version + decline code", () => {
     const atom = buildHonestVerifyDeclineAtom({
       parcelNodeId: "00000:TEST-1",
       zoningFactAtomDid: "did:hauska:zoning-fact:00000:TEST-1",
@@ -33,8 +33,14 @@ describe("buildHonestVerifyDeclineAtom (extracted from promoteHonestVerifyDeclin
     });
 
     expect(atom.entityType).toBe("buildable-envelope");
+    /**
+     * P-263 — this assertion used to read `kind: "no-buildable-area"`. A verify
+     * failure is an opinion that was NOT computed, so it may not claim a
+     * computed zero: the outcome is `provisional-front-edge`, and only a caller
+     * that supplies a `zero` proof gets `no-buildable-area` back.
+     */
     expect(atom.outcome).toMatchObject({
-      kind: "no-buildable-area",
+      kind: "provisional-front-edge",
       reason: "mechanical verify failed: front orientation mismatch",
     });
     expect(atom.recipeVersion).toBe(RECIPE_VERSION);

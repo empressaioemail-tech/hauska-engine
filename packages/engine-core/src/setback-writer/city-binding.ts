@@ -5,6 +5,8 @@
  */
 
 import {
+  SETBACK_ENGINE_REGISTRY,
+  CORPUS_SETBACK_JURISDICTION_KEYS,
   getSetbackTable,
   requiresPerParcelSetbackRecord,
 } from "@hauska-engine/adapters";
@@ -34,6 +36,14 @@ export type SetbackCityBinding = {
   counties: readonly string[];
   tableLanded: boolean;
   namedSource: NamedRuleSource | null;
+  /**
+   * P-260 — why no table landed, spelled out instead of left as a null
+   * `namedSource`. A city with no ruled table must SAY SO: the pre-P-260 shape
+   * (`tableLanded: false, namedSource: null`) told a caller nothing it could
+   * report, which is how a silent absence reads identically to "not checked".
+   * Null only when `tableLanded` is true.
+   */
+  tableNotLandedReason: string | null;
   districtAliases: Readonly<Record<string, string>>;
   derivations: readonly string[];
 };
@@ -72,6 +82,28 @@ function tableLandedForCity(cityKey: string): boolean {
   if (requiresPerParcelSetbackRecord(cityKey)) return false;
   const table = getSetbackTable(cityKey);
   return Boolean(table && Array.isArray(table.districts) && table.districts.length > 0);
+}
+
+/**
+ * P-260 — why this city key has no table, in words a close can print.
+ * Distinguishes the three real cases so "no table" is never read as "no
+ * setback law": authored from a live per-parcel record by standing ruling (R13),
+ * carried by the corpus but not served by this engine, or genuinely not in the
+ * corpus at all (the city is not yet researched).
+ */
+export function setbackTableNotLandedReason(cityKey: string): string {
+  const key = hyphenate(cityKey);
+  if (requiresPerParcelSetbackRecord(key)) {
+    return "authored from the city's live per-parcel setback record, not a codified table (R13) — no table row is expected";
+  }
+  const notServed = SETBACK_ENGINE_REGISTRY.find((r) => r.key === key);
+  if (notServed && !notServed.served) return notServed.reason;
+  if (CORPUS_SETBACK_JURISDICTION_KEYS.includes(key)) {
+    // Carried by the corpus but not in this engine's served policy — a registry
+    // that is not total, which the divergence test refuses; never silent here.
+    return "corpus carries this table but this engine's setback registry does not serve it — registry gap";
+  }
+  return "no ruled setback table: @empressaio/setback-corpus does not carry this city key";
 }
 
 export function nameSetbackTableSource(cityKey: string): NamedRuleSource | null {
@@ -179,6 +211,7 @@ export function resolveSetbackCityBinding(
     counties,
     tableLanded: landed,
     namedSource: landed ? nameSetbackTableSource(cityKey) : null,
+    tableNotLandedReason: landed ? null : setbackTableNotLandedReason(cityKey),
     districtAliases: aliases,
     derivations,
   };

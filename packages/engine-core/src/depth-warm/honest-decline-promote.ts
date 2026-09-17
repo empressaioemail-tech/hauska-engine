@@ -13,12 +13,18 @@ import {
   BUILDABLE_ENVELOPE_DERIVATION_METHOD,
   buildAtomDid,
   type BuildableEnvelopeAtomInstance,
+  type BuildableEnvelopeZeroProof,
+  type EnvelopeHonestOutcome,
 } from "@hauska-engine/atoms";
 import { createWidthedConfidence } from "@empressaio/atom-contract/read-contract";
 import {
   toBuildableEnvelopeAbsenceKind,
   type BuildableEnvelopeAbsenceKind,
 } from "@empressaio/atom-contract/property";
+import {
+  assertEnvelopeOutcomeIsHonest,
+  outcomeForEnvelopeDecline,
+} from "../property-reasoning/envelope-outcome-honesty.js";
 import {
   buildPropertyReadContract,
   contentHashExcludingProvenance,
@@ -42,6 +48,15 @@ export interface HonestVerifyDeclineInput {
   district?: string;
   cityKey?: string;
   countyFips?: string;
+  /**
+   * P-263 — a computed, verified zero, when THIS decline is a completed
+   * computation whose result was zero (setbacks consuming the lot). Present:
+   * the outcome is `no-buildable-area` and carries the proof. Absent (the
+   * normal case for a decline): the outcome is `not-applicable` for an unzoned
+   * cohort and `provisional-front-edge` otherwise, because a decline that ran
+   * no computation may not claim a zero.
+   */
+  zero?: BuildableEnvelopeZeroProof;
 }
 
 /**
@@ -133,6 +148,32 @@ export function buildHonestVerifyDeclineAtom(
     ...(input.provenanceScope ?? ENVELOPE_DECLINE_PROVENANCE_SCOPE_DEFAULT),
   ];
 
+  /**
+   * P-263 — the OUTCOME is decided by whether this decline computed a zero,
+   * not by the fact that it is a decline.
+   *
+   * Before P-263 this line read `outcome: { kind: "no-buildable-area", reason }`
+   * unconditionally, which is how the unzoned cascade and the not-yet-onboarded
+   * breadth cohort (362,643 of the six counties' 490,185) came to assert a
+   * computed zero — and how the serving facet came to print "Setbacks consume
+   * the lot" about land no setback derivation was attempted on.
+   *
+   * With a zero proof: the claim, carrying its computation.
+   * Without one: `not-applicable` when the reason names an unzoned cohort (no
+   * ordinance reaches the parcel), `provisional-front-edge` otherwise (a
+   * pending derivation — the ledger apply decides what the cell becomes).
+   */
+  const outcome: EnvelopeHonestOutcome = input.zero
+    ? { kind: "no-buildable-area", reason: declineReason, zero: input.zero }
+    : outcomeForEnvelopeDecline({
+        declineCode: input.declineCode,
+        reason: declineReason,
+      });
+  assertEnvelopeOutcomeIsHonest(outcome, {
+    writer: "buildHonestVerifyDeclineAtom",
+    parcelNodeId: input.parcelNodeId,
+  });
+
   const instance: HonestVerifyDeclineAtom = {
     entityType: "buildable-envelope",
     atomDid,
@@ -148,10 +189,7 @@ export function buildHonestVerifyDeclineAtom(
     atomTier: "data",
     status: "active",
     versionStamp: `${input.parcelNodeId}:buildable-envelope-decline:${version}:${extractedAt}`,
-    outcome: {
-      kind: "no-buildable-area",
-      reason: declineReason,
-    },
+    outcome,
     absence: {
       kind: absenceKind,
       reason: declineReason,
