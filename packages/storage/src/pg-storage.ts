@@ -126,6 +126,46 @@ interface JurisdictionStatusRow {
   access_policy: string;
 }
 
+/**
+ * P-273. How many of these edges does the STORE actually hold right now?
+ *
+ * This is the measurement `assertEdgesNotStarved` needs, and the whole reason
+ * it exists is that the count it used to be handed was derived from the same
+ * `instances` array the expectation came from, making the comparison unable to
+ * fail. Presence, not rows-inserted: `writeAtomLinks` is
+ * `ON CONFLICT ... DO NOTHING`, so an idempotent re-run inserts nothing and is
+ * not starved.
+ *
+ * Multiplicity is preserved by construction: a repeated key in the input joins
+ * to the one stored row once per repeat, so N derived edges are answered N
+ * times and a caller that hands the same atom twice is not failed.
+ *
+ * Exported so a test can measure the store with the same query the writer uses
+ * rather than a lookalike.
+ */
+export async function countPersistedAtomLinks(
+  sql: postgres.Sql,
+  links: ReadonlyArray<AtomLink>,
+): Promise<number> {
+  if (links.length === 0) return 0;
+  const fromDids = links.map((l) => buildAtomDid(l.fromEntityType, l.fromEntityId).raw);
+  const toDids = links.map((l) => buildAtomDid(l.toEntityType, l.toEntityId).raw);
+  const linkTypes = links.map((l) => l.linkType);
+  const rows = await sql<{ n: number }[]>`
+    SELECT count(*)::int AS n
+    FROM atom_links l
+    JOIN unnest(
+      ${fromDids}::text[],
+      ${toDids}::text[],
+      ${linkTypes}::text[]
+    ) AS d(from_atom_did, to_atom_did, link_type)
+      ON l.from_atom_did = d.from_atom_did
+     AND l.to_atom_did = d.to_atom_did
+     AND l.link_type = d.link_type
+  `;
+  return Number(rows[0]?.n ?? 0);
+}
+
 function parseStoredAtom(body: unknown): StoredAtomInstance | null {
   if (typeof body !== "object" || body === null) return null;
   if (isPropertyAtomInstance(body)) return body;
@@ -315,7 +355,6 @@ export class PgStorage implements StoragePort {
       dedupe: true,
     });
     const links = appliesToLinksFromPropertyAtoms(instances);
-    assertEdgesNotStarved(instances, links.length);
     const geomBboxRows = geomBboxRowsFromInstances(
       instances as unknown as ReadonlyArray<Record<string, unknown>>,
     );
@@ -325,6 +364,15 @@ export class PgStorage implements StoragePort {
       assertScopeOnAtoms(lease, instances);
       await upsertPropertyAtomRowsMulti(sql, rows);
       if (links.length > 0) await this.writeAtomLinks(links, sql);
+      // P-273. Read the edge count back from the STORE, inside the transaction,
+      // and only then assert. Pre-fix this was
+      //   assertEdgesNotStarved(instances, links.length);
+      // placed BEFORE the transaction, so both sides of the comparison were
+      // derived from `instances` by the same three skip conditions and the
+      // throw was unreachable. `linksPersisted` is now a second, independent
+      // derivation -- what the store holds -- which is the only way the check
+      // can report a starved edge.
+      assertEdgesNotStarved(instances, await countPersistedAtomLinks(sql, links));
       await upsertGeomBboxRows(sql, geomBboxRows);
     });
     return out;

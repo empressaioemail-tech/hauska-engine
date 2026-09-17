@@ -148,15 +148,37 @@ export function expectedAppliesToCount(
   return n;
 }
 
+/**
+ * P-273. THE STARVATION CONTROL, and what `linksPersisted` must be.
+ *
+ * `linksPersisted` MUST be a count read back from the STORE after the write,
+ * over the same derived edge list the writer used (multiplicity included, so a
+ * batch carrying a repeated atom is asked for its edge twice and answered
+ * twice). It used to receive
+ * `appliesToLinksFromPropertyAtoms(atoms).length`, and that is the defect this
+ * docblock exists to stop recurring: `appliesToLinksFromPropertyAtoms` and
+ * `expectedAppliesToCount` apply the SAME three skip conditions
+ * (entityType === "parcel-node", no parcelNodeId, isCountyCoverageParcelNodeId),
+ * so the two sides of the comparison were equal by construction and the throw
+ * below was unreachable. A control that cannot fire is worse than an absent one
+ * because an absent one is visible.
+ *
+ * What the invariant actually is: every edge the body implies must EXIST after
+ * the write. Not "the store inserted N rows" — `writeAtomLinks` uses
+ * `ON CONFLICT ... DO NOTHING`, so an idempotent re-run legitimately inserts
+ * fewer rows than it derives, and asserting on the INSERT count would be a
+ * permanently-red gate (DEV_PROCESS 2.0). Presence is the meaning-shaped
+ * quantity; count of rows inserted is not.
+ */
 export function assertEdgesNotStarved(
   atoms: ReadonlyArray<Pick<PropertyAtomInstance, "entityType" | "parcelNodeId">>,
-  linksWritten: number,
+  linksPersisted: number,
 ): void {
   const expected = expectedAppliesToCount(atoms);
-  if (expected > 0 && linksWritten !== expected) {
+  if (expected > 0 && linksPersisted !== expected) {
     throw new WriteBoundaryError(
       STARVED_EDGE,
-      `writer produced ${linksWritten} applies-to links; body-derived expected ${expected}`,
+      `writer persisted ${linksPersisted} applies-to links; body-derived expected ${expected}`,
     );
   }
 }

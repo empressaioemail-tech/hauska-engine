@@ -227,6 +227,40 @@ export function appliesToLinkFromPropertyAtom(
   return appliesToParcelLink(atom.entityType, atom.entityId, canonical);
 }
 
+/**
+ * Stable identity of ONE applies-to edge. Two atoms that mint the same edge are
+ * one edge in the store, so a count of derived edges must be taken over these
+ * keys rather than over the array length.
+ */
+export function atomLinkKey(
+  link: Pick<
+    AtomLink,
+    "fromEntityType" | "fromEntityId" | "toEntityType" | "toEntityId" | "linkType"
+  >,
+): string {
+  return [
+    link.fromEntityType,
+    link.fromEntityId,
+    link.toEntityType,
+    link.toEntityId,
+    link.linkType,
+  ].join("|");
+}
+
+/**
+ * The applies-to edges a batch of property atoms must produce, ONE PER
+ * QUALIFYING ATOM.
+ *
+ * P-273: the length of this array is NOT the control. The control is
+ * `assertEdgesNotStarved`, and what makes it able to fire is that its second
+ * argument must be read back from the STORE. Handing it this array's length is
+ * the defect: this array and `expectedAppliesToCount` apply the same three skip
+ * conditions, so that comparison was equal by construction.
+ *
+ * Multiplicity is preserved deliberately. A batch carrying the same atom twice
+ * derives the edge twice and the store is asked for it twice, so a duplicate
+ * input is not a false failure at the call site.
+ */
 export function appliesToLinksFromPropertyAtoms(
   atoms: ReadonlyArray<Pick<PropertyAtomInstance, "entityType" | "entityId" | "parcelNodeId">>,
 ): AtomLink[] {

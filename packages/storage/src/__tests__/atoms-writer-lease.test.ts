@@ -301,6 +301,15 @@ describe("atoms writer lease v2", () => {
           },
         ];
       }
+      // P-273. `writePropertyAtomsBatch` now asks the STORE how many of the edges
+      // it derived are actually present (pg-storage `countPersistedAtomLinks`)
+      // instead of echoing the caller's derived count back at itself. A SQL fake
+      // that answers every unrecognised statement with `[]` would report a
+      // starved store for a write it just accepted, so it has to answer this
+      // one. One derived applies-to edge, one present row.
+      if (text.includes("count(*)")) {
+        return [{ n: 1 }];
+      }
       return [];
     });
     const storage = new PgStorage(sql as never);
