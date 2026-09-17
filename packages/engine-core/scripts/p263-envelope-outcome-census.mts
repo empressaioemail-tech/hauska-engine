@@ -292,7 +292,7 @@ try {
     JSON.stringify(
       {
         mode: artifact.mode,
-        storeHostFingerprint,
+        hostFingerprint,
         totals: artifact.totals,
         perCounty: Object.fromEntries(
           Object.entries(perCounty).map(([f, c]) => [
