@@ -1,0 +1,16 @@
+{
+  "status": {
+    "traffic": [
+      {
+        "revisionName": "fixture-svc-00003-ccc",
+        "percent": 100,
+        "tag": "canary"
+      },
+      {
+        "revisionName": "fixture-svc-09999-zzz",
+        "percent": 0,
+        "tag": "ghost"
+      }
+    ]
+  }
+}

@@ -63,6 +63,47 @@ jobs:
       - name: Retire bastrop-per-parcel setback authorship (P-219)
         run: node packages/engine-core/scripts/retire-bastrop-per-parcel-setback-authorship.mjs
 
+      # P-279. The offline halves of tools/check-tagged-revision-env.mjs. This is
+      # what keeps the rule alive on every push: the predicate's own fixture set
+      # (pass, fail, four refusals) and the byte-hash against the sha256 recorded
+      # in tools/fixtures/tagged-revision-env/canonical.json. No cloud access and
+      # no credentials are needed, which is why it can live here.
+      #
+      # The LIVE check — the one that reads the five services and fails when a tag
+      # points at a revision missing a credential the serving revision carries — is
+      # NOT here, because this repo carries no deploy workflow for hauska-engine-api,
+      # hauska-retrieval-api or hauska-mcp-server. Those deploys are hand
+      # `gcloud run deploy` calls, so this repo's deploy path is the wrapper
+      # tools/deploy-cloud-run-service.mjs, which runs the deploy and then runs the
+      # check against the service it deployed. The wrapper's argument parsing is
+      # smoke-tested below (--help, exit 0) because a deploy path nobody can invoke is
+      # not a deploy path. Saying this here is the point: a reader must not mistake
+      # this step for the interlock.
+      #
+      # Exit codes are kept distinguishable and 2 (REFUSE) FAILS: a check that
+      # cannot read what it needs is never a pass (DEV_PROCESS 2.0/2.3).
+      - name: Tagged-revision env predicate alive (P-279)
+        run: |
+          set +e
+          node tools/check-tagged-revision-env.mjs --selftest
+          SELF=$?
+          node tools/check-tagged-revision-env.mjs --check-divergence
+          DIV=$?
+          set -e
+          echo "p279 selftest=$SELF divergence=$DIV"
+          if [ "$SELF" -ne 0 ]; then
+            echo "FAIL p279-tagged-revision-env: the shipped fixture set did not pass (exit $SELF); the predicate is not measuring what it claims"
+            exit 1
+          fi
+          if [ "$DIV" -ne 0 ]; then
+            echo "FAIL p279-tagged-revision-env: divergence control failed (exit $DIV); this file no longer matches the sha256 recorded in tools/fixtures/tagged-revision-env/canonical.json"
+            exit 1
+          fi
+          # The deploy path must be invocable. --help is the only mode that touches
+          # nothing; every other mode either deploys or reads a live service.
+          node tools/deploy-cloud-run-service.mjs --help > /dev/null
+          echo "ci-tagged-revision-env: clean"
+
       - name: Geometry lane LLM grep gate (OPS-3 I1)
         run: |
           if rg -i '\b(llm|anthropic|openai|xai)\b|@ai-sdk/|generateText' \
