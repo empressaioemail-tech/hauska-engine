@@ -127,7 +127,7 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "@empressaio/setback-corpus": "^1.2.0"
+    "@empressaio/setback-corpus": "1.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

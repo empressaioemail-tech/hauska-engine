@@ -2,7 +2,7 @@
   "$schema": "./schema.json",
   "jurisdictionKey": "waco-tx",
   "jurisdictionDisplayName": "City of Waco, TX",
-  "note": "Codified from City of Waco Code of Ordinances Chapter 28 (Zoning), Article IV (District Regulations), Divisions 2-6, cross-verified against the City of Waco Planning & Zoning Department's official published summary table 'Chart 1. Yard setback requirements' at https://www.waco-texas.com/files/sharedassets/public/v/2/departments/planning-amp-zoning/documents/chart1yardsetbackrequirements.pdf (accessed 2026-09-06). Primary ordinance text for individual sections was read via the eLaws mirror of the Code of Ordinances at waco-tx.elaws.us (accessed 2026-09-06) because library.municode.com, the canonical live host, returned HTTP 403 to automated fetch; eLaws' section text matches the Chart 1 PDF numerics exactly everywhere both were checked, so the two are treated as independently corroborating. WebSearch-surfaced text (not independently confirmed by direct fetch of the primary page) put the live Municode Code of Ordinances as 'codified through Ordinance No. 2025-778, enacted October 21, 2025'; that overall currency date is reported as-is but is NOT independently verified against a directly-fetched primary page, and no section-specific amendment date is available for Divisions 2-6 of Article IV or for section 28-904. SHIPPED rows: R-E, R-1A, R-1B, R-1C, R-2 (the five 'R' district classes covering estate, single-family, and two-family/attached-single-family use, matching in scope the single-family-and-adjacent breadth covered by the Austin (SF-1/2/3 + MF) and Pflugerville (SF-S/SF-R + MF/2-F) tables). Each row's front/side/rear values are the 'All dwellings' (or equivalent standard-use) scalar row from Code section §28-276 (R-E), §28-301 (R-1A), §28-326 (R-1B), §28-351 (R-1C), §28-376 (R-2); each district's ordinance text also carries a materially different 'Other' (non-dwelling) use row and, for R-1C/R-2, a separate single-family-attached/zero-lot-line row with a 10-foot COMBINED side yard in place of the two-yard scalar - both are OMITTED from this table because the schema carries one scalar side_ft per district and the dwelling-use row is the dominant/default case. R-1B and R-1C also each carry a distinct 'special permit uses' row (R-1B: 25/6/25; R-1C: same as its base 'all dwellings' row) that is likewise omitted as a secondary case. side_corner_ft for all five rows is sourced from Code §28-904(f) (Article V, Division 2, 'Yards and required open space'), which sets a 15-foot minimum side-street yard on corner lots in 'the R and O districts' generally; Chart 1 only fills in an explicit numeric side-corner value for the R-E row (15, matching §28-904(f) exactly) and leaves the column blank for R-1A/R-1B/R-1C/R-2, so this table applies the same general-provision value to those rows rather than treating the blank cell as zero or unspecified. §28-904(f) is NOT a flat 15-foot rule: it also provides that a lot of record under 75 feet wide need only provide 20 percent of lot width as the corner side yard, and that where a corner lot's rear yard abuts an adjacent lot's side yard, the corner side yard must instead equal that adjacent lot's required front-yard depth (whichever is greater) - both exceptions are disclosed in the per-field quote below rather than folded into the scalar. max_height_ft (35 for all five rows) is drawn from Code §28-275/28-300/28-325/28-350/28-375, each of which caps height at '2 1/2 stories or 35 feet,' whichever is more restrictive; the 2.5-story component is not separately representable in this schema and is disclosed per-field. max_lot_coverage_pct and max_impervious_pct use the established non-binding sentinel 100 (per the Pflugerville precedent in this same corpus) because Chapter 28 Article IV Divisions 2-6 (Purpose/Permitted uses/Special uses/Lot area/Height/Yard/Additional regulations/Distance requirement sections) and Chart 1/Chart 2 contain no lot-coverage-percentage or impervious-cover-percentage scalar for these districts; a general Waco-wide search for such a figure returned nothing applicable to R-E/R-1A/R-1B/R-1C/R-2. OMITTED: R-3A-R-3E (multi-family), O-1/O-2/O-3, C-1-C-5, M-1-M-3, PUD, Brazos River Corridor, College and University Neighborhoods, Neighborhood Conservation, Airport Overlay, West End, Downtown, and Historic District overlays (Article X) - none were in scope for the single-family/two-family residential envelope this table serves, and none were checked. CORRECTION (2026-09-07): all provenance entries originally shipped as verification_state 'human-verified' with a fabricated atom_did (e.g. waco_tx/coor/28-276) that never resolved against any real ingested code-section atom -- no code-section atom corpus exists for waco_tx at all (confirmed directly against the live atoms store). Relabeled to 'primary-source-verified' (a state added in legacy-design-tools PR #628 for exactly this gap) and atom_did removed; the underlying research (real primary-source fetches, cross-verified against two independent sources) is unchanged, only the overclaimed verification status is corrected.",
+  "note": "Codified from City of Waco Code of Ordinances Chapter 28 (Zoning), Article IV (District Regulations), Divisions 2-6, cross-verified against the City of Waco Planning & Zoning Department's official published summary table 'Chart 1. Yard setback requirements' at https://www.waco-texas.com/files/sharedassets/public/v/2/departments/planning-amp-zoning/documents/chart1yardsetbackrequirements.pdf (accessed 2026-09-06). Primary ordinance text for individual sections was read via the eLaws mirror of the Code of Ordinances at waco-tx.elaws.us (accessed 2026-09-06) because library.municode.com, the canonical live host, returned HTTP 403 to automated fetch; eLaws' section text matches the Chart 1 PDF numerics exactly everywhere both were checked, so the two are treated as independently corroborating. WebSearch-surfaced text (not independently confirmed by direct fetch of the primary page) put the live Municode Code of Ordinances as 'codified through Ordinance No. 2025-778, enacted October 21, 2025'; that overall currency date is reported as-is but is NOT independently verified against a directly-fetched primary page, and no section-specific amendment date is available for Divisions 2-6 of Article IV or for section 28-904. SHIPPED rows: R-E, R-1A, R-1B, R-1C, R-2 (the five 'R' district classes covering estate, single-family, and two-family/attached-single-family use, matching in scope the single-family-and-adjacent breadth covered by the Austin (SF-1/2/3 + MF) and Pflugerville (SF-S/SF-R + MF/2-F) tables). Each row's front/side/rear values are the 'All dwellings' (or equivalent standard-use) scalar row from Code section §28-276 (R-E), §28-301 (R-1A), §28-326 (R-1B), §28-351 (R-1C), §28-376 (R-2); each district's ordinance text also carries a materially different 'Other' (non-dwelling) use row and, for R-1C/R-2, a separate single-family-attached/zero-lot-line row with a 10-foot COMBINED side yard in place of the two-yard scalar - both are OMITTED from this table because the schema carries one scalar side_ft per district and the dwelling-use row is the dominant/default case. R-1B and R-1C also each carry a distinct 'special permit uses' row (R-1B: 25/6/25; R-1C: same as its base 'all dwellings' row) that is likewise omitted as a secondary case. side_corner_ft for all five rows is sourced from Code §28-904(f) (Article V, Division 2, 'Yards and required open space'), which sets a 15-foot minimum side-street yard on corner lots in 'the R and O districts' generally; Chart 1 only fills in an explicit numeric side-corner value for the R-E row (15, matching §28-904(f) exactly) and leaves the column blank for R-1A/R-1B/R-1C/R-2, so this table applies the same general-provision value to those rows rather than treating the blank cell as zero or unspecified. §28-904(f) is NOT a flat 15-foot rule: it also provides that a lot of record under 75 feet wide need only provide 20 percent of lot width as the corner side yard, and that where a corner lot's rear yard abuts an adjacent lot's side yard, the corner side yard must instead equal that adjacent lot's required front-yard depth (whichever is greater) - both exceptions are disclosed in the per-field quote below rather than folded into the scalar. max_height_ft (35 for all five rows) is drawn from Code §28-275/28-300/28-325/28-350/28-375, each of which caps height at '2 1/2 stories or 35 feet,' whichever is more restrictive; the 2.5-story component is not separately representable in this schema and is disclosed per-field. max_lot_coverage_pct and max_impervious_pct use the established non-binding sentinel 100 (per the Pflugerville precedent in this same corpus) because Chapter 28 Article IV Divisions 2-6 (Purpose/Permitted uses/Special uses/Lot area/Height/Yard/Additional regulations/Distance requirement sections) and Chart 1/Chart 2 contain no lot-coverage-percentage or impervious-cover-percentage scalar for these districts; a general Waco-wide search for such a figure returned nothing applicable to R-E/R-1A/R-1B/R-1C/R-2. OMITTED: R-3A-R-3E (multi-family), O-1/O-2/O-3, C-1-C-5, M-1-M-3, PUD, Brazos River Corridor, College and University Neighborhoods, Neighborhood Conservation, Airport Overlay, West End, Downtown, and Historic District overlays (Article X) - none were in scope for the single-family/two-family residential envelope this table serves, and none were checked. CORRECTION (2026-09-07): all provenance entries originally shipped as verification_state 'human-verified' with a fabricated atom_did (e.g. waco_tx/coor/28-276) that never resolved against any real ingested code-section atom -- no code-section atom corpus exists for waco_tx at all (confirmed directly against the live atoms store). Relabeled to 'primary-source-verified' (a state added in legacy-design-tools PR #628 for exactly this gap) and atom_did removed; the underlying research (real primary-source fetches, cross-verified against two independent sources) is unchanged, only the overclaimed verification status is corrected. EXTENDED 2026-09-16 (P-258 lane-b, OPS-24 district-miss wave): added the 16 district-miss rows named by the wave worklist -- R-3A, R-3B, R-3C, R-3D, R-3E, O-1, O-2, O-3, C-1, C-2, C-3, C-4, C-5, M-1, M-2, M-3 -- completing the 21 distinct codes the City of Waco GIS zoning layer actually carries. The five rows above (R-E, R-1A, R-1B, R-1C, R-2) are untouched by this pass. All 16 new rows are CODE-BACKED, not chart-only: every yard value is read from the district's own Article IV yard-requirements section (Divisions 7-22: sections 28-401, 28-426, 28-451, 28-476, 28-501, 28-526, 28-551, 28-576, 28-603, 28-627, 28-651, 28-676, 28-701, 28-726, 28-751, 28-776) and every height value from the district's own height-restriction section (sections 28-400, 28-425, 28-450, 28-475, 28-500, 28-525, 28-550, 28-575, 28-602, 28-626, 28-650, 28-675, 28-700, 28-725, 28-750, 28-775). Where a district section states more than one use-specific row, the GENERAL case is coded -- the townhouse/multiple-family row for R-3A through R-3E (front 25 / two side yards 5 each / rear 25) and the all-permitted-uses row for the O/C/M districts -- and every materially different secondary case is preserved verbatim in that field's provenance quote rather than folded into the scalar: the 50/25/50 other-permitted-uses row in R-3A through R-3E, the zero-lot-line single-family-attached and small-lot rows, the 25-foot abutting-R-1-or-R-2 side yard in O-1, O-3, C-1, C-2, C-3, C-5, M-2 and the 25-foot abutting-R-or-O side yard in M-1, the 15-foot abutting-R-3-or-O rear/side yard in every C and M district, the party-wall side-yard waiver in the R-3 and O-2 districts, and the height-triggered yard escalators. side_corner_ft: the R-3 and O districts state a 15-foot side-street yard in their own section and are additionally covered by the R-and-O-wide general provision in section 28-904(f); C-1, C-2, C-3, C-5, M-2 and M-3 state a 10-foot side-street yard in their own section (and section 28-904(f) is expressly limited to the R and O districts, so it never raises them); C-4 states no minimum yard of any kind and 0 is coded; M-1's section carries no side-street clause, so its 15 comes from its own 15-foot minimum side yard read with the City's Chart 2 side-corner column, coded at reduced confidence. HEIGHT: four districts state NO height limit -- R-3E (section 28-500), O-2 (section 28-550), C-4 (section 28-675), M-3 (section 28-775) -- and carry the canonical not_specified sentinel 999 rather than a fabricated figure. M-1's height is lot-size-conditional (45 feet under 200,000 square feet, 120 feet over); 45 is coded as the base case with the full conditional quoted verbatim and reduced confidence. max_lot_coverage_pct stays the non-binding 100 sentinel on all 16 rows: no building-footprint-only coverage scalar exists in any of these Divisions, nor in the City's Chart 1, Chart 2 or Chart 3. max_impervious_pct is NOT sentineled on these 16 rows: Article III section 28-216 (Site coverage and open space) states a family-wide site-coverage cap by buildings and paved areas -- 75 percent in all R districts, 85 percent in all O districts (75 percent for residential use in an O district), 90 percent in all C and M districts except C-4, which section 28-216 expressly names as an exception. Those figures are coded with the exact statutory sentence quoted per row at reduced confidence (0.65-0.7) because the ordinance's own term is 'coverage of the site by buildings and paved areas' rather than the word 'impervious', which is how this corpus's max_impervious_pct field is read. LOWEST-CONFIDENCE CODINGS ON THESE ROWS, called out rather than hidden: (1) the section 28-216 site-coverage mapping to max_impervious_pct above; (2) M-1's 45-foot base height against its 120-foot large-lot standard; (3) M-1's 15-foot side-corner value, which no district section states expressly; (4) O-2's 85 percent coverage, in the one O district whose purpose is in significant part residential -- its provenance entry quotes the 75 percent residential figure too. OPEN THREAD (reported, not silently resolved): section 28-216's cap is written family-wide, so the five pre-existing R-E/R-1A/R-1B/R-1C/R-2 rows' max_impervious_pct 100 sentinel is in tension with the 75 coded here for R-3A through R-3E. Those five rows were NOT touched by this pass because they are outside this lane's researched scope; the tension needs one family-wide ruling. SOURCE TRAIL AND CITATION CHAIN (CORRECTED 2026-09-16, second pass; this paragraph supersedes the first version's source-trail sentence, which overstated what was read). THE AUTHORITATIVE INSTRUMENT is the City of Waco Code of Ordinances, Chapter 28 (Zoning), on Municode at library.municode.com/tx/waco. MUNICODE RETURNED HTTP 403 TO A PLAIN AUTOMATED FETCH, and the waco-tx.elaws.us mirror that sourced the five earlier rows TIMED OUT on 2026-09-16 (independently reproduced by the P-258 wave planner from a separate session at ~2026-09-16T21:10Z, same result). The Article IV Divisions 7-22 yard and height sections (28-401 through 28-776 and 28-400 through 28-775) and Article III section 28-216 were therefore READ FROM A THIRD-PARTY TRANSCRIPTION of Chapter 28 (the Zoneomics code mirror of Article IV Divisions 1-22 and Article III), NOT from the ordinance itself and NOT from any page this pass fetched. The City of Waco Planning & Zoning Department's own published 'Chart 1. Yard setback requirements', 'Chart 2. Yard setback requirements for C and M districts', 'Chart 3. Lot size requirements' and the height-limit matrix are official summary tables and are the material the transcription's figures were checked against, but THOSE PDFS ALSO RETURNED HTTP 403 TO AUTOMATED FETCH on 2026-09-16 and could not be re-read in this pass, so NO VALUE IN THESE 16 ROWS RESTS ON A SOURCE THIS PASS FETCHED ITSELF. Where a chart and the section text differ (R-3C and R-3D, which the charts show only through a secondary use row rather than the general dwellings row; the blank side-corner cells for C-2, C-3, M-3 and R-1A through R-2) the DISTRICT SECTION governs and the chart's different presentation is disclosed in that row's provenance quote. THE CURRENCY DATE WAS NOT READ AT SOURCE. The earlier search-surfaced string ('codified through Ordinance No. 2025-778, enacted October 21, 2025') is superseded by a later search-surfaced Municode string seen on 2026-09-16 ('Code of Ordinances Supplement 88, online content updated on July 9, 2026 -- codified through Ordinance No. 2026-250, enacted April 21, 2026'); BOTH are search-surfaced, NEITHER was read off a page this pass fetched, and no section-specific amendment date is available for Article IV Divisions 7-22. CITATION_URL now names the authoritative instrument -- Municode -- rather than a host that does not resolve. Where a real Municode nodeId was captured off an indexed Municode page it is carried per row: Division 7 (R-3A) nodeId=PTIICOOR_CH28ZO_ARTIVDIRE_DIV7MUMIREDI, captured from an indexed Municode section URL; Division 20 (M-1) nodeId=PTIICOOR_CH28ZO_ARTIVDIRE_DIV20OFREINDI and Division 22 (M-3) nodeId=PTIICOOR_CH28ZO_ARTIVDIRE_DIV22GEINDI, both captured as the division-node prefix of indexed Municode section URLs. The other 13 rows cite the Municode code root for the city and carry their section number in section_number. The Municode page is a client-rendered application: it returns HTTP 200 to a browser-user-agent fetch (measured 2026-09-16) but the section text is assembled client-side, so the citation NAMES THE INSTRUMENT AND THE SECTION, it does not resolve to extracted text for a machine. The old waco-tx.elaws.us scheme is NOT carried in any row of this table: that host did not resolve on 2026-09-16 and a citation nobody can follow is worse than a named instrument. ONE BOUNDED ATTEMPT TO RESTORE A FETCHED CITATION WAS MADE AND FAILED. Municode's own content host does serve real ordinance text -- an HTTP 200 application/pdf fetch of mcclibraryfunctions.azurewebsites.us/api/ordinanceDownload/11666/1174746/pdf (made by this pass on 2026-09-16, 436,815 bytes, 5 pages, text-extracted) returned genuine Chapter 28 Article IV text -- but that document is Ordinance No. 2022-440 (House Museum special-permit amendments), which contains only the special-permit use sections (28-298 through 28-697) and states NONE of the yard, height or coverage values coded here. The other two routes failed: mcclibrary.blob.core.usgovcloudapi.net/codecontent returned HTTP 404 to an anonymous container listing, and library.municode.com/api returned HTTP 401 (its child paths 200 with the SPA shell, i.e. no server-side content). WHAT 'primary-source-verified' MEANS ON THESE 16 ROWS, STATED PLAINLY RATHER THAN LEFT TO BE IMPLIED: the label's own definition (gate.ts) is 'read directly off a real primary legal source and cross-checked against a second primary source where one was available'. The honest situation on these rows is NARROWER THAN THAT LABEL: the text was read from a third-party transcription and compared against official summary tables whose PDFs this pass could not fetch. The label is retained ONLY because it is the corpus's only reachable state for a jurisdiction with no code-section atom corpus. 'asserted' IS UNREACHABLE HERE, NOT MERELY DISCOURAGED: gate.ts blocks at G2 any entry whose verification_state is not primary-source-verified and whose atom_did does not resolve in the supplied atom corpus ('atom_did required for verification_state \"asserted\" but missing'), so relabelling these 112 values 'asserted' would both claim atom backing that does not exist and block every one of them -- and every existing 'asserted' entry elsewhere in this corpus (e.g. hutto-tx.json) carries a real atom_did. A value-level state meaning 'cited to the authoritative instrument but not fetched by this pass' is a genuine gap in the corpus vocabulary; it is reported as an open thread rather than papered over with a state that would be a false claim. LIVE-MAP CHECK (2026-09-16): an ArcGIS REST distinct-value query against the City of Waco zoning layer (gis.wacotx.gov/server/rest/services/PublicMap/PublicMap_Planning_and_Economical_Development/FeatureServer/1, field ZONING) returns exactly C-1, C-2, C-3, C-4, C-5, M-1, M-2, M-3, O-1, O-2, O-3, R-1A, R-1B, R-1C, R-2, R-3A, R-3B, R-3C, R-3D, R-3E, R-E, PUD, STATE and null -- so all 16 codes added here are real on the ground, and every Euclidean district code in the layer now has a row (PUD is a planned-development code and takes no Euclidean row per the program rule; STATE and null are not districts). P-299 OT-2 (2026-09-17): this table's 147 primary-source-verified value slots are RELABELLED to \"transcription-read\", the fourth verification state added to gate.ts in the same change, with confidence capped at 0.75 (rule G9). Reason, from this file's own note above: every value here was read through a COPY of the governing instrument rather than off the instrument's own text -- third-party transcription (the Zoneomics code mirror of Chapter 28) and the eLaws mirror of the Code of Ordinances, because the canonical Municode host returned HTTP 403 to fetch. The state is not a downgrade of the read's quality; it is the honest name for the channel, and it keeps \"primary-source-verified\" meaning what it says for the tables that did reach the instrument's own text. It is treated exactly like primary-source-verified for rule G2 (no code-section atom is required) and skips G5's quote round-trip for the same reason.",
   "districts": [
     {
       "district_name": "R-E Estate Single-Family Residence District",
@@ -18,45 +18,45 @@
         "front_ft": {
           "section_number": "28-276",
           "quote": "Single-family dwelling: 'A front yard of not less than 35 feet; two side yards of not less than 25 feet each; rear yard minimum 50 feet.' Uses allowed by special permit carry the same 35/25/50 values.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "rear_ft": {
           "section_number": "28-276",
           "quote": "Single-family dwelling: front yard 35 feet, two side yards 25 feet each, rear yard not less than 50 feet.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_ft": {
           "section_number": "28-276",
           "quote": "Single-family dwelling: front yard 35 feet, two side yards of not less than 25 feet each, rear yard 50 feet.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_corner_ft": {
           "section_number": "28-904(f)",
           "quote": "Chart 1 (City of Waco Planning & Zoning) lists an explicit Side Corner value of 15 for R-E, matching §28-904(f): 'On corner lots in the R and O districts, there shall be a yard along the side street side of such tract at least 15 feet, except that, in the case of a lot of record which is less than 75 feet in width, only 20 per cent of the width of the lot need be provided for such side yard; and further provided, that in any district, where the rear yard of a corner lot abuts the side yard of an adjacent lot, such corner lot shall provide a side yard along the side street side of such tract which is equal in width to the depth required for the front yard of such adjacent lot (whichever is greater).'",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_height_ft": {
           "section_number": "28-275",
           "quote": "'No structure or use in the R-E district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_lot_coverage_pct": {
           "section_number": "28-271--28-278",
           "quote": "No lot-coverage-percentage scalar appears in the R-E district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations, or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
         },
         "max_impervious_pct": {
           "section_number": "28-271--28-278",
           "quote": "No impervious-cover-percentage scalar appears in the R-E district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
         }
       }
@@ -75,45 +75,45 @@
         "front_ft": {
           "section_number": "28-301",
           "quote": "Single-family dwelling: 'A front yard of not less than 30 feet; two side yards of not less than ten feet each; and a rear yard of not less than 30 feet.' Uses allowed by special permit carry the same 30/10/30 values.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "rear_ft": {
           "section_number": "28-301",
           "quote": "Single-family dwelling: front yard 30 feet, two side yards ten feet each, and a rear yard of not less than 30 feet.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_ft": {
           "section_number": "28-301",
           "quote": "Single-family dwelling: front yard 30 feet, two side yards of not less than ten feet each, rear yard 30 feet.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_corner_ft": {
           "section_number": "28-904(f)",
           "quote": "Chart 1 leaves the Side Corner cell blank for R-1A; §28-904(f) states the 15-foot corner-lot side-street yard applies generally to 'the R and O districts,' so it is applied here as the general provision. Full text: 'there shall be a yard along the side street side of such tract at least 15 feet, except that, in the case of a lot of record which is less than 75 feet in width, only 20 per cent of the width of the lot need be provided... and further provided, that... where the rear yard of a corner lot abuts the side yard of an adjacent lot, such corner lot shall provide a side yard... equal in width to the depth required for the front yard of such adjacent lot (whichever is greater).'",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_height_ft": {
           "section_number": "28-300",
           "quote": "'No structure or use in the R-1A district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_lot_coverage_pct": {
           "section_number": "28-296--28-303",
           "quote": "No lot-coverage-percentage scalar appears in the R-1A district's Purpose, Permitted uses, Special uses, Lot area (§28-299: 12,000 sq ft / 100 ft width), Height, Yard, Additional regulations (§28-302: development-plan review, escarpment/floodplain chapters, parking permit - no coverage figure), or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
         },
         "max_impervious_pct": {
           "section_number": "28-296--28-303",
           "quote": "No impervious-cover-percentage scalar appears in the R-1A district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
         }
       }
@@ -132,45 +132,45 @@
         "front_ft": {
           "section_number": "28-326",
           "quote": "Single-family dwelling and small lot single-family dwelling: 'A front yard of not less than 25 feet; two sides of not less than five feet each; and a rear yard of not less than 25 feet.' A distinct special-permit-uses row carries 25/6/25 instead and is omitted here.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "rear_ft": {
           "section_number": "28-326",
           "quote": "Single-family dwelling and small lot single-family dwelling: front yard 25 feet, two sides five feet each, rear yard not less than 25 feet.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_ft": {
           "section_number": "28-326",
           "quote": "Single-family dwelling and small lot single-family dwelling: front yard 25 feet, two sides of not less than five feet each, rear yard 25 feet.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_corner_ft": {
           "section_number": "28-904(f)",
           "quote": "Chart 1 leaves the Side Corner cell blank for R-1B; §28-904(f) states the 15-foot corner-lot side-street yard applies generally to 'the R and O districts,' so it is applied here as the general provision, subject to the same narrow-lot (20% of width, if lot of record <75 ft wide) and rear-abuts-adjacent-side-yard (match adjacent lot's front-yard depth, whichever greater) exceptions quoted in the R-E row.",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_height_ft": {
           "section_number": "28-325",
           "quote": "'No structure or use in the R-1B district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_lot_coverage_pct": {
           "section_number": "28-321--28-328",
           "quote": "No lot-coverage-percentage scalar appears in the R-1B district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations, or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
         },
         "max_impervious_pct": {
           "section_number": "28-321--28-328",
           "quote": "No impervious-cover-percentage scalar appears in the R-1B district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
         }
       }
@@ -189,45 +189,45 @@
         "front_ft": {
           "section_number": "28-351",
           "quote": "All dwellings except single-family attached (including special permits): 'A front yard of not less than 25 feet; two side yards of not less than six feet each; and a rear yard of not less than 25 feet.' A separate single-family-attached/detached (zero lot line) row carries a 25/[10-ft combined side]/25 shape instead and is omitted here.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "rear_ft": {
           "section_number": "28-351",
           "quote": "All dwellings except SF attached: front yard 25 feet, two side yards six feet each, rear yard not less than 25 feet.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_ft": {
           "section_number": "28-351",
           "quote": "All dwellings except SF attached: front yard 25 feet, two side yards of not less than six feet each, rear yard 25 feet. (The zero-lot-line SF-attached/detached variant instead uses a 10-foot combined side yard and is not represented by this scalar.)",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_corner_ft": {
           "section_number": "28-904(f)",
           "quote": "Chart 1 leaves the Side Corner cell blank for R-1C; §28-904(f) states the 15-foot corner-lot side-street yard applies generally to 'the R and O districts,' so it is applied here as the general provision, subject to the same narrow-lot and rear-abuts-adjacent-side-yard exceptions quoted in the R-E row.",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_height_ft": {
           "section_number": "28-350",
           "quote": "'No structure or use in the R-1C district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_lot_coverage_pct": {
           "section_number": "28-346--28-353",
           "quote": "No lot-coverage-percentage scalar appears in the R-1C district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations, or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
         },
         "max_impervious_pct": {
           "section_number": "28-346--28-353",
           "quote": "No impervious-cover-percentage scalar appears in the R-1C district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
         }
       }
@@ -246,46 +246,947 @@
         "front_ft": {
           "section_number": "28-376",
           "quote": "Single-family or two-family dwelling: 'A front yard of not less than 25 feet; two side yards of not less than five feet each; and a rear yard of not less than 25 feet.' Separate single-family-attached (zero lot line), single-family-detached (zero lot line), and small-lot single-family rows exist with 10-ft combined/opposite side-yard shapes and are omitted here.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "rear_ft": {
           "section_number": "28-376",
           "quote": "Single-family or two-family dwelling: front yard 25 feet, two side yards five feet each, rear yard not less than 25 feet.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_ft": {
           "section_number": "28-376",
           "quote": "Single-family or two-family dwelling: front yard 25 feet, two side yards of not less than five feet each, rear yard 25 feet. (Zero-lot-line and small-lot variants instead use a 10-foot combined or opposite-side yard and are not represented by this scalar.)",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "side_corner_ft": {
           "section_number": "28-904(f)",
           "quote": "Chart 1 leaves the Side Corner cell blank for R-2; §28-904(f) states the 15-foot corner-lot side-street yard applies generally to 'the R and O districts,' so it is applied here as the general provision, subject to the same narrow-lot and rear-abuts-adjacent-side-yard exceptions quoted in the R-E row.",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_height_ft": {
           "section_number": "28-375",
           "quote": "'No structure or use in the R-2 district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height,' subject to the exception in section 28-903. The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
-          "confidence": 0.9,
-          "verification_state": "primary-source-verified"
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
         },
         "max_lot_coverage_pct": {
           "section_number": "28-371--28-378",
           "quote": "No lot-coverage-percentage scalar appears in the R-2 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations, or Distance requirement sections, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
         },
         "max_impervious_pct": {
           "section_number": "28-371--28-378",
           "quote": "No impervious-cover-percentage scalar appears in the R-2 district's sections checked, nor in Chart 1/Chart 2. Sentinel 100 per the established non-binding convention in this corpus (see pflugerville-tx.json).",
-          "confidence": 0.8,
-          "verification_state": "primary-source-verified",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
           "not_specified": true
+        }
+      }
+    },
+{
+      "district_name": "R-3A Multiple-Family Residence District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 75,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances?nodeId=PTIICOOR_CH28ZO_ARTIVDIRE_DIV7MUMIREDI",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-401",
+          "quote": "All dwellings except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each,' except that a side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling, and the required side or rear yard adjacent to a lot in an R-1A, R-1B, or R-1C district shall be increased by one foot for each two feet, or fraction thereof, by which the principal structure exceeds 25 feet in height. The district's secondary 'Other permitted uses' row (front 50 / side 25 / rear 50) is omitted from this scalar.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-401",
+          "quote": "All dwellings except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each.' The secondary 'Other permitted uses' row carries a 50-foot rear yard and is omitted.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-401",
+          "quote": "'two side yards of not less than five feet each, except that: A side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling. The required side or rear yard adjacent to a lot in an R-1A, R-1B, or R-1C district shall be increased by one foot for each two feet, or fraction thereof, by which the principal structure exceeds 25 feet in height.' The 5-foot scalar is the two-yard minimum; the party-wall waiver and the abutting-R-1A/R-1B/R-1C height escalator are conditional and not folded in.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-401",
+          "quote": "'A side yard of not less than 15 feet shall be provided where a side yard is adjacent to a side street, except as provided in section 28-904(f).' Section 28-904(f) states the general R-and-O rule: 'On corner lots in the R and O districts, there shall be a yard along the side street side of such tract at least 15 feet, except that, in the case of a lot of record which is less than 75 feet in width, only 20 percent of the width of the lot need be provided for such side yard; and further provided, that in any district, where the rear yard of a corner lot abuts the side yard of an adjacent lot, such corner lot shall provide a side yard along the side street side of such tract which is equal in width to the depth required for the front yard of such adjacent lot (whichever is greater).' The narrow-lot and rear-abuts-adjacent-side-yard exceptions are preserved here rather than folded into the 15-foot scalar.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-400",
+          "quote": "'Except as provided in section 28-903, no structure or use in the R-3A district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height.' The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried. Section 28-903 exempts chimneys, steeples, mechanical appurtenances and similar items and permits 70 feet for public buildings, churches, hospitals, institutions and schools with increased yards.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-396--28-403",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the R-3A district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all R districts, the maximum coverage of the site by buildings and paved areas shall not exceed 75 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved areas' (a site-coverage cap on buildings plus pavement) rather than the word 'impervious', which this corpus's max_impervious_pct field reads as the same concept. The rule is family-wide and is stated once for all R districts, not per district.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "R-3B Multiple-Family Residence District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 75,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-426",
+          "quote": "All dwellings except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each,' except that a side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling. The district's secondary rows are omitted from this scalar: 'Other permitted uses. A front yard of not less than 50 feet; two side yards of not less than 25 feet; and a rear yard of not less than 50 feet,' and the single-family-attached (zero lot line) row, whose rear yard is 25 feet abutting an R-1 or R-2 district.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-426",
+          "quote": "All dwellings except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each.' The secondary 'Other permitted uses' row carries a 50-foot rear yard and is omitted.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-426",
+          "quote": "'two side yards of not less than five feet each, except that: A side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling. The required side or rear yard adjacent to a lot in an R-1A, R-1B or R-1C district shall be increased by one foot for each two feet, or fraction thereof, by which the principal structure exceeds 25 feet in height.' The 5-foot scalar is the two-yard minimum; the party-wall waiver and the abutting-R-1A/R-1B/R-1C height escalator are conditional and not folded in.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-426",
+          "quote": "'A side yard of not less than 15 feet shall be provided where a side yard is adjacent to a side street, except as provided in section 28-904(f).' Section 28-904(f) states the same 15-foot corner-lot side-street yard for 'the R and O districts' generally, subject to the narrow-lot (under 75 feet of record: 20 percent of lot width) and rear-abuts-adjacent-side-yard (match the adjacent lot's required front-yard depth, whichever is greater) exceptions preserved verbatim in the R-3A row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-425",
+          "quote": "'Except as provided in section 28-903, no structure or use in the R-3B district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height.' The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-421--28-428",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the R-3B district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all R districts, the maximum coverage of the site by buildings and paved areas shall not exceed 75 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved areas' rather than the word 'impervious'; the rule is family-wide and stated once for all R districts.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "R-3C Multiple-Family Residence District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 75,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-451",
+          "quote": "All dwellings except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each.' The City's Chart 1 shows R-3C through its 'Single-family attached (zero lot line)' row (front 25 / combined side 10 / rear 25) rather than this general dwellings row; the district section, which governs, puts the general case at a 5-foot two-side-yard minimum. The secondary 'Other permitted uses' row (front 50 / side 25 / rear 50) is omitted.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-451",
+          "quote": "All dwellings except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each.' The single-family-attached (zero lot line) row carries 'a rear yard of not less than 25 feet abutting an R-1 or R-2 district; a rear yard of not less than 25 feet abutting an R-3, O, C or M district' and is omitted as a secondary case; the 'Other permitted uses' row carries 50 feet.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-451",
+          "quote": "'two side yards of not less than five feet each, except that: A side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling. The required side or rear yard adjacent to a lot in an R-1A, R-1B or R-1C district shall be increased by one foot for each two feet, or fraction thereof, by which the principal structure exceeds 25 feet in height.' The zero-lot-line attached variant instead uses 'a side yard or yards with a combined width of not less than ten feet' and is not represented by this scalar.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-451",
+          "quote": "'A side yard of not less than 15 feet shall be provided where a side yard is adjacent to a side street, except as provided in section 28-904(f).' Section 28-904(f) states the same 15-foot corner-lot side-street yard for 'the R and O districts' generally, subject to the narrow-lot and rear-abuts-adjacent-side-yard exceptions preserved verbatim in the R-3A row. Chart 1 leaves the R-3C side-corner cell without a numeric value.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-450",
+          "quote": "'Except as provided in section 28-903, no structure or use in the R-3C district shall be erected, altered or maintained which exceeds 2½ stories or 35 feet in height.' The 2.5-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-446--28-453",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the R-3C district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all R districts, the maximum coverage of the site by buildings and paved areas shall not exceed 75 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved areas' rather than the word 'impervious'; the rule is family-wide and stated once for all R districts.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "R-3D Multiple-Family Residence District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 75,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-476",
+          "quote": "All dwellings except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each.' The City's Chart 1 shows R-3D through its 'Other' row (front 50 / side 25 / rear 50) rather than this general dwellings row; the district section, which governs, puts the general case at 25 feet, and that secondary 'For other permitted uses' row is preserved here rather than coded.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-476",
+          "quote": "All dwellings except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each.' The secondary 'For other permitted uses' row carries 'a rear yard of not less than 50 feet' and is omitted.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-476",
+          "quote": "'two side yards of not less than five feet each, except that: A side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling. The required side or rear yard adjacent to a lot in an R-1A, R-1B or R-1C district shall be increased by one foot for each two feet, or fraction thereof, by which the principal structure exceeds 25 feet in height.' The 'other permitted uses' row instead requires two 25-foot side yards and is not represented by this scalar.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-476",
+          "quote": "'A side yard of not less than 15 feet shall be provided where a side yard is adjacent to a side street, except as provided in section 28-904(f).' Section 28-904(f) states the same 15-foot corner-lot side-street yard for 'the R and O districts' generally, subject to the narrow-lot and rear-abuts-adjacent-side-yard exceptions preserved verbatim in the R-3A row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-475",
+          "quote": "'Except as provided in section 28-903, no structure or use in the R-3D district shall be erected, altered or maintained which exceeds 3½ stories or 45 feet in height.' The 3.5-story cap is not separately representable in this schema; 45 feet is the scalar carried. This is the one R-3 subdivision whose height cap differs from the 35 feet carried by R-3A/R-3B/R-3C.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-471--28-478",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the R-3D district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all R districts, the maximum coverage of the site by buildings and paved areas shall not exceed 75 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved areas' rather than the word 'impervious'; the rule is family-wide and stated once for all R districts.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "R-3E Multiple-Family Residence District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 75,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-501",
+          "quote": "Preamble: 'Except as provided in sections 28-904 through 28-907, no structure or use in the R-3E district shall be erected, altered or maintained unless the following yards are provided:' -- 'All dwellings except single-family attached (zero lot line) dwellings. A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each,' except that a side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling. The secondary 'For other permitted uses' row (front 50 / side 25 / rear 50) is omitted.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-501",
+          "quote": "All dwellings except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each.' The secondary 'For other permitted uses' row carries a 50-foot rear yard and is omitted.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-501",
+          "quote": "'two side yards of not less than five feet each, except that: A side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling. The required side or rear yard adjacent to a lot in an R-1A, R-1B or R-1C district shall be increased by one foot for each two feet, or fraction thereof, by which the principal structure exceeds 25 feet in height.' The 5-foot scalar is the two-yard minimum.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-501",
+          "quote": "'A side yard of not less than 15 feet shall be provided where a side yard is adjacent to a side street, except as provided in section 28-904(f).' Section 28-904(f) states the same 15-foot corner-lot side-street yard for 'the R and O districts' generally, subject to the narrow-lot and rear-abuts-adjacent-side-yard exceptions preserved verbatim in the R-3A row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-500",
+          "quote": "Height restriction: 'Except as provided in section 28-903, there shall be no height limit in the R-3E district.' Coded as the canonical not_specified sentinel 999 rather than a fabricated figure; the ordinance states no feet-based maximum for this district. Section 28-903 still exempts the usual items and still permits 70 feet for public buildings, churches, hospitals, institutions and schools with increased yards.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-496--28-503",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the R-3E district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all R districts, the maximum coverage of the site by buildings and paved areas shall not exceed 75 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved areas' rather than the word 'impervious'; the rule is family-wide and stated once for all R districts.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "O-1 Office District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 85,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-526",
+          "quote": "All permitted uses: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each,' except that where abutting an R-1 or R-2 district a side yard of not less than 25 feet shall be provided, and the required side or rear yard adjacent to a lot in an R-1A, R-1B or R-1C district shall be increased by one foot for each two feet, or fraction thereof, by which the principal structure exceeds 25 feet in height. The 25-foot scalar is the general-case front yard; the abutting-R-1/R-2 side increase is a conditional exception preserved here, not folded in.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-526",
+          "quote": "All permitted uses: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each,' except that where abutting an R-1 or R-2 district a side yard of not less than 25 feet shall be provided. The 25-foot general rear yard is coded; the abutting-R-1/R-2 condition is preserved, not folded in.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-526",
+          "quote": "'two side yards of not less than five feet each, except that: Where abutting an R-1 or R-2 district, a side yard of not less than 25 feet shall be provided.' The 5-foot scalar is the general-case two-yard minimum; the 25-foot abutting-R-1/R-2 increase is a conditional exception preserved verbatim rather than coded.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-526",
+          "quote": "'A side yard of not less than 15 feet shall be provided where a side yard is adjacent to a side street, except as provided in section 28-904(f).' Section 28-904(f) states the same 15-foot corner-lot side-street yard for 'the R and O districts' generally, subject to the narrow-lot and rear-abuts-adjacent-side-yard exceptions preserved verbatim in the R-3A row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-525",
+          "quote": "'Except as provided in section 28-903, no structure or use in the O-1 district shall be erected, altered or maintained which exceeds two stories or 35 feet in height.' The two-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-521--28-528",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the O-1 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all O districts, except for residential uses in O districts, the maximum coverage of the site by buildings and paved areas shall not exceed 85 percent of the total lot area. When the use is residential in O districts, the maximum coverage of the sites by buildings and paved areas shall not exceed 75 percent of the total lot area.' 85 is coded as the general (non-residential) case per the ordinance's own 'except for residential uses' framing; the residential-use 75 percent is preserved here verbatim. Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved areas' rather than the word 'impervious'.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "O-2 Office-Residence District",
+      "front_ft": 25,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 85,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-551",
+          "quote": "All uses except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each,' except that a side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling. The single-family-attached (zero lot line) row and the small-lot single-family row both carry a 25-foot general front yard on a 10-foot combined side yard and are omitted as secondary cases.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-551",
+          "quote": "All uses except single-family attached (zero lot line) dwellings: 'A front yard of not less than 25 feet; a rear yard of not less than 25 feet; and two side yards of not less than five feet each.' The single-family-attached (zero lot line) row carries the same 25-foot rear yard and is omitted as a secondary case.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-551",
+          "quote": "'two side yards of not less than five feet each, except that: A side yard shall not be required where a side lot line is coterminous with a party wall of a townhouse dwelling. The required side or rear yard adjacent to a lot in an R-1A, R-1B or R-1C district shall be increased by one foot for each two feet, or fraction thereof, by which the principal structure exceeds 25 feet in height.' The zero-lot-line and small-lot variants instead use a 10-foot combined side yard and are not represented by this scalar.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-551",
+          "quote": "'A side yard of not less than 15 feet shall be provided where a side yard is adjacent to a side street, except as provided in section 28-904(c).' PRESERVED VERBATIM INCLUDING THE CROSS-REFERENCE: O-2 is the only district in this family whose side-street clause cites section 28-904(c) (the subsection barring double-counting of required yards) rather than 28-904(f) (the 15-foot corner-lot side-street rule that every other R-3/O district cites); read against section 28-904(f), which applies to 'the R and O districts' generally and is quoted verbatim in the R-3A row, the 15-foot figure is the same. Recorded as a codification quirk, not silently corrected.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-550",
+          "quote": "Height restrictions: 'Except as provided in section 28-903, there shall be no height limit in the O-2 district.' Coded as the canonical not_specified sentinel 999 rather than a fabricated figure; the ordinance states no feet-based maximum for this district.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-546--28-553",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the O-2 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all O districts, except for residential uses in O districts, the maximum coverage of the site by buildings and paved areas shall not exceed 85 percent of the total lot area. When the use is residential in O districts, the maximum coverage of the sites by buildings and paved areas shall not exceed 75 percent of the total lot area.' 85 is coded as the general case per the ordinance's own 'except for residential uses' framing; the residential-use 75 percent is preserved verbatim. O-2 is the O district where that residential exception is most likely to bind, since its purpose is 'compatible office and high-density residential uses'. Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved areas' rather than the word 'impervious'.",
+          "confidence": 0.65,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "O-3 Office-Limited Commercial District",
+      "front_ft": 15,
+      "rear_ft": 25,
+      "side_ft": 5,
+      "side_corner_ft": 15,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 85,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-576",
+          "quote": "All permitted uses: 'A front yard of not less than 15 feet; a rear yard of not less than 25 feet; two side yards of not less than five feet each,' except that a side yard of not less than 15 feet shall be required where the side yard is adjacent to a side street, and a side yard abutting any R-1 or R-2 district shall not be less than 25 feet. O-3's front yard is 15 feet, not the 25 feet carried by O-1/O-2 and the R-3 districts.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-576",
+          "quote": "All permitted uses: 'A front yard of not less than 15 feet; a rear yard of not less than 25 feet; two side yards of not less than five feet each,' with a 25-foot side yard required abutting any R-1 or R-2 district. The 25-foot general rear yard is coded; the abutting-R-1/R-2 condition is preserved, not folded in.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-576",
+          "quote": "'two side yards of not less than five feet each, except that: A side yard of not less than 15 feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f). A side yard abutting any R-1 or R-2 district shall not be less than 25 feet.' The 5-foot scalar is the general-case two-yard minimum; the 25-foot abutting-R-1/R-2 increase is a conditional exception preserved verbatim rather than coded.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-576",
+          "quote": "'A side yard of not less than 15 feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f).' Section 28-904(f) states the same 15-foot corner-lot side-street yard for 'the R and O districts' generally, subject to the narrow-lot and rear-abuts-adjacent-side-yard exceptions preserved verbatim in the R-3A row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-575",
+          "quote": "'Except as provided in section 28-903, no structure or use in the O-3 district shall be erected, altered or maintained which exceeds two stories or 35 feet in height.' The two-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-571--28-578",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the O-3 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Nonresidential regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all O districts, except for residential uses in O districts, the maximum coverage of the site by buildings and paved areas shall not exceed 85 percent of the total lot area. When the use is residential in O districts, the maximum coverage of the sites by buildings and paved areas shall not exceed 75 percent of the total lot area.' 85 is coded as the general case per the ordinance's own 'except for residential uses' framing; the residential-use 75 percent is preserved verbatim. Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved areas' rather than the word 'impervious'.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "C-1 Community Commercial - No Alcohol District",
+      "front_ft": 20,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 90,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-603",
+          "quote": "All permitted uses: 'A front yard of not less than 20 feet and no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street.' The 20-foot front yard is the general case; the side-street side yard and the abutting-R-3/O and R-1/R-2 increases are conditional and preserved below.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-603",
+          "quote": "'A front yard of not less than 20 feet and no minimum side or rear yard is required, except that: ... Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet. The required side or rear yard adjacent to a lot in an R-1A, R-1B or R-1C district shall be increased by one foot for each two feet, or fraction thereof, by which the principle structure exceeds 25 feet in height.' Coded 0 as the general case (no minimum rear yard), with the abutting-district exceptions and the height escalator preserved verbatim. The ordinance's own 'principle structure' typo is preserved as it appears.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-603",
+          "quote": "'no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street. Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet.' Coded 0 as the general case (no minimum interior side yard), with the side-street 10-foot rule and both abutting-district increases preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-603",
+          "quote": "'A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street.' Section 28-904(f)'s 15-foot corner-lot rule is expressly limited to 'the R and O districts', so it does not raise C-1's side-street yard; the City's Chart 2 side-corner column reads 10 for C-1, matching this section. The 15-foot abutting-R-3/O and 25-foot abutting-R-1/R-2 increases are separate conditions preserved on the side_ft and rear_ft entries.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-602",
+          "quote": "'Except as provided in section 28-903, no structure or use in the C-1 district shall be erected, altered or maintained which exceeds two stories or 35 feet in height.' Section 28-903's conditional exception: 'Office buildings and hotels located in C-1, C-2, C-3, and C-5 districts may have a maximum height of five stories or 75 feet if all required yards for such buildings are increased by at least one additional foot for each two feet by which the building exceeds the maximum height for the district in which it is located.' The two-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-596--28-605",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the C-1 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all C and M districts, except the C-4 district, the maximum coverage of the site by buildings and paved area shall not exceed 90 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved area' rather than the word 'impervious'; the rule is family-wide and stated once for all C and M districts other than C-4.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "C-2 Community Commercial District",
+      "front_ft": 20,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 35,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 90,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-627",
+          "quote": "All permitted uses: 'A front yard of not less than 20 feet and no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street.' The 20-foot front yard is the general case; the side-street side yard and the abutting-R-3/O and R-1/R-2 increases are conditional and preserved below.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-627",
+          "quote": "'A front yard of not less than 20 feet and no minimum side or rear yard is required, except that: ... Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet. The required side or rear yard adjacent to a lot in an R-1A, R-1B or R-1C district shall be increased by one foot for every two feet, or fraction thereof, by which the principal structure exceeds 25 feet in height.' Coded 0 as the general case (no minimum rear yard), with the abutting-district exceptions and the height escalator preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-627",
+          "quote": "'no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street. Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet.' Coded 0 as the general case (no minimum interior side yard), with the side-street 10-foot rule and both abutting-district increases preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-627",
+          "quote": "'A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street.' Section 28-904(f)'s 15-foot corner-lot rule is expressly limited to 'the R and O districts', so it does not raise C-2's side-street yard. The City's Chart 2 leaves the C-2 side-corner cell blank; the district section, which governs, states 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-626",
+          "quote": "'Except as provided in section 28-903, no structure or use in the C-2 district shall be erected, altered or maintained which exceeds two stories or 35 feet in height.' Section 28-903's conditional exception: 'Office buildings and hotels located in C-1, C-2, C-3, and C-5 districts may have a maximum height of five stories or 75 feet if all required yards for such buildings are increased by at least one additional foot for each two feet by which the building exceeds the maximum height for the district in which it is located.' The two-story cap is not separately representable in this schema; 35 feet is the scalar carried.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-621--28-629",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the C-2 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all C and M districts, except the C-4 district, the maximum coverage of the site by buildings and paved area shall not exceed 90 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved area' rather than the word 'impervious'; the rule is family-wide and stated once for all C and M districts other than C-4.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "C-3 General Commercial District",
+      "front_ft": 10,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 90,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-651",
+          "quote": "All permitted uses: 'A front yard of not less than ten feet and no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street.' The 10-foot front yard is the general case; the abutting-R-3/O and R-1/R-2 increases and the height escalator are conditional and preserved below.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-651",
+          "quote": "'A front yard of not less than ten feet and no minimum side or rear yard is required, except that: ... Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet. All side and rear yards shall be increased by one foot for each two feet, or fraction thereof, by which a principal structure exceeds 35 feet in height.' Coded 0 as the general case (no minimum rear yard), with the abutting-district exceptions and the 35-foot height escalator preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-651",
+          "quote": "'no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street. Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet.' Coded 0 as the general case (no minimum interior side yard), with the side-street 10-foot rule and both abutting-district increases preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-651",
+          "quote": "'A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street.' Section 28-904(f)'s 15-foot corner-lot rule is expressly limited to 'the R and O districts', so it does not raise C-3's side-street yard. The City's Chart 2 leaves the C-3 side-corner cell blank; the district section, which governs, states 10.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-650",
+          "quote": "'Except as provided in section 28-903, no structure or use in the C-3 district shall be erected, altered or maintained which exceeds four stories or 60 feet in height.' Section 28-903's conditional exception: 'Office buildings and hotels located in C-1, C-2, C-3, and C-5 districts may have a maximum height of five stories or 75 feet if all required yards for such buildings are increased by at least one additional foot for each two feet by which the building exceeds the maximum height for the district in which it is located.' The four-story cap is not separately representable in this schema; 60 feet is the scalar carried.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-646--28-653",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the C-3 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all C and M districts, except the C-4 district, the maximum coverage of the site by buildings and paved area shall not exceed 90 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved area' rather than the word 'impervious'; the rule is family-wide and stated once for all C and M districts other than C-4.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "C-4 Central Commercial District",
+      "front_ft": 0,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 0,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 100,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-676",
+          "quote": "'There shall be no minimum yard requirements in the C-4 district, except that: Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet. Provisions applicable under section 28-904 will apply.' Coded 0 as the general case (no minimum front yard); both abutting-district exceptions are preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-676",
+          "quote": "'There shall be no minimum yard requirements in the C-4 district, except that: Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet.' Coded 0 as the general case (no minimum rear yard); both abutting-district exceptions are preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-676",
+          "quote": "'There shall be no minimum yard requirements in the C-4 district, except that: Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet.' Coded 0 as the general case (no minimum interior side yard); both abutting-district exceptions are preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-676",
+          "quote": "C-4 states no minimum yard requirement of any kind and, unlike the other districts in this table, carries no side-street clause at all. Section 28-904(f)'s 15-foot corner-lot side-street rule is expressly limited to 'the R and O districts' and therefore does not apply to C-4. The City's Chart 2 side-corner column reads 0 for C-4, matching this section. Coded 0, not the 15/25 abutting-R-district exceptions (those are abutting-lot conditions preserved on the side_ft and rear_ft entries).",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-675",
+          "quote": "Height restrictions: 'There shall be no height limit in the C-4 district.' Coded as the canonical not_specified sentinel 999 rather than a fabricated figure; the ordinance states no feet-based maximum for this district, and the C-4 section alone omits the 'Except as provided in section 28-903' preamble the other districts carry.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-671--28-678",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the C-4 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. C-4 is the one district in this family that section 28-216 expressly excepts from its coverage cap, so no site-coverage figure is coded to max_impervious_pct on this row either.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III) caps site coverage by 'buildings and paved areas' at 75 percent in all R districts, 85 percent in all O districts (75 percent residential), and 'In all C and M districts, except the C-4 district, ... 90 percent of the total lot area.' C-4 is the one district section 28-216 NAMES as an exception, so no cap is coded; sentinel 100 per the established non-binding convention. The City's Chart 3 states 'No Limit' for C-4, corroborating.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        }
+      }
+    },
+{
+      "district_name": "C-5 Service Commercial District",
+      "front_ft": 10,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 60,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 90,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-701",
+          "quote": "All permitted uses: 'A front yard of not less than ten feet; and no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f).' The 10-foot front yard is the general case; the abutting-R-3/O and R-1/R-2 increases are conditional and preserved below.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-701",
+          "quote": "'A front yard of not less than ten feet; and no minimum side or rear yard is required, except that: ... Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet. The required side or rear yard shall be increased by one foot for each two feet, or fraction thereof, by which the principal structure exceeds 35 feet in height.' Coded 0 as the general case (no minimum rear yard), with the abutting-district exceptions and the 35-foot height escalator preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-701",
+          "quote": "'no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f). Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet.' Coded 0 as the general case (no minimum interior side yard), with the side-street 10-foot rule and both abutting-district increases preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-701",
+          "quote": "'A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f).' Although C-5's clause cross-references section 28-904(f), that section's 15-foot corner-lot rule is expressly limited to 'the R and O districts' and never applies to C-5; the 10-foot figure stated in the district section itself governs, and the City's Chart 2 side-corner column reads 10 for C-5, matching.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-700",
+          "quote": "'Except as provided in section 28-903, no structure or use in the C-5 district shall be erected, altered or maintained which exceeds four stories or 60 feet in height.' Section 28-903's conditional exception: 'Office buildings and hotels located in C-1, C-2, C-3, and C-5 districts may have a maximum height of five stories or 75 feet if all required yards for such buildings are increased by at least one additional foot for each two feet by which the building exceeds the maximum height for the district in which it is located.' The four-story cap is not separately representable in this schema; 60 feet is the scalar carried.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-696--28-703",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the C-5 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all C and M districts, except the C-4 district, the maximum coverage of the site by buildings and paved area shall not exceed 90 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved area' rather than the word 'impervious'; the rule is family-wide and stated once for all C and M districts other than C-4.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "M-1 Office and Restricted Industrial District",
+      "front_ft": 35,
+      "rear_ft": 35,
+      "side_ft": 15,
+      "side_corner_ft": 15,
+      "max_height_ft": 45,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 90,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances?nodeId=PTIICOOR_CH28ZO_ARTIVDIRE_DIV20OFREINDI",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-726",
+          "quote": "All permitted uses: 'A front yard of not less than 35 feet; two side yards of not less than 15 feet each; and a rear yard of not less than 35 feet, except that a side yard abutting a lot in an R or O district shall not be less than 25 feet. All required yards shall be increased by one foot for each two feet, or fraction thereof, by which a principal structure exceeds 45 feet in height.' M-1 is the most generous street yard in this table at 35 feet; the abutting-R-or-O increase and the 45-foot height escalator are conditional and preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-726",
+          "quote": "'A front yard of not less than 35 feet; two side yards of not less than 15 feet each; and a rear yard of not less than 35 feet, except that a side yard abutting a lot in an R or O district shall not be less than 25 feet.' The 35-foot rear yard is the general case; the abutting-R-or-O condition is preserved, not folded in.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-726",
+          "quote": "'two side yards of not less than 15 feet each; ... except that a side yard abutting a lot in an R or O district shall not be less than 25 feet.' The 15-foot scalar is the general-case two-yard minimum; the 25-foot abutting-R-or-O increase is a conditional exception preserved verbatim rather than coded.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-726",
+          "quote": "The M-1 yard section carries no side-street clause of its own: 'A front yard of not less than 35 feet; two side yards of not less than 15 feet each; and a rear yard of not less than 35 feet, except that a side yard abutting a lot in an R or O district shall not be less than 25 feet.' Section 28-904(f)'s 15-foot corner-lot rule is expressly limited to 'the R and O districts' and does not apply to M-1. 15 is coded because (i) it is the district's own minimum side yard, which a corner lot's side-street side yard must satisfy, and (ii) the City's Chart 2 side-corner column reads 15 for M-1. Coded at reduced confidence because no district section states a side-street yard figure expressly.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-725",
+          "quote": "'Except as provided in section 28-903, no structure or use in the M-1 district shall be erected, altered or maintained which exceeds three stories or 45 feet in height for a lot of less than 200,000 square feet in area; or eight stories or 120 feet in height for a lot of more than 200,000 square feet.' M-1 is the one district in this table whose height cap is lot-size-conditional. 45 feet is coded as the base case (the sub-200,000-square-foot standard, the general case for a GIS district stamp that carries no lot-size attribute); the 120-foot large-lot standard is preserved here verbatim rather than folded in. Coded at reduced confidence for that reason.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-721--28-728",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the M-1 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all C and M districts, except the C-4 district, the maximum coverage of the site by buildings and paved area shall not exceed 90 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved area' rather than the word 'impervious'; the rule is family-wide and stated once for all C and M districts other than C-4.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "M-2 Light Industrial District",
+      "front_ft": 25,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 90,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 90,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-751",
+          "quote": "All permitted uses: 'A front yard of not less than 25 feet; and no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f).' The 25-foot front yard is the general case; the abutting-R-3/O and R-1/R-2 increases are conditional and preserved below.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-751",
+          "quote": "'A front yard of not less than 25 feet; and no minimum side or rear yard is required, except that: ... Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet. All required yards shall be increased by one foot for every two feet, or fraction thereof, by which a principal structure exceeds 45 feet in height.' Coded 0 as the general case (no minimum rear yard), with the abutting-district exceptions and the 45-foot height escalator preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-751",
+          "quote": "'no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f). Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet.' Coded 0 as the general case (no minimum interior side yard), with the side-street 10-foot rule and both abutting-district increases preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-751",
+          "quote": "'A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f).' Although M-2's clause cross-references section 28-904(f), that section's 15-foot corner-lot rule is expressly limited to 'the R and O districts' and never applies to M-2; the 10-foot figure stated in the district section itself governs, and the City's Chart 2 side-corner column reads 10 for M-2, matching.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-750",
+          "quote": "'Except as provided in section 28-903, no structure or use in the M-2 district shall be erected, altered or maintained which exceeds six stories or 90 feet in height.' The six-story cap is not separately representable in this schema; 90 feet is the scalar carried.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-746--28-753",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the M-2 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all C and M districts, except the C-4 district, the maximum coverage of the site by buildings and paved area shall not exceed 90 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved area' rather than the word 'impervious'; the rule is family-wide and stated once for all C and M districts other than C-4.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
+        }
+      }
+    },
+{
+      "district_name": "M-3 General Industrial District",
+      "front_ft": 25,
+      "rear_ft": 0,
+      "side_ft": 0,
+      "side_corner_ft": 10,
+      "max_height_ft": 999,
+      "max_lot_coverage_pct": 100,
+      "max_impervious_pct": 90,
+      "citation_url": "https://library.municode.com/tx/waco/codes/code_of_ordinances?nodeId=PTIICOOR_CH28ZO_ARTIVDIRE_DIV22GEINDI",
+      "provenance": {
+        "front_ft": {
+          "section_number": "28-776",
+          "quote": "All permitted uses: 'A front yard of not less than 25 feet, and no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f).' The 25-foot front yard is the general case; the abutting-R-3/O and R-1/R-2 increases are conditional and preserved below.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "rear_ft": {
+          "section_number": "28-776",
+          "quote": "'A front yard of not less than 25 feet, and no minimum side or rear yard is required, except that: ... Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet. All required yards shall be increased by one foot for every two feet, or fraction thereof, by which a principal structure exceeds 45 feet in height.' Coded 0 as the general case (no minimum rear yard), with the abutting-district exceptions and the 45-foot height escalator preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_ft": {
+          "section_number": "28-776",
+          "quote": "'no minimum side or rear yard is required, except that: A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f). Any rear or side yard abutting an R-3 or O district shall not be less than 15 feet. Any rear or side yard abutting an R-1 or R-2 district shall not be less than 25 feet.' Coded 0 as the general case (no minimum interior side yard), with the side-street 10-foot rule and both abutting-district increases preserved verbatim.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "side_corner_ft": {
+          "section_number": "28-776",
+          "quote": "'A side yard of not less than ten feet shall be required where the side yard is adjacent to a side street or as provided in section 28-904(f).' Section 28-904(f)'s 15-foot corner-lot rule is expressly limited to 'the R and O districts' and does not apply to M-3; the district section's own 10-foot side-street figure governs. The City's Chart 2 side-corner cell for M-3 carries only a footnote marker and no number, so the district section is the sole numeric source here.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read"
+        },
+        "max_height_ft": {
+          "section_number": "28-775",
+          "quote": "Height restrictions: 'Subject to the provisions of section 28-903, there shall be no height limit in the M-3 district.' Coded as the canonical not_specified sentinel 999 rather than a fabricated figure; the ordinance states no feet-based maximum for this district.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_lot_coverage_pct": {
+          "section_number": "28-771--28-778",
+          "quote": "No building-footprint-only lot-coverage-percentage scalar appears in the M-3 district's Purpose, Permitted uses, Special uses, Lot area, Height, Yard, Additional regulations or Distance requirement sections, nor in the City's Chart 1/Chart 2/Chart 3. Sentinel 100 per the established non-binding convention in this corpus. The only coverage figure the ordinance states for this district family is the buildings-and-paved-areas site-coverage cap in section 28-216, coded to max_impervious_pct on this row.",
+          "confidence": 0.75,
+          "verification_state": "transcription-read",
+          "not_specified": true
+        },
+        "max_impervious_pct": {
+          "section_number": "28-216",
+          "quote": "Site coverage and open space (Article III): 'In all C and M districts, except the C-4 district, the maximum coverage of the site by buildings and paved area shall not exceed 90 percent of the total lot area.' Coded at reduced confidence because the ordinance's own term is 'coverage of the site by buildings and paved area' rather than the word 'impervious'; the rule is family-wide and stated once for all C and M districts other than C-4.",
+          "confidence": 0.7,
+          "verification_state": "transcription-read"
         }
       }
     }

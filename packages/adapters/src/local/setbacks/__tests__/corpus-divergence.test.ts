@@ -33,6 +33,21 @@
  * differ"). Both halves of the regression are now checked: `compareTables`
  * is symmetric on the district set (set equality, not one-way containment)
  * and asserts provenance monotonicity on top of the numeric-value check.
+ *
+ * P-299 (2026-09-17, corpus 1.4.0): the two repos are one fact about setbacks in
+ * three places — this baseline, legacy-design-tools' tables at a recorded
+ * commit, and the published package — so the 14 JSON files under `../` are no
+ * longer an independent research pass: they ARE the pinned corpus's tables
+ * (LDT's bytes, at the commit recorded in
+ * `_inbox/2026-09-17_p299-engine-corpus-and-slate_f1-table-revendor.json`), and
+ * this test now reads as a version pin. Two consequences worth stating: a
+ * jurisdiction the corpus grows arrives with the baseline instead of becoming a
+ * permanent asymmetry exception (1.4.0 alone added 78 districts across austin,
+ * round-rock, waco, kyle and pflugerville), and the fourth verification state,
+ * `transcription-read`, is ranked rather than invisible. See
+ * VERIFICATION_STATE_RANK's docstring and the `unranked-verification-state`
+ * mismatch kind — between 1.2.0 and 1.4.0, 154 value slots changed state and
+ * the previous map reported none of them.
  */
 import { describe, expect, it } from "vitest";
 import { getSetbackTable as getCorpusSetbackTable } from "@empressaio/setback-corpus";
@@ -100,11 +115,33 @@ const NUMERIC_FIELDS = [
  * `human-verified` is a regression in what the data can actually support,
  * even though the label reads "stronger". This rank exists to make that
  * regression a rank DECREASE so "never weaken" catches it.
+ *
+ * P-299 (2026-09-17) — two changes, both because this map's failure mode is a
+ * state it cannot place:
+ *
+ * 1. `transcription-read` is the corpus's fourth state (gate.ts, added by
+ *    P-299's other half; confidence capped at 0.75 by rule G9). It ranks above
+ *    `asserted` — gate.ts is explicit that it is "NOT a weaker asserted", a
+ *    real read of the value happened — and below both states that claim a
+ *    stronger channel: `human-verified` (claims an atom-backed check, however
+ *    distrusted) and `primary-source-verified` (read off the instrument's own
+ *    text). It is the honest name for values read through a COPY — an eCode360
+ *    render, a mirror, a transcription — which is most of this corpus.
+ * 2. The map is a TOTAL ORDER over the states that exist, and an unranked
+ *    state is now REPORTED (see `unranked-verification-state` in
+ *    compareTables) rather than skipped. Before this, both lookups returned
+ *    `undefined` and the branch was silently skipped: 154 value slots changed
+ *    state between the vendored 1.2.0 copy and 1.4.0 (98 `primary-source-
+ *    verified` -> `transcription-read` relabels, 56 `transcribed` -> `asserted`
+ *    vocabulary changes) and this test reported ZERO of them. A rank map that
+ *    can only compare states it already knows is a blind spot with the shape of
+ *    a control, which is what the CTX-B fix above was written about.
  */
 const VERIFICATION_STATE_RANK: Readonly<Record<string, number>> = {
   asserted: 0,
-  "human-verified": 1,
-  "primary-source-verified": 2,
+  "transcription-read": 1,
+  "human-verified": 2,
+  "primary-source-verified": 3,
 };
 
 function verificationStateOf(
@@ -199,7 +236,13 @@ const KNOWN_ASYMMETRIC_DISTRICTS: Readonly<
 };
 
 export interface TableMismatch {
-  kind: "missing-in-corpus" | "extra-in-corpus" | "ambiguous-match" | "numeric-mismatch" | "verification-weakened";
+  kind:
+    | "missing-in-corpus"
+    | "extra-in-corpus"
+    | "ambiguous-match"
+    | "numeric-mismatch"
+    | "verification-weakened"
+    | "unranked-verification-state";
   jurisdictionKey: string;
   district: string;
   field?: string;
@@ -267,7 +310,23 @@ export function compareTables(
       if (vendoredState && corpusState) {
         const vendoredRank = VERIFICATION_STATE_RANK[vendoredState];
         const corpusRank = VERIFICATION_STATE_RANK[corpusState];
-        if (vendoredRank !== undefined && corpusRank !== undefined && corpusRank < vendoredRank) {
+        if (vendoredRank === undefined || corpusRank === undefined) {
+          // P-299: report an unranked state instead of falling through.
+          // This branch IS the 154-state blind spot: previously both lookups
+          // returned undefined, the `if` below was skipped, and a state change
+          // to something the map had never heard of produced no finding at all.
+          // Now it produces one, so the next corpus state fails this test until
+          // someone ranks it deliberately (see the map's docstring).
+          mismatches.push({
+            kind: "unranked-verification-state",
+            jurisdictionKey,
+            district: vendoredDistrict.district_name,
+            field,
+            detail: `verification_state not in VERIFICATION_STATE_RANK: baseline=${vendoredState}${
+              vendoredRank === undefined ? " (unranked)" : ""
+            } published=${corpusState}${corpusRank === undefined ? " (unranked)" : ""}`,
+          });
+        } else if (corpusRank < vendoredRank) {
           mismatches.push({
             kind: "verification-weakened",
             jurisdictionKey,
@@ -444,6 +503,120 @@ describe("compareTables — proof by violation (DEV_PROCESS 2.2: a check unteste
       }),
     ]);
     expect(compareTables("demo-tx", vendored, corpus)).toEqual([]);
+  });
+
+  it("FAILS on a primary-source-verified -> transcription-read relabel — P-299's fourth state, the 98-slot change on corpus 1.4.0", () => {
+    // The exact shape the vendored baseline hit when the pin moved to 1.4.0:
+    // four tables' 98 value slots were relabelled from primary-source-verified
+    // to transcription-read (the honest name for a read through a copy, capped
+    // at 0.75 confidence by the corpus's G9). Before P-299 this produced ZERO
+    // findings, because transcription-read was not in the rank map at all.
+    const vendored = table([
+      district({
+        provenance: {
+          front_ft: {
+            section_number: "1",
+            quote: "q",
+            confidence: 0.9,
+            verification_state: "primary-source-verified",
+          },
+        } as SetbackDistrict["provenance"],
+      }),
+    ]);
+    const corpus = table([
+      district({
+        provenance: {
+          front_ft: {
+            section_number: "1",
+            quote: "q",
+            confidence: 0.75,
+            verification_state: "transcription-read",
+          },
+        } as SetbackDistrict["provenance"],
+      }),
+    ]);
+    const mismatches = compareTables("demo-tx", vendored, corpus);
+    expect(
+      mismatches.some(
+        (m) =>
+          m.kind === "verification-weakened" &&
+          m.field === "front_ft" &&
+          m.detail.includes("baseline=primary-source-verified") &&
+          m.detail.includes("published=transcription-read"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does NOT flag the reverse relabel (transcription-read promoted to primary-source-verified) as a weakening", () => {
+    const vendored = table([
+      district({
+        provenance: {
+          front_ft: {
+            section_number: "1",
+            quote: "q",
+            confidence: 0.75,
+            verification_state: "transcription-read",
+          },
+        } as SetbackDistrict["provenance"],
+      }),
+    ]);
+    const corpus = table([
+      district({
+        provenance: {
+          front_ft: {
+            section_number: "1",
+            quote: "q",
+            confidence: 0.9,
+            verification_state: "primary-source-verified",
+          },
+        } as SetbackDistrict["provenance"],
+      }),
+    ]);
+    expect(compareTables("demo-tx", vendored, corpus)).toEqual([]);
+  });
+
+  it("REPORTS a state the rank map has never heard of, instead of skipping it in silence", () => {
+    // The blind spot itself, pinned: a state absent from the map used to be
+    // skipped by BOTH sides of the comparison, so a corpus that invented a new
+    // state (or a baseline carrying an old vocabulary) could change every value
+    // slot's provenance and this test would still pass. `transcribed` is not
+    // hypothetical: the engine's own vocabulary (see
+    // engine-core/src/property-reasoning/table-types.ts) stood in 56 value slots
+    // of the vendored elgin-development-code.json against the corpus's
+    // `asserted`, and produced zero findings.
+    const vendored = table([
+      district({
+        provenance: {
+          front_ft: {
+            section_number: "1",
+            quote: "q",
+            confidence: 0.9,
+            verification_state: "transcribed",
+          },
+        } as SetbackDistrict["provenance"],
+      }),
+    ]);
+    const corpus = table([
+      district({
+        provenance: {
+          front_ft: {
+            section_number: "1",
+            quote: "q",
+            confidence: 0.5,
+            verification_state: "asserted",
+          },
+        } as SetbackDistrict["provenance"],
+      }),
+    ]);
+    const mismatches = compareTables("demo-tx", vendored, corpus);
+    expect(
+      mismatches.some(
+        (m) =>
+          m.kind === "unranked-verification-state" &&
+          m.field === "front_ft" &&
+          m.detail.includes("baseline=transcribed (unranked)"),
+      ),
+    ).toBe(true);
   });
 
   it("does NOT flag the reviewed, allowlisted Kyle extras (regression guard on the allowlist itself)", () => {
