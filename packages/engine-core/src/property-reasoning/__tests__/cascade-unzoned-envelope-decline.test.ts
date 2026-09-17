@@ -37,7 +37,19 @@ describe("buildCascadeEnvelopeDecline (unzoned-county cascade, R27 shape reuse)"
     expect(decline.warmVerifyDeclineCode).toBe(UNZONED_NO_DISTRICT_BASIS_CODE);
     expect(decline.warmVerifyDecline).toBe(UNZONED_NO_DISTRICT_BASIS_REASON);
     expect(decline.recipeVersion).toBeTruthy();
-    expect(decline.outcome).toMatchObject({ kind: "no-buildable-area" });
+    /**
+     * P-263 — this assertion used to read `kind: "no-buildable-area"`. The
+     * unincorporated cohort has no ordinance reaching the parcel and this
+     * cascade ran no computation, so the honest outcome is `not-applicable`:
+     * before P-263 the kind made retrieval's facet print "Setbacks consume the
+     * lot" about land no setback derivation was attempted on. The legacy
+     * warmVerifyDecline* fields below are unchanged, so pre-migration readers
+     * still see the same code and reason.
+     */
+    expect(decline.outcome).toMatchObject({
+      kind: "not-applicable",
+      reason: UNZONED_NO_DISTRICT_BASIS_REASON,
+    });
     // Cites the absence zoning-fact as its sole input — no setback-rule ref,
     // because none is minted (contract has no dimension-less setback shape).
     expect(decline.reasoningChain).toMatchObject({

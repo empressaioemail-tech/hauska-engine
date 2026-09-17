@@ -12,11 +12,19 @@ import {
   sha256HexCanonical,
   contentHashExcludingProvenance,
 } from "./confidence.js";
+import { assertEnvelopeOutcomeIsHonest } from "./envelope-outcome-honesty.js";
 import type { EmitBuildableEnvelopeInputs, HonestAbsence } from "./types.js";
 
 export function emitBuildableEnvelope(
   inputs: EmitBuildableEnvelopeInputs,
 ): BuildableEnvelopeAtomInstance | HonestAbsence {
+  // P-263 — every outcome this emitter persists passes the honesty gate first:
+  // a `no-buildable-area` must show the computation that found the zero, and may
+  // not carry an absence-of-law/data reason. Throws; not catchable into a write.
+  assertEnvelopeOutcomeIsHonest(inputs.outcome, {
+    writer: "emitBuildableEnvelope",
+    parcelNodeId: inputs.parcelNodeId,
+  });
   if (inputs.inputAssertedConfidences.length < 2) {
     return {
       kind: "honest-absence",

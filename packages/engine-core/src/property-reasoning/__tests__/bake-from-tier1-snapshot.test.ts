@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  LEGACY_TIER1_NO_BUILDABLE_AREA_REASON,
+  TIER1_STATUS_NOT_A_ZERO_REASON,
   descriptorForCounty,
   emitFromTier1Snapshot,
 } from "../bake-from-tier1-snapshot.js";
@@ -300,6 +302,55 @@ describe("emitFromTier1Snapshot setback via cityKey (WDLL 3.4–3.6)", () => {
     };
     expect(zoning?.sourceAdapter).toBe("txgio-zoning-stamp:bastrop-city-tx");
     expect(zoning?.sourceUrl).toContain("Zoning_Place_Type");
+  });
+});
+
+describe("P-263 — the Tier-1 no-buildable-area status is not our computed zero", () => {
+  it("reports provisional-front-edge naming the upstream status instead of claiming the zero", () => {
+    const result = emitFromTier1Snapshot(
+      "48453:TEST-TIER1-NO-AREA",
+      {
+        bakedAt: "2026-07-24T20:00:00.000Z",
+        baseFacts: { situsCity: "Austin" },
+        zoning: {
+          district: "SF-3",
+          jurisdictionKey: "austin-tx",
+          provenance: gisProv({
+            sourceUrl: "https://example.test/austin-zoning",
+            codeField: "ZONING_Z",
+            cityKey: "austin-tx",
+          }),
+        },
+        envelope: { status: "no-buildable-area", buildableAreaSqFt: 0 },
+      },
+      "48453",
+    );
+    expect(result.setbackPresent).toBe(true);
+    const envelope = result.atoms.find(
+      (a) => a.entityType === "buildable-envelope",
+    ) as { outcome?: { kind?: string; reason?: string; zero?: unknown } } | undefined;
+    /**
+     * The kind is the claim; `zero` is the proof. A status string from Tier-1 is neither a
+     * computation nor a proof, so the atom may not carry `no-buildable-area` — and the serving
+     * facet prints "Setbacks consume the lot" for that kind, which is how this branch's cohort
+     * (97,108 atoms measured 2026-09-17) reached customers as a statement about their land.
+     */
+    expect(envelope?.outcome?.kind).toBe("provisional-front-edge");
+    expect(envelope?.outcome?.reason).toBe(TIER1_STATUS_NOT_A_ZERO_REASON);
+    expect(envelope?.outcome?.zero).toBeUndefined();
+  });
+
+  it("keeps the retired reason string distinguishable, so the census attributes only the old cohort", () => {
+    /**
+     * The P-263 census counts the pre-fix cohort by `LEGACY_TIER1_NO_BUILDABLE_AREA_REASON`
+     * (imported from the producer above). If a future edit made the two strings equal, every
+     * atom the FIXED branch writes would be counted as a mislabelled one and the movement
+     * table would over-report; this assertion is what keeps that from happening silently.
+     */
+    expect(LEGACY_TIER1_NO_BUILDABLE_AREA_REASON).not.toBe(
+      TIER1_STATUS_NOT_A_ZERO_REASON,
+    );
+    expect(LEGACY_TIER1_NO_BUILDABLE_AREA_REASON).toContain("Tier-1");
   });
 });
 
