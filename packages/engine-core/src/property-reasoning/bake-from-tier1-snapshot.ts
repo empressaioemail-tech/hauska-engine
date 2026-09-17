@@ -35,6 +35,28 @@ import type {
   SetbackTableRowProvenance,
 } from "./types.js";
 
+/**
+ * P-263 — the reason string the PRE-fix Tier-1 bake wrote on every envelope it received from
+ * Tier-1 with status `no-buildable-area`. No computation stood behind it, so it asserted a zero
+ * the bake never found, and the serving facet printed "Setbacks consume the lot" for it. No code
+ * writes this string any more (the branch that used it now reports `provisional-front-edge` and
+ * names the upstream status), but the atoms already on record still carry it, so P-263's movement
+ * census attributes that cohort to THIS producer by this exact string.
+ *
+ * It is exported from beside the branch that retired it so the census cannot attribute a cohort to
+ * a producer by keeping a private copy of the producer's literal: if the string ever moves, the
+ * instrument that counts it moves with it.
+ */
+export const LEGACY_TIER1_NO_BUILDABLE_AREA_REASON =
+  "Tier-1 snapshot status no-buildable-area";
+
+/**
+ * P-263 — the honest reason the same branch writes today: the derivation is pending, and the
+ * upstream status is NAMED rather than re-asserted as our own computed zero.
+ */
+export const TIER1_STATUS_NOT_A_ZERO_REASON =
+  "Tier-1 snapshot reports status no-buildable-area; this bake holds no computed zero of its own and does not re-assert the claim (P-263)";
+
 export type Tier1ZoningProvenance = {
   sourceUrl?: string | null;
   codeField?: string | null;
@@ -363,8 +385,7 @@ export function emitFromTier1Snapshot(
      */
     outcome = {
       kind: "provisional-front-edge",
-      reason:
-        "Tier-1 snapshot reports status no-buildable-area; this bake holds no computed zero of its own and does not re-assert the claim (P-263)",
+      reason: TIER1_STATUS_NOT_A_ZERO_REASON,
     };
   } else if (
     env?.status === "ok" &&

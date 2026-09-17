@@ -25,6 +25,10 @@
  *   so the census cannot disagree with the guard about what a reason means:
  *     - "unzoned"    -> NOT-APPLICABLE   (the ordinance does not reach the parcel)
  *     - "no-district"-> PENDING-DERIVATION (provisional-front-edge; the ledger decides the cell)
+ *     - producer literal -> PENDING-DERIVATION: `LEGACY_TIER1_NO_BUILDABLE_AREA_REASON`
+ *       (97,108 atoms — the largest single reason string) is attributed to the one branch that
+ *       wrote it, which this lane FIXED, so the cohort is classified rather than excused. The
+ *       string is imported from the producer (`bake-from-tier1-snapshot.ts`), never copied.
  *     - null         -> UNCLASSIFIED-BY-REASON (a reason that names neither; reported, never guessed)
  *   Every atom lands in exactly one bucket, and the buckets sum to the population by
  *   construction — the run asserts both and exits non-zero if either fails.
@@ -56,6 +60,7 @@ import {
   classifyEnvelopeAbsenceReason,
   outcomeForEnvelopeDecline,
 } from "../src/property-reasoning/envelope-outcome-honesty.js";
+import { LEGACY_TIER1_NO_BUILDABLE_AREA_REASON } from "../src/property-reasoning/bake-from-tier1-snapshot.js";
 import { evaluateBlastRadius } from "./writer-blast-radius-guard.mjs";
 
 /** The six Phase-0 counties (doc_repo `_catalog` six-county set). */
@@ -119,6 +124,16 @@ function bucketOf(kind, reason, hasZero) {
   const absent = classifyEnvelopeAbsenceReason(reason ?? "");
   if (absent === "unzoned") return "unzoned";
   if (absent === "no-district") return "no-district";
+  /**
+   * A third arm the absence classifier cannot see, and the reason this census does not stop
+   * at it: `LEGACY_TIER1_NO_BUILDABLE_AREA_REASON` is a producer's own literal, written by
+   * exactly one branch (the pre-P-263 Tier-1 bake, which re-asserted an upstream STATUS as
+   * its own computed zero). The branch has been fixed, so the cohort is attributable to the
+   * fix rather than left in "operator ruling needed" — 97,108 atoms of it, the largest single
+   * reason string in the population. Attribution is by the string the producer exports, never
+   * by a literal copied here (see the constant's docstring).
+   */
+  if (reason === LEGACY_TIER1_NO_BUILDABLE_AREA_REASON) return "tier1StatusAssertion";
   return "unclassifiedByReason";
 }
 
@@ -131,6 +146,8 @@ function movementFor(bucket, reason) {
     return `${outcome.kind} (${outcome.reason.slice(0, 48)}…)`;
   }
   if (bucket === "no-district") return "provisional-front-edge — pending; the ledger decides the cell";
+  if (bucket === "tier1StatusAssertion")
+    return "provisional-front-edge — the branch that wrote this reason now names the upstream status instead of claiming a zero (P-263)";
   if (bucket === "alreadyComputedZero") return "none — already carries a computed zero";
   if (bucket === "notNoBuildableArea") return "none — not this kind";
   return "UNCLASSIFIED — operator ruling needed";
@@ -157,6 +174,8 @@ try {
       moves: 0,
       toNotApplicable: 0,
       toPendingDerivation: 0,
+      /** Of `toPendingDerivation`, how much is the retired Tier-1 status assertion. */
+      toPendingByTier1Status: 0,
       cannotClassify: 0,
     };
   }
@@ -178,6 +197,10 @@ try {
     } else if (r.bucket === "no-district") {
       c.moves += r.n;
       c.toPendingDerivation += r.n;
+    } else if (r.bucket === "tier1StatusAssertion") {
+      c.moves += r.n;
+      c.toPendingDerivation += r.n;
+      c.toPendingByTier1Status += r.n;
     } else {
       c.cannotClassify += r.n;
     }
@@ -245,7 +268,9 @@ try {
       population:
         "active buildable-envelope atoms, parcelNodeId prefix in the six counties, outcome.kind = no-buildable-area, no `zero` proof",
       classifier: "src/property-reasoning/envelope-outcome-honesty.ts#classifyEnvelopeAbsenceReason",
-      buckets: ["unzoned", "no-district", "unclassifiedByReason"],
+      buckets: ["unzoned", "no-district", "tier1StatusAssertion", "unclassifiedByReason"],
+      thirdArmCountingRule:
+        "`tier1StatusAssertion` is attributed by the producer's own exported reason string (bake-from-tier1-snapshot.ts#LEGACY_TIER1_NO_BUILDABLE_AREA_REASON), not by the absence classifier: it is a false zero whose producer this lane fixed, so it moves. Only `unclassifiedByReason` is genuinely unclassifiable by this change.",
       excludedAndReportedSeparately: ["alreadyComputedZero", "notNoBuildableArea"],
       sumInvariant: "toNotApplicable + toPendingDerivation + cannotClassify == population, per county and overall",
     },
@@ -256,6 +281,10 @@ try {
       bucketSum,
       toNotApplicable: Object.values(perCounty).reduce((a, c) => a + c.toNotApplicable, 0),
       toPendingDerivation: Object.values(perCounty).reduce((a, c) => a + c.toPendingDerivation, 0),
+      toPendingByTier1Status: Object.values(perCounty).reduce(
+        (a, c) => a + c.toPendingByTier1Status,
+        0,
+      ),
       cannotClassify: Object.values(perCounty).reduce((a, c) => a + c.cannotClassify, 0),
       alreadyComputedZero: Object.values(perCounty).reduce((a, c) => a + c.alreadyComputedZero, 0),
       notNoBuildableArea: Object.values(perCounty).reduce((a, c) => a + c.notNoBuildableArea, 0),
@@ -301,6 +330,7 @@ try {
               population: c.population,
               toNotApplicable: c.toNotApplicable,
               toPendingDerivation: c.toPendingDerivation,
+              toPendingByTier1Status: c.toPendingByTier1Status,
               cannotClassify: c.cannotClassify,
             },
           ]),
@@ -346,7 +376,8 @@ try {
               f,
               {
                 unzoned: c.toNotApplicable,
-                noDistrict: c.toPendingDerivation,
+                noDistrict: c.toPendingDerivation - c.toPendingByTier1Status,
+                tier1StatusAssertion: c.toPendingByTier1Status,
                 unclassifiedByReason: c.cannotClassify,
               },
             ]),
