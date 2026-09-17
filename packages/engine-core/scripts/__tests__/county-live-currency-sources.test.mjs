@@ -105,4 +105,57 @@ describe("county-live-currency-sources: the registry's shape", () => {
     expect(liveCurrencySourceFor("")).toBeNull();
     expect(liveCurrencySourceFor(null)).toBeNull();
   });
+
+  it("EVERY registered source carries .requests, and Bastrop counts its own fetch", async () => {
+    // The registry's contract is that a caller can read the request count off the entry. It was
+    // not true of every entry: the ArcGIS factory exposes `.requests` as a getter on the reader,
+    // while Bastrop's hand-written source exposed it only on the Map it returns, so a caller
+    // following the contract got `undefined` and the CLI reported a cost of 0 for the counties
+    // that DID ask. Asserted per entry so neither half can drift again.
+    for (const fips of registeredLiveCurrencyCounties()) {
+      expect(LIVE_CURRENCY_SOURCES[fips].requests, `county ${fips} has no .requests`).toBeTypeOf(
+        "number",
+      );
+    }
+
+    const realFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return {
+        ok: true,
+        async json() {
+          return {
+            features: [
+              {
+                properties: { prop_id: "40925" },
+                geometry: {
+                  type: "Polygon",
+                  coordinates: [
+                    [
+                      [-97.3, 30.1],
+                      [-97.29, 30.1],
+                      [-97.29, 30.11],
+                      [-97.3, 30.1],
+                    ],
+                  ],
+                },
+              },
+            ],
+          };
+        },
+      };
+    };
+    try {
+      const bastrop = LIVE_CURRENCY_SOURCES["48021"];
+      const before = bastrop.requests;
+      const readings = await bastrop(["40925"]);
+      expect(readings.get("40925")?.reading).toBe("live");
+      expect(bastrop.requests).toBe(before + calls);
+      expect(bastrop.requests).toBeGreaterThan(0);
+      expect(readings.requests).toBe(bastrop.requests);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
 });

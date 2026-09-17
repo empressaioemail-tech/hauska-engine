@@ -299,12 +299,14 @@ try {
           }
         }
         if (askable.length > 0) {
-          let liveRequests = typeof source.requests === "number" ? source.requests : null;
+          // The request count is a property of the READER (a getter on the ArcGIS factory, and on
+          // the Bastrop source since P-275), but Bastrop's ALSO rides the returned Map for older
+          // callers -- accept either, and never mistake "no count available" for a count of 0.
+          const countOf = (v) => (typeof v?.requests === "number" ? v.requests : null);
+          let liveRequests = countOf(source);
           try {
             const byId = await source(askable.map((id) => id.split(":")[1]));
-            // The request count is a property of the READER (a getter), not of the Map it returns:
-            // reading `.requests` off the Map silently reported 0 for every county that did ask.
-            if (typeof source.requests === "number") liveRequests = source.requests;
+            liveRequests = countOf(byId) ?? countOf(source) ?? liveRequests;
             for (const id of askable) {
               const key = id.split(":")[1];
               // The Bastrop source keys by normalized propId, the ArcGIS reader by normalized
@@ -328,7 +330,11 @@ try {
             // candidate of this county becomes UNMEASURED with the transport reason -- the run
             // does not report zero candidates and does not report them as absent.
             summary.liveCurrencySource = "unreachable";
-            const reason = `county ${args.county} live-currency source unreachable: ${err?.message ?? err}`;
+            // `fetch failed` alone hides the transport cause on this host (an untrusted leaf
+            // certificate reads as a bare "fetch failed"), and the cause is exactly what the
+            // operator needs to tell a broken source from an unreachable host.
+            const cause = err?.cause?.message ? ` (cause: ${err.cause.message})` : "";
+            const reason = `county ${args.county} live-currency source unreachable: ${err?.message ?? err}${cause}`;
             for (const id of askable) liveCurrency.set(id, { reading: "unmeasured", reason });
           }
           summary.liveCurrencyRequests = liveRequests;

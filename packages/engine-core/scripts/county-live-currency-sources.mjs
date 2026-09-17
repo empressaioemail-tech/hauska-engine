@@ -71,25 +71,35 @@ export const LIVE_CURRENCY_SOURCES = {
   // `--use-system-ca`. The runs recorded in the P-275 close were made with that flag; without it
   // the review reports every candidate UNMEASURED with the transport reason (which is the correct
   // behaviour for an unreachable source, and is exactly what the first run produced).
-  "48021": async (propIds) => {
+  "48021": (() => {
     let requests = 0;
-    const countingFetch = (input, init) => {
-      requests += 1;
-      return fetch(input, init);
+    const source = async (propIds) => {
+      const countingFetch = (input, init) => {
+        requests += 1;
+        return fetch(input, init);
+      };
+      const bcadByPropId = await bulkLoadBcadRingsByPropId(propIds, countingFetch);
+      const out = new Map();
+      for (const propId of propIds) {
+        out.set(
+          propId,
+          parcelCurrencyFromBcadMap(propId, bcadByPropId).ok
+            ? { reading: "live" }
+            : { reading: "absent" },
+        );
+      }
+      // Kept on the Map as well: callers read it either way, and the registry's contract is
+      // that the COUNT is available, not where it hangs.
+      out.requests = requests;
+      return out;
     };
-    const bcadByPropId = await bulkLoadBcadRingsByPropId(propIds, countingFetch);
-    const out = new Map();
-    for (const propId of propIds) {
-      out.set(
-        propId,
-        parcelCurrencyFromBcadMap(propId, bcadByPropId).ok
-          ? { reading: "live" }
-          : { reading: "absent" },
-      );
-    }
-    out.requests = requests;
-    return out;
-  },
+    // `.requests` is part of the registry contract, so it lives on the reader like every other
+    // entry here -- the ArcGIS factory exposes it as a getter and this hand-written source used
+    // to expose it only on the returned Map, so a caller following the contract read undefined
+    // and a caller reading the Map read 0 for the four counties that are not Bastrop.
+    Object.defineProperty(source, "requests", { get: () => requests });
+    return source;
+  })(),
 
   // ---- 48055 Caldwell. Caldwell CAD public parcel layer. Field Prop_ID = the parcel map id.
   "48055": makeArcgisIdCurrencySource({
