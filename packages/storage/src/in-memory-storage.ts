@@ -9,6 +9,7 @@
 
 import {
   appliesToLinksFromPropertyAtoms,
+  atomLinkKey,
   assertCanonicalParcelEntityId,
   assertEdgesNotStarved,
   assertPropertyWriteBoundary,
@@ -92,8 +93,11 @@ export class InMemoryStorage implements StoragePort {
     this.cids.set(atomDid, pin.cid);
     this.cache.set(atomDid, instance);
     const links = appliesToLinksFromPropertyAtoms([instance]);
-    assertEdgesNotStarved([instance], links.length);
     if (links.length > 0) await this.writeAtomLinks(links);
+    // P-273. `links.length` here was the SAME derivation as the expectation
+    // (both skip the same three conditions), so this could not fire. Ask the
+    // store what it holds instead.
+    assertEdgesNotStarved([instance], this.countStoredLinks(links));
     return { atomDid, cid: pin.cid };
   }
 
@@ -106,6 +110,20 @@ export class InMemoryStorage implements StoragePort {
       out.push(await this.writePropertyAtom(inst));
     }
     return out;
+  }
+
+  /**
+   * P-273. How many of these derived edges the in-memory store actually holds.
+   * The store's own `writeAtomLinks` dedupes, so this is a genuine second
+   * derivation rather than an echo of the caller's array length.
+   */
+  private countStoredLinks(links: ReadonlyArray<AtomLink>): number {
+    let n = 0;
+    for (const link of links) {
+      const key = atomLinkKey(link);
+      if (this.links.some((stored) => atomLinkKey(stored) === key)) n += 1;
+    }
+    return n;
   }
 
   async listPropertyAtomsByParcelNodeId(
