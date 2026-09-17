@@ -118,8 +118,9 @@ export const SETBACK_NOT_SERVED_REASON = {
   /**
    * The corpus carries the table; this engine has no registry row, cohort, or
    * routing rule wired for the city yet (`setback-writer/city-binding.ts` says
-   * the same thing to a writer as `tableLanded: false`, and
-   * `resolveWiredCityRegistry` lists them per county).
+   * the same thing to a writer as `tableLanded: false`, and its
+   * `listWiredCityBindings` enumerates the cities this engine DOES route, per
+   * county).
    */
   notWired:
     "corpus table exists; no registry row, cohort, or setback routing rule is wired for this jurisdiction yet",
