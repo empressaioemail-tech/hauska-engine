@@ -25,6 +25,13 @@
  *    from, so reading them is reading the same fact the facet reads, not a
  *    second derivation of it. Gated strictly on `serve === "record"` by
  *    `recordScalarNumber`.
+ *
+ *    P-302 (OPS-24 law 7, A-193): a SLATED rail that declares a refusal, or
+ *    states an absence on a required axis, is that answer and STOPS the
+ *    precedence here — steps 2 and 3 below are the numbers the ruling retires,
+ *    and reaching them from a slated refusal is the defect this lane removes.
+ *    An UNSLATED rail (`serve === "legacy-transitional"`) is unchanged and
+ *    still walks the full precedence.
  * 2. **The ruled corpus row**, resolved through `getSetbackTableForZoning`
  *    under R-1 (most-current source wins). This is not a second source: the
  *    rails' own values were composed from this same corpus row, which is why
@@ -66,8 +73,9 @@ import {
 import type { SetbackRuleAtomInstance } from "@hauska-engine/atoms";
 
 import {
-  recordScalarNumber,
+  recordScalarNumberAnswer,
   type ParcelRecordResponse,
+  type RecordRailAnswer,
   type RecordReaderClient,
 } from "./parcel-record-reader-client.js";
 import type { NotSpecifiedAxes } from "./setback-display.js";
@@ -127,6 +135,19 @@ export interface ExportSetbackResolution {
   supersededAtom?: {
     atomDid: string;
     axes: Array<"front" | "side" | "rear" | "corner">;
+  };
+  /**
+   * P-302 (OPS-24 law 7, A-193): the ledger's own answer for the setback rails,
+   * present exactly when that answer was NOT a value — a declared refusal, or a
+   * stated absence. In both cases the ruled corpus row and the persisted atom
+   * below are NOT consulted (their scalars are the numbers the ruling retires),
+   * `honestAbsence` is true and every inset is zero, and this field carries the
+   * rails, their codes and the store's own words so the refusal is printed
+   * rather than hidden behind an unverified-looking blank.
+   */
+  ledgerRailAnswer?: {
+    form: "refusal" | "absence";
+    entries: ReadonlyArray<{ rail: string; code: string; reason: string | null }>;
   };
 }
 
@@ -299,10 +320,26 @@ export async function resolveExportSetback(
       record = null;
     }
   }
-  const railFront = recordScalarNumber(record?.rails.setbackFrontFt);
-  const railSide = recordScalarNumber(record?.rails.setbackSideFt);
-  const railRear = recordScalarNumber(record?.rails.setbackRearFt);
-  const railCorner = recordScalarNumber(record?.rails.setbackCornerFt);
+  // P-302 (OPS-24 law 7, A-193): ask the rails' own CELLS what they are, before
+  // step 1 asks whether the rails can answer. See the pre-check below for what
+  // each answer does — the short version is that a slated rail's refusal or
+  // stated absence is the answer, and the corpus row and persisted atom below
+  // are NOT a substitute for it.
+  const railAnswers: {
+    front: RecordRailAnswer<number>;
+    side: RecordRailAnswer<number>;
+    rear: RecordRailAnswer<number>;
+    corner: RecordRailAnswer<number>;
+  } = {
+    front: recordScalarNumberAnswer(record?.rails.setbackFrontFt),
+    side: recordScalarNumberAnswer(record?.rails.setbackSideFt),
+    rear: recordScalarNumberAnswer(record?.rails.setbackRearFt),
+    corner: recordScalarNumberAnswer(record?.rails.setbackCornerFt),
+  };
+  const railFront = railAnswers.front.form === "value" ? railAnswers.front.value : undefined;
+  const railSide = railAnswers.side.form === "value" ? railAnswers.side.value : undefined;
+  const railRear = railAnswers.rear.form === "value" ? railAnswers.rear.value : undefined;
+  const railCorner = railAnswers.corner.form === "value" ? railAnswers.corner.value : undefined;
 
   const atomDid = input.atom?.sourceCodeAtomRef?.atomDid ?? null;
   const atomRetired = isRetiredSetbackProvenance(atomDid);
@@ -348,6 +385,97 @@ export async function resolveExportSetback(
       ?.front_ft?.atom_did ??
     cite?.table.jurisdictionKey ??
     null;
+
+  // P-302 (OPS-24 law 7, A-193): the rails' answers, read above, decide here.
+  // A slated rail that declares a refusal is a refusal for this sheet — not a
+  // cue to fall through to the ruled corpus row or the persisted atom, whose
+  // scalars are precisely the numbers the ruling retires. This is the shape the
+  // old `recordScalarNumber → undefined → step 2` path produced: a declared
+  // refusal printed as the baked value.
+  //
+  // A STATED ABSENCE is treated the same way on the three required axes
+  // (front/side/rear): on a slated rail it IS the rail's answer, and falling
+  // through to the corpus would substitute exactly what the cell declined to
+  // serve. The corner axis is different and deliberately so — a district that
+  // publishes no corner value is the ordinary case, so an absence there leaves
+  // `cornerFt` null (which is what an unset corner already means) instead of
+  // voiding a sheet whose front/side/rear the ledger did answer.
+  const allRailEntries: Array<[string, RecordRailAnswer<number>]> = [
+    ["setbackFrontFt", railAnswers.front],
+    ["setbackSideFt", railAnswers.side],
+    ["setbackRearFt", railAnswers.rear],
+    ["setbackCornerFt", railAnswers.corner],
+  ];
+  const refusedRails = allRailEntries.filter(([, a]) => a.form === "refusal");
+  if (refusedRails.length > 0) {
+    const reasons = refusedRails
+      .map(([rail, a]) => (a.form === "refusal" ? `${rail} (${a.code}): ${a.reason}` : ""))
+      .join(" ");
+    return {
+      provenanceKind: "honest-absence",
+      honestAbsence: true,
+      honestAbsenceReason:
+        `No setback is drawn or printed for this parcel — the parcel ledger declared a refusal for its ` +
+        `setback values: ${reasons} The legacy or baked value is not shown in its place.`,
+      front: 0,
+      side: 0,
+      rear: 0,
+      cornerFt: null,
+      sourceCodeAtomDid: `parcel_record/${input.parcelNodeId}/setback`,
+      sourceLabel: "Parcel record (ledger rails)",
+      sourceCitation: null,
+      sourceDate: null,
+      dateBasis: null,
+      districtCode,
+      ledgerRailAnswer: {
+        form: "refusal",
+        entries: refusedRails.map(([rail, a]) => ({
+          rail,
+          code: a.form === "refusal" ? a.code : "",
+          reason: a.form === "refusal" ? a.reason : null,
+        })),
+      },
+      ...(retiredAtomDeclined ? { retiredAtomDeclined } : {}),
+    };
+  }
+  const absentRequiredRails = (
+    [
+      ["setbackFrontFt", railAnswers.front],
+      ["setbackSideFt", railAnswers.side],
+      ["setbackRearFt", railAnswers.rear],
+    ] as Array<[string, RecordRailAnswer<number>]>
+  ).filter(([, a]) => a.form === "absence");
+  if (absentRequiredRails.length > 0) {
+    const reasons = absentRequiredRails
+      .map(([rail, a]) => (a.form === "absence" ? `${rail} (${a.absenceVerdict}): ${a.reason ?? "no reason recorded"}` : ""))
+      .join(" ");
+    return {
+      provenanceKind: "honest-absence",
+      honestAbsence: true,
+      honestAbsenceReason:
+        `No setback is drawn or printed for this parcel — the parcel ledger states no setback value ` +
+        `applies: ${reasons} The ruled table's values are not shown in their place.`,
+      front: 0,
+      side: 0,
+      rear: 0,
+      cornerFt: null,
+      sourceCodeAtomDid: `parcel_record/${input.parcelNodeId}/setback`,
+      sourceLabel: "Parcel record (ledger rails)",
+      sourceCitation: null,
+      sourceDate: null,
+      dateBasis: null,
+      districtCode,
+      ledgerRailAnswer: {
+        form: "absence",
+        entries: absentRequiredRails.map(([rail, a]) => ({
+          rail,
+          code: a.form === "absence" ? a.absenceVerdict : "",
+          reason: a.form === "absence" ? a.reason : null,
+        })),
+      },
+      ...(retiredAtomDeclined ? { retiredAtomDeclined } : {}),
+    };
+  }
 
   if (railFront != null && railSide != null && railRear != null) {
     const rails = {

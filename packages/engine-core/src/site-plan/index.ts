@@ -158,9 +158,27 @@ export {
 } from "./report-model.js";
 export {
   recordReaderFromEnv,
+  /** P-302: the answer-returning rail API, and the one field helper that keeps a slated rail's answer from becoming the baked value. */
+  recordRailAnswer,
+  recordRailField,
+  recordRailRefusals,
+  recordRailRefusalReason,
+  recordScalarNumberAnswer,
+  recordCityLimitsAnswer,
+  recordSpecialDistrictNamesAnswer,
+  recordUtilityServiceAnswer,
+  recordOverlayDistrictsAnswer,
+  recordParcelAreaSqFtAnswer,
+  type RecordRailAnswer,
+  type RecordRailAbsenceVerdict,
+  type RecordRailRefusalCode,
+  type RecordRailRefusalEntry,
+  type RecordCityLimitsDisposition,
   type RecordReaderClient,
   type ParcelRecordResponse,
   type ParcelRecordRail,
+  type ParcelRecordRefusalCode,
+  type ParcelRecordServeRefusal,
 } from "./parcel-record-reader-client.js";
 
 export {

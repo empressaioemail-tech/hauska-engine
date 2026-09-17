@@ -59,12 +59,15 @@ import type {
   GasProviderResult,
 } from "../electric-provider-fact/index.js";
 import {
-  recordCityLimitsDisposition,
-  recordScalarNumber,
-  recordSpecialDistrictNames,
-  recordUtilityService,
-  recordOverlayDistricts,
-  recordParcelAreaSqFt,
+  recordCityLimitsAnswer,
+  recordOverlayDistrictsAnswer,
+  recordParcelAreaSqFtAnswer,
+  recordRailField,
+  recordRailRefusalReason,
+  recordRailRefusals,
+  recordScalarNumberAnswer,
+  recordSpecialDistrictNamesAnswer,
+  recordUtilityServiceAnswer,
   type ParcelRecordResponse,
   type RecordReaderClient,
 } from "./parcel-record-reader-client.js";
@@ -609,12 +612,35 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
     // engine's substrate store, but its marketValue/assessedValue rails ARE
     // slated "record" (wave-3 verify doc B6), so the reader alone can now
     // make this section present where the substrate atom never could.
-    const marketValue = recordScalarNumber(record?.rails.marketValue) ?? cadRoll?.marketValue;
-    const assessedValue = recordScalarNumber(record?.rails.assessedValue) ?? cadRoll?.assessedValue;
-    const landValue = recordScalarNumber(record?.rails.landValue) ?? cadRoll?.landValue;
-    const improvementValue = recordScalarNumber(record?.rails.improvementValue) ?? cadRoll?.improvementValue;
-    const yearBuilt = recordScalarNumber(record?.rails.yearBuilt) ?? cadRoll?.yearBuilt;
-    const livingAreaSqft = recordScalarNumber(record?.rails.livingAreaSqft) ?? cadRoll?.livingAreaSqft;
+    // P-302 (OPS-24 law 7, A-193): on a SLATED rail this parcel's own cell is
+    // the answer, and the substrate cad-parcel-roll value is NOT a substitute
+    // for it. Before this lane the helper returned `undefined` for every
+    // non-`value` cell, and `undefined` is indistinguishable from "this rail is
+    // not slated", so `?? cadRoll?.<field>` (below, now via the one
+    // `recordRailField`) printed the baked value for a refused cell — the exact
+    // shape the ruling retires.
+    const ownershipAnswers = {
+      marketValue: recordScalarNumberAnswer(record?.rails.marketValue),
+      assessedValue: recordScalarNumberAnswer(record?.rails.assessedValue),
+      landValue: recordScalarNumberAnswer(record?.rails.landValue),
+      improvementValue: recordScalarNumberAnswer(record?.rails.improvementValue),
+      yearBuilt: recordScalarNumberAnswer(record?.rails.yearBuilt),
+      livingAreaSqft: recordScalarNumberAnswer(record?.rails.livingAreaSqft),
+    };
+    const ledgerRefusals = recordRailRefusals([
+      ["marketValue", ownershipAnswers.marketValue],
+      ["assessedValue", ownershipAnswers.assessedValue],
+      ["landValue", ownershipAnswers.landValue],
+      ["improvementValue", ownershipAnswers.improvementValue],
+      ["yearBuilt", ownershipAnswers.yearBuilt],
+      ["livingAreaSqft", ownershipAnswers.livingAreaSqft],
+    ]);
+    const marketValue = recordRailField(ownershipAnswers.marketValue, cadRoll?.marketValue);
+    const assessedValue = recordRailField(ownershipAnswers.assessedValue, cadRoll?.assessedValue);
+    const landValue = recordRailField(ownershipAnswers.landValue, cadRoll?.landValue);
+    const improvementValue = recordRailField(ownershipAnswers.improvementValue, cadRoll?.improvementValue);
+    const yearBuilt = recordRailField(ownershipAnswers.yearBuilt, cadRoll?.yearBuilt);
+    const livingAreaSqft = recordRailField(ownershipAnswers.livingAreaSqft, cadRoll?.livingAreaSqft);
     const recordSuppliedAnything =
       marketValue !== undefined ||
       assessedValue !== undefined ||
@@ -624,19 +650,23 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
       livingAreaSqft !== undefined;
 
     if (!cadRoll && !owner && !recordSuppliedAnything) {
+      // A refusal is a STRONGER statement than "no row exists": the ledger was
+      // asked about this parcel and declined. Prefer it to blocked-at-source
+      // when both would apply, so a customer reads what actually happened.
+      if (ledgerRefusals.length > 0) {
+        return absent(
+          "refused",
+          recordRailRefusalReason(ledgerRefusals),
+          "Ownership, value and building characteristics cannot be stated from the parcel ledger for this parcel. Order a title or CAD roll pull before relying on any of them.",
+        );
+      }
       return absent(
         "blocked-at-source",
         "The county appraisal roll carries no record for this parcel.",
         "Ownership, value and building characteristics cannot be stated. Order a title or CAD roll pull before relying on any of them.",
       );
     }
-    const usedRecordForAnyField =
-      recordScalarNumber(record?.rails.marketValue) !== undefined ||
-      recordScalarNumber(record?.rails.assessedValue) !== undefined ||
-      recordScalarNumber(record?.rails.landValue) !== undefined ||
-      recordScalarNumber(record?.rails.improvementValue) !== undefined ||
-      recordScalarNumber(record?.rails.yearBuilt) !== undefined ||
-      recordScalarNumber(record?.rails.livingAreaSqft) !== undefined;
+    const usedRecordForAnyField = Object.values(ownershipAnswers).some((a) => a.form === "value");
     return present<ParcelOwnershipFacts>(
       {
         legalDescription: cadRoll?.legalDescription,
@@ -655,6 +685,12 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
             : undefined,
         landUseCode: landUse?.landUseCode,
         landUseLabel: landUse?.landUseLabel,
+        // Field-level, deliberately: the refused field is unset above and named
+        // here. A section-level refusal would also withhold ownerName and
+        // legalDescription, which the ruling never asked to withhold.
+        ...(ledgerRefusals.length > 0
+          ? { ledgerRefusals: ledgerRefusals.map(({ rail, code, reason }) => ({ field: rail, code, reason })) }
+          : {}),
       },
       {
         sourceCitation: usedRecordForAnyField
@@ -704,7 +740,30 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
     // that's reported on `substrateOnlyDistricts`, not silently dropped
     // (dispatch item 7: "a disagreement... is reported... not resolved
     // here").
-    const recordDistrictNames = recordSpecialDistrictNames(record?.rails.specialDistricts);
+    // P-302 (OPS-24 law 7, A-193): a slated rail's own answer decides this
+    // section, and the substrate TCEQ atoms are NOT a substitute for a slated
+    // rail that refused. Before this lane the helper returned `undefined` for
+    // every non-`value` cell, so `undefined` fell through to the substrate —
+    // which is the shape the ruling retires.
+    const districtAnswer = recordSpecialDistrictNamesAnswer(record?.rails.specialDistricts);
+    if (districtAnswer.form === "refusal") {
+      return absent(
+        "refused",
+        recordRailRefusalReason([
+          { rail: "specialDistricts", code: districtAnswer.code, reason: districtAnswer.reason },
+        ]),
+        "No special-district finding is stated for this parcel. Confirm MUD, PID and special-assessment membership with the county tax office before relying on either answer.",
+      );
+    }
+    if (districtAnswer.form === "absence") {
+      return absent(
+        districtAnswer.absenceVerdict === "absent-verified" ? "clear" : "not-applicable",
+        districtAnswer.reason ??
+          "Checked against every mapped special-district boundary; this parcel falls outside all of them.",
+        "No MUD, PID or special-assessment district applies, so no district levy attaches to this parcel.",
+      );
+    }
+    const recordDistrictNames = districtAnswer.form === "value" ? districtAnswer.value : undefined;
     if (recordDistrictNames && recordDistrictNames.length > 0) {
       const substrateNames = substrateDistricts.map((d) => d.districtName).filter((n): n is string => !!n);
       const recordSet = new Set(recordDistrictNames.map((n) => n.trim().toLowerCase()));
@@ -715,6 +774,16 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
           ...(substrateOnly.length > 0 ? { substrateOnlyDistricts: substrateOnly } : {}),
         },
         { sourceCitation: "parcel_record (Hauska retrieval reader)", asOfIso: record?.readAt },
+      );
+    }
+    if (districtAnswer.form === "value") {
+      // A slated `value` cell that carried no companion rows: the rail's own
+      // answer is "none", which is a checked finding — NOT the pre-cutover
+      // substrate path, and not the "nothing ever looked" blocked-at-source.
+      return absent(
+        "clear",
+        "Checked against every mapped special-district boundary; this parcel falls outside all of them.",
+        "No MUD, PID or special-assessment district applies, so no district levy attaches to this parcel.",
       );
     }
 
@@ -851,7 +920,29 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
     // service type (the same precedent P152-RAILS already set for
     // specialDistricts/cityLimits); HIFLD supplies electric only when the
     // reader itself has no electric holder on file.
-    const readerUtility = recordUtilityService(record?.rails.utilityService);
+    // P-302 (OPS-24 law 7, A-193): the rail's OWN answer decides this section
+    // before HIFLD is ever reached. A refusal is not a cue to consult the
+    // electric-only read or the substrate; it is the ledger saying it will not
+    // answer for this parcel.
+    const utilityAnswer = recordUtilityServiceAnswer(record?.rails.utilityService);
+    if (utilityAnswer.form === "refusal") {
+      return absent(
+        "refused",
+        recordRailRefusalReason([
+          { rail: "utilityService", code: utilityAnswer.code, reason: utilityAnswer.reason },
+        ]),
+        "Territory holders could not be resolved. Request a service-availability letter before assuming capacity.",
+      );
+    }
+    if (utilityAnswer.form === "absence") {
+      return absent(
+        utilityAnswer.absenceVerdict === "absent-verified" ? "clear" : "not-applicable",
+        utilityAnswer.reason ??
+          "Checked against the state's utility territory records; no water, sewer or electric holder covers this parcel.",
+        "No CCN or territory holder is on file for this parcel. Confirm service availability directly with the utility before assuming capacity.",
+      );
+    }
+    const readerUtility = utilityAnswer.form === "value" ? utilityAnswer.value : undefined;
 
     // Called lazily, and its own failure never sinks an already-resolved
     // reader answer: HIFLD is only consulted when the reader has no electric
@@ -942,7 +1033,28 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   // lane, distinct from the base zoning district already read into
   // `model.geometry.model.summary.zoningDistrict`.
   const overlayDistricts = safeSection<OverlayDistrictsFacts>("overlayDistricts", () => {
-    const result = recordOverlayDistricts(record?.rails.overlayDistricts);
+    // P-302 (OPS-24 law 7, A-193): the rail's own answer first. A refusal is
+    // reported as a refusal — the old `undefined` became blocked-at-source,
+    // which misses the point: the source was asked and declined.
+    const overlayAnswer = recordOverlayDistrictsAnswer(record?.rails.overlayDistricts);
+    if (overlayAnswer.form === "refusal") {
+      return absent(
+        "refused",
+        recordRailRefusalReason([
+          { rail: "overlayDistricts", code: overlayAnswer.code, reason: overlayAnswer.reason },
+        ]),
+        "No overlay-district finding is stated for this parcel. An overlay district, if one applies, would be an additional constraint beyond the base zoning district above. Confirm with the city before design.",
+      );
+    }
+    if (overlayAnswer.form === "absence") {
+      return absent(
+        overlayAnswer.absenceVerdict === "absent-verified" ? "clear" : "not-applicable",
+        overlayAnswer.reason ??
+          "Checked against every mapped overlay district; none applies to this parcel.",
+        "No overlay district adds a constraint beyond the base zoning district above.",
+      );
+    }
+    const result = overlayAnswer.form === "value" ? { districts: overlayAnswer.value } : undefined;
     if (!result) {
       // Never checked -- distinct from "checked, genuinely zero" below (the
       // same clear-vs-blocked-at-source distinction D5 fixed for
@@ -973,7 +1085,26 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   // substituted for `lotAreaSqFt` in this report's own coverage math, which
   // must keep using the same ring the buildable envelope was offset from.
   const readerParcelArea = safeSection<ReaderParcelAreaFacts>("readerParcelArea", () => {
-    const sqFt = recordParcelAreaSqFt(record?.rails.parcelAreaSqFt);
+    // P-302: the rail's own answer first — a refusal is a refusal, not the
+    // out-of-scope a rail that was never slated earns.
+    const areaAnswer = recordParcelAreaSqFtAnswer(record?.rails.parcelAreaSqFt);
+    if (areaAnswer.form === "refusal") {
+      return absent(
+        "refused",
+        recordRailRefusalReason([
+          { rail: "parcelAreaSqFt", code: areaAnswer.code, reason: areaAnswer.reason },
+        ]),
+        "The independent lot-area cross-check is not stated for this parcel. The report's own ring-derived area above is unaffected and still stands.",
+      );
+    }
+    if (areaAnswer.form === "absence") {
+      return absent(
+        areaAnswer.absenceVerdict === "absent-verified" ? "clear" : "not-applicable",
+        areaAnswer.reason ?? "The parcel ledger states no independent lot area for this parcel.",
+        "The independent lot-area cross-check is not stated for this parcel. The report's own ring-derived area above is unaffected and still stands.",
+      );
+    }
+    const sqFt = areaAnswer.form === "value" ? areaAnswer.value : undefined;
     if (sqFt === undefined) {
       return absent("out-of-scope", "No independent parcel-area figure is on file from the retrieval reader for this parcel.");
     }
@@ -1144,13 +1275,32 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   // lane; deleted per the wave-3 verify doc A2). "unresolved" remains the
   // honest default when no recordReader was supplied, the fetch failed, or
   // the rail is not yet slated "record".
-  const cityLimits = recordCityLimitsDisposition(record?.rails.cityLimits);
+  // P-302 (OPS-24 law 7, A-193): the rail's own answer. A refusal keeps
+  // cityLimitsStatus at "unresolved" — that IS the honest state for a
+  // jurisdiction we cannot state — and carries the ledger's code and reason so
+  // the refusal is not silent. `absent-verified` keeps its existing reading of
+  // `unincorporated`, unchanged: a cell that says "verified: not in a city" is
+  // answering the question, not substituting for it.
+  const cityLimitsAnswer = recordCityLimitsAnswer(record?.rails.cityLimits);
+  const cityLimits = cityLimitsAnswer.form === "value" ? cityLimitsAnswer.value : undefined;
   const jurisdiction: JurisdictionFacts = {
     countyFips: geometry.status === "present" ? geometry.model.summary.countyFips : null,
     countyName: geometry.status === "present" ? geometry.model.summary.countyName : undefined,
     cityLimitsStatus: cityLimits?.status ?? "unresolved",
     ...(cityLimits?.cityName ? { cityName: cityLimits.cityName } : {}),
     ...(cityLimits ? { cityLimitsSourceCitation: `parcel_record (${cityLimits.source})` } : {}),
+    ...(cityLimitsAnswer.form === "refusal"
+      ? { cityLimitsLedgerAnswer: { form: "refusal" as const, code: cityLimitsAnswer.code, reason: cityLimitsAnswer.reason } }
+      : {}),
+    ...(cityLimitsAnswer.form === "absence"
+      ? {
+          cityLimitsLedgerAnswer: {
+            form: "absence" as const,
+            verdict: cityLimitsAnswer.absenceVerdict,
+            reason: cityLimitsAnswer.reason,
+          },
+        }
+      : {}),
     etjStatus: "unresolved",
   };
 
