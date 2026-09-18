@@ -42,8 +42,10 @@
  *      declared number per county run, recorded with its basis, not a judgement call at call time"
  *      (OPS-16 P-213). A missing share refuses with BLAST_RADIUS_UNMEASURED — it never defaults.
  *      Over the cap, the run refuses and writes NOTHING, and the refusal prints the EXACT
- *      `BLAST_RADIUS_OVERRIDE=` token the integration seat would pass to authorise THIS measured
- *      run and no other (`overrideTokenFor`). Counts move and the token stops carrying.
+ *      `DESTRUCTIVE_WRITE_AUTHORISATION=` token — the program's one declared authorisation
+ *      variable (A-220), which the guard exports as `OVERRIDE_ENV_VAR` — the integration seat
+ *      would pass to authorise THIS measured run and no other (`overrideTokenFor`). Counts move
+ *      and the token stops carrying.
  *   2. CENSUS DRIFT. `--apply` REQUIRES `--expect-digest` (the digest a reviewed dry run printed),
  *      and the run takes its OWN fresh census in its own read window before writing. Population or
  *      any bucket differing from the pinned digest refuses with CENSUS_DRIFT and writes nothing —
@@ -713,11 +715,12 @@ export function authorisationTokenFor(plan: CountyPlan): string {
 }
 
 /**
- * The bare VALUE of `BLAST_RADIUS_OVERRIDE` for this run — `writer:scope:affected/population`,
- * with no `NAME=` prefix. `overrideTokenFor` returns the full assignment (what an operator
- * pastes); `parseBlastRadiusOverride` reads the env value (what the guard receives), and the two
- * differ by exactly the prefix. Recorded side by side in every refusal so the paste and the
- * value can never be confused for one another.
+ * The bare VALUE of the program's declared authorisation variable (`OVERRIDE_ENV_VAR`,
+ * `DESTRUCTIVE_WRITE_AUTHORISATION` since A-220) for this run —
+ * `writer:scope:affected/population`, with no `NAME=` prefix. `overrideTokenFor` returns the full
+ * assignment (what an operator pastes); `parseBlastRadiusOverride` reads the env value (what the
+ * guard receives), and the two differ by exactly the prefix. Recorded side by side in every
+ * refusal so the paste and the value can never be confused for one another.
  */
 export function authorisationValueFor(plan: CountyPlan): string {
   return authorisationTokenFor(plan).slice(`${BLAST_RADIUS_OVERRIDE_ENV_VAR}=`.length);
