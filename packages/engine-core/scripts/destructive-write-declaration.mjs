@@ -111,17 +111,18 @@ export function authorisationTokenFor(writer, countyFips, destructive, populatio
 export const PROGRAM_DECLARATION_PIN = Object.freeze({
   repo: "empressaioemail-tech/hauska-factory",
   path: "src/lib/destructive-write-guard.mjs",
-  ref: "bb2db193e698e8e4ff1e1ff82ecbcdbd856702d5",
+  ref: "e8a8f4615267dd500a44d8c5b63f659dd4200b3a",
   refKind: "branch-head",
   refBranch: "lane/p361-threshold-005",
   refSubject:
-    "P-361 (A-220): the program's destructive-write threshold is 0.05, and every unwired reason " +
-    "re-read at the new number -- factory lane head at pin time",
+    "P-361 x P-352: retire-phantom-record's reason carries its RE-READ AT 0.05 verdict -- factory " +
+    "lane head after main (with P-352's new unwired writer) was merged in; re-pinned by the " +
+    "integration seat (first pinned at bb2db193, 23,524 bytes)",
   refReadAt: "2026-09-18",
   contentAddressed: true,
-  gitBlobSha: "5038e24a9a8404da70f168ce8d303630230895ef",
-  bytes: 23524,
-  sha256: "e76bd834008ddb0950b20e7015fe21d984fa84c3ac6fe3bdf4d1c5de69ca7fa1",
+  gitBlobSha: "ad618e469b36da9981885afd598cbafc6a5bcda3",
+  bytes: 25091,
+  sha256: "4b166f56e8e1b9f9743ddbcd8f3fbc1de6f05628c089e2a45ee44cdc5a6f8c67",
   facts: Object.freeze({
     constantName: "MAX_DESTRUCTIVE_SHARE",
     constantValue: 0.05,
