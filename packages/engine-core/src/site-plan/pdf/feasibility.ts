@@ -8,6 +8,8 @@ import {
   type ParcelReportModel,
 } from "../report-model.js";
 import type { SitePlanModel } from "../site-model.js";
+import { UNSLATED_ETJ_REASON } from "../etj-determination.js";
+import type { JurisdictionFacts } from "../feasibility-model.js";
 import { FEASIBILITY_MANIFEST, manifestIncludes, type ReportManifest } from "../report-manifest.js";
 
 // Re-exported for backward compatibility: both functions moved to
@@ -221,6 +223,92 @@ function absentChipOpts(state: { kind: string; reason: string; sourceCitation?: 
   };
 }
 
+/**
+ * P-358 (OPS-24): the ETJ row, per state. Before this, the row was an
+ * unconditional absent chip for every parcel in every county, while hauska-map's
+ * panel (P-332, live 2026-09-18) served the real determination. The four states
+ * are the panel's own vocabulary, mirrored in `etj-determination.ts`.
+ */
+function etjFactChip(j: JurisdictionFacts) {
+  const fact = j.etjFact;
+  const source = fact?.sourceCitation ?? (fact?.source ? `parcel_record (${fact.source})` : undefined);
+  switch (j.etjStatus) {
+    case "present":
+      return factOrChip(
+        "ETJ",
+        `Inside ${fact?.cityName ? `${fact.cityName}'s ` : "a "}extraterritorial jurisdiction` +
+          `${fact?.ringLabel ? ` (${fact.ringLabel})` : ""}`,
+        { source },
+      );
+    case "absent":
+      // A verified finding, rendered as a VALUE row (the way cityLimits'
+      // `unincorporated` is): the rail checked the rings and answered. The
+      // `verifiedClear` chip is for an ABSENCE (`value` undefined) that a source
+      // confirmed; here the report has a determination, not an absence, so
+      // claiming the chip would understate what the rail actually served.
+      return factOrChip(
+        "ETJ",
+        "No extraterritorial jurisdiction reaches this parcel on the rings consulted" +
+          (fact?.ringsConsulted != null
+            ? ` (${fact.ringsConsulted} ring${fact.ringsConsulted === 1 ? "" : "s"} consulted)`
+            : ""),
+        { source },
+      );
+    case "conflicting": {
+      const c = j.etjConflict;
+      const clSource = c?.cityLimits.source ?? j.cityLimitsSourceCitation;
+      return factOrChip(
+        "ETJ",
+        "Conflicting reads: city limits say incorporated" +
+          `${c?.cityLimits.cityName ? ` (${c.cityLimits.cityName})` : ""}` +
+          `${clSource ? ` per ${clSource}` : ""}; the ETJ read says this point is inside a published ` +
+          `extraterritorial-jurisdiction ring${c?.etj.ringLabel ? ` "${c.etj.ringLabel}"` : ""}` +
+          `${c?.etj.etjId ? ` (${c.etj.etjId})` : ""}${c?.etj.source ? ` per ${c.etj.source}` : ""}. ` +
+          "Both readings are stated; neither is dropped.",
+        {},
+      );
+    }
+    case "unresolved":
+      // Today's honest sentence, now carrying the rail's OWN reason when it gave
+      // one (a refusal's code and reason, or a determination's basis) and only
+      // falling back to the engine's unslated default when there is nothing to
+      // carry.
+      return factOrChip("ETJ", undefined, { absentReason: j.etjReason ?? UNSLATED_ETJ_REASON });
+  }
+}
+
+/** P-358: what the ETJ state means for a build decision, per state. */
+function etjConsequenceSentence(j: JurisdictionFacts): string {
+  const fact = j.etjFact;
+  switch (j.etjStatus) {
+    case "present":
+      return (
+        `This parcel sits inside ${fact?.cityName ? `${fact.cityName}'s ` : "a "}published extraterritorial ` +
+        "jurisdiction, which is land outside the city's limits that the city may still hold platting and " +
+        "development authority over. Confirm with that city before assuming a county-only review path."
+      );
+    case "absent":
+      return (
+        "No published extraterritorial-jurisdiction ring reaches this parcel, so the reviewing authority " +
+        "follows the resolved city-limits status rather than an ETJ. Confirm with the county before proceeding."
+      );
+    case "conflicting":
+      // Deliberately does NOT restate the conflict: the ETJ chip above already
+      // prints both readings with both sources. A consequence row is capped at
+      // `DOSSIER_CAPS.factValue` (400 chars) and a restatement pushed this one
+      // over it, so the "which authority" half was being clipped mid-word --
+      // the two rows together name both readings AND what to do about them.
+      return (
+        "The two readings disagree, so which authority reviews a permit is not established. Confirm the boundary and " +
+        "the reviewing authority with the city named above and with the county before relying on either reading."
+      );
+    case "unresolved":
+      return j.cityLimitsStatus === "unresolved"
+        ? "Which authority reviews a permit here is not established. Confirm with the county and with any city whose ETJ may reach this parcel before assuming a review path."
+        : "ETJ reach beyond the resolved city limits is not established. Confirm with the county and with any city whose ETJ may reach this parcel before assuming a review path.";
+  }
+}
+
 export function feasibilityModelToBriefSections(model: ParcelReportModel): DossierBriefSectionInput[] {
   const sections: DossierBriefSectionInput[] = [];
   const facts = model.facts;
@@ -236,10 +324,11 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
       // rows. They used to fail together (one missing adapter, one shared
       // reason) — that stopped being true the moment `cityLimitsStatus` got
       // a real source (the Hauska retrieval reader's `cityLimits` rail,
-      // report-model.ts). City limits can now be a genuine finding while ETJ
-      // remains honestly unverified (no ETJ rail exists on ANY path today);
-      // printing them as one fact would misrepresent a resolved city-limits
-      // finding as an unresolved pair.
+      // report-model.ts). City limits can be a genuine finding while ETJ is
+      // separately unresolved, and as of P-358 (2026-09-18) ETJ is a real
+      // four-state read of its OWN rail rather than a literal, so the two rows
+      // are now independently sourced in every state and printing them as one
+      // fact would misrepresent a resolved reading as an unresolved pair.
       facts.jurisdiction.cityLimitsStatus === "unresolved"
         ? factOrChip("City limits", undefined, {
             absentReason: "No city-limits boundary source is wired for this county yet, so annexation status is unverified.",
@@ -251,15 +340,8 @@ export function feasibilityModelToBriefSections(model: ParcelReportModel): Dossi
               : "Unincorporated",
             { source: facts.jurisdiction.cityLimitsSourceCitation },
           ),
-      factOrChip("ETJ", undefined, {
-        absentReason: "No ETJ boundary source is wired for this county yet, so extraterritorial-jurisdiction status is unverified.",
-      }),
-      factOrChip(
-        CONSEQUENCE_ROW_LABEL,
-        facts.jurisdiction.cityLimitsStatus === "unresolved"
-          ? "Which authority reviews a permit here is not established. Confirm with the county and with any city whose ETJ may reach this parcel before assuming a review path."
-          : "ETJ reach beyond the resolved city limits is not established. Confirm with the county and with any city whose ETJ may reach this parcel before assuming a review path.",
-      ),
+      etjFactChip(facts.jurisdiction),
+      factOrChip(CONSEQUENCE_ROW_LABEL, etjConsequenceSentence(facts.jurisdiction)),
     ],
   });
 

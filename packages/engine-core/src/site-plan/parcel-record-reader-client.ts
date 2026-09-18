@@ -29,6 +29,9 @@
 // in production and no secret mount is owed. Re-verify at source before
 // relying on this note in turn -- that is the lesson the old one taught.
 
+import type { EtjRailReading } from "./etj-determination.js";
+import { readEtjReading } from "./etj-determination.js";
+
 /**
  * P-302. The four code tokens the wire's `refusal.code` can carry, mirrored
  * VERBATIM from the server side (`services/retrieval-api/src/parcel-record-reader.ts`'s
@@ -449,6 +452,13 @@ export type RecordCityLimitsDisposition = {
   cityName?: string;
   source: string;
   vintage?: string;
+  /**
+   * P-358 (OPS-24): the cell's own basis text, when it carried one
+   * (`basis.finding`, else the cell's `reason`). Read for the ETJ conflict
+   * block, which names BOTH readings with BOTH bases — the city-limits basis is
+   * this rail's own words where it has them, never engine prose standing in.
+   */
+  basis?: string;
 };
 
 /** cityLimits' basis shape carries `disposition`, not `finding` (matches hauska-map's composeCityLimits). */
@@ -464,11 +474,13 @@ function rawCityLimitsDisposition(rail: ParcelRecordRail): RecordCityLimitsDispo
   const cell = rail.cell!;
   const cityName = asNullableString(cell.value);
   if (!cityName) return undefined;
+  const statedReason = statedAbsenceReason(cell);
   return {
     status: "incorporated",
     cityName,
     source: asNullableString(cell.source) ?? "parcel_record",
     vintage: asNullableString(cell.vintage) ?? undefined,
+    ...(statedReason ? { basis: statedReason } : {}),
   };
 }
 
@@ -488,11 +500,61 @@ export function recordCityLimitsAnswer(
   const answer = recordRailAnswer(rail, rawCityLimitsDisposition);
   if (answer.form === "absence" && answer.absenceVerdict === "absent-verified" && rail?.cell) {
     const basis = asRecord(rail.cell.basis);
+    const statedReason = statedAbsenceReason(rail.cell);
     return {
       form: "value",
       value: {
         status: "unincorporated",
         source: (basis && asNullableString(basis.source)) ?? "parcel_record",
+        ...(statedReason ? { basis: statedReason } : {}),
+      },
+    };
+  }
+  return answer;
+}
+
+/**
+ * P-358 (OPS-24): the `etjStatus` rail's answer, in the engine's own terms. The
+ * rail exists on both sides already
+ * (`packages/engine-core/src/parcel-record/rail-keys.ts` and the retrieval
+ * service's vendored registry) and reads `excluded-mid-cutover` today; P-336
+ * writes its cells. This reader is what makes the PDF forward the panel's state
+ * instead of a literal.
+ *
+ * The three-way P-302 rule is the SAME one every other rail in this file uses
+ * (`recordRailAnswer`), with ONE rail-specific promotion, exactly as
+ * `recordCityLimitsAnswer` has one:
+ *   - `absent-verified` is PROMOTED to ETJ `absent`. A cell that says "verified:
+ *     this point is not inside any published ETJ ring" IS the rail's answer to
+ *     the ETJ question — the same reasoning that promotes a verified
+ *     not-in-a-city cityLimits cell to `unincorporated`. The cell's own basis
+ *     rides along and is what the PDF prints beside the finding.
+ *   - `not-applicable` is deliberately NOT promoted: it is a stated absence with
+ *     its own reason, not the checked finding "no ring reaches this point on the
+ *     rings consulted", and printing that sentence for it would claim a check
+ *     that never ran. It stays an absence and the composer reports it as
+ *     `unresolved` carrying the cell's reason.
+ */
+export function recordEtjStatusAnswer(
+  rail: ParcelRecordRail | undefined,
+): RecordRailAnswer<EtjRailReading> {
+  const answer = recordRailAnswer(rail, (r) => readEtjReading(r.cell?.value));
+  if (answer.form === "absence" && answer.absenceVerdict === "absent-verified" && rail?.cell) {
+    const basis = asRecord(rail.cell.basis);
+    return {
+      form: "value",
+      value: {
+        status: "absent",
+        raw: "absent",
+        fact: {
+          status: "absent",
+          source: (basis && asNullableString(basis.source)) ?? "parcel_record",
+          basis:
+            statedAbsenceReason(rail.cell) ??
+            "the parcel ledger verified this point is not inside any published ETJ ring.",
+        },
+        conflict: null,
+        reason: null,
       },
     };
   }

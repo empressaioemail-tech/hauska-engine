@@ -140,6 +140,23 @@ export {
 } from "./feasibility-model.js";
 
 export {
+  /** P-358: the ETJ determination literals shared with hauska-map's pe-etj-determination.ts. */
+  ETJ_STATUSES,
+  NO_DETERMINATION_REASON,
+  UNSLATED_ETJ_REASON,
+  readEtjFact,
+  readEtjConflict,
+  readEtjReading,
+  resolveEtjDetermination,
+  type EtjStatus,
+  type EtjFactWire,
+  type EtjConflictWire,
+  type EtjDetermination,
+  type EtjRailReading,
+  type RawEtjStatus,
+} from "./etj-determination.js";
+
+export {
   composeParcelReport,
   composeParcelReportFacts,
   resolveParcelDrainage,
@@ -165,6 +182,7 @@ export {
   recordRailRefusalReason,
   recordScalarNumberAnswer,
   recordCityLimitsAnswer,
+  recordEtjStatusAnswer,
   recordSpecialDistrictNamesAnswer,
   recordUtilityServiceAnswer,
   recordOverlayDistrictsAnswer,
