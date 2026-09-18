@@ -1,4 +1,5 @@
 import type { DischargePointResolver, NamedDischargePoint } from "./discharge-point.js";
+import type { EtjConflictWire, EtjFactWire, EtjStatus } from "./etj-determination.js";
 
 /**
  * Per-section fact TYPES shared across every report product (P-32 wave 1,
@@ -188,8 +189,7 @@ export interface JurisdictionFacts {
    * (P152-PANEL). "unresolved" remains the honest default when no
    * `recordReader` option was supplied, the fetch failed, or the rail is not
    * yet slated `"record"` for this county — never fabricated, never
-   * silently omitted. No engine ETJ source exists (no rail carries it
-   * either) — `etjStatus` stays the literal "unresolved" always.
+   * silently omitted.
    */
   cityLimitsStatus: "unresolved" | "incorporated" | "unincorporated";
   cityName?: string;
@@ -206,7 +206,47 @@ export interface JurisdictionFacts {
   cityLimitsLedgerAnswer?:
     | { form: "refusal"; code: string; reason: string }
     | { form: "absence"; verdict: "absent-verified" | "not-applicable"; reason: string | null };
-  etjStatus: "unresolved";
+  /**
+   * P-358 (OPS-24): the ETJ determination, forwarded from the Hauska retrieval
+   * service's `etjStatus` rail — the SAME rail and the SAME four-state
+   * vocabulary hauska-map's Property Explorer panel serves (P-332, live
+   * 2026-09-18). The states are `present`, `absent`, `unresolved` and
+   * `conflicting`, where `conflicting` means city limits say `incorporated`
+   * while the ETJ read says `present` — a Texas ETJ is by definition
+   * unincorporated land outside a city's limits, so the two independently
+   * derived answers disagree and the report names both rather than picking one.
+   *
+   * `unresolved` remains the honest default when no `recordReader` option was
+   * supplied, the fetch failed, the rail is not yet slated `"record"` for this
+   * county, or the rail declared a refusal — never fabricated, never silently
+   * omitted, and always with a reason (see `etjReason`). The rule lives once, in
+   * `etj-determination.ts`.
+   */
+  etjStatus: EtjStatus;
+  /**
+   * The determination behind `etjStatus`, carried through with its own source,
+   * basis, ring and (for a published ring) `etjId`. Present only when a slated
+   * rail served a determination — an unslated rail has none to carry, and a
+   * fabricated one is what this whole lane exists to prevent.
+   */
+  etjFact?: EtjFactWire;
+  /**
+   * P-358: set only when `etjStatus === "conflicting"`, naming BOTH readings
+   * with their own sources and their own bases — the `cityLimitsLedgerAnswer`
+   * pattern, applied to the one state that is a disagreement rather than a
+   * value. Present when the ledger declared the conflict itself (P-336's cells
+   * name both sources) or when the shared rule derived it from an
+   * `incorporated` city-limits read beside a `present` ETJ read.
+   */
+  etjConflict?: EtjConflictWire;
+  /**
+   * P-358: set only when `etjStatus === "unresolved"` — why the report serves no
+   * determination for this parcel. Deliberately a field of its own rather than
+   * text appended to a fact's basis: code that says "unresolved" without saying
+   * why is the defaulting this lane removes, and a reader (or a probe) must be
+   * able to tell a refused rail from an unslated one.
+   */
+  etjReason?: string;
 }
 
 // ── Section 4: parcel and ownership ─────────────────────────────────────

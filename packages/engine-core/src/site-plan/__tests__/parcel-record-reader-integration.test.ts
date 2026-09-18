@@ -77,7 +77,7 @@ describe("P152-RAILS item 4: composeParcelReportFacts composes cityLimits/ETJ fr
     expect(model.facts.jurisdiction.cityLimitsStatus).toBe("incorporated");
     expect(model.facts.jurisdiction.cityName).toBe("Austin");
     expect(model.facts.jurisdiction.cityLimitsSourceCitation).toContain("parcel_record");
-    expect(model.facts.jurisdiction.etjStatus).toBe("unresolved"); // no ETJ rail exists anywhere — never fabricated
+    expect(model.facts.jurisdiction.etjStatus).toBe("unresolved"); // P-358: no etjStatus rail in this fixture, so the honest default — never fabricated
   });
 
   it("stays 'unresolved' (unchanged) when no recordReader option is supplied — the pre-existing test contract", async () => {

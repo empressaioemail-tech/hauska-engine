@@ -60,6 +60,7 @@ import type {
 } from "../electric-provider-fact/index.js";
 import {
   recordCityLimitsAnswer,
+  recordEtjStatusAnswer,
   recordOverlayDistrictsAnswer,
   recordParcelAreaSqFtAnswer,
   recordRailField,
@@ -71,6 +72,7 @@ import {
   type ParcelRecordResponse,
   type RecordReaderClient,
 } from "./parcel-record-reader-client.js";
+import { UNSLATED_ETJ_REASON, resolveEtjDetermination, type EtjRailReading } from "./etj-determination.js";
 
 /**
  * The composition root (P-120 reports re-cut, R1-R3).
@@ -267,7 +269,41 @@ export interface ComposeParcelReportFactsOptions {
   callerTier?: CallerAccessTier;
 }
 
-const JURISDICTION_ACTION_SENTENCE = "Confirm city-limits and ETJ status with the county before proceeding.";
+/**
+ * P-358 (OPS-24). The open-items review path for the jurisdiction section. It
+ * used to assert that BOTH halves are unresolved ("Confirm city-limits and ETJ
+ * status with the county before proceeding."), which is false the moment the
+ * `etjStatus` rail has answered — and the open item is only ever pushed because
+ * CITY LIMITS is unresolved, so the ETJ half must not be described as unverified
+ * when the report knows it. The sentence changes only where the state is known;
+ * `unresolved` keeps today's wording.
+ */
+function jurisdictionActionSentence(jurisdiction: JurisdictionFacts): string {
+  const WHERE =
+    "Confirm city-limits status with the county" +
+    (jurisdiction.cityName ? ` and with the City of ${jurisdiction.cityName}` : "") +
+    " before proceeding.";
+  switch (jurisdiction.etjStatus) {
+    case "present":
+      return (
+        `City-limits status is unresolved, but this parcel sits inside a published extraterritorial ` +
+        `jurisdiction${jurisdiction.etjFact?.cityName ? ` (${jurisdiction.etjFact.cityName})` : ""}${
+          jurisdiction.etjFact?.ringLabel ? `, ring "${jurisdiction.etjFact.ringLabel}"` : ""
+        }. ${WHERE}`
+      );
+    case "absent":
+      return `City-limits status is unresolved; no published ETJ ring reaches this parcel. ${WHERE}`;
+    case "conflicting":
+      return (
+        "The parcel ledger declares a conflict between the city-limits read and the ETJ read, and " +
+        "city-limits status is unresolved here, so which authority reviews a permit is not established. " +
+        "Confirm with the county and with the city named in this report before proceeding."
+      );
+    case "unresolved":
+      return "Confirm city-limits and ETJ status with the county before proceeding.";
+  }
+}
+
 const HOA_ACTION_SENTENCE = "Search county records directly for recorded restrictions and HOA documents.";
 const FIXED_ACTION_SENTENCES: Record<string, string> = {
   parcelOwnership: "Order a title or CAD roll pull to confirm ownership and value.",
@@ -383,13 +419,52 @@ function composeStructuresSentence(model: Omit<ParcelReportModel, "package">): s
   return fp.consequence ?? "Existing structures are unresolved for this parcel; confirm with a site survey.";
 }
 
+/**
+ * P-358 (OPS-24). The narrative skeleton's jurisdiction sentence. It used to
+ * assert for every parcel in every county that "City-limits and ETJ status are
+ * not yet resolved for this jurisdiction", which is a claim about the ETJ read
+ * that the report can now make truthfully or not at all. Each state gets the
+ * sentence its own reading supports; `unresolved` keeps today's wording exactly,
+ * so an unslated county's document is unchanged.
+ */
+function jurisdictionSkeletonSentence(j: JurisdictionFacts): string {
+  const cityLimitsPhrase =
+    j.cityLimitsStatus === "incorporated"
+      ? `City limits read incorporated${j.cityName ? ` (${j.cityName})` : ""}`
+      : j.cityLimitsStatus === "unincorporated"
+        ? "City limits read unincorporated"
+        : "City-limits status is not resolved";
+  switch (j.etjStatus) {
+    case "present":
+      return (
+        `${cityLimitsPhrase}, and this parcel sits inside a published extraterritorial jurisdiction` +
+        `${j.etjFact?.ringLabel ? ` (ring "${j.etjFact.ringLabel}")` : ""}.`
+      );
+    case "absent":
+      return (
+        `${cityLimitsPhrase}, and no published extraterritorial-jurisdiction ring reaches this parcel ` +
+        "on the rings consulted."
+      );
+    case "conflicting":
+      return (
+        `${cityLimitsPhrase}, while the ETJ read says this point is inside a published ETJ ring` +
+        `${j.etjConflict?.etj.ringLabel ? ` ("${j.etjConflict.etj.ringLabel}")` : ""} — an extraterritorial ` +
+        "jurisdiction is unincorporated land outside a city's limits, so the two independently derived " +
+        "answers disagree and both are stated here rather than one being dropped."
+      );
+    case "unresolved":
+      return "City-limits and ETJ status are not yet resolved for this jurisdiction.";
+  }
+}
+
 function composeNarrativeSkeleton(model: Omit<ParcelReportModel, "package">, openItems: ReadonlyArray<OpenItem>): string {
   const paragraphs: string[] = [];
   const countyLabel = countyNameOrUnresolved(model.facts.jurisdiction.countyName) ?? "an unresolved county";
 
   paragraphs.push(
     `This parcel (${model.parcelNodeId}) sits in ${countyLabel}. ` +
-      "City-limits and ETJ status are not yet resolved for this jurisdiction. " +
+      jurisdictionSkeletonSentence(model.facts.jurisdiction) +
+      " " +
       (model.geometry.status === "present"
         ? `Zoning reads ${model.geometry.model.summary.zoningDistrict ?? "not on file"}, on a lot of ${model.geometry.model.summary.lotAreaSqFt.toLocaleString()} square feet.`
         : `Zoning and lot area could not be determined: ${model.geometry.reason}.`),
@@ -427,7 +502,7 @@ function composePackageLayer(model: Omit<ParcelReportModel, "package">): Package
     });
   }
   if (model.facts.jurisdiction.cityLimitsStatus === "unresolved") {
-    items.push({ section: "jurisdiction", actionSentence: JURISDICTION_ACTION_SENTENCE });
+    items.push({ section: "jurisdiction", actionSentence: jurisdictionActionSentence(model.facts.jurisdiction) });
   }
   // `terrain` is excluded here on purpose: it has no independent failure mode
   // — it is 100% derived from `geometry` — so a `geometry` absence already
@@ -1283,10 +1358,71 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
   // answering the question, not substituting for it.
   const cityLimitsAnswer = recordCityLimitsAnswer(record?.rails.cityLimits);
   const cityLimits = cityLimitsAnswer.form === "value" ? cityLimitsAnswer.value : undefined;
+  const cityLimitsStatus = cityLimits?.status ?? "unresolved";
+
+  // P-358 (OPS-24): the ETJ determination, forwarded from the `etjStatus` rail —
+  // the SAME rail and the SAME four-state vocabulary hauska-map's panel serves
+  // (P-332, live 2026-09-18). The state is never derived from city limits, and
+  // city limits is never derived from it (P-332's rule 3): the rail is read, or
+  // the report says `unresolved` with the reason the rail gave.
+  //
+  // The rail's own three-way answer (P-302) maps onto the report the way every
+  // other rail in this file does: a `value` cell is the determination; a
+  // REFUSAL becomes `unresolved` carrying the ledger's code and reason (never a
+  // substituted state, and never silent); a stated absence (`not-applicable`)
+  // becomes `unresolved` carrying the cell's own reason, because only a
+  // `absent-verified` cell is the checked finding "no ring reaches this point"
+  // (that promotion lives in `recordEtjStatusAnswer`, beside cityLimits' own);
+  // and an UNSLATED rail (`current-path`) or a failed fetch has no determination
+  // to carry at all, so the honest default is the pre-cutover sentence every
+  // county carries today.
+  const etjAnswer = recordEtjStatusAnswer(record?.rails.etjStatus);
+  const etjReading: EtjRailReading | null = (() => {
+    if (etjAnswer.form === "value") return etjAnswer.value;
+    if (etjAnswer.form === "refusal") {
+      return {
+        status: "unresolved",
+        raw: "unresolved",
+        fact: null,
+        conflict: null,
+        reason: recordRailRefusalReason([
+          { rail: "etjStatus", code: etjAnswer.code, reason: etjAnswer.reason },
+        ]),
+      };
+    }
+    if (etjAnswer.form === "absence") {
+      return {
+        status: "unresolved",
+        raw: "unresolved",
+        fact: null,
+        conflict: null,
+        reason: etjAnswer.reason ?? UNSLATED_ETJ_REASON,
+      };
+    }
+    return null;
+  })();
+
+  const etj = resolveEtjDetermination({
+    cityLimits: {
+      status: cityLimitsStatus,
+      cityName: cityLimits?.cityName ?? null,
+      source: cityLimits ? `parcel_record (${cityLimits.source})` : "parcel_record",
+      basis:
+        cityLimits?.basis ??
+        (cityLimitsStatus === "incorporated"
+          ? `city limits read incorporated${cityLimits?.cityName ? ` (${cityLimits.cityName})` : ""}.`
+          : cityLimitsStatus === "unincorporated"
+            ? "city limits read unincorporated."
+            : "city-limits status is not resolved for this parcel."),
+    },
+    reading: etjReading,
+    fallbackReason: UNSLATED_ETJ_REASON,
+  });
+
   const jurisdiction: JurisdictionFacts = {
     countyFips: geometry.status === "present" ? geometry.model.summary.countyFips : null,
     countyName: geometry.status === "present" ? geometry.model.summary.countyName : undefined,
-    cityLimitsStatus: cityLimits?.status ?? "unresolved",
+    cityLimitsStatus,
     ...(cityLimits?.cityName ? { cityName: cityLimits.cityName } : {}),
     ...(cityLimits ? { cityLimitsSourceCitation: `parcel_record (${cityLimits.source})` } : {}),
     ...(cityLimitsAnswer.form === "refusal"
@@ -1301,7 +1437,10 @@ export async function composeParcelReportFacts(options: ComposeParcelReportFacts
           },
         }
       : {}),
-    etjStatus: "unresolved",
+    etjStatus: etj.etjStatus,
+    ...(etj.etjFact ? { etjFact: etj.etjFact } : {}),
+    ...(etj.etjConflict ? { etjConflict: etj.etjConflict } : {}),
+    ...(etj.etjReason ? { etjReason: etj.etjReason } : {}),
   };
 
   const hoa: HoaFacts = { searchStatus: "not-searched" };
