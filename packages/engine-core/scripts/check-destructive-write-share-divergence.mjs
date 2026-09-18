@@ -31,8 +31,9 @@
  *        a throw site.
  *
  *   RE-DERIVED (`--factory <path-to-hauska-factory>`, needs a local clone)
- *     4. `git show <ref>:<path>` reads the factory's declaration at the pinned SHA, hashes it and
- *        parses its literals, and refuses on any disagreement -- so the pin is RE-DERIVABLE rather
+ *     4. `git show <ref>:<path>` reads the factory's declaration at the pinned SHA, compares the
+ *        file's BYTES (normalized sha256, byte length, and git's own blob sha for those bytes) and
+ *        parses its literals, refusing on any disagreement -- so the pin is RE-DERIVABLE rather
  *        than asserted. This is the leg that catches a factory change.
  *
  * ---------------------------------------------------------------------------------------------
@@ -196,7 +197,43 @@ export function scanForSecondThresholds({ root = PACKAGE_ROOT } = {}) {
 }
 
 /**
- * Half 3: re-derive the factory's declaration from a local clone and compare. Refuses on an
+ * The pure half of Half 4's byte agreement: the pinned BYTES, not only a normalized digest of
+ * them. `text` is what the factory handed back and `blobSha` is git's own identity for those bytes
+ * (computed by the caller -- that is the only part that needs the repo). Injectable so the test can
+ * prove the leg fires without a hauska-factory clone, which CI does not have and must not need.
+ *
+ * All three recorded fields are compared, because a recorded field nothing reads is a pin that is
+ * stronger-looking than it is -- the same defect Half 3 closes for codes. A normalized sha256 alone
+ * cannot tell a BOM-stripped or CRLF-converted copy from the real blob, so the byte length and the
+ * git blob sha are compared here too.
+ */
+export function evaluatePinHashes({ text, pin = PROGRAM_DECLARATION_PIN, blobSha } = {}) {
+  if (typeof text !== "string" || !pin) {
+    return refuse("PIN_UNREADABLE", "text or pin was not supplied to the byte comparison");
+  }
+  const bytes = Buffer.byteLength(text, "utf8");
+  const sha = normalisedSha256(Buffer.from(text, "utf8"));
+  const diverged = [];
+  if (bytes !== pin.bytes) {
+    diverged.push(`byte length: the file is ${bytes} bytes, the pin records ${pin.bytes}`);
+  }
+  if (blobSha !== undefined && blobSha !== pin.gitBlobSha) {
+    diverged.push(`git blob sha: the file is ${blobSha}, the pin records ${pin.gitBlobSha}`);
+  }
+  if (sha !== pin.sha256) {
+    diverged.push(`normalized sha256: the file is ${sha}, the pin records ${pin.sha256}`);
+  }
+  if (diverged.length > 0) {
+    return refuse(
+      "PIN_HASH_MISMATCH",
+      `${diverged.join("; ")}. The pinned bytes are not the bytes this declaration was copied from.`,
+    );
+  }
+  return { verdict: "PASS", bytes, blobSha: blobSha ?? pin.gitBlobSha, sha256: sha };
+}
+
+/**
+ * Half 4: re-derive the factory's declaration from a local clone and compare. Refuses on an
  * unreadable clone rather than skipping, because a check that silently passes when it cannot read
  * its subject is the failure this whole row is about.
  */
@@ -217,14 +254,12 @@ export function reDeriveFromFactory({ factoryPath, pin = PROGRAM_DECLARATION_PIN
         `The pin needs a clone that contains ${pin.ref}.`,
     );
   }
-  const sha = normalisedSha256(Buffer.from(text, "utf8"));
-  if (sha !== pin.sha256) {
-    return refuse(
-      "PIN_HASH_MISMATCH",
-      `factory ${pin.path} at ${pin.ref} hashes ${sha}, the pin records ${pin.sha256}. The pinned ` +
-        `file is not what this declaration was copied from.`,
-    );
-  }
+  const blobSha = execFileSync("git", ["-C", factoryPath, "hash-object", "--stdin"], {
+    input: Buffer.from(text, "utf8"),
+    encoding: "utf8",
+  }).trim();
+  const hashes = evaluatePinHashes({ text, pin, blobSha });
+  if (hashes.verdict !== "PASS") return hashes;
   const constant = /export const MAX_DESTRUCTIVE_SHARE = ([0-9]*\.?[0-9]+);/.exec(text);
   const envVar = /export const AUTHORISATION_ENV_VAR = "([^"]+)";/.exec(text);
   const diverged = [];
@@ -244,13 +279,15 @@ export function reDeriveFromFactory({ factoryPath, pin = PROGRAM_DECLARATION_PIN
     verdict: "PASS",
     factoryPath,
     ref: pin.ref,
-    sha256: sha,
+    sha256: hashes.sha256,
+    bytes: hashes.bytes,
+    gitBlobSha: hashes.blobSha,
     facts: { MAX_DESTRUCTIVE_SHARE: Number(constant[1]), AUTHORISATION_ENV_VAR: envVar[1] },
   };
 }
 
 /**
- * Half 4: the refusal codes are thrown by identifier, not spelled by hand.
+ * Half 3: the refusal codes are thrown by identifier, not spelled by hand.
  *
  * The declaration records the engine's codes (`REFUSAL_CODES.engine`); the guard imports them and
  * passes the identifiers to `refuse(...)`. Two directions are checked, and each one alone is a

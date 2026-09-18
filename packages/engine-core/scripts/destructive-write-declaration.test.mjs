@@ -41,6 +41,7 @@ import {
 import {
   evaluateDeclarationAgainstPin,
   evaluateDivergence,
+  evaluatePinHashes,
   normalisedSha256,
   scanForRefusalCodeDrift,
   scanForSecondThresholds,
@@ -346,6 +347,43 @@ describe("P-328 F5: the drift check can fire", () => {
       [...Object.values(REFUSAL_CODES.engine)].sort(),
     );
     expect(out.thrown.length).toBe(4);
+  });
+
+  it("REFUSES when the factory bytes differ but the normalized digest does not", () => {
+    // The case a sha256-only pin cannot see: one extra byte changes the byte count and git's own
+    // blob identity while leaving a normalized digest of any OTHER pair of files untouched. This
+    // leg exists because the pin RECORDS bytes and a blob sha, and a recorded field nothing reads
+    // is a pin that looks stronger than it is.
+    const pinnedText = "export const MAX_DESTRUCTIVE_SHARE = 0.5;\n";
+    const out = evaluatePinHashes({
+      text: pinnedText,
+      blobSha: "0000000000000000000000000000000000000000",
+      pin: {
+        ...PROGRAM_DECLARATION_PIN,
+        bytes: PROGRAM_DECLARATION_PIN.bytes + 1,
+        sha256: normalisedSha256(Buffer.from(pinnedText, "utf8")),
+      },
+    });
+    expect(out.verdict).toBe("REFUSE");
+    expect(out.reason).toBe("PIN_HASH_MISMATCH");
+    expect(out.detail).toContain("byte length");
+    expect(out.detail).toContain("git blob sha");
+  });
+
+  it("PASSES on text that genuinely matches all three recorded fields", () => {
+    const text = "abc";
+    const out = evaluatePinHashes({
+      text,
+      blobSha: "b",
+      pin: {
+        ...PROGRAM_DECLARATION_PIN,
+        bytes: 3,
+        gitBlobSha: "b",
+        sha256: normalisedSha256(Buffer.from(text, "utf8")),
+      },
+    });
+    expect(out.verdict).toBe("PASS");
+    expect(out.bytes).toBe(3);
   });
 
   it("hashes bytes the same way the re-derivation leg does", () => {
