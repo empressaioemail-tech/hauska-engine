@@ -43,6 +43,15 @@ import {
   verifyStoredRoadNodeAtom,
 } from "../src/road-node/index.ts";
 
+import {
+  evaluateBlastRadius,
+  OVERRIDE_ENV_VAR as AUTHORISATION_ENV_VAR,
+} from "./writer-blast-radius-guard.mjs";
+import { MAX_DESTRUCTIVE_SHARE } from "./destructive-write-declaration.mjs";
+
+/** Stable writer id (P-328). Part of the authorisation token, so it cannot drift from one. */
+const ROAD_RECONCILE_WRITER = "road-node-county-reconcile";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../../..");
 const WORKER = join(REPO_ROOT, "artifacts/roads-pbf-worker/extract_highways.py");
@@ -462,6 +471,22 @@ try {
           })),
           plan,
         );
+
+        // ---- BLAST-RADIUS REFUSAL (P-328), BEFORE any retire body is fetched or built, in BOTH
+        // dry-run and --apply. This writer had NONE until this row. P-213's header named it as
+        // having the IDENTICAL unconditional-orphan-retirement shape as the parcel-node writer
+        // ("found while building this guard, not fixed by it"), so it has been retiring a set
+        // computed as a difference against a prior population with no share check at all. The
+        // number and the authorisation variable are the program's, read from
+        // destructive-write-declaration.mjs -- not a second threshold for a second writer.
+        summary.blastRadius = evaluateBlastRadius({
+          writer: ROAD_RECONCILE_WRITER,
+          scopeKey: args.county,
+          affected: reconcile.orphans.length,
+          population: reconcile.priorActive,
+          maxShare: MAX_DESTRUCTIVE_SHARE,
+          override: process.env[AUTHORISATION_ENV_VAR] ?? null,
+        });
 
         if (reconcile.orphans.length > 0) {
           const orphanIds = reconcile.orphans.map((o) => o.roadNodeId);

@@ -37,21 +37,24 @@
  *      threshold and no valid, matching authorization was supplied. The caller must not catch
  *      this and continue; it must propagate before any write.
  *   4. What bypasses it?    STATED, because the answer is never none:
- *      (a) Any batch writer that never calls this module. As of this writing that includes
- *          `write-road-node-county.mjs` / `reconcileCountyRoadNodes`, which has the IDENTICAL
+ *      (a) Any batch writer that never calls this module. P-328 reduced this list by wiring
+ *          `write-road-node-county.mjs` / `reconcileCountyRoadNodes`, which had the IDENTICAL
  *          unconditional-orphan-retirement shape as the parcel-node writer this module was first
- *          wired into (same set-difference, same unconditional `retireAtoms` write, no threshold)
- *          — found while building this guard, not fixed by it. Every other `write-*-county.mjs` /
- *          `write-setback-city.mjs` writer in this package that does not call
- *          `evaluateBlastRadius` is likewise unguarded for whatever destructive transitions it
- *          performs.
+ *          wired into (same set-difference, same unconditional retirement, no threshold) and went
+ *          unguarded for the whole life of the parcel-node guard. Every other `write-*-county.mjs`
+ *          / `write-setback-city.mjs` writer in this package that does not call
+ *          `evaluateBlastRadius` is still unguarded for whatever destructive transitions it
+ *          performs; `destructive-write-declaration.mjs`'s `DESTRUCTIVE_WRITERS` enumerates the
+ *          destructive ones and says, per writer, whether it is wired and why not.
  *      (b) A raw Postgres connection, or a hand `UPDATE atoms SET body = jsonb_set(...)`, issued
  *          outside the guarded writer's own code path. This module has no way to see a write it
  *          is not called from.
  *      (c) `review-retired-parcel-nodes.mjs`'s reactivation path — the opposite direction
- *          (retired -> active) and out of THIS module's scope (a mass, unwarranted reactivation
- *          is a different failure mode with its own live-corroboration gate, not a "destructive
- *          state" transition).
+ *          (retired -> active), out of THIS module's "destructive transition" scope. P-328 gave
+ *          it its own refusal (`retired-reactivation-guard.mjs`), reading the SAME declared
+ *          number and authorisation from `destructive-write-declaration.mjs`; a mass,
+ *          unwarranted reactivation is a different failure mode with its own live-corroboration
+ *          gate, not a "destructive state" one.
  *      (d) The ten-minute `factory-conformant reap` schedule (named, not touched, per this row's
  *          own explicit scope: it is flagged as worth auditing separately, not assumed defective).
  *      (e) Deleting or reverting this module, or a caller catching its throw and proceeding
@@ -76,22 +79,30 @@
  * `no-prior`/`priorBasis` split. `affected === 0` always passes (`no-change`).
  *
  * ---------------------------------------------------------------------------------------------
- * THE THRESHOLD IS A DECLARED NUMBER, PER WRITER
+ * THE THRESHOLD IS ONE DECLARED NUMBER, PASSED IN
  * ---------------------------------------------------------------------------------------------
  *
- * `maxShare` is supplied by the CALLER, not this module — "the threshold is a declared number
- * per writer, recorded with its basis, not a judgement call made at call time" (OPS-16 P-213).
- * This module refuses to run without one (`0 < maxShare < 1`): a shared guard with a built-in
- * default would let a threshold be a config value nobody chose, which is exactly what this
- * control exists to prevent. See the calling writer's own source for its declared number and
- * basis (e.g. `write-parcel-node-county.mjs`'s `MAX_ORPHAN_SHARE`).
+ * `maxShare` is supplied by the CALLER, not this module, and since P-328 every engine caller
+ * imports the SAME value (`MAX_DESTRUCTIVE_SHARE` from `destructive-write-declaration.mjs`) rather
+ * than declaring its own — the engine's parcel-node writer carried `MAX_ORPHAN_SHARE = 0.05` and
+ * its reactivation writer carried `MAX_REACTIVATION_SHARE = 0.05` before this row, two declarations
+ * of a number the program had already declared once. This module still refuses to run without a
+ * declared `0 < maxShare < 1`: a shared guard with a built-in default would let a threshold be a
+ * config value nobody chose, which is exactly what this control exists to prevent. The number
+ * itself is the program's, declared in hauska-factory and carried here by
+ * `destructive-write-declaration.mjs` with a pinned ref and a drift check.
  *
  * ---------------------------------------------------------------------------------------------
  * THE OVERRIDE, PORTED FROM P-236's publish-coverage-floor.mjs
  * ---------------------------------------------------------------------------------------------
  *
- *     BLAST_RADIUS_OVERRIDE=<writer>:<scopeKey>:<affected>/<population>
- *     e.g. BLAST_RADIUS_OVERRIDE=parcel-node-county-reconcile:48021:57704/62394
+ *     DESTRUCTIVE_WRITE_AUTHORISATION=<writer>:<scopeKey>:<affected>/<population>
+ *     e.g. DESTRUCTIVE_WRITE_AUTHORISATION=parcel-node-county-reconcile:48021:57704/62394
+ *
+ * P-328: the variable NAME and the declared number are now the PROGRAM'S, read from
+ * `destructive-write-declaration.mjs` (which is pinned to the factory's declaration). They were
+ * the engine's own (`BLAST_RADIUS_OVERRIDE`, 0.05) until this row; the token GRAMMAR was already
+ * identical, so what P-328 unified is the name and the number, not the shape.
  *
  * Names the writer, the scope (e.g. county FIPS) AND both measured counts, exactly, for the
  * same reasons P-236's override does: it cannot be written before the refusal exists to read the
@@ -101,12 +112,14 @@
  * did not fire.
  */
 
-export const BLAST_RADIUS_EXCEEDED = "BLAST_RADIUS_EXCEEDED";
-export const BLAST_RADIUS_UNMEASURED = "BLAST_RADIUS_UNMEASURED";
-export const BLAST_RADIUS_OVERRIDE_MALFORMED = "BLAST_RADIUS_OVERRIDE_MALFORMED";
-export const BLAST_RADIUS_OVERRIDE_MISMATCH = "BLAST_RADIUS_OVERRIDE_MISMATCH";
+import { AUTHORISATION_ENV_VAR, REFUSAL_CODES } from "./destructive-write-declaration.mjs";
 
-export const OVERRIDE_ENV_VAR = "BLAST_RADIUS_OVERRIDE";
+export const BLAST_RADIUS_EXCEEDED = REFUSAL_CODES.engine.blastRadius;
+export const BLAST_RADIUS_UNMEASURED = REFUSAL_CODES.engine.unmeasured;
+export const BLAST_RADIUS_OVERRIDE_MALFORMED = REFUSAL_CODES.engine.overrideMalformed;
+export const BLAST_RADIUS_OVERRIDE_MISMATCH = REFUSAL_CODES.engine.overrideMismatch;
+
+export const OVERRIDE_ENV_VAR = AUTHORISATION_ENV_VAR;
 
 function refuse(code, message, detail = {}) {
   const err = new Error(message);
