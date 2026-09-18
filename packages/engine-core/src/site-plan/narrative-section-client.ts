@@ -100,8 +100,10 @@ const SERVER_NO_CONTENT_GENERATED_BY = "rules-v1";
  * here, each on its own honest reading:
  *
  * - `jurisdiction` is present when a county is actually known. `cityLimitsStatus`
- *   and `etjStatus` ride along as the literal `"unresolved"` they are, so the
- *   model can say they are unresolved rather than guess a value.
+ *   and the four-state `etjStatus` ride along as the readings they are
+ *   (P-358: forwarded from the `cityLimits` and `etjStatus` rails, in
+ *   `report-model.ts`), so the model can state a determination it has rather
+ *   than guess one it does not.
  * - `hoa` is ABSENT unless a document is actually mounted. `searchStatus:
  *   "not-searched"` is the absence of a search, not a finding of no
  *   restrictions, and must never be handed to the model as a present fact.
