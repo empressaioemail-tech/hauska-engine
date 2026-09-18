@@ -34,6 +34,7 @@ import {
   overrideTokenFor,
   parseBlastRadiusOverride,
 } from "./writer-blast-radius-guard.mjs";
+import { MAX_DESTRUCTIVE_SHARE } from "./destructive-write-declaration.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -43,7 +44,7 @@ const BASTROP = { affected: 57_704, population: 62_394 };
 // active rows (_inbox/2026-08-08_L2_WAVE3_retirement_dry_full.json).
 const KENEDY = { affected: 1, population: 528 };
 const WRITER = "parcel-node-county-reconcile";
-const MAX_SHARE = 0.05; // matches write-parcel-node-county.mjs's declared MAX_ORPHAN_SHARE
+const MAX_SHARE = MAX_DESTRUCTIVE_SHARE; // P-328: the PROGRAM's one declared number, not a local one
 
 /** Mimics the call order write-parcel-node-county.mjs actually uses: guard, THEN write. */
 function simulateGuardedWrite(evalArgs, batch) {
@@ -150,12 +151,12 @@ describe("F2 (pass): a legitimate re-run writes normally", () => {
     expect(writeCalls).toEqual([batch]);
   });
 
-  it("the boundary is the declared number -- exactly 5% passes, 5.1% refuses", () => {
-    const atFloor = evaluateBlastRadius({ writer: WRITER, scopeKey: "48099", affected: 50, population: 1000, maxShare: MAX_SHARE });
+  it("the boundary is the declared number -- exactly the declared share passes, above it refuses", () => {
+    const atFloor = evaluateBlastRadius({ writer: WRITER, scopeKey: "48099", affected: 50, population: 100, maxShare: MAX_SHARE });
     expect(atFloor.ok).toBe(true);
-    expect(atFloor.share).toBe(0.05);
+    expect(atFloor.share).toBe(MAX_SHARE);
     expect(() =>
-      evaluateBlastRadius({ writer: WRITER, scopeKey: "48099", affected: 51, population: 1000, maxShare: MAX_SHARE }),
+      evaluateBlastRadius({ writer: WRITER, scopeKey: "48099", affected: 51, population: 100, maxShare: MAX_SHARE }),
     ).toThrow();
   });
 });
@@ -320,11 +321,16 @@ describe("F4: the override authorizes exactly one measured run, never a template
 describe("wiring: write-parcel-node-county.mjs calls the guard before it takes a lease or writes", () => {
   const writerSrc = readFileSync(path.join(here, "write-parcel-node-county.mjs"), "utf8");
 
-  it("declares its own threshold as a literal number, with the override env var imported from this module", () => {
-    const m = /const MAX_ORPHAN_SHARE = ([0-9.]+);/.exec(writerSrc);
-    expect(m, "MAX_ORPHAN_SHARE must be a literal declared in write-parcel-node-county.mjs").not.toBeNull();
-    expect(Number(m[1])).toBe(MAX_SHARE);
+  it("reads the program's ONE declared number from the declaration module (P-328) -- it no longer declares its own", () => {
+    // P-328 replaced a local `MAX_ORPHAN_SHARE = 0.05` with the program's number. A local share
+    // LITERAL here is now the defect, so this asserts its ABSENCE rather than its value.
+    expect(writerSrc).toContain("MAX_DESTRUCTIVE_SHARE");
+    expect(writerSrc).toContain('from "./destructive-write-declaration.mjs"');
     expect(writerSrc).toContain('from "./writer-blast-radius-guard.mjs"');
+    expect(
+      /MAX_[A-Z0-9_]*SHARE\s*=\s*0\./.test(writerSrc),
+      "write-parcel-node-county.mjs must not declare its own share literal",
+    ).toBe(false);
   });
 
   it("evaluateBlastRadius( precedes takeScopedLease( and every writePropertyAtomsBatch( call site in source order", () => {
