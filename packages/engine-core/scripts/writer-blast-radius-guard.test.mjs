@@ -10,6 +10,10 @@
  *   F2  A run below the threshold PASSES and the simulated writer's write function IS called
  *       with the expected batch. Would falsify: a guard that refuses a healthy run, which is how
  *       a control gets disabled by the first writer it blocks.
+ *       P-361 (A-220) sharpens this to the band the ruling closed: a 6 PERCENT share refuses and a
+ *       4 PERCENT share passes, through the same call path. At the old declared 0.5 both passed, so
+ *       a declaration that reverted to 0.5 while the writer still held 0.05 would pass this file
+ *       before P-361 and must not now.
  *   F3  A first-ever run (population === 0) and a no-op run (affected === 0) are their own bases,
  *       never folded into "within-threshold" and never refused.
  *   F4  The override is not a habit-flag: only an exact <writer>:<scopeKey>:<affected>/
@@ -152,12 +156,38 @@ describe("F2 (pass): a legitimate re-run writes normally", () => {
   });
 
   it("the boundary is the declared number -- exactly the declared share passes, above it refuses", () => {
-    const atFloor = evaluateBlastRadius({ writer: WRITER, scopeKey: "48099", affected: 50, population: 100, maxShare: MAX_SHARE });
+    // 0.05 exactly (5 of 100) passes and 6 of 100 refuses, because the comparison is `> maxShare`.
+    // Before P-361 this test was written at 50 of 100, which was "exactly 0.5"; the number moved and
+    // the test that pins the boundary moved with it, which is why it is written from the DECLARED
+    // value and not from a literal.
+    const atFloor = evaluateBlastRadius({ writer: WRITER, scopeKey: "48099", affected: 5, population: 100, maxShare: MAX_SHARE });
     expect(atFloor.ok).toBe(true);
     expect(atFloor.share).toBe(MAX_SHARE);
     expect(() =>
-      evaluateBlastRadius({ writer: WRITER, scopeKey: "48099", affected: 51, population: 100, maxShare: MAX_SHARE }),
+      evaluateBlastRadius({ writer: WRITER, scopeKey: "48099", affected: 6, population: 100, maxShare: MAX_SHARE }),
     ).toThrow();
+  });
+
+  it("P-361: a 6 percent share REFUSES and a 4 percent share PASSES, on the write-parcel-node-county call path", () => {
+    // The dispatch's pre-registered pair, at the number A-220 moved the program to. 6 percent is the
+    // point of the row: it passed at 0.5 and refuses at 0.05, so this pair is what fails if the
+    // declaration ever loosens again while the writer keeps refusing (a stated-but-unenforced
+    // number) or if the writer follows it back up (a loosened writer).
+    expect(() =>
+      simulateGuardedWrite(
+        { writer: WRITER, scopeKey: "48021", affected: 6, population: 100, maxShare: MAX_SHARE },
+        ["48021:_feature-0"],
+      ),
+    ).toThrow(/6\.00%/);
+
+    const batch = ["48021:_feature-0"];
+    const { verdict, writeCalls } = simulateGuardedWrite(
+      { writer: WRITER, scopeKey: "48021", affected: 4, population: 100, maxShare: MAX_SHARE },
+      batch,
+    );
+    expect(verdict.ok).toBe(true);
+    expect(verdict.share).toBe(0.04);
+    expect(writeCalls).toEqual([batch]);
   });
 });
 

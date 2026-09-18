@@ -22,21 +22,29 @@
  * THE NUMBER, AND THE COST OF CARRYING IT RATHER THAN THE ENGINE'S EARLIER ONE
  * ---------------------------------------------------------------------------------------------
  *
- * `MAX_DESTRUCTIVE_SHARE = 0.5` is the program's number and is NOT re-derived here. It is a COPY,
+ * `MAX_DESTRUCTIVE_SHARE = 0.05` is the program's number and is NOT re-derived here. It is a COPY,
  * and a copy that cannot be re-derived is a number that drifts, which is why the pin and the drift
  * check exist beside it.
  *
- * STATED PLAINLY, because it is a change to a live control: the engine's writers refused above
- * 0.05 before this row. Carrying 0.5 LOOSENS the engine's parcel-node and reactivation controls by
- * 10x. The Bastrop incident (92.5 percent) is refused under either number, so the row's completion
- * predicate holds; the band that stopped being refused is 5 to 50 percent, where a mass false
- * retirement would now pass unauthorised. Two things follow, and both are deliberate:
+ * RE-PINNED BY P-361 (A-220, 2026-09-18). P-328 shipped this file carrying the factory's 0.5 and
+ * stated plainly what that cost: the engine's own writers refuse above 0.05 (`MAX_ORPHAN_SHARE`,
+ * `MAX_REACTIVATION_SHARE`, live since P-213), so reading 0.5 LOOSENED them 10x on the writer that
+ * retired 92.5 percent of Bastrop. The operator has now moved the program's one number to the
+ * engine's, program-wide ("The program's destructive-write threshold is 5 percent (0.05),
+ * program-wide", `_decisions/2026-09-18_phase0_closeout_rulings.md`, wave 1 / A-220). So this
+ * declaration now says 0.05 -- and the direction of the change is the OPPOSITE of the one P-328
+ * carried: the ENGINE is unchanged and the FACTORY tightens to meet it.
  *
- *   - One number is the program's choice, and the alternatives are worse: a second number is the
- *     defect this row exists to prevent, and a drift check that compares 0.05 to 0.5 is a
- *     permanently-red gate, which DEV_PROCESS calls a dead gate.
- *   - If the operator wants the sharper number, the place to change it is the factory's single
- *     declaration, and the engine follows through this pin. leave_behind carries that proposal.
+ * WHAT THAT MEANS FOR THE PLAN ROW'S OWN ARGUMENT, restated because the earlier text argued the
+ * other way and must not be left standing:
+ *
+ *   - The loosening is GONE. There is no 5-to-50-percent band left open; a mass false retirement in
+ *     that band refuses unauthorised in both repos.
+ *   - The one-number rule is unchanged and is now easier to hold, because the two repos agree.
+ *   - The Bastrop incident (0.925) refuses under either number, so the row's completion predicate
+ *     held throughout; what changed is the width of what it refuses.
+ *
+ * There is no remaining "if the operator wants the sharper number" proposal: the operator took it.
  *
  * ---------------------------------------------------------------------------------------------
  * WHY A PINNED SHA AND NOT A NETWORK FETCH
@@ -51,13 +59,27 @@
  * `check-destructive-write-share-divergence.mjs --factory <path>` does, and the enforceable
  * cross-repo direction is the factory-side one (the factory can read the public engine). That row
  * is handed back rather than faked here.
+ *
+ * THE PIN IS CONTENT-ADDRESSED, NOT COMMIT-ADDRESSED (P-361's pin choice). The identity of the
+ * pinned file is its CONTENT -- the git blob sha, the byte length and the normalized sha256, all
+ * three recorded and all three compared -- and `ref` is PROVENANCE: the commit the copy was read
+ * from, recorded so a reader can find the change, never the thing the pin rests on. The reason is
+ * a merge idiom this program uses: a squash merge REPLACES the commit sha and leaves the blob
+ * untouched. A commit-addressed pin would break the day the factory PR lands, for a change that
+ * did not touch a byte of the pinned file, and a check that fails for a reason unrelated to its
+ * subject is a dead gate. With a content-addressed pin, a squash merge is a no-op for this check;
+ * only a change to the file's BYTES fires it, which is exactly the event worth refusing.
+ * `check-destructive-write-share-divergence.mjs` therefore reads the ref if the factory clone has
+ * it and falls back to the clone's own `origin/main` copy, refusing only on a content mismatch --
+ * so the pin stays re-derivable after the branch commit is gone.
  */
 
 /**
- * THE NUMBER. The program's, carried, pinned, and never re-derived in this repo. See the header for
- * the basis and for the 0.05 -> 0.5 loosening this carries.
+ * THE NUMBER. The program's, carried, pinned, and never re-derived in this repo. It is 0.05 because
+ * A-220 moved the program to the engine's live number (P-361); see the header for the basis and for
+ * what this declaration carried before the ruling.
  */
-export const MAX_DESTRUCTIVE_SHARE = 0.5;
+export const MAX_DESTRUCTIVE_SHARE = 0.05;
 
 /**
  * THE AUTHORISATION VARIABLE. The factory's name, so an operator who has authorised one of these
@@ -80,20 +102,29 @@ export function authorisationTokenFor(writer, countyFips, destructive, populatio
  *
  * Re-derive with:
  *   node scripts/check-destructive-write-share-divergence.mjs --factory <path-to-hauska-factory>
- * Read at the ref with `git show 85d63e8d:src/lib/destructive-write-guard.mjs`.
+ * Read at the ref with `git show bb2db193:src/lib/destructive-write-guard.mjs`.
+ *
+ * `ref` is PROVENANCE, not identity -- see the header. `blobSha`/`bytes`/`sha256` are the identity,
+ * and `refKind: "branch-head"` says the ref was a lane branch head at pin time rather than a commit
+ * on factory main, which is a thing a squash merge re-writes. The check does not depend on it.
  */
 export const PROGRAM_DECLARATION_PIN = Object.freeze({
   repo: "empressaioemail-tech/hauska-factory",
   path: "src/lib/destructive-write-guard.mjs",
-  ref: "85d63e8d39f0129ef14267f432b8a555292fd172",
-  refSubject: "fix(P-325): a join miss is not a verified absence (#175) -- factory origin/main tip",
+  ref: "bb2db193e698e8e4ff1e1ff82ecbcdbd856702d5",
+  refKind: "branch-head",
+  refBranch: "lane/p361-threshold-005",
+  refSubject:
+    "P-361 (A-220): the program's destructive-write threshold is 0.05, and every unwired reason " +
+    "re-read at the new number -- factory lane head at pin time",
   refReadAt: "2026-09-18",
-  gitBlobSha: "a0f8e22fa2dcf04b4f665607367140efa0a6fc8a",
-  bytes: 19597,
-  sha256: "165dc955b840af4e1fd75ed3da1e7db1a5077137421b345a4f6cd6bc88411bd1",
+  contentAddressed: true,
+  gitBlobSha: "5038e24a9a8404da70f168ce8d303630230895ef",
+  bytes: 23524,
+  sha256: "e76bd834008ddb0950b20e7015fe21d984fa84c3ac6fe3bdf4d1c5de69ca7fa1",
   facts: Object.freeze({
     constantName: "MAX_DESTRUCTIVE_SHARE",
-    constantValue: 0.5,
+    constantValue: 0.05,
     envVarName: "AUTHORISATION_ENV_VAR",
     envVarValue: "DESTRUCTIVE_WRITE_AUTHORISATION",
     tokenGrammar: "<writer>:<county-fips>:<destructive>/<population>",

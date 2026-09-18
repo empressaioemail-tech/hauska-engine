@@ -50,6 +50,20 @@
  * CI can run, and `--factory` is what a lane or the integration seat runs with a clone in hand.
  *
  * ---------------------------------------------------------------------------------------------
+ * THE PIN IS CONTENT-ADDRESSED, NOT COMMIT-ADDRESSED (P-361)
+ * ---------------------------------------------------------------------------------------------
+ *
+ * Half 4 reads the factory at `PROGRAM_DECLARATION_PIN.ref`, which at pin time was a LANE BRANCH
+ * head rather than a commit on factory main. A squash merge of that lane replaces the commit sha
+ * and leaves the file's bytes untouched, so a commit-addressed check would go red for a change that
+ * did not touch its subject -- DEV_PROCESS's dead gate. The pin's identity is therefore the CONTENT
+ * (git blob sha + byte length + normalized sha256, all three compared) and `ref` is provenance:
+ * the read falls back to the clone's `origin/main`/`main`/`HEAD` copy and REFUSES on a content
+ * mismatch, naming the ref it actually read. A clone that can produce none of the candidate refs
+ * still refuses FACTORY_UNREADABLE -- the fallback narrows what the pin depends on, it does not
+ * make an unreadable factory a pass.
+ *
+ * ---------------------------------------------------------------------------------------------
  * THE THREE-QUESTION GATE
  * ---------------------------------------------------------------------------------------------
  *
@@ -241,17 +255,32 @@ export function reDeriveFromFactory({ factoryPath, pin = PROGRAM_DECLARATION_PIN
   if (!factoryPath) {
     return refuse("FACTORY_UNREADABLE", "--factory <path-to-hauska-factory> was not supplied");
   }
-  let text;
-  try {
-    text = execFileSync("git", ["-C", factoryPath, "show", `${pin.ref}:${pin.path}`], {
-      encoding: "utf8",
-      maxBuffer: 64 * 1024 * 1024,
-    });
-  } catch (e) {
+  // The pin is CONTENT-ADDRESSED (P-361): `ref` is provenance and may be gone after a squash merge,
+  // so the read falls back to the clone's own integration branch and the CONTENT is what must
+  // agree. The fallback is not silent -- the ref actually read is named in the result and in any
+  // refusal -- and a clone that can produce NONE of the candidate refs still refuses.
+  const candidates = [pin.ref, "origin/main", "main", "HEAD"].filter(Boolean);
+  const tried = [];
+  let text = null;
+  let readRef = null;
+  for (const ref of candidates) {
+    try {
+      text = execFileSync("git", ["-C", factoryPath, "show", `${ref}:${pin.path}`], {
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+      });
+      readRef = ref;
+      break;
+    } catch (e) {
+      tried.push(`${ref} (${e.message.split("\n")[0]})`);
+    }
+  }
+  if (text === null) {
     return refuse(
       "FACTORY_UNREADABLE",
-      `could not read ${pin.ref}:${pin.path} from ${factoryPath} (${e.message.split("\n")[0]}). ` +
-        `The pin needs a clone that contains ${pin.ref}.`,
+      `could not read ${pin.path} from ${factoryPath} at any of ${candidates.join(", ")} -- ` +
+        `the pin's ref is provenance, so the clone's integration branch is an accepted source, ` +
+        `but a clone that holds none of them cannot be compared. Tried: ${tried.join("; ")}`,
     );
   }
   const blobSha = execFileSync("git", ["-C", factoryPath, "hash-object", "--stdin"], {
@@ -259,7 +288,13 @@ export function reDeriveFromFactory({ factoryPath, pin = PROGRAM_DECLARATION_PIN
     encoding: "utf8",
   }).trim();
   const hashes = evaluatePinHashes({ text, pin, blobSha });
-  if (hashes.verdict !== "PASS") return hashes;
+  if (hashes.verdict !== "PASS") {
+    return refuse(
+      hashes.reason,
+      `${hashes.detail} (read at ${readRef}; the pin's ref was ${pin.ref} -- content is the pin's ` +
+        `identity, so a squash merge that re-writes the ref is not a divergence and a changed byte is)`,
+    );
+  }
   const constant = /export const MAX_DESTRUCTIVE_SHARE = ([0-9]*\.?[0-9]+);/.exec(text);
   const envVar = /export const AUTHORISATION_ENV_VAR = "([^"]+)";/.exec(text);
   const diverged = [];
@@ -279,6 +314,8 @@ export function reDeriveFromFactory({ factoryPath, pin = PROGRAM_DECLARATION_PIN
     verdict: "PASS",
     factoryPath,
     ref: pin.ref,
+    readRef,
+    refFallback: readRef === pin.ref ? null : `read at ${readRef} instead of the pinned ref`,
     sha256: hashes.sha256,
     bytes: hashes.bytes,
     gitBlobSha: hashes.blobSha,

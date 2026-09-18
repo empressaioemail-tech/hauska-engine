@@ -67,7 +67,9 @@ function syntheticRun({ affected, population }) {
 describe("retired-reactivation-guard: declared number and scope", () => {
   it("reads the program's ONE declared number (P-328), with the transition named", () => {
     expect(MAX_REACTIVATION_SHARE).toBe(MAX_DESTRUCTIVE_SHARE);
-    expect(MAX_DESTRUCTIVE_SHARE).toBe(0.5);
+    // A-220 (P-361): 0.05 program-wide. This test read 0.5 while the guard refused at 0.05, which is
+    // the exact split P-361 closed -- the declaration and the enforced number are now one number.
+    expect(MAX_DESTRUCTIVE_SHARE).toBe(0.05);
     expect(REACTIVATION_TRANSITION).toBe("retired->active");
     expect(REACTIVATION_WRITER).toBe("parcel-node-retired-review-reactivation");
     // The writer id is part of the override token, so an authorization for the RETIREMENT
@@ -97,17 +99,29 @@ describe("retired-reactivation-guard: the false-positive checks (it must NOT be 
   });
 
   it("a repair inside the declared share passes without any override", () => {
-    const run = syntheticRun({ affected: 50, population: 1013 }); // 4.94%
+    const run = syntheticRun({ affected: 40, population: 1000 }); // 4.00%
     const plan = planReactivationWrite({ countyFips: COUNTY, ...run });
     expect(plan.write).toBe(true);
     expect(plan.blastRadius.basis).toBe("within-threshold");
-    expect(plan.blastRadius.share).toBeCloseTo(50 / 1013, 12); // 4.94%, under the program's 0.5 (P-328)
+    expect(plan.blastRadius.share).toBeCloseTo(0.04, 12); // under the program's 0.05 (A-220 / P-361)
+  });
+
+  it("P-361: on this call path a 6 percent run REFUSES and a 4 percent run writes", () => {
+    // The dispatch's pre-registered pair, in the direction P-275 exists for. 6 percent is the band
+    // A-220 closed: it passed at the declared 0.5 and refuses at the declared 0.05, and this pair is
+    // what fails if either the declaration or the guard moves without the other.
+    expect(() => planReactivationWrite({ countyFips: COUNTY, ...syntheticRun({ affected: 60, population: 1000 }) })).toThrow(
+      /6\.00%/,
+    );
+    const plan = planReactivationWrite({ countyFips: COUNTY, ...syntheticRun({ affected: 40, population: 1000 }) });
+    expect(plan.write).toBe(true);
+    expect(plan.blastRadius.share).toBeCloseTo(0.04, 12);
   });
 
   it("exactly at the declared share passes (the check is > maxShare, not >=)", () => {
-    const v = assertReactivationBlastRadius({ countyFips: COUNTY, affected: 50, population: 100 });
+    const v = assertReactivationBlastRadius({ countyFips: COUNTY, affected: 5, population: 100 });
     expect(v.basis).toBe("within-threshold");
-    expect(v.share).toBe(0.5);
+    expect(v.share).toBe(0.05);
   });
 
   it("a county with no prior retired population passes under its own basis", () => {

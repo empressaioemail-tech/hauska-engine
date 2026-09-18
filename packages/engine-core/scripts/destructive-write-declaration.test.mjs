@@ -99,8 +99,11 @@ describe("P-328 F1: the shape that emptied Bastrop refuses against the program's
     expect(err.message).toContain("NOTHING WAS WRITTEN");
   });
 
-  it("fires against the PROGRAM's number, not the engine's old 0.05 -- 92.5% is above both", () => {
-    // The row's completion predicate must hold at the declared number, and the share is above it.
+  it("fires against the PROGRAM's number, which A-220 moved to the engine's own 0.05 -- 92.5% is above both", () => {
+    // P-328's version of this test distinguished the program's 0.5 from the engine's old 0.05. After
+    // A-220 (P-361) the program's number IS 0.05, so the row's completion predicate is the same
+    // predicate and the share is above it under either reading of history.
+    expect(MAX_DESTRUCTIVE_SHARE).toBe(0.05);
     expect(BASTROP.affected / BASTROP.population).toBeGreaterThan(MAX_DESTRUCTIVE_SHARE);
   });
 
@@ -289,11 +292,20 @@ describe("P-328 F5: the drift check can fire", () => {
 
   it("REFUSES when the constant is edited alone (the dispatch's fourth falsifier)", () => {
     const out = evaluateDeclarationAgainstPin({
-      declaration: { ...realDeclaration, MAX_DESTRUCTIVE_SHARE: 0.05 },
+      declaration: { ...realDeclaration, MAX_DESTRUCTIVE_SHARE: 0.1 },
     });
     expect(out.verdict).toBe("REFUSE");
     expect(out.reason).toBe("ENGINE_CONSTANT_DIVERGED");
-    expect(out.detail).toContain("57704".length ? "0.5" : "0.5");
+    // A single-number edit is refused NAMING the pinned value it should have matched: the pinned
+    // number is 0.05 (A-220 / P-361), so an engine that drifts to 0.1 is caught, and so is one that
+    // reverts to the old 0.5.
+    expect(out.detail).toContain("0.05");
+    const reverted = evaluateDeclarationAgainstPin({
+      declaration: { ...realDeclaration, MAX_DESTRUCTIVE_SHARE: 0.5 },
+    });
+    expect(reverted.verdict).toBe("REFUSE");
+    expect(reverted.reason).toBe("ENGINE_CONSTANT_DIVERGED");
+    expect(reverted.detail).toContain("0.05");
   });
 
   it("REFUSES when the authorisation variable is edited alone", () => {
