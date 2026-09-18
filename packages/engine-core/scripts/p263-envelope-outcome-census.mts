@@ -20,16 +20,19 @@
  *   the six Phase-0 county fips, whose `outcome.kind` is `no-buildable-area`, and which
  *   carry no `zero` proof. `status` is `active` unless the row says otherwise.
  *
- *   Bucket = classifyEnvelopeAbsenceReason(outcome.reason ?? absence.reason), the SAME
- *   function the writer guard calls (`src/property-reasoning/envelope-outcome-honesty.ts`),
- *   so the census cannot disagree with the guard about what a reason means:
+ *   Bucket = `classifyEnvelopeOutcomeBucket` from
+ *   `src/property-reasoning/envelope-outcome-movement.ts`, the ONE module the apply
+ *   (`scripts/p263-envelope-outcome-apply.mts`, P-342) imports too, so the census cannot
+ *   disagree with the writer about which atoms move, nor with the guard about what a reason
+ *   means (`classifyEnvelopeAbsenceReason` is what that module calls):
  *     - "unzoned"    -> NOT-APPLICABLE   (the ordinance does not reach the parcel)
  *     - "no-district"-> PENDING-DERIVATION (provisional-front-edge; the ledger decides the cell)
  *     - producer literal -> PENDING-DERIVATION: `LEGACY_TIER1_NO_BUILDABLE_AREA_REASON`
  *       (97,108 atoms — the largest single reason string) is attributed to the one branch that
  *       wrote it, which this lane FIXED, so the cohort is classified rather than excused. The
  *       string is imported from the producer (`bake-from-tier1-snapshot.ts`), never copied.
- *     - null         -> UNCLASSIFIED-BY-REASON (a reason that names neither; reported, never guessed)
+ *     - null         -> UNCLASSIFIED-BY-REASON (a reason that names neither; withheld as
+ *       unverified and MOVED NOWHERE by the apply, never guessed)
  *   Every atom lands in exactly one bucket, and the buckets sum to the population by
  *   construction — the run asserts both and exits non-zero if either fails.
  *
@@ -52,27 +55,22 @@
  */
 import { writeFileSync } from "node:fs";
 
-import postgres from "postgres";
-
 import { resolveSubstrateDatabaseUrl } from "@hauska-engine/storage";
 
+/**
+ * P-342 — the bucket logic is NOT defined here any more. It lives in ONE module that the
+ * apply (`p263-envelope-outcome-apply.mts`) imports too, so the instrument that MEASURES a
+ * movement and the writer that PERFORMS it cannot disagree about which atoms move. Before
+ * this, a second copy in the apply was the only alternative and the divergence would have
+ * been a write against a classification the measuring instrument does not agree with.
+ */
 import {
-  classifyEnvelopeAbsenceReason,
-  outcomeForEnvelopeDecline,
-} from "../src/property-reasoning/envelope-outcome-honesty.js";
-import { LEGACY_TIER1_NO_BUILDABLE_AREA_REASON } from "../src/property-reasoning/bake-from-tier1-snapshot.js";
+  classifyEnvelopeOutcomeBucket,
+  movementFor,
+} from "../src/property-reasoning/envelope-outcome-movement.js";
+import { openSubstrateClient, storeHostFingerprint } from "./atoms-store-client.mjs";
+import { COUNTY_NAME, SIX_COUNTIES } from "./p263-phase0-counties.mjs";
 import { evaluateBlastRadius } from "./writer-blast-radius-guard.mjs";
-
-/** The six Phase-0 counties (doc_repo `_catalog` six-county set). */
-const SIX_COUNTIES = ["48021", "48055", "48209", "48309", "48453", "48491"];
-const COUNTY_NAME = {
-  "48021": "Bastrop",
-  "48055": "Caldwell",
-  "48209": "Hays",
-  "48309": "McLennan",
-  "48453": "Travis",
-  "48491": "Williamson",
-};
 
 function argValue(argv, name) {
   const i = argv.indexOf(name);
@@ -89,15 +87,9 @@ const jsonOut = argValue(argv, "--json");
 const expectPopulation = Number(argValue(argv, "--expect-population") ?? "0") || null;
 
 const url = resolveSubstrateDatabaseUrl();
-const hostFingerprint = (() => {
-  try {
-    return new URL(url).host.replace(/\.[a-z0-9-]+\.aws\.neon\.tech$/i, ".…neon.tech");
-  } catch {
-    return "unparseable";
-  }
-})();
+const hostFingerprint = storeHostFingerprint(url);
 
-const sql = postgres(url, { ssl: "require", max: 1, prepare: false });
+const sql = openSubstrateClient(url);
 
 /**
  * The one query. Grouped by (county, outcome kind, reason, has-zero) so every figure
@@ -118,41 +110,6 @@ async function readPopulation() {
   `;
 }
 
-function bucketOf(kind, reason, hasZero) {
-  if (hasZero) return "alreadyComputedZero";
-  if (kind !== "no-buildable-area") return "notNoBuildableArea";
-  const absent = classifyEnvelopeAbsenceReason(reason ?? "");
-  if (absent === "unzoned") return "unzoned";
-  if (absent === "no-district") return "no-district";
-  /**
-   * A third arm the absence classifier cannot see, and the reason this census does not stop
-   * at it: `LEGACY_TIER1_NO_BUILDABLE_AREA_REASON` is a producer's own literal, written by
-   * exactly one branch (the pre-P-263 Tier-1 bake, which re-asserted an upstream STATUS as
-   * its own computed zero). The branch has been fixed, so the cohort is attributable to the
-   * fix rather than left in "operator ruling needed" — 97,108 atoms of it, the largest single
-   * reason string in the population. Attribution is by the string the producer exports, never
-   * by a literal copied here (see the constant's docstring).
-   */
-  if (reason === LEGACY_TIER1_NO_BUILDABLE_AREA_REASON) return "tier1StatusAssertion";
-  return "unclassifiedByReason";
-}
-
-function movementFor(bucket, reason) {
-  if (bucket === "unzoned") {
-    const outcome = outcomeForEnvelopeDecline({
-      declineCode: "unzoned-no-district-basis",
-      reason,
-    });
-    return `${outcome.kind} (${outcome.reason.slice(0, 48)}…)`;
-  }
-  if (bucket === "no-district") return "provisional-front-edge — pending; the ledger decides the cell";
-  if (bucket === "tier1StatusAssertion")
-    return "provisional-front-edge — the branch that wrote this reason now names the upstream status instead of claiming a zero (P-263)";
-  if (bucket === "alreadyComputedZero") return "none — already carries a computed zero";
-  if (bucket === "notNoBuildableArea") return "none — not this kind";
-  return "UNCLASSIFIED — operator ruling needed";
-}
-
 function countyOf(fips) {
   return COUNTY_NAME[fips] ?? fips;
 }
@@ -160,7 +117,11 @@ function countyOf(fips) {
 try {
   const before = await readPopulation();
   const rows = before.map((r) => {
-    const bucket = bucketOf(r.kind, r.reason, r.has_zero === true);
+    const bucket = classifyEnvelopeOutcomeBucket({
+      kind: r.kind,
+      reason: r.reason,
+      hasZero: r.has_zero === true,
+    });
     return { ...r, bucket, movement: movementFor(bucket, r.reason) };
   });
 
@@ -267,10 +228,10 @@ try {
     countingRule: {
       population:
         "active buildable-envelope atoms, parcelNodeId prefix in the six counties, outcome.kind = no-buildable-area, no `zero` proof",
-      classifier: "src/property-reasoning/envelope-outcome-honesty.ts#classifyEnvelopeAbsenceReason",
+      classifier: "src/property-reasoning/envelope-outcome-movement.ts#classifyEnvelopeOutcomeBucket",
       buckets: ["unzoned", "no-district", "tier1StatusAssertion", "unclassifiedByReason"],
       thirdArmCountingRule:
-        "`tier1StatusAssertion` is attributed by the producer's own exported reason string (bake-from-tier1-snapshot.ts#LEGACY_TIER1_NO_BUILDABLE_AREA_REASON), not by the absence classifier: it is a false zero whose producer this lane fixed, so it moves. Only `unclassifiedByReason` is genuinely unclassifiable by this change.",
+        "`tier1StatusAssertion` is attributed by the producer's own exported reason string (bake-from-tier1-snapshot.ts#LEGACY_TIER1_NO_BUILDABLE_AREA_REASON), not by the absence classifier: it is a false zero whose producer this lane fixed, so it moves. Only `unclassifiedByReason` is genuinely unclassifiable by this change; it is withheld as unverified and the apply MOVES NOTHING for it (OPS-16 A-215 Ruling 12).",
       excludedAndReportedSeparately: ["alreadyComputedZero", "notNoBuildableArea"],
       sumInvariant: "toNotApplicable + toPendingDerivation + cannotClassify == population, per county and overall",
     },
