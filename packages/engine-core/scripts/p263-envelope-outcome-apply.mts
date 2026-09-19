@@ -53,11 +53,44 @@
  *      same leased window". A dry run needs no pin; it PRINTS the digest to pin.
  *   3. NO LEASE, NO RUN. `--apply` requires `--run-id` (LEASE_REQUIRED otherwise) and takes a live
  *      `atoms_writer_lease_v2` WRITE scope on `(buildable-envelope, <county fips>)`. A write
- *      without a held lease fails closed. `--apply` also refuses outside a Cloud Run Job
- *      (LAPTOP_WRITE_FROZEN, P-169) — see "WHAT BYPASSES THIS" below for the fixture seam.
+ *      without a held lease fails closed — and since P-365 that is true of EVERY batch, not only
+ *      the first: each batch transaction re-asserts and extends the lease before it writes
+ *      anything, and a lease that is no longer held refuses the batch and stops the run with
+ *      `P263_LEASE_LOST`. `--apply` also refuses outside a Cloud Run Job (LAPTOP_WRITE_FROZEN,
+ *      P-169) — see "WHAT BYPASSES THIS" below for the fixture seam.
  *   4. NO RECORD, NO WRITE. Every atom's before-state and after-state is INSERTed into
  *      `envelope_outcome_movement_journal` IN THE SAME TRANSACTION as the body UPDATE, before it.
  *      If the record cannot be written the transaction aborts and the write does not run.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * THE LEASE, HELD FOR AS LONG AS IT WRITES (P-365)
+ * ---------------------------------------------------------------------------------------------
+ *
+ * The lease is taken ONCE and RE-ASSERTED IN EVERY BATCH. Taking it once was the defect: the TTL is
+ * `DEFAULT_LEASE_TTL_MS` — 15 minutes — and a county's run is not. Williamson's 239,491 moves at
+ * the measured 7.8-8.4 ms/atom are about 32 minutes, so a lease taken once had expired for the
+ * second half of that county while the file claimed "a write without a held lease fails closed".
+ *
+ *   - WHAT EXECUTES THE RENEWAL: `lockAndHeartbeatLease` (storage, unchanged by this row) — it
+ *     selects the row by THIS holder token with `expires > now` `FOR UPDATE` and extends `expires`.
+ *   - WHAT TRIGGERS IT: every batch, as the FIRST statement of the transaction that writes that
+ *     batch — before the journal insert, before the body UPDATE. ONE clock reading per batch serves
+ *     both `applied_at` and the heartbeat, so the record's timestamps and the lease's window cannot
+ *     disagree about when the batch ran.
+ *   - WHY THAT TRANSACTION: on the same transaction the batch writes with, so the extension commits
+ *     with the batch and rolls back with it. An extension on a separate connection could commit
+ *     while the batch aborted (claiming a window the run never used) or the batch could commit
+ *     while the extension rolled back (writing under an expiry nobody advanced).
+ *   - WHAT FAILS WHEN IT IS LOST MID-RUN: the batch's transaction aborts at its first statement and
+ *     the run stops with `P263_LEASE_LOST`, naming the storage error (`LEASE_EXPIRED` for a row that
+ *     expired or was taken, `SCOPE_MISMATCH` for a row that is not this scope) and how many
+ *     batches/atoms/journal rows were already written. Those stay journalled and reversible. The
+ *     release that follows is recorded as `expired` (or as a failure) rather than as a normal
+ *     release, and it can never delete a scope another holder now holds: the release deletes by OUR
+ *     token.
+ *   - WHAT BYPASSES IT: nothing in this file — the core takes the lease itself and a caller cannot
+ *     hand it one — and, as always, everything outside it: a raw `UPDATE atoms`, or the reversal
+ *     path run against a build without this change. The reversal takes the same scope (see below).
  *
  * ---------------------------------------------------------------------------------------------
  * WHAT BYPASSES THIS (stated in full, because the answer is never none)
@@ -70,8 +103,9 @@
  *       and it is not the only way the bytes can change.
  *   (b) A CALLER OF THE CORE. `applyCountyMovement()` / `reverseMovementRun()` are exported for
  *       the fixture-store tests. A caller that reaches them from outside the CLI skips the
- *       Cloud-Run-Job gate and the `--run-id` requirement (but NOT the lease: the core calls
- *       `takeScopedLease` itself, so it still fails closed without a live scope). The
+ *       Cloud-Run-Job gate and the `--run-id` requirement (but NOT the lease: the core takes the
+ *       scope itself with `takeScopedLease` and holds it with `lockAndHeartbeatLease`, and it takes
+ *       no lease parameter, so a caller cannot hand it one and cannot write unleased). The
  *       integration test is exactly such a caller, by design.
  *   (c) A HAND-EDITED CAP. `--blast-radius-max-share` is supplied by the operator's seat. A run
  *       that declares a cap so wide the guard cannot fire is a run whose cap was chosen to not
@@ -91,6 +125,13 @@
  * the migration-018 trigger refuses a second reversal UPDATE, and the (run_id, atom_did) unique
  * index refuses a second journal row for the same atom in the same run.
  *
+ * THE REVERSAL HOLDS THE LEASE TOO (P-365). A reversal UPDATEs `atoms`, so it takes the same
+ * `(write, buildable-envelope, <fips>)` scope the apply took and re-asserts it in every batch
+ * transaction, in the same place. Before this it held NO scope: it could overwrite a county's atoms
+ * while another holder held that county. WHICH COUNTIES it touches is read from the JOURNAL — the
+ * record that selects the rows — so `--county` narrows the run and, without it, the reversal takes
+ * and releases ONE SCOPE PER COUNTY the journal names, in turn.
+ *
  * ---------------------------------------------------------------------------------------------
  * THE THREE-QUESTION GATE
  * ---------------------------------------------------------------------------------------------
@@ -102,9 +143,14 @@
  *   3. What fails?  Refusals 1-4 above, each with its own code, each writing nothing:
  *      BLAST_RADIUS_UNMEASURED / BLAST_RADIUS_EXCEEDED / BLAST_RADIUS_OVERRIDE_MISMATCH,
  *      CENSUS_DRIFT, LEASE_REQUIRED / LAPTOP_WRITE_FROZEN / lease scope errors from
- *      `takeScopedLease`, P263_JOURNAL_ALREADY_WRITTEN, and P263_POST_STATE_NOT_MOVED if the
- *      county does not read zero mislabelled atoms after the write.
+ *      `takeScopedLease`, P263_LEASE_LOST if a batch's lease is no longer held (P-365),
+ *      P263_JOURNAL_ALREADY_WRITTEN, and P263_POST_STATE_NOT_MOVED if the county does not read
+ *      zero mislabelled atoms after the write.
  *   4. What bypasses it?  (a)-(d) above.
+ *
+ * The same four questions, asked of the LEASE RENEWAL itself, are answered in full under
+ * "THE LEASE, HELD FOR AS LONG AS IT WRITES" above: what executes the renewal, what triggers it
+ * (every batch), what fails when the lease is lost mid-run, and what bypasses it.
  *
  * Usage:
  *   tsx scripts/p263-envelope-outcome-apply.mts --county=48021 \
@@ -121,9 +167,14 @@ import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 
 import {
+  ATOMS_WRITER_LEASE_NOT_HELD,
+  lockAndHeartbeatLease,
   releaseScopedLease,
   resolveSubstrateDatabaseUrl,
+  scopeIdOf,
   takeScopedLease,
+  type HeldLease,
+  type WriteLeaseScope,
 } from "@hauska-engine/storage";
 
 import { contentHashExcludingProvenance } from "../src/property-reasoning/confidence.js";
@@ -190,6 +241,24 @@ function refuse(code, message, detail = {}) {
   err.code = code;
   Object.assign(err, detail);
   throw err;
+}
+
+/**
+ * A REFUSAL THAT STOPPED THE RUN IS STILL A MEASUREMENT (P-365). When the lease is lost mid-run,
+ * the batches already committed stay journalled and reversible, so the artifact has to say which
+ * refusal it was, what storage error caused it, and how much was written before it — a failed job
+ * with no accounting of the writes it did make is exactly the state this row exists to prevent.
+ */
+function leaseRefusalRecord(error) {
+  return {
+    code: error?.code ?? "P263_LEASE_LOST",
+    message: String(error?.message ?? error),
+    cause: error?.cause ?? null,
+    batchesWritten: error?.batchesWritten ?? null,
+    atomsWrittenBeforeRefusal: error?.atomsWrittenBeforeRefusal ?? null,
+    journalRowsBeforeRefusal: error?.journalRowsBeforeRefusal ?? null,
+    leaseReport: error?.leaseReport ?? null,
+  };
 }
 
 /* ---------------------------------- pure planning ---------------------------------- */
@@ -450,15 +519,116 @@ export async function readCountyPopulationFingerprint(sql, county: string) {
   );
 }
 
+/* ---------------------------------- the lease, as a measurement ---------------------------------- */
+
+/**
+ * WHAT THE LEASE DID, FOR THE ARTIFACT (P-365). `heartbeats` and `lastExpires` are the fields
+ * that turn "the lease was held for the whole run" into a measurement rather than an assurance:
+ * a run that took a lease and never renewed it reports `heartbeats: 0` and a `lastExpires` that
+ * predates its own last write, whatever its prose claims.
+ *
+ * `refusal` is non-null only when the run stopped because the lease was no longer held; it
+ * carries how much was written BEFORE the refusal, because those batches stay journalled and
+ * reversible and an operator deciding what to do next needs exactly that count.
+ */
+export type LeaseRunReport = {
+  /** False when no lease was taken because there was nothing to write. */
+  taken: boolean;
+  runId: string;
+  holderLabel: string;
+  scope: { scopeType: string; scopeId: string };
+  heartbeats: number;
+  lastExpires: string | null;
+  released: boolean;
+  releaseReason: "normal" | "expired" | null;
+  releaseFailure: string | null;
+  refusal: null | {
+    code: string;
+    /** The storage error that refused the batch (LEASE_EXPIRED / SCOPE_MISMATCH / ...). */
+    cause: string | null;
+    message: string;
+    batchesWritten: number;
+    /** Apply: atoms whose body+journal row committed. Reversal: rows restored and marked. */
+    atomsWrittenBeforeRefusal: number;
+    /** Apply only: the reversible journal rows written before the refusal. */
+    journalRowsBeforeRefusal: number | null;
+  };
+};
+
+/** The ONE write scope this file takes: `buildable-envelope:<county fips>`. */
+function envelopeWriteScope(countyFips: string): WriteLeaseScope {
+  return { scope_type: "write", entity_type: "buildable-envelope", county_fips: countyFips };
+}
+
+function leaseScopeDescriptor(scope: WriteLeaseScope | HeldLease["scope"]) {
+  return { scopeType: scope.scope_type, scopeId: scopeIdOf(scope) };
+}
+
+function leaseReportOf(inputs: {
+  lease: HeldLease | null;
+  runId: string;
+  holderLabel: string;
+  scope: { scopeType: string; scopeId: string };
+  heartbeats: number;
+  lastExpires: string | null;
+  released: boolean;
+  releaseReason: "normal" | "expired" | null;
+  releaseFailure: string | null;
+  refusal: LeaseRunReport["refusal"];
+}): LeaseRunReport {
+  return {
+    taken: inputs.lease !== null,
+    runId: inputs.runId,
+    holderLabel: inputs.lease?.holder_label ?? inputs.holderLabel,
+    scope: inputs.scope,
+    heartbeats: inputs.heartbeats,
+    lastExpires: inputs.lastExpires,
+    released: inputs.released,
+    releaseReason: inputs.releaseReason,
+    releaseFailure: inputs.releaseFailure,
+    refusal: inputs.refusal,
+  };
+}
+
+/**
+ * RELEASE, WITHOUT MASKING THE RUN'S OWN OUTCOME. One place, so the apply and the reversal cannot
+ * release differently.
+ *
+ * A scope that is no longer ours (stolen mid-run, or released out of band) is RECORDED, not
+ * rethrown: every write this run made committed under a held lease, the anomaly is the lease
+ * bookkeeping's business rather than the data's, and the artifact carries `released: false` with
+ * the reason. Any OTHER release failure is unexpected, and on a run with nothing else to report it
+ * propagates exactly as it did before this change.
+ */
+async function releaseAfterRun(
+  sql,
+  lease: HeldLease,
+  releaseReason: "normal" | "expired",
+  context: { hasRecordedFailure: boolean; leaseLost: boolean },
+): Promise<{ released: boolean; releaseFailure: string | null }> {
+  try {
+    await releaseScopedLease(sql, lease, { release_reason: releaseReason });
+    return { released: true, releaseFailure: null };
+  } catch (error) {
+    const code = (error as { code?: string })?.code ?? null;
+    if (code !== ATOMS_WRITER_LEASE_NOT_HELD && !context.leaseLost && !context.hasRecordedFailure) {
+      throw error;
+    }
+    return { released: false, releaseFailure: String((error as Error)?.message ?? error) };
+  }
+}
+
 /* ---------------------------------- the writer core ---------------------------------- */
 
 /**
  * Apply one county's plan. NOT guarded by the CLI's Cloud-Run gate — this is the core the
- * fixture-store tests call (see "WHAT BYPASSES THIS" (b)). It DOES take the write lease itself,
- * so it still fails closed without a live scope.
+ * fixture-store tests call (see "WHAT BYPASSES THIS" (b)). It DOES take the write lease itself and
+ * it RE-ASSERTS it in every batch transaction, so it still fails closed without a live scope —
+ * for the WHOLE run, not only for its first batch.
  *
  * The journal row and the body UPDATE go in the SAME transaction, journal first, so the record
- * cannot be missing when the write commits and the write cannot commit if the record fails.
+ * cannot be missing when the write commits and the write cannot commit if the record fails. The
+ * lease heartbeat is the FIRST statement of that same transaction (see "THE LEASE" below).
  *
  * `beforeBodies` MUST be the bodies the plan was built from; the core refuses if an atom in the
  * plan has no before-body, because a journal row without the state it restores is not a record.
@@ -472,12 +642,36 @@ export async function applyCountyMovement(
     runId: string;
     holderLabel: string;
     batchSize?: number;
+    /**
+     * Injected clock, called ONCE for the take and ONCE per batch, in that order (P-365's
+     * falsifiers drive the TTL this way instead of sleeping). Omitted in production, where the
+     * process clock is the only clock.
+     */
     now?: () => Date;
   },
-): Promise<{ moved: number; journalRows: number; batches: number }> {
+): Promise<{ moved: number; journalRows: number; batches: number; lease: LeaseRunReport }> {
   const { plan, rows, runId, holderLabel } = options;
   const batchSize = Math.max(1, Math.min(options.batchSize ?? DEFAULT_BATCH_SIZE, 1000));
-  if (!plan.movable.length) return { moved: 0, journalRows: 0, batches: 0 };
+  const nextNow = options.now ?? (() => new Date());
+  if (!plan.movable.length) {
+    return {
+      moved: 0,
+      journalRows: 0,
+      batches: 0,
+      lease: leaseReportOf({
+        lease: null,
+        runId,
+        holderLabel,
+        scope: leaseScopeDescriptor(envelopeWriteScope(plan.county)),
+        heartbeats: 0,
+        lastExpires: null,
+        released: false,
+        releaseReason: null,
+        releaseFailure: null,
+        refusal: null,
+      }),
+    };
+  }
 
   const before = new Map<string, { contentHash: string; body: Record<string, unknown> }>();
   for (const r of rows) {
@@ -489,20 +683,44 @@ export async function applyCountyMovement(
     }
   }
 
-  const lease = await takeScopedLease(sql, {
-    scope: { scope_type: "write", entity_type: "buildable-envelope", county_fips: plan.county },
+  /**
+   * THE LEASE — taken ONCE, re-asserted EVERY batch.
+   *
+   * Taking it once is what the first revision did, and that is the defect P-365 fixes: the TTL is
+   * `DEFAULT_LEASE_TTL_MS`, 15 minutes (`packages/storage/src/atoms-writer-lease.ts`), and a
+   * county's run is not. Williamson's 239,491 atoms at the measured 7.8-8.4 ms/atom are about 32
+   * minutes, so a lease taken once had already expired for the second half of that county, and
+   * "a write without a held lease fails closed" held only for the first batch.
+   *
+   * The take is still ONE take, and that is deliberate: `lockAndHeartbeatLease` extends THIS
+   * holder token's row and never re-takes, so this code can never hand the scope to a second
+   * holder mid-run, and no re-take can steal a scope from a live holder.
+   */
+  let lease: HeldLease = await takeScopedLease(sql, {
+    scope: envelopeWriteScope(plan.county),
     holder_label: holderLabel,
     run_id: runId,
+    now: nextNow(),
   });
+  let heartbeats = 0;
+  let lastExpires: string = lease.expires;
 
   let moved = 0;
   let journalRows = 0;
   let batches = 0;
+  /** Set when a batch's own heartbeat refused; the loop then stops with a named refusal. */
+  let leaseLost: { cause: string | null; message: string } | null = null;
+  let released = false;
+  let releaseFailure: string | null = null;
+  let releaseReason: "normal" | "expired" = "normal";
+  let refusal: LeaseRunReport["refusal"] = null;
+  let failure: unknown = null;
+
   try {
     for (let i = 0; i < plan.movable.length; i += batchSize) {
       const slice = plan.movable.slice(i, i + batchSize);
       batches += 1;
-      const appliedAt = (options.now ?? (() => new Date()))();
+      const appliedAt = nextNow();
 
       const prepared = slice.map((atom) => {
         const prior = before.get(atom.atomDid);
@@ -536,6 +754,37 @@ export async function applyCountyMovement(
       });
 
       await sql.begin(async (txn) => {
+        /**
+         * THE LEASE, HELD FOR AS LONG AS THIS BATCH WRITES (P-365). FIRST statement of the batch
+         * transaction, on that transaction, BEFORE the journal insert:
+         *
+         *   - BEFORE THE RECORD AND THE WRITE, so a lease that is gone (expired, stolen, deleted)
+         *     aborts the batch before any row of it is recorded or written. Journal-then-write is
+         *     the "no record, no write" order; this sits ahead of both, so a lost lease cannot
+         *     leave a journal row describing a batch that was then refused.
+         *   - ON THE BATCH'S OWN TRANSACTION, so the extension commits with the batch's writes and
+         *     rolls back with them. An extension that committed on a separate connection while the
+         *     batch aborted would claim a window the run did not use; a batch that committed while
+         *     its extension rolled back would write under an expiry nobody advanced.
+         *
+         * `lockAndHeartbeatLease` selects the row by OUR holder token with `expires > now`
+         * `FOR UPDATE` (so a holder that raced us is serialized behind this batch) and extends
+         * `expires` by the TTL. A row that is missing or expired throws there; this catches it,
+         * names the batch that was refused, and stops the run — the batches already committed stay
+         * journalled and reversible.
+         */
+        try {
+          lease = await lockAndHeartbeatLease(txn, lease, { now: appliedAt });
+        } catch (error) {
+          leaseLost = {
+            cause: (error as { code?: string })?.code ?? null,
+            message: String((error as Error)?.message ?? error),
+          };
+          throw error;
+        }
+        heartbeats += 1;
+        lastExpires = lease.expires;
+
         /**
          * THE RECORD, BEFORE THE WRITE. ON CONFLICT DO NOTHING + a count check is what refuses
          * a re-run of the same run_id rather than silently re-moving.
@@ -608,10 +857,62 @@ export async function applyCountyMovement(
       });
       moved += slice.length;
     }
+  } catch (error) {
+    if (leaseLost) {
+      /**
+       * NAMED REFUSAL. The lease was not held when this batch asked for it, so this batch wrote
+       * nothing (its transaction aborted at its first statement) and the run stops here. What was
+       * ALREADY committed is named with it, because those batches are journalled and remain
+       * reversible — the operator's next decision needs that count, not a bare "lease lost".
+       */
+      refusal = {
+        code: "P263_LEASE_LOST",
+        cause: leaseLost.cause,
+        message:
+          `the batch's lease on ${scopeIdOf(lease.scope)} is no longer held by ${holderLabel} ` +
+          `(${leaseLost.cause ?? "unknown"}: ${leaseLost.message}) — batch ${batches} refused and ` +
+          `NOTHING WAS WRITTEN FOR IT. ${batches - 1} batch(es) / ${moved} atom(s) / ` +
+          `${journalRows} journal row(s) were already written and stay reversible under run ${runId}.`,
+        batchesWritten: batches - 1,
+        atomsWrittenBeforeRefusal: moved,
+        journalRowsBeforeRefusal: journalRows,
+      };
+      try {
+        refuse("P263_LEASE_LOST", refusal.message, refusal);
+      } catch (refusalError) {
+        failure = refusalError;
+      }
+    } else {
+      failure = error;
+    }
   } finally {
-    await releaseScopedLease(sql, lease);
+    // A lease that was lost is not released as "normal": the history row says it expired.
+    if (leaseLost) releaseReason = "expired";
+    const release = await releaseAfterRun(sql, lease, releaseReason, {
+      hasRecordedFailure: failure != null,
+      leaseLost: leaseLost != null,
+    });
+    released = release.released;
+    releaseFailure = release.releaseFailure;
   }
-  return { moved, journalRows, batches };
+
+  const report = leaseReportOf({
+    lease,
+    runId,
+    holderLabel,
+    scope: leaseScopeDescriptor(lease.scope),
+    heartbeats,
+    lastExpires,
+    released,
+    releaseReason: released ? releaseReason : null,
+    releaseFailure,
+    refusal,
+  });
+  if (failure) {
+    (failure as Record<string, unknown>).leaseReport = report;
+    throw failure;
+  }
+  return { moved, journalRows, batches, lease: report };
 }
 
 /* ---------------------------------- reversal ---------------------------------- */
@@ -620,6 +921,20 @@ export async function applyCountyMovement(
  * Reverse a whole journal run: restore every not-yet-reversed row's before-state and mark it.
  * Restore precedes the mark in the same transaction, so a crash between them leaves the row
  * unmarked and therefore still reversible.
+ *
+ * THE LEASE (P-365). This path UPDATEs `atoms`, so it now takes the same
+ * `(write, buildable-envelope, <fips>)` scope the apply takes and re-asserts it in EVERY batch
+ * transaction, in the same place the apply does (first statement of the transaction that writes).
+ * Before this, a reversal held no scope at all: it could overwrite atoms while another holder held
+ * the county, and nothing in the store refused it.
+ *
+ * WHICH COUNTIES it touches is read from the JOURNAL — the same record that selects the rows —
+ * and NOT from the caller. `county` narrows the run; WITHOUT it the reversal takes ONE SCOPE PER
+ * COUNTY the journal names, sequentially, releasing each county's scope before taking the next.
+ * Refusing to reverse without `--county` was the alternative and was NOT chosen: the CLI accepts a
+ * run-wide reversal today, so a refusal would be a capability regression on the documented undo
+ * path, and deriving the scope set from the record that selects the rows is what makes it
+ * impossible to write a county whose scope this run does not hold.
  */
 export async function reverseMovementRun(
   sql,
@@ -627,68 +942,176 @@ export async function reverseMovementRun(
     journalRunId: string;
     reversalRunId: string;
     county?: string | null;
+    /** Lease holder label; defaults to a name that names this path. */
+    holderLabel?: string;
     batchSize?: number;
+    /** Injected clock — same contract as `applyCountyMovement`'s: once per take, once per batch. */
+    now?: () => Date;
   },
-): Promise<{ reversed: number; batches: number }> {
+): Promise<{ reversed: number; batches: number; leases: LeaseRunReport[] }> {
   const batchSize = Math.max(1, Math.min(options.batchSize ?? DEFAULT_BATCH_SIZE, 1000));
   const county = options.county ?? null;
+  const holderLabel = (options.holderLabel ?? "p263-reverse").trim() || "p263-reverse";
+  const nextNow = options.now ?? (() => new Date());
 
-  const rows = await sql`
-    SELECT id, atom_did
+  const countyRows = await sql`
+    SELECT DISTINCT county_fips
       FROM envelope_outcome_movement_journal
      WHERE run_id = ${options.journalRunId}
        AND reversed_at IS NULL
        AND (${county}::text IS NULL OR county_fips = ${county})
-     ORDER BY id
+     ORDER BY county_fips
   `;
-  if (rows.length === 0) return { reversed: 0, batches: 0 };
+  if (countyRows.length === 0) return { reversed: 0, batches: 0, leases: [] };
 
+  const leases: LeaseRunReport[] = [];
   let reversed = 0;
   let batches = 0;
-  for (let i = 0; i < rows.length; i += batchSize) {
-    const slice = rows.slice(i, i + batchSize);
-    batches += 1;
-    const ids = slice.map((r) => Number(r.id));
-    const now = new Date();
-    await sql.begin(async (txn) => {
-      const restored = await txn`
-        UPDATE atoms a
-           SET body = j.before_body,
-               content_hash = j.before_content_hash,
-               updated_at = now()
-          FROM envelope_outcome_movement_journal j
-         WHERE j.id = ANY(${ids})
-           AND a.atom_did = j.atom_did
-           AND a.entity_type = 'buildable-envelope'
-        RETURNING a.atom_did
-      `;
-      if (restored.length !== ids.length) {
-        refuse(
-          "P263_REVERSAL_INCOMPLETE",
-          `restored ${restored.length} of ${ids.length} journal rows — NOTHING WAS REVERSED ` +
-            `(an atom named by the journal is missing from the store)`,
-          { expected: ids.length, restored: restored.length, journalRunId: options.journalRunId },
-        );
-      }
-      const marked = await txn`
-        UPDATE envelope_outcome_movement_journal
-           SET reversed_at = ${now},
-               reversed_by_run_id = ${options.reversalRunId}
-         WHERE id = ANY(${ids})
-           AND reversed_at IS NULL
-        RETURNING id
-      `;
-      if (marked.length !== ids.length) {
-        refuse(
-          "P263_REVERSAL_MARK_INCOMPLETE",
-          `marked ${marked.length} of ${ids.length} rows as reversed`,
-          { expected: ids.length, marked: marked.length },
-        );
-      }
-      reversed += marked.length;
+
+  for (const single of countyRows) {
+    const fips = String(single.county_fips);
+    const rows = await sql`
+      SELECT id, atom_did
+        FROM envelope_outcome_movement_journal
+       WHERE run_id = ${options.journalRunId}
+         AND county_fips = ${fips}
+         AND reversed_at IS NULL
+       ORDER BY id
+    `;
+    if (rows.length === 0) continue;
+
+    let lease: HeldLease = await takeScopedLease(sql, {
+      scope: envelopeWriteScope(fips),
+      holder_label: holderLabel,
+      run_id: options.reversalRunId,
+      now: nextNow(),
     });
+    let heartbeats = 0;
+    let lastExpires: string = lease.expires;
+    let leaseLost: { cause: string | null; message: string } | null = null;
+    let released = false;
+    let releaseFailure: string | null = null;
+    let releaseReason: "normal" | "expired" = "normal";
+    let refusal: LeaseRunReport["refusal"] = null;
+    let failure: unknown = null;
+    const reversedAtCountyStart = reversed;
+    let countyBatches = 0;
+
+    try {
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const slice = rows.slice(i, i + batchSize);
+        batches += 1;
+        countyBatches += 1;
+        const ids = slice.map((r) => Number(r.id));
+        const now = nextNow();
+        await sql.begin(async (txn) => {
+          /**
+           * THE LEASE, RE-ASSERTED FOR THIS BATCH — FIRST, on the batch's own transaction, before
+           * the restore UPDATE: a lease that is gone (expired, stolen, deleted) aborts the batch
+           * before a single `atoms` row is restored, and the extension commits with the restore.
+           */
+          try {
+            lease = await lockAndHeartbeatLease(txn, lease, { now });
+          } catch (error) {
+            leaseLost = {
+              cause: (error as { code?: string })?.code ?? null,
+              message: String((error as Error)?.message ?? error),
+            };
+            throw error;
+          }
+          heartbeats += 1;
+          lastExpires = lease.expires;
+
+          const restored = await txn`
+            UPDATE atoms a
+               SET body = j.before_body,
+                   content_hash = j.before_content_hash,
+                   updated_at = now()
+              FROM envelope_outcome_movement_journal j
+             WHERE j.id = ANY(${ids})
+               AND a.atom_did = j.atom_did
+               AND a.entity_type = 'buildable-envelope'
+            RETURNING a.atom_did
+          `;
+          if (restored.length !== ids.length) {
+            refuse(
+              "P263_REVERSAL_INCOMPLETE",
+              `restored ${restored.length} of ${ids.length} journal rows — NOTHING WAS REVERSED ` +
+                `(an atom named by the journal is missing from the store)`,
+              { expected: ids.length, restored: restored.length, journalRunId: options.journalRunId },
+            );
+          }
+          const marked = await txn`
+            UPDATE envelope_outcome_movement_journal
+               SET reversed_at = ${now},
+                   reversed_by_run_id = ${options.reversalRunId}
+             WHERE id = ANY(${ids})
+               AND reversed_at IS NULL
+            RETURNING id
+          `;
+          if (marked.length !== ids.length) {
+            refuse(
+              "P263_REVERSAL_MARK_INCOMPLETE",
+              `marked ${marked.length} of ${ids.length} rows as reversed`,
+              { expected: ids.length, marked: marked.length },
+            );
+          }
+          reversed += marked.length;
+        });
+      }
+    } catch (error) {
+      if (leaseLost) {
+        refusal = {
+          code: "P263_LEASE_LOST",
+          cause: leaseLost.cause,
+          message:
+            `the reversal's lease on ${scopeIdOf(lease.scope)} is no longer held by ${holderLabel} ` +
+            `(${leaseLost.cause ?? "unknown"}: ${leaseLost.message}) — batch ${countyBatches} of ` +
+            `county ${fips} refused and NOTHING WAS WRITTEN FOR IT. ` +
+            `${reversed - reversedAtCountyStart} row(s) were already restored and marked, and the ` +
+            `journal still describes them.`,
+          batchesWritten: countyBatches - 1,
+          atomsWrittenBeforeRefusal: reversed - reversedAtCountyStart,
+          journalRowsBeforeRefusal: null,
+        };
+        try {
+          refuse("P263_LEASE_LOST", refusal.message, refusal);
+        } catch (refusalError) {
+          failure = refusalError;
+        }
+      } else {
+        failure = error;
+      }
+    } finally {
+      if (leaseLost) releaseReason = "expired";
+      const release = await releaseAfterRun(sql, lease, releaseReason, {
+        hasRecordedFailure: failure != null,
+        leaseLost: leaseLost != null,
+      });
+      released = release.released;
+      releaseFailure = release.releaseFailure;
+    }
+
+    const report = leaseReportOf({
+      lease,
+      runId: options.reversalRunId,
+      holderLabel,
+      scope: leaseScopeDescriptor(lease.scope),
+      heartbeats,
+      lastExpires,
+      released,
+      releaseReason: released ? releaseReason : null,
+      releaseFailure,
+      refusal,
+    });
+    leases.push(report);
+    if (failure) {
+      (failure as Record<string, unknown>).leaseReport = report;
+      throw failure;
+    }
   }
-  return { reversed, batches };
+
+  return { reversed, batches, leases };
 }
 
 /* ---------------------------------- the guard ---------------------------------- */
@@ -857,12 +1280,37 @@ async function main() {
       const runIdArg = readArg(argv, "--run-id");
       const reversalRunId = runIdArg ?? `p342-reverse:${journalRunId}`;
       const county = readArg(argv, "--county");
-      const result = await reverseMovementRun(sql, {
-        journalRunId,
-        reversalRunId,
-        county,
-        batchSize: Number(readArg(argv, "--batch-size") ?? DEFAULT_BATCH_SIZE),
-      });
+      let result;
+      try {
+        result = await reverseMovementRun(sql, {
+          journalRunId,
+          reversalRunId,
+          county,
+          holderLabel: process.env.CLOUD_RUN_EXECUTION?.trim() || "p342-local",
+          batchSize: Number(readArg(argv, "--batch-size") ?? DEFAULT_BATCH_SIZE),
+        });
+      } catch (error) {
+        if (error?.code === "P263_LEASE_LOST") {
+          const artifact = {
+            instrument: "p263-envelope-outcome-apply",
+            mode: "REVERSE-REFUSED-LEASE-LOST",
+            ranAt: new Date().toISOString(),
+            storeHostFingerprint: hostFingerprint,
+            journalRunId,
+            reversalRunId,
+            county: county ?? null,
+            rowsRestoredBeforeRefusal: error?.atomsWrittenBeforeRefusal ?? null,
+            batchesWrittenBeforeRefusal: error?.batchesWritten ?? null,
+            refused: leaseRefusalRecord(error),
+            leases: error?.leaseReport ? [error.leaseReport] : [],
+          };
+          if (jsonOut) writeFileSync(jsonOut, JSON.stringify(artifact, null, 2));
+          console.error(JSON.stringify(artifact, null, 2));
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
       const artifact = {
         instrument: "p263-envelope-outcome-apply",
         mode: "REVERSE",
@@ -873,6 +1321,13 @@ async function main() {
         county: county ?? null,
         reversed: result.reversed,
         batches: result.batches,
+        /**
+         * ONE LEASE PER COUNTY THE JOURNAL NAMES. A run-wide reversal takes and releases each
+         * county's `(write, buildable-envelope, <fips>)` scope in turn; the report per scope
+         * carries the run id, the holder label, the heartbeat count and the last expiry, so "the
+         * lease was held for every write" is readable from the record instead of assumed.
+         */
+        leases: result.leases,
       };
       if (jsonOut) writeFileSync(jsonOut, JSON.stringify(artifact, null, 2));
       console.log(JSON.stringify(artifact, null, 2));
@@ -1033,6 +1488,12 @@ async function main() {
       ruling12: ruling12Verdict(plan),
       writes: null as unknown,
       guard: null as unknown,
+      /**
+       * THE LEASE, AS A MEASUREMENT (P-365): `{runId, holderLabel, scope, heartbeats, lastExpires,
+       * released, releaseFailure}`. A run that took a lease and never renewed it reports
+       * `heartbeats: 0` and a `lastExpires` that predates its own last write.
+       */
+      lease: null as unknown,
     };
 
     if (guardOnly && !apply) {
@@ -1047,13 +1508,35 @@ async function main() {
     }
 
     if (apply) {
-      const result = await applyCountyMovement(sql, {
-        plan,
-        rows,
-        runId: runIdArg as string,
-        holderLabel: process.env.CLOUD_RUN_EXECUTION?.trim() || "p342-local",
-        batchSize,
-      });
+      let result;
+      try {
+        result = await applyCountyMovement(sql, {
+          plan,
+          rows,
+          runId: runIdArg as string,
+          holderLabel: process.env.CLOUD_RUN_EXECUTION?.trim() || "p342-local",
+          batchSize,
+        });
+      } catch (error) {
+        if (error?.code === "P263_LEASE_LOST") {
+          artifact.mode = "APPLY-REFUSED-LEASE-LOST";
+          artifact.lease = error?.leaseReport ?? null;
+          artifact.writes = {
+            refused: true,
+            runId: runIdArg,
+            atomsWrittenBeforeRefusal: error?.atomsWrittenBeforeRefusal ?? null,
+            journalRowsBeforeRefusal: error?.journalRowsBeforeRefusal ?? null,
+            batchesWrittenBeforeRefusal: error?.batchesWritten ?? null,
+            refusal: leaseRefusalRecord(error),
+          };
+          if (jsonOut) writeFileSync(jsonOut, JSON.stringify(artifact, null, 2));
+          console.error(JSON.stringify(artifact, null, 2));
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
+      artifact.lease = result.lease;
       const afterRows = await readCountyAtoms(sql, county);
       const after = planCounty(county, afterRows);
       const verdict = postStateVerdict(plan, after);
