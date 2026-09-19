@@ -22,7 +22,9 @@ import {
 import type {
   CountyFloodHazardPlan,
   PlannedFloodHazard,
+  RefusedFloodHazard,
 } from "./plan-county-flood-hazard.js";
+import { emptyContainmentTally, type ContainmentTally } from "./containment.js";
 import type { FloodCountyRunProvenance } from "./flood-hazard-fact-atoms.js";
 
 export const FLOOD_PLAN_NDJSON_FORMAT = "flood-plan-ndjson-v1" as const;
@@ -31,6 +33,14 @@ export interface FloodPlanDigest {
   sha256: string;
   records: number;
   byZone: Record<string, number>;
+  /**
+   * Refusals are digested WITH the determinations, not beside them. A plan that
+   * refused 900 parcels and a plan that refused none are different plans, and a
+   * digest that could not tell them apart would let a containment regression
+   * replay through --from-plan under a matching hash.
+   */
+  refusedRecords: number;
+  byRefusalReason: Record<string, number>;
 }
 
 export interface FloodPlanPayload {
@@ -40,6 +50,8 @@ export interface FloodPlanPayload {
   zonesIndexed: number;
   emptyZoneIndex: boolean;
   planned: PlannedFloodHazard[];
+  refused: RefusedFloodHazard[];
+  containment: ContainmentTally;
   counts: CountyFloodHazardPlan["counts"];
   parcelsRead: number;
   planDigest: FloodPlanDigest;
@@ -49,8 +61,10 @@ export interface FloodPlanPayload {
 }
 
 export function digestFloodPlan(
-  plan: Pick<CountyFloodHazardPlan, "planned">,
+  plan: Pick<CountyFloodHazardPlan, "planned"> &
+    Partial<Pick<CountyFloodHazardPlan, "refused">>,
 ): FloodPlanDigest {
+  const refusedList = plan.refused ?? [];
   const lines = plan.planned.map((p) =>
     p.outcome === "present"
       ? [
@@ -60,9 +74,19 @@ export function digestFloodPlan(
           p.floodZone ?? "",
           p.zoneSubtype ?? "",
           p.baseFloodElevation == null ? "" : String(p.baseFloodElevation),
+          p.samplePointContainment,
         ].join("|")
-      : [p.parcelKey, "absent", p.absenceKind, p.reason].join("|"),
+      : [
+          p.parcelKey,
+          "absent",
+          p.absenceKind,
+          p.reason,
+          p.samplePointContainment,
+        ].join("|"),
   );
+  for (const r of refusedList) {
+    lines.push([r.parcelKey, "refused", r.reasonCode, r.reason].join("|"));
+  }
   lines.sort();
   const hash = createHash("sha256");
   for (const line of lines) hash.update(line).update("\n");
@@ -72,7 +96,17 @@ export function digestFloodPlan(
     const key = p.floodZone ?? "_outside";
     byZone[key] = (byZone[key] ?? 0) + 1;
   }
-  return { sha256: hash.digest("hex"), records: lines.length, byZone };
+  const byRefusalReason: Record<string, number> = {};
+  for (const r of refusedList) {
+    byRefusalReason[r.reasonCode] = (byRefusalReason[r.reasonCode] ?? 0) + 1;
+  }
+  return {
+    sha256: hash.digest("hex"),
+    records: plan.planned.length,
+    byZone,
+    refusedRecords: refusedList.length,
+    byRefusalReason,
+  };
 }
 
 export function buildFloodPlanPayload(
@@ -90,6 +124,8 @@ export function buildFloodPlanPayload(
     zonesIndexed: plan.zonesIndexed,
     emptyZoneIndex: plan.emptyZoneIndex,
     planned: plan.planned as PlannedFloodHazard[],
+    refused: plan.refused as RefusedFloodHazard[],
+    containment: plan.containment,
     counts: { ...plan.counts },
     parcelsRead: plan.parcelsRead,
     planDigest: digestFloodPlan(plan),
@@ -233,6 +269,7 @@ export function drainFloodPlanPayload(
 ): {
   countyFips: string;
   planned: PlannedFloodHazard[];
+  refused: RefusedFloodHazard[];
   plan: CountyFloodHazardPlan;
   planDigest: FloodPlanDigest;
   provenance: FloodPlanPayload["provenance"];
@@ -256,17 +293,30 @@ export function drainFloodPlanPayload(
     );
   }
 
+  if (!Array.isArray(payload.refused)) {
+    // FAIL CLOSED on a pre-containment artifact. A plan written before the
+    // containment gate existed carries no refusal set, and draining it would
+    // publish determinations that were never checked, which is exactly what
+    // this gate exists to prevent. Re-plan the county; never replay blind.
+    throw new Error(
+      "flood-hazard-fact --from-plan FAIL CLOSED: refused[] missing. This artifact predates the sample-point containment gate (SS-W17, P-45). Re-plan the county rather than draining an unchecked plan.",
+    );
+  }
+
   const plan: CountyFloodHazardPlan = {
     countyFips: payload.countyFips,
     zonesIndexed: payload.zonesIndexed ?? 0,
     parcelsRead: payload.parcelsRead ?? payload.planned.length,
     emptyZoneIndex: Boolean(payload.emptyZoneIndex),
     planned: payload.planned,
+    refused: payload.refused,
+    containment: payload.containment ?? emptyContainmentTally(),
     counts: payload.counts ?? {
       present: 0,
       presentInSfha: 0,
       presentOutside: 0,
       absent: 0,
+      refused: payload.refused.length,
       skippedUnusableKey: 0,
     },
   };
@@ -286,6 +336,7 @@ export function drainFloodPlanPayload(
   return {
     countyFips: payload.countyFips,
     planned: payload.planned,
+    refused: payload.refused,
     plan,
     planDigest: recomputed,
     provenance: payload.provenance,

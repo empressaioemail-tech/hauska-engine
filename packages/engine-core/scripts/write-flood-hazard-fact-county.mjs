@@ -23,6 +23,14 @@
  *
  * --from-plan drains a flood-plan-ndjson-v1 artifact (eng #334 mirror) and
  * MUST NOT open a PostGIS plan scan. --plan-only persists that artifact.
+ *
+ * SAMPLE-POINT CONTAINMENT (SS-W17, P-45). Every parcel's query point is tested
+ * against that parcel's own ring before any determination is kept. A point
+ * outside the parcel REFUSES: no atom is built, the parcel lands in
+ * plan.refused with its basis, and --refusals-out persists the whole set as
+ * NDJSON. This exists because tier2 flood was retired for answering about a
+ * tile centre 227 m away, and the vertex-mean centroid this writer uses is not
+ * guaranteed to be inside a concave parcel either.
  */
 
 import { existsSync, writeFileSync } from "node:fs";
@@ -40,7 +48,6 @@ import {
   drainFloodPlanPayload,
   filterZonesByBBox,
   firstZoneVintageInBBox,
-  geometryCentroid,
   planCountyFloodHazard,
   planCountyFloodHazardPostgis,
   probeFloodZoneGeomReadiness,
@@ -76,6 +83,7 @@ function parseArgs(argv) {
     planOnly: false,
     fromPlan: null,
     expectDigest: null,
+    refusalsOut: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -95,6 +103,10 @@ function parseArgs(argv) {
     else if (a.startsWith("--batch=")) out.batch = Number(a.slice("--batch=".length));
     else if (a === "--limit") out.limit = Number(argv[++i] || 0);
     else if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length));
+    else if (a === "--refusals-out")
+      out.refusalsOut = String(argv[++i] || "").trim() || null;
+    else if (a.startsWith("--refusals-out="))
+      out.refusalsOut = a.slice("--refusals-out=".length).trim() || null;
     else if (a === "--out") out.out = String(argv[++i] || "").trim() || null;
     else if (a.startsWith("--out=")) out.out = a.slice("--out=".length).trim() || null;
     else if (a === "--plan-backend") out.planBackend = String(argv[++i] || "").trim();
@@ -184,6 +196,8 @@ async function writeAtomsFromFloodPlan(plan, provenance, summary) {
         const verdict = verifyStoredFloodHazardFactAtom(back, {
           parcelNodeId: atom.parcelNodeId,
           outcome: atom.absence || atom.sourceTier === "absent" ? "absent" : "present",
+          samplePoint: atom.samplePoint,
+          samplePointContainment: atom.samplePointContainment,
         });
         if (verdict.ok) summary.verified += 1;
         else summary.verifyFailures.push(verdict);
@@ -258,8 +272,10 @@ if (args.fromPlan) {
       wouldWritePresentInSfha: drained.plan.counts.presentInSfha,
       wouldWritePresentOutside: drained.plan.counts.presentOutside,
       wouldWriteAbsent: drained.plan.counts.absent,
+      refused: drained.plan.counts.refused,
       skippedUnusableKey: drained.plan.counts.skippedUnusableKey,
     };
+    summary.containment = drained.plan.containment;
     const provenance =
       drained.provenance ??
       defaultFloodProvenance(
@@ -436,6 +452,9 @@ const summary = {
   planCandidatesRejectedByJs: null,
   planCandidateLimitHits: null,
   planDigest: null,
+  containment: null,
+  refusalExamples: [],
+  refusalsArtifact: null,
 };
 
 try {
@@ -500,17 +519,21 @@ try {
       if (page.length === 0) break;
       for (const p of page) {
         if (args.limit > 0 && parcels.length >= args.limit) break;
-        const centroid =
-          geometryCentroid(p.geometry) ??
-          (Number.isFinite(p.west_lng) && Number.isFinite(p.south_lat)
-            ? [
-                (Number(p.west_lng) + Number(p.east_lng)) / 2,
-                (Number(p.south_lat) + Number(p.north_lat)) / 2,
-              ]
-            : null);
+        // SS-W17: the query point is DERIVED INSIDE selectPlannableParcels now,
+        // from the geometry and the bbox, so the derivation is named and the
+        // containment gate runs on the same object both backends consume. The
+        // old `geometryCentroid(g) ?? bboxCentre(...)` lived here and produced a
+        // bounding-box centre that no downstream reader could distinguish from a
+        // real parcel centroid.
         parcels.push({
           parcelKey: p.prop_id ?? `_feature-${p.feature_index}`,
-          centroid,
+          geometry: p.geometry,
+          bbox: {
+            westLng: Number(p.west_lng),
+            southLat: Number(p.south_lat),
+            eastLng: Number(p.east_lng),
+            northLat: Number(p.north_lat),
+          },
         });
       }
       lastFeature = page[page.length - 1].feature_index;
@@ -662,8 +685,24 @@ try {
       wouldWritePresentInSfha: plan.counts.presentInSfha,
       wouldWritePresentOutside: plan.counts.presentOutside,
       wouldWriteAbsent: plan.counts.absent,
+      refused: plan.counts.refused,
       skippedUnusableKey: plan.counts.skippedUnusableKey,
     };
+    summary.containment = plan.containment;
+    summary.refusalExamples = plan.refused.slice(0, 10).map((r) => ({
+      parcelKey: r.parcelKey,
+      reasonCode: r.reasonCode,
+      samplePoint: r.samplePoint,
+      samplePointDerivation: r.samplePointDerivation,
+      samplePointContainment: r.samplePointContainment,
+    }));
+    if (args.refusalsOut) {
+      writeFileSync(
+        args.refusalsOut,
+        plan.refused.map((r) => JSON.stringify(r)).join("\n") + "\n",
+      );
+      summary.refusalsArtifact = args.refusalsOut;
+    }
 
     const provenance = {
       sourceAdapter: SOURCE_ADAPTER,
@@ -754,6 +793,8 @@ try {
           const verdict = verifyStoredFloodHazardFactAtom(back, {
             parcelNodeId: atom.parcelNodeId,
             outcome: atom.absence || atom.sourceTier === "absent" ? "absent" : "present",
+            samplePoint: atom.samplePoint,
+            samplePointContainment: atom.samplePointContainment,
           });
           if (verdict.ok) summary.verified += 1;
           else summary.verifyFailures.push(verdict);
