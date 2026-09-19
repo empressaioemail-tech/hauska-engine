@@ -267,7 +267,119 @@ export async function promoteHonestVerifyDecline(
   return { buildableEnvelopeAtomDid: result.atomDid };
 }
 
-/** Classify verify-fail reasons into a bucket key for STEP 0 diagnosis. */
+/**
+ * The explicit sink for a verify failure this taxonomy cannot name. P-264
+ * requires an unclassified bucket that is REACHED, not inferred: a failure
+ * that no known class claims must land here visibly rather than be absorbed
+ * into the nearest-looking named class.
+ */
+export const UNCLASSIFIED_VERIFY_FAIL_BUCKET = "unclassified-verify-fail";
+
+/**
+ * Road-NAME parity bucket. Deliberately distinct from `road-classification-
+ * mismatch` (road CLASS, from the roadClassification gate) and from
+ * `front-orientation` (which edge bears the front, from the frontOrientation
+ * gate). A-177 governs whether the street-name dictionary and the road-class
+ * rules move earlier in the programme, and that call cannot be made if the two
+ * are reported as one number.
+ */
+export const ROAD_NAME_MISMATCH_BUCKET = "road-name-mismatch";
+
+export interface VerifyFailGateSet {
+  geometry?: { reasons?: readonly string[] } | null;
+  roadClassification?: { reasons?: readonly string[] } | null;
+  setbackEdgeDistance?: { reasons?: readonly string[] } | null;
+  frontOrientation?: { reasons?: readonly string[] } | null;
+  r32PerEdgeInset?: { reasons?: readonly string[] } | null;
+  facesAnswer?: { reasons?: readonly string[] } | null;
+}
+
+/**
+ * Gate -> bucket. This is the ONE mapping from a mechanical gate to its
+ * failure class; every caller that has the structured gates must come here
+ * rather than sniffling prose.
+ */
+const VERIFY_FAIL_GATE_BUCKETS: ReadonlyArray<
+  readonly [keyof VerifyFailGateSet, string]
+> = [
+  // Road-NAME parity FIRST. The facesAnswer reason interpolates the resolved
+  // street name as a value, so a parcel facing "Front Street" contains the
+  // literal substring "front"; any prose cascade that tested `front` before
+  // this gate reported that parcel as an orientation failure.
+  ["facesAnswer", ROAD_NAME_MISMATCH_BUCKET],
+  ["roadClassification", "road-classification-mismatch"],
+  ["frontOrientation", "front-orientation"],
+  ["setbackEdgeDistance", "setback-edge-distance"],
+  ["r32PerEdgeInset", "r32-per-edge-inset"],
+  ["geometry", "geometry"],
+];
+
+/**
+ * P-264: map verify-fail GATES to failure classes by gate identity.
+ *
+ * The batch runner previously flattened all six gates' reason strings into one
+ * list and substring-sniffed them (bucketVerifyFailReasons). Flattening
+ * destroyed the only information that actually identifies the failure — which
+ * gate produced it — and two defects followed:
+ *
+ *   1. ROAD-NAME THEFT: a road-NAME mismatch on a street whose name contains
+ *      "front"/"frontage" was bucketed as "front-orientation", hiding it.
+ *   2. OVER-BROAD ORIENTATION: any reason mentioning a front edge in prose,
+ *      including per-edge setback rows ("...for role front..."), also landed in
+ *      "front-orientation".
+ *
+ * Keying on the gate removes both: no substring inference, and no interpolated
+ * value ever reaches the decision. Returns EVERY failing gate's class, because
+ * a parcel can legitimately fail both road-name and road-class, and a residual
+ * that silently kept only the first would under-report one of them.
+ */
+export function verifyFailGateBuckets(gates: VerifyFailGateSet): string[] {
+  const buckets: string[] = [];
+  const source = (gates ?? {}) as Record<
+    string,
+    { reasons?: readonly string[] } | null | undefined
+  >;
+  for (const [gate, bucket] of VERIFY_FAIL_GATE_BUCKETS) {
+    const reasons = source[gate]?.reasons;
+    if (Array.isArray(reasons) && reasons.length > 0) buckets.push(bucket);
+  }
+  // A gate this taxonomy does not recognise, but which reported reasons, is an
+  // unattributable failure. It is surfaced as unclassified rather than dropped:
+  // a silently-ignored failure mode is the one outcome the residual must never
+  // produce, because it makes the total look complete while hiding a class.
+  const known = new Set<string>(VERIFY_FAIL_GATE_BUCKETS.map(([gate]) => gate as string));
+  const unknownFailed = Object.entries(source).some(
+    ([key, value]) =>
+      !known.has(key) && Array.isArray(value?.reasons) && value!.reasons!.length > 0,
+  );
+  if (unknownFailed) buckets.push(UNCLASSIFIED_VERIFY_FAIL_BUCKET);
+  return buckets;
+}
+
+/**
+ * Single-bucket convenience over verifyFailGateBuckets, for callers whose
+ * contract carries one bucket per parcel (e.g. recordRefusedParcel). Priority
+ * is the table order above; road-NAME is therefore preferred over the classes
+ * below it. An empty failure set is UNCLASSIFIED, never a named class.
+ */
+export function bucketVerifyFailGates(gates: VerifyFailGateSet): string {
+  return verifyFailGateBuckets(gates)[0] ?? UNCLASSIFIED_VERIFY_FAIL_BUCKET;
+}
+
+/**
+ * Classify verify-fail REASON STRINGS into a bucket key for STEP 0 diagnosis.
+ *
+ * Prose fallback for callers that hold only strings, where gate identity is
+ * already lost. Prefer bucketVerifyFailGates whenever the structured gates are
+ * in hand — this function can only guess.
+ *
+ * ORDER IS LOAD-BEARING: the road-NAME test runs before the orientation test.
+ * The facesAnswer reason is `facesAnswer: situs "X" != road "Y" (...)`, which
+ * contains neither "orientation" nor a literal "front" — but "Y", the resolved
+ * road name, is interpolated as a value and may itself be "Front Street". With
+ * the orientation test first, that row was claimed as "front-orientation" and
+ * the road-name failure was invisible.
+ */
 export function bucketVerifyFailReasons(reasons: string[]): string {
   const text = reasons.join(" ").toLowerCase();
   if (text.includes("superseded") || text.includes("absent from county cadastral")) {
@@ -276,13 +388,16 @@ export function bucketVerifyFailReasons(reasons: string[]): string {
   if (text.includes("inset ring is null") || text.includes("marked empty")) {
     return "null-inset";
   }
+  if (text.includes("facesanswer")) {
+    return ROAD_NAME_MISMATCH_BUCKET;
+  }
   if (text.includes("classification") && text.includes("osm")) {
     return "road-classification-mismatch";
   }
   if (text.includes("orientation") || text.includes("front")) {
     return "front-orientation";
   }
-  if (text.includes("facesanswer") || text.includes("situs")) {
+  if (text.includes("situs")) {
     return "faces-answer";
   }
   if (text.includes("r32")) {
@@ -294,5 +409,5 @@ export function bucketVerifyFailReasons(reasons: string[]): string {
   if (text.includes("setback")) {
     return "setback-edge-distance";
   }
-  return "other-verify-fail";
+  return UNCLASSIFIED_VERIFY_FAIL_BUCKET;
 }

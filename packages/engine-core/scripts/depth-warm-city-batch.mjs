@@ -65,8 +65,9 @@ import {
 } from "../src/depth-warm/remint-preview.ts";
 import { roadAtomToWarmSource } from "../src/road-intake/road-to-warm-source.ts";
 import {
-  bucketVerifyFailReasons,
+  bucketVerifyFailGates,
   promoteHonestVerifyDecline,
+  verifyFailGateBuckets,
 } from "../src/depth-warm/honest-decline-promote.ts";
 import {
   EnvelopeGroundTruthPromoteDeclineError,
@@ -703,6 +704,12 @@ const stats = {
     byCode: warmGate.tally.byCode,
   },
   failureBuckets: {},
+  // P-264: per-class verify-fail counts, keyed by gate identity. Distinct from
+  // failureBuckets above (one bucket per parcel, first class only) because a
+  // parcel can fail both road-NAME and road-CLASS and the per-city residual must
+  // be able to count both.
+  gateFailureBuckets: {},
+  gateFailureClassesObserved: 0,
   honestDeclines: 0,
   atomWrites: 0,
   wallMsPerParcel: [],
@@ -1137,8 +1144,18 @@ for (const row of parcelRows) {
       ...result.verify.gates.r32PerEdgeInset.reasons,
       ...result.verify.gates.facesAnswer.reasons,
     ];
-    const bucket = bucketVerifyFailReasons(reasons);
+    // P-264: classify by GATE IDENTITY, not by sniffing the flattened prose.
+    // The reasons list below is for the operator-facing sample only; the bucket
+    // must come from the structured gates that produced them.
+    const gates = result.verify.gates;
+    const bucket = bucketVerifyFailGates(gates);
     stats.failureBuckets[bucket] = (stats.failureBuckets[bucket] ?? 0) + 1;
+    // Per-class counts: a parcel can fail both road-NAME and road-CLASS, so the
+    // per-city residual must be able to count both rather than only the first.
+    for (const gateBucket of verifyFailGateBuckets(gates)) {
+      stats.gateFailureBuckets[gateBucket] = (stats.gateFailureBuckets[gateBucket] ?? 0) + 1;
+    }
+    stats.gateFailureClassesObserved = Object.keys(stats.gateFailureBuckets).length;
     recordRefusedParcel(parcelNodeId, bucket);
     if (args.diagnoseFailures && failureSamples.length < 30) {
       failureSamples.push({ parcelNodeId, bucket, reasons: reasons.slice(0, 3) });
@@ -1213,6 +1230,10 @@ const costJson = {
     honestDeclines: stats.honestDeclines,
     declines: stats.declines,
     failureBuckets: stats.failureBuckets,
+    // P-264: per-class verify-fail counts (gate identity), so road-NAME and
+    // road-CLASS are separable in the per-city residual.
+    gateFailureBuckets: stats.gateFailureBuckets,
+    gateFailureClassesObserved: stats.gateFailureClassesObserved,
   },
   // Serve-Consistency Principle (2026-08-07) — report-only, never gates
   // promote. Empty array when no parcel this run needed a BCAD re-fetch, or
