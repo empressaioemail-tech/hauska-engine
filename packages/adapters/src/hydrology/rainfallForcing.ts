@@ -9,6 +9,7 @@
 import {
   fetchNoaaAtlas14PointEstimate,
   inchesToMm,
+  PfdsRefusal,
   type NoaaAtlas14PointEstimate,
 } from "./noaaAtlas14";
 
@@ -91,12 +92,21 @@ export async function resolveRainfallForcing(
   const match =
     estimate.designStorms.find((d) => d.returnPeriodYears === rp) ??
     estimate.designStorms[0];
-  const depthInches = match?.depthInches ?? 4;
+  // G-165: this used to be `match?.depthInches ?? 4`, which invented a depth
+  // and published it under `kind: "noaa-atlas-14"` — the route then classified
+  // that as NOT degraded, so an invented number was also reported as full
+  // coverage. There is now no number to publish unless the parser produced one.
+  if (!match) {
+    throw new PfdsRefusal({
+      code: "estimate_empty",
+      detail: `the PFDS estimate for this point carries ${estimate.designStorms.length} design storms, so there is no ${rp}-yr depth to serve`,
+    });
+  }
   return {
     kind: "noaa-atlas-14",
     estimate,
-    returnPeriodYears: match?.returnPeriodYears ?? rp,
-    depthInches,
+    returnPeriodYears: match.returnPeriodYears,
+    depthInches: match.depthInches,
   };
 }
 

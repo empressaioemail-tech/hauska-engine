@@ -38,6 +38,7 @@ import {
 import {
   BLAST_RADIUS_EXCEEDED,
   BLAST_RADIUS_OVERRIDE_MISMATCH,
+  OVERRIDE_ENV_VAR,
   evaluateBlastRadius,
 } from "./writer-blast-radius-guard.mjs";
 
@@ -221,13 +222,18 @@ describe("P-342 cap (P-213): a missing share refuses, the exact token carries, a
     expect(caught).not.toBeNull();
     expect(caught.code).toBe(BLAST_RADIUS_EXCEEDED);
     expect(caught.expectedToken).toBe(authorisationTokenFor(plan));
+    // The NAME is the program's one declared authorisation variable (A-220), which the guard
+    // exports as `OVERRIDE_ENV_VAR`. Read it rather than hardcoding it: in this repo the old
+    // literal (`BLAST_RADIUS_OVERRIDE=`) outlived the rename on main, and only a test that reads
+    // the constant can fail for the right reason when the name moves again.
+    expect(OVERRIDE_ENV_VAR).toBe("DESTRUCTIVE_WRITE_AUTHORISATION");
     expect(authorisationTokenFor(plan)).toBe(
-      `BLAST_RADIUS_OVERRIDE=p263-envelope-outcome-apply:48021:100/100`,
+      `${OVERRIDE_ENV_VAR}=p263-envelope-outcome-apply:48021:100/100`,
     );
     // The paste form and the ENV VALUE differ by exactly the `NAME=` prefix — the guard reads
     // the value, the operator pastes the assignment, and the artifact carries both.
     expect(authorisationValueFor(plan)).toBe(`p263-envelope-outcome-apply:48021:100/100`);
-    expect(authorisationTokenFor(plan)).toBe(`BLAST_RADIUS_OVERRIDE=${authorisationValueFor(plan)}`);
+    expect(authorisationTokenFor(plan)).toBe(`${OVERRIDE_ENV_VAR}=${authorisationValueFor(plan)}`);
   });
 
   it("the exact authorization lets the same run through", () => {

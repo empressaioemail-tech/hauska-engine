@@ -45,8 +45,20 @@ export {
   fetchNoaaAtlas14PointEstimate,
   buildPfdsUrl,
   parsePfdsDepthTable,
+  pfdsRefusalTally,
+  resetPfdsRefusalTally,
   inchesToMm,
+  PfdsRefusal,
+  PFDS_DURATION_ROWS,
+  PFDS_RETURN_PERIOD_COLUMNS,
+  DEFAULT_PFDS_DURATION_HOURS,
   type NoaaAtlas14PointEstimate,
+  type NoaaAtlas14DesignStorm,
+  type ParsePfdsDepthTableOptions,
+  type PfdsDurationRow,
+  type PfdsRefusalCode,
+  type PfdsRefusalInit,
+  type PfdsRefusalTally,
 } from "./noaaAtlas14.js";
 
 export {

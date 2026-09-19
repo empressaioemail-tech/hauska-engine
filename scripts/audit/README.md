@@ -4,6 +4,32 @@ Read-only reproduction scripts for write-provenance audits. Nothing here takes `
 issues a write, or triggers a deploy; every script is safe to re-run at any time and is meant
 to be re-run, not archived.
 
+## g165-noaa-parser-probe.mts (G-165)
+
+Measures the NOAA Atlas 14 PFDS parser against the LIVE HDSC endpoint. Run from this repo root:
+
+```
+NODE_OPTIONS=--use-system-ca pnpm exec tsx scripts/audit/g165-noaa-parser-probe.mts <out.json>
+```
+
+`--use-system-ca` is required on the fleet workstation: Node's default trust store rejects
+`hdsc.nws.noaa.gov` with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. It is the system trust store, not
+verification disabled.
+
+It runs two real points (Bastrop and El Paso, whose true 100-yr 24-hr Atlas 14 depths differ)
+through the real `resolveStudyRainfall` and `resolveRainfallForcing` paths, and it carries the
+pre-G-165 parser FROZEN verbatim so both halves of the violation stay reproducible after the
+fix. It also perturbs the live payload 13 ways — 12 that must be REFUSED and one control that
+must still PARSE, because a harness that refuses everything grades nothing — and reports
+`perturbations.allExpectationsMet`.
+
+Typecheck it with `pnpm exec tsc -p scripts/audit/tsconfig.json`; the root `tsconfig.json`
+includes nothing, so scripts here are outside `pnpm -r typecheck` and need their own project.
+
+A raw-body hash is NOT a stable identity for this endpoint: the payload embeds a
+non-reproducible `pyRunTime` float. The probe reports `quantilesLiteralSha256`, which is the
+matrix the parser consumes and the fixture key.
+
 ## p171-footprint-write-provenance.sh
 
 Built for P-171 (naming the writer behind the 2026-09-07 building-footprint atom write for

@@ -34,10 +34,14 @@ import {
   reactivationOverrideToken,
   reactivationOverrideValue,
 } from "../retired-reactivation-guard.mjs";
+import {
+  AUTHORISATION_ENV_VAR,
+  MAX_DESTRUCTIVE_SHARE,
+} from "../destructive-write-declaration.mjs";
 
 const COUNTY = "48021";
 
-/** The bare env-var VALUE (what `process.env.BLAST_RADIUS_OVERRIDE` holds). */
+/** The bare env-var VALUE (what `process.env.DESTRUCTIVE_WRITE_AUTHORISATION` holds, P-328). */
 const value = (affected, population) => reactivationOverrideValue(COUNTY, affected, population);
 /** The shell-assignment form, which is what a refusal message prints. */
 const token = (affected, population) => reactivationOverrideToken(COUNTY, affected, population);
@@ -61,8 +65,11 @@ function syntheticRun({ affected, population }) {
 }
 
 describe("retired-reactivation-guard: declared number and scope", () => {
-  it("declares 0.05 with the transition named, not inherited from a variable", () => {
-    expect(MAX_REACTIVATION_SHARE).toBe(0.05);
+  it("reads the program's ONE declared number (P-328), with the transition named", () => {
+    expect(MAX_REACTIVATION_SHARE).toBe(MAX_DESTRUCTIVE_SHARE);
+    // A-220 (P-361): 0.05 program-wide. This test read 0.5 while the guard refused at 0.05, which is
+    // the exact split P-361 closed -- the declaration and the enforced number are now one number.
+    expect(MAX_DESTRUCTIVE_SHARE).toBe(0.05);
     expect(REACTIVATION_TRANSITION).toBe("retired->active");
     expect(REACTIVATION_WRITER).toBe("parcel-node-retired-review-reactivation");
     // The writer id is part of the override token, so an authorization for the RETIREMENT
@@ -73,14 +80,14 @@ describe("retired-reactivation-guard: declared number and scope", () => {
   it("the token names writer, county AND both measured counts", () => {
     expect(value(40, 1013)).toBe("parcel-node-retired-review-reactivation:48021:40/1013");
     expect(token(40, 1013)).toBe(
-      "BLAST_RADIUS_OVERRIDE=parcel-node-retired-review-reactivation:48021:40/1013",
+      `${AUTHORISATION_ENV_VAR}=parcel-node-retired-review-reactivation:48021:40/1013`,
     );
   });
 
   it("reads the override from the environment as a bare VALUE, and treats blank as absent", () => {
     expect(reactivationOverrideFromEnv({})).toBeNull();
-    expect(reactivationOverrideFromEnv({ BLAST_RADIUS_OVERRIDE: "   " })).toBeNull();
-    expect(reactivationOverrideFromEnv({ BLAST_RADIUS_OVERRIDE: ` ${value(40, 1013)} ` })).toBe(value(40, 1013));
+    expect(reactivationOverrideFromEnv({ [AUTHORISATION_ENV_VAR]: "   " })).toBeNull();
+    expect(reactivationOverrideFromEnv({ [AUTHORISATION_ENV_VAR]: ` ${value(40, 1013)} ` })).toBe(value(40, 1013));
   });
 });
 
@@ -92,11 +99,23 @@ describe("retired-reactivation-guard: the false-positive checks (it must NOT be 
   });
 
   it("a repair inside the declared share passes without any override", () => {
-    const run = syntheticRun({ affected: 50, population: 1013 }); // 4.94%
+    const run = syntheticRun({ affected: 40, population: 1000 }); // 4.00%
     const plan = planReactivationWrite({ countyFips: COUNTY, ...run });
     expect(plan.write).toBe(true);
     expect(plan.blastRadius.basis).toBe("within-threshold");
-    expect(plan.blastRadius.share).toBeCloseTo(50 / 1013, 12); // 4.94%, under the declared 5%
+    expect(plan.blastRadius.share).toBeCloseTo(0.04, 12); // under the program's 0.05 (A-220 / P-361)
+  });
+
+  it("P-361: on this call path a 6 percent run REFUSES and a 4 percent run writes", () => {
+    // The dispatch's pre-registered pair, in the direction P-275 exists for. 6 percent is the band
+    // A-220 closed: it passed at the declared 0.5 and refuses at the declared 0.05, and this pair is
+    // what fails if either the declaration or the guard moves without the other.
+    expect(() => planReactivationWrite({ countyFips: COUNTY, ...syntheticRun({ affected: 60, population: 1000 }) })).toThrow(
+      /6\.00%/,
+    );
+    const plan = planReactivationWrite({ countyFips: COUNTY, ...syntheticRun({ affected: 40, population: 1000 }) });
+    expect(plan.write).toBe(true);
+    expect(plan.blastRadius.share).toBeCloseTo(0.04, 12);
   });
 
   it("exactly at the declared share passes (the check is > maxShare, not >=)", () => {
@@ -142,17 +161,17 @@ describe("retired-reactivation-guard: the refusals (falsifier 3)", () => {
   });
 
   it("a share just above the threshold also refuses -- there is no small-print band", () => {
-    expect(() => assertReactivationBlastRadius({ countyFips: COUNTY, affected: 51, population: 1013 })).toThrow(
-      /BLAST_RADIUS_EXCEEDED|would transition 51 of 1013/,
+    expect(() => assertReactivationBlastRadius({ countyFips: COUNTY, affected: 51, population: 100 })).toThrow(
+      /BLAST_RADIUS_EXCEEDED|would transition 51 of 100/,
     );
   });
 
   it("the exact authorization for THIS measured run carries", () => {
-    const run = syntheticRun({ affected: 60, population: 1013 });
+    const run = syntheticRun({ affected: 60, population: 100 });
     const plan = planReactivationWrite({
       countyFips: COUNTY,
       ...run,
-      override: value(60, 1013),
+      override: value(60, 100),
     });
     expect(plan.write).toBe(true);
     expect(plan.blastRadius.basis).toBe("override-authorised");
@@ -164,8 +183,8 @@ describe("retired-reactivation-guard: the refusals (falsifier 3)", () => {
       assertReactivationBlastRadius({
         countyFips: "48453",
         affected: 60,
-        population: 1013,
-        override: value(60, 1013), // 48021's authorization
+        population: 100,
+        override: value(60, 100), // 48021's authorization
       }),
     ).toThrow(expect.objectContaining({ code: BLAST_RADIUS_OVERRIDE_MISMATCH }));
   });
@@ -175,8 +194,8 @@ describe("retired-reactivation-guard: the refusals (falsifier 3)", () => {
       assertReactivationBlastRadius({
         countyFips: COUNTY,
         affected: 61,
-        population: 1013,
-        override: value(60, 1013),
+        population: 100,
+        override: value(60, 100),
       }),
     ).toThrow(expect.objectContaining({ code: BLAST_RADIUS_OVERRIDE_MISMATCH }));
   });
