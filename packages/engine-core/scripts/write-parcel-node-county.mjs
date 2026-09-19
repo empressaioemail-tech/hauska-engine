@@ -74,8 +74,9 @@
  * WHICH ids are orphans; it does not, on its own, know whether that set is a normal amount of
  * churn or a repeat of the incident that motivated this row (P-212: 92.5 percent of Bastrop
  * retired from one undersized plan, every row-level check passing). Before this CLI builds or
- * writes a single retire-body, it measures the orphan share against `MAX_ORPHAN_SHARE` and
- * refuses — writing nothing, in dry-run or --apply — above it, unless `BLAST_RADIUS_OVERRIDE`
+ * writes a single retire-body, it measures the orphan share against `MAX_DESTRUCTIVE_SHARE` (the
+ * program's number, read from destructive-write-declaration.mjs) and
+ * refuses — writing nothing, in dry-run or --apply — above it, unless `DESTRUCTIVE_WRITE_AUTHORISATION`
  * names this exact county and these exact counts.
  */
 
@@ -102,25 +103,27 @@ import {
   railLeaseArgs,
   refuseApplyWithoutRunId,
 } from "./writer-apply-lease.mjs";
-import { evaluateBlastRadius, OVERRIDE_ENV_VAR as BLAST_RADIUS_OVERRIDE_ENV_VAR } from "./writer-blast-radius-guard.mjs";
+import { evaluateBlastRadius, OVERRIDE_ENV_VAR as AUTHORISATION_ENV_VAR } from "./writer-blast-radius-guard.mjs";
+import { MAX_DESTRUCTIVE_SHARE } from "./destructive-write-declaration.mjs";
 
 const SOURCE_ADAPTER = "txgio-stratmap-bulk-v1";
 const SOURCE_URL = "https://data.geographic.texas.gov/";
 
-/**
- * P-213: the declared threshold for THIS writer's destructive transition (orphan retirement).
+/*
+ * P-328: the declared threshold for THIS writer's destructive transition (orphan retirement) is
+ * the PROGRAM'S number, read from `destructive-write-declaration.mjs` -- not re-declared here.
  *
- * Basis: mirrors the 5-point slack `publish-coverage-floor.mjs` (P-236, hauska-factory) declared
- * for the analogous "healthy run measures ~1.0, five points of slack covers genuine movement"
- * reasoning — a re-acquisition that changes nothing should retire close to 0 percent, and the
- * two real reference points bracket this by more than an order of magnitude each: a real,
- * legitimate re-run on Kenedy County (48261, `_inbox/2026-08-08_L2_WAVE3_retirement_dry_full.json`)
- * retired 1 of 528 prior-active rows (0.19 percent); the Bastrop incident this row exists because
- * of retired 57,704 of 62,394 (92.5 percent). 5 percent sits roughly 25x above the one measured
- * legitimate case and roughly 18x below the incident, so it is not doing fine discrimination
- * between "normal churn" and "collapse" and does not need to.
+ * Until P-328 this file declared its own orphan-share number (five percent, 1 in 20, with a basis
+ * of its own: Kenedy retired 1 of 528 prior-active rows = 0.19 percent; Bastrop retired 57,704 of
+ * 62,394 = 92.5 percent; five percent sat 25x above the one and 18x below the other). That basis
+ * was sound and the number was STRICTER than the program's 0.5 -- and it was still a second
+ * declaration of a number the program had already declared once, which is the defect P-328 exists
+ * to remove. One number, in one place, with a drift check that can fire; the cost of carrying 0.5
+ * instead of the stricter number is stated in the declaration's own header rather than hidden here.
+ *
+ * A note and not a declaration, deliberately: the doc-comment form would document whatever
+ * happened to follow it, and nothing here declares a number any more.
  */
-const MAX_ORPHAN_SHARE = 0.05;
 
 function parseArgs(argv) {
   const out = {
@@ -428,8 +431,8 @@ try {
           scopeKey: args.county,
           affected: reconcile.orphans.length,
           population: reconcile.priorActive,
-          maxShare: MAX_ORPHAN_SHARE,
-          override: process.env[BLAST_RADIUS_OVERRIDE_ENV_VAR] ?? null,
+          maxShare: MAX_DESTRUCTIVE_SHARE,
+          override: process.env[AUTHORISATION_ENV_VAR] ?? null,
         });
 
         // Retirement is a STATUS TRANSITION on the row, re-persisted through

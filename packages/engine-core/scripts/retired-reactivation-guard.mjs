@@ -28,21 +28,24 @@
  * THE DECLARED NUMBER AND ITS DENOMINATOR
  * ---------------------------------------------------------------------------------------------
  *
- * `MAX_REACTIVATION_SHARE = 0.05` — the same declared number `write-parcel-node-county.mjs` uses
- * for `MAX_ORPHAN_SHARE`, for the same reason: a batch that moves more than 5 percent of a
- * population in one run is an incident-shaped event and must be authorized knowingly.
+ * `MAX_REACTIVATION_SHARE` — P-328: the program's `MAX_DESTRUCTIVE_SHARE`, read from
+ * destructive-write-declaration.mjs. P-275 declared 0.05 here only as "the same declared number
+ * `write-parcel-node-county.mjs` uses for `MAX_ORPHAN_SHARE`", so unifying it removes a second
+ * copy rather than changing a basis of its own. The rule it declares: a batch that moves more than
+ * the declared share of a population in one run is an incident-shaped event and must be authorized
+ * knowingly.
  *
  * The DENOMINATOR is the county's retired population the reactivation is drawn from (the review's
  * `priorRetired`), not the county's total nodes and not the candidate count. This follows the
  * guard's own rule: "the population a caller measures is exactly the denominator its own share
- * claim depends on". A county with 1,013 retired rows authorizes at most 50 rows; Bastrop's
+ * claim depends on". A county with 1,013 retired rows authorizes at most 506 rows under the program's 0.5; Bastrop's
  * residual needs no authorization at all, which is the intended outcome.
  *
  * ---------------------------------------------------------------------------------------------
  * THE CONSEQUENCE, STATED OUT LOUD
  * ---------------------------------------------------------------------------------------------
  *
- * Under 0.05, ANY reactivation of more than 5 percent of a county's retired rows refuses and
+ * Under the program's declared share, ANY reactivation above that share of a county's retired rows refuses and
  * demands the exact measured token. That is deliberate and it makes an authorized mass repair a
  * two-step act: run report-only to read the counts, then re-execute with the token those counts
  * print. The refusal message and the run summary both carry that token, with the counts in it, so
@@ -53,12 +56,24 @@
  */
 
 import { evaluateBlastRadius, overrideTokenFor } from "./writer-blast-radius-guard.mjs";
+import {
+  AUTHORISATION_ENV_VAR,
+  MAX_DESTRUCTIVE_SHARE,
+} from "./destructive-write-declaration.mjs";
 
 /** Stable writer id. Part of the override token, so it cannot drift from an authorization. */
 export const REACTIVATION_WRITER = "parcel-node-retired-review-reactivation";
 
-/** Declared share, per writer. See the header for the basis. */
-export const MAX_REACTIVATION_SHARE = 0.05;
+/**
+ * P-328: the program's ONE declared number, read from destructive-write-declaration.mjs.
+ *
+ * P-275 declared its own 0.05 here as "the same declared number `write-parcel-node-county.mjs`
+ * uses for `MAX_ORPHAN_SHARE`" -- so it was never independently based; it was chosen for
+ * consistency with a number that has now moved to the program's. Unifying it here removes a
+ * second copy without changing a basis of its own. The cost of carrying 0.5 rather than 0.05 is
+ * stated in that module's header.
+ */
+export const MAX_REACTIVATION_SHARE = MAX_DESTRUCTIVE_SHARE;
 
 /**
  * Ascending: retire -> reactivate. A retired row returning to active is checked against how much
@@ -80,7 +95,7 @@ export function reactivationOverrideValue(countyFips, affected, population) {
 
 /** The bare override value a run reads from its environment, or null. */
 export function reactivationOverrideFromEnv(env = process.env) {
-  const raw = env?.["BLAST_RADIUS_OVERRIDE"];
+  const raw = env?.[AUTHORISATION_ENV_VAR];
   return raw === undefined || String(raw).trim() === "" ? null : String(raw).trim();
 }
 
