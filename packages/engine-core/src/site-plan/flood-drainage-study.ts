@@ -8,6 +8,7 @@ import {
   computeD8Field,
   fetchNoaaAtlas14PointEstimate,
   inchesToMm,
+  PfdsRefusal,
   runHydrologyWorker,
   type GeoJsonFeatureCollection,
   type HydrologyWorkerRequest,
@@ -627,6 +628,13 @@ export interface ResolvedRainfall {
    * serial round trip). Never derived or guessed when the fetch fails.
    */
   curve?: ReadonlyArray<RainfallCurvePoint>;
+  /**
+   * Present ONLY on a `default`-sourced resolution (G-165): WHY the live Atlas
+   * 14 read did not answer. This is what makes a surviving fallback named on
+   * the read instead of a number a reader has to assume was measured. Absent on
+   * `parameter` and `noaa-atlas14` resolutions — those are not fallbacks.
+   */
+  fallback?: RainfallFallback;
 }
 
 export async function resolveStudyRainfall(
@@ -641,10 +649,17 @@ export async function resolveStudyRainfall(
   // overrides a supplied parameter and never changes rainfallDepthInches/
   // rainfallSource resolution below (the pre-G-125 behavior is unchanged).
   let estimate: NoaaAtlas14PointEstimate | null = null;
+  let fallback: RainfallFallback | undefined;
   try {
     estimate = await fetchRainfall({ lat: centroid.lat, lng: centroid.lng });
-  } catch {
+  } catch (err) {
     estimate = null;
+    // G-165: the fallback is NAMED. Before this, every failure mode — the
+    // parser refusing the payload shape, NOAA declaring the point uncovered,
+    // and a dead network — collapsed into one unlabelled "default", so a reader
+    // could not tell "we asked and there is no Atlas 14 value here" from
+    // "our parser could not read the answer".
+    fallback = rainfallFallbackFrom(err);
   }
   const curve: ReadonlyArray<RainfallCurvePoint> | undefined =
     estimate && estimate.designStorms.length > 0
@@ -680,8 +695,54 @@ export async function resolveStudyRainfall(
   return {
     depthInches: DEFAULT_RAINFALL_DEPTH_INCHES,
     source: "default",
-    detail: DEFAULT_RAINFALL_CITATION,
+    detail: fallback
+      ? `${DEFAULT_RAINFALL_CITATION} — ${fallback.reason}`
+      : DEFAULT_RAINFALL_CITATION,
+    ...(fallback ? { fallback } : {}),
     ...(curve ? { curve } : {}),
+  };
+}
+
+/**
+ * G-165: the reason a `default`-sourced rainfall resolution is a default.
+ * Named rather than collapsed, so a read can distinguish a principled absence
+ * (Atlas 14 genuinely does not cover the point) from an instrument failure.
+ */
+export type RainfallFallbackReason =
+  /** NOAA itself declares no Atlas 14 value at this point (`result = 'null' | 'none'`). */
+  | "noaa-not-covered"
+  /** the HDSC payload did not have the shape this engine can read — the parser refused */
+  | "noaa-payload-refused"
+  /** the HDSC request never completed (transport, timeout, non-200) */
+  | "noaa-unreachable"
+  /** some other failure the fetch seam surfaced */
+  | "noaa-fetch-failed";
+
+export interface RainfallFallback {
+  reason: RainfallFallbackReason;
+  /** The refusal's own code and message, or the thrown error's message. */
+  detail: string;
+  /** NOAA's `ErrorMsg` verbatim, when it sent one. */
+  errorMsg?: string;
+}
+
+function rainfallFallbackFrom(err: unknown): RainfallFallback {
+  if (err instanceof PfdsRefusal) {
+    const reason: RainfallFallbackReason =
+      err.code === "result_not_values"
+        ? "noaa-not-covered"
+        : err.code === "transport_error" || err.code === "http_status"
+          ? "noaa-unreachable"
+          : "noaa-payload-refused";
+    return {
+      reason,
+      detail: `${err.code}: ${err.detail}`,
+      ...(err.errorMsg ? { errorMsg: err.errorMsg } : {}),
+    };
+  }
+  return {
+    reason: "noaa-fetch-failed",
+    detail: err instanceof Error ? err.message : String(err),
   };
 }
 

@@ -251,6 +251,8 @@ export {
   type PondingClipResult,
   type PourPointMethod,
   type PourPointResolution,
+  type RainfallFallback,
+  type RainfallFallbackReason,
   type RainfallSource,
   type RunFloodDrainageStudyOptions,
   type RunFloodDrainageStudyResult,

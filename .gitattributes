@@ -10,3 +10,9 @@ packages/adapters/src/local/setbacks/*.json text eol=lf
 # every Windows clone — a guardrail that does not survive a clone is not a
 # guardrail. Pin to LF so the hash is the same bytes everywhere.
 packages/engine-core/src/site-plan/pdf/brand/*.svg text eol=lf
+
+# G-165: the captured HDSC PFDS payloads are third-party evidence, read as bytes by
+# noaaAtlas14.test.ts. core.autocrlf=true would rewrite them on checkout, so a clone would
+# test different bytes than the capture. Pin to LF - a guardrail that does not survive a
+# clone is not a guardrail.
+packages/adapters/src/hydrology/__fixtures__/*.pfds.txt text eol=lf
