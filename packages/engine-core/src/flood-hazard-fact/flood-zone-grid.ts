@@ -7,8 +7,8 @@
 
 import {
   bboxContainsPoint,
+  pickPreferredFloodZone,
   pointInGeoJson,
-  isSfhaFlag,
   type BBox,
   type FloodZoneFeature,
 } from "./geo.js";
@@ -222,17 +222,10 @@ export function gatherGridCandidateIndices(
   return out;
 }
 
-function pickZoneFromCandidates(
-  candidates: FloodZoneFeature[],
-): FloodZoneFeature | null {
-  if (candidates.length === 0) return null;
-  const sfha = candidates.find((c) => isSfhaFlag(c.sfhaTf));
-  return sfha ?? candidates[0]!;
-}
-
 /**
  * Point-in-polygon zone lookup using the spatial grid. Exact PIP is the
- * final arbiter; grid only narrows candidates.
+ * final arbiter; grid only narrows candidates. Overlap preference is
+ * pickPreferredFloodZone (parse every flag; unrecognised raises).
  */
 export function findZoneAtPointWithGrid(
   lng: number,
@@ -264,5 +257,5 @@ export function findZoneAtPointWithGrid(
     }
     if (pointInGeoJson(lng, lat, z.geometry)) candidates.push(z);
   }
-  return pickZoneFromCandidates(candidates);
+  return pickPreferredFloodZone(candidates);
 }
